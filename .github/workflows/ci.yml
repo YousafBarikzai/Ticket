@@ -15,6 +15,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege, declared rather than inherited. The secret scanner reads the
+# pull request's commits to work out what to scan, so it needs more than the
+# default contents scope; nothing here needs write access to anything.
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   NODE_VERSION: '22'
 
