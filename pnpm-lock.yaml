@@ -439,12 +439,6 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../expr
-      react:
-        specifier: ^19
-        version: 19.3.0
-      react-dom:
-        specifier: ^19
-        version: 19.3.0(react@19.3.0)
     devDependencies:
       '@types/react':
         specifier: ^19.3.0
@@ -455,6 +449,12 @@ importers:
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
 
 packages:
 

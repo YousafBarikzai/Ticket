@@ -1,4 +1,8 @@
 import 'dotenv/config';
+
+// This tool's output is consumed by shells and by people. Structured logs would
+// contaminate a captured value, so they are silenced unless explicitly asked for.
+process.env.LOG_SILENT ??= '1';
 import {
   SYSTEM_PERMISSIONS,
   createContext,

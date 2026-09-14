@@ -183,7 +183,7 @@ export async function notifyForEvent(ctx: TenantContext, envelope: EventEnvelope
           'notify',
           'notification.dispatch',
           { notificationId, channel },
-          { idempotencyKey: `notify:${notificationId}:${channel}` },
+          { idempotencyKey: `notify-${notificationId}-${channel}` },
         );
       }
       queued += 1;

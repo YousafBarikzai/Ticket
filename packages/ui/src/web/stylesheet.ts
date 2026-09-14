@@ -179,6 +179,7 @@ export const componentStylesheet = `
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
 }
 .itsm-Switch[aria-checked="true"] { background: var(--itsm-colour-brand-solid); border-color: var(--itsm-colour-brand-solid); justify-content: flex-end; }
 .itsm-Switch[aria-disabled="true"] { cursor: not-allowed; opacity: 0.6; }
@@ -188,7 +189,6 @@ export const componentStylesheet = `
   border-radius: var(--itsm-radius-pill);
   background: var(--itsm-colour-surface-raised);
   box-shadow: var(--itsm-elevation-sm);
-  transition: transform var(--itsm-duration-fast) var(--itsm-easing-standard);
 }
 
 /* ------------------------------------------------- Combobox and date picker */

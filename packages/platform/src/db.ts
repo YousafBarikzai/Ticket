@@ -108,10 +108,50 @@ function appUrl(): string {
   return loadConfig().DATABASE_URL_APP;
 }
 
-/** The application client. Used by the API and the workers. */
+/**
+ * The application client.
+ *
+ * Every operation runs inside a transaction that sets `app.tenant_id`, because
+ * row-level security reads that setting and `SET LOCAL` only lives for the
+ * length of a transaction. Without this wrapping a bare read would quietly
+ * return nothing at all, which is a far worse failure than an error: it looks
+ * like missing data rather than a missing tenant.
+ *
+ * Use `transaction()` directly whenever several statements must succeed or fail
+ * together; this convenience is for single reads and writes.
+ */
 export function db(): Db {
   if (!appClient) appClient = baseClient(appUrl());
-  return extend(appClient);
+  return autoTransactional(appClient) as unknown as Db;
+}
+
+function autoTransactional(client: PrismaClient): unknown {
+  return new Proxy(client, {
+    get(target, prop: string | symbol) {
+      const value = (target as unknown as Record<string | symbol, unknown>)[prop];
+      if (typeof prop !== 'string' || !isModelProperty(prop) || typeof value !== 'object' || value === null) {
+        return value;
+      }
+      return new Proxy(value as Record<string, unknown>, {
+        get(model, operation: string) {
+          const fn = model[operation];
+          if (typeof fn !== 'function') return fn;
+          return async (args: Record<string, unknown> = {}) => {
+            const ctx = currentContext();
+            if (!ctx) throw new MissingTenantContextError(`${prop}.${operation}`);
+            return transaction(ctx, async (tx) => {
+              const delegate = (tx as unknown as Record<string, Record<string, unknown>>)[prop];
+              const method = delegate?.[operation];
+              if (typeof method !== 'function') {
+                throw new MissingTenantContextError(`${prop}.${operation} is not a model operation`);
+              }
+              return (method as (a: unknown) => unknown).call(delegate, args);
+            });
+          };
+        },
+      });
+    },
+  });
 }
 
 /**

@@ -141,7 +141,7 @@ export async function fanOut(ctx: TenantContext, envelope: EventEnvelope): Promi
           nextAttemptAt: new Date(),
         },
       });
-      await enqueue(ctx, 'webhooks', 'webhook.deliver', { deliveryId }, { idempotencyKey: `deliver:${deliveryId}` });
+      await enqueue(ctx, 'webhooks', 'webhook.deliver', { deliveryId }, { idempotencyKey: `deliver-${deliveryId}` });
       queued += 1;
     }
     return queued;
@@ -253,7 +253,7 @@ export async function deliverWebhook(ctx: TenantContext, deliveryId: string): Pr
   });
 
   if (!dead) {
-    await enqueue(ctx, 'webhooks', 'webhook.deliver', { deliveryId }, { delay: backoffMs(attempt), idempotencyKey: `deliver:${deliveryId}:${attempt}` });
+    await enqueue(ctx, 'webhooks', 'webhook.deliver', { deliveryId }, { delay: backoffMs(attempt), idempotencyKey: `deliver-${deliveryId}-${attempt}` });
   }
   return dead ? 'dead' : 'retry';
 }
@@ -265,5 +265,5 @@ export async function redeliver(ctx: TenantContext, deliveryId: string): Promise
     if (!delivery) throw new NotFoundError('webhook delivery', deliveryId);
     await tx.webhookDelivery.update({ where: { id: deliveryId }, data: { status: 'pending', attempt: 1, nextAttemptAt: new Date() } });
   });
-  await enqueue(ctx, 'webhooks', 'webhook.deliver', { deliveryId }, { idempotencyKey: `redeliver:${deliveryId}:${Date.now()}` });
+  await enqueue(ctx, 'webhooks', 'webhook.deliver', { deliveryId }, { idempotencyKey: `redeliver-${deliveryId}-${Date.now()}` });
 }

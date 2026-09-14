@@ -95,7 +95,7 @@ defineJob('sla', 'sla.tick', async () => {
     const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       for (let partition = 0; partition < TIMER_PARTITIONS; partition += 1) {
-        await enqueue(ctx, 'sla', 'sla.tick.partition', { partition }, { idempotencyKey: `tick:${tenant.id}:${partition}:${Math.floor(Date.now() / 60_000)}` });
+        await enqueue(ctx, 'sla', 'sla.tick.partition', { partition }, { idempotencyKey: `tick-${tenant.id}-${partition}-${Math.floor(Date.now() / 60_000)}` });
       }
     });
   }

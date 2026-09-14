@@ -107,7 +107,7 @@ describe('CommandPalette keyboard navigation', () => {
 
   it('never runs a disabled command', () => {
     const run = vi.fn();
-    const input = openPalette(run);
+    openPalette(run);
     const disabled = options().find((option) => option.getAttribute('aria-disabled') === 'true');
     if (!disabled) throw new Error('no disabled option');
 

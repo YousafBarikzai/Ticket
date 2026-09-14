@@ -98,6 +98,21 @@ export function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: s
   });
 }
 
+/** Picks an option in a native select the way a user does, inside `act`. */
+export function selectOption(select: HTMLSelectElement, value: string): void {
+  act(() => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
+/** Lets timers and promises settle inside `act`, so React state updates are flushed and warning-free. */
+export async function settle(ms = 0): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+}
+
 /** The element that currently has DOM focus, typed for assertions. */
 export function activeElement(): HTMLElement | null {
   return document.activeElement instanceof HTMLElement ? document.activeElement : null;

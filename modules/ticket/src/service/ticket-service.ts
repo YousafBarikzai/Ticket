@@ -51,7 +51,13 @@ registerScopeResolver<repo.TicketRow>({
   isOwn: (ctx, ticket) =>
     Boolean(ctx.actor.id) &&
     (ticket.requesterId === ctx.actor.id || ticket.affectedUserId === ctx.actor.id || ticket.assigneeId === ctx.actor.id),
-  isTeam: (ctx, ticket) => Boolean(ticket.groupId && ctx.teamIds.includes(ticket.groupId)),
+  isTeam: (ctx, ticket) => {
+    if (ticket.groupId) return ctx.teamIds.includes(ticket.groupId);
+    // A ticket that no rule has routed yet belongs to its organisation's triage
+    // pool: without this, a newly raised ticket would be invisible to every
+    // agent and could never be picked up.
+    return Boolean(ticket.orgId && ctx.organisationIds.includes(ticket.orgId));
+  },
   orgId: (ticket) => ticket.orgId,
 });
 
@@ -251,7 +257,8 @@ function scopeFilterFor(ctx: TenantContext): Record<string, unknown> | undefined
         { requesterId: ctx.actor.id },
         { affectedUserId: ctx.actor.id },
         { assigneeId: ctx.actor.id },
-        ...(ctx.organisationIds.length ? [{ orgId: { in: ctx.organisationIds } }] : []),
+        // The unrouted triage pool, scoped to the actor's organisations.
+        ...(ctx.organisationIds.length ? [{ groupId: null, orgId: { in: ctx.organisationIds } }] : []),
       ],
     };
   }
@@ -754,7 +761,7 @@ export async function registerAttachment(
       aggregateId: ticket.id,
       payload: { ticketId: ticket.id, number: ticket.number, attachmentId: id, filename: input.filename, size: input.size },
     });
-    await enqueue(ctx, 'scan', 'attachment.scan', { attachmentId: id }, { idempotencyKey: `scan:${id}` });
+    await enqueue(ctx, 'scan', 'attachment.scan', { attachmentId: id }, { idempotencyKey: `scan-${id}` });
 
     return attachment;
   });
