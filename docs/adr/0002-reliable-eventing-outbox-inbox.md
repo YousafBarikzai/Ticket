@@ -1,6 +1,6 @@
 # ADR-0002 · Reliable eventing: transactional outbox and consumer inbox
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-02
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-02
 
 ## Context
 

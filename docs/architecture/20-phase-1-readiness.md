@@ -26,7 +26,7 @@ PH-1 ends with the specification's walking skeleton: **create tenant → SSO log
 
 | Weeks | Focus | Exit check |
 |---|---|---|
-| 1–2 | Decisions D-01 and OD-06 (domains); accounts (Railway, Cloudflare, GitHub, Grafana Cloud, Sentry, object storage, Postmark sandbox, test IdP); monorepo, toolchain, docker-compose, CI stages 1–3; Keycloak Organizations and Prisma/RLS spikes (AR-02, AR-04) | `pnpm dev` runs; CI green on an empty module; spike reports |
+| 1–2 | OD-06 (domains); accounts (Railway, Cloudflare, GitHub, Grafana Cloud, Sentry, object storage, Postmark sandbox, test IdP); monorepo, toolchain, docker-compose, CI stages 1–3; Keycloak Organizations and data-layer/RLS spikes (AR-02, AR-04). D-01 closed as option A before the phase started | `pnpm dev` runs; CI green on an empty module; spike reports |
 | 3–4 | Tenant model, RLS, tenant-aware client, provisioning CLI; Keycloak realm as code; auth plugin, sessions, JIT; platform primitives (context, audit, settings, flags, telemetry) | Isolation suite skeleton passes; login works in preview |
 | 5–6 | Ticket core schema and API; outbox/inbox and publisher; API foundations (contracts, OpenAPI, SDK); design tokens and first components | Create/read/update/list tickets via SDK with audit and outbox rows; OpenAPI published |
 | 7–8 | Notification engine with email; search projection and indexer; timer engine and business-time; admin console basics; web shells with auth | Skeleton journey works in staging end to end |
@@ -37,7 +37,7 @@ PH-1 ends with the specification's walking skeleton: **create tenant → SSO log
 
 | Criterion | Status | Action |
 |---|---|---|
-| Stack decisions ADR-01 to ADR-10 accepted | Drafted as ADR-0001…0010 in `docs/adr` (status *Proposed*) | Steering group to accept |
+| Stack decisions ADR-01 to ADR-10 accepted | ADR-0001…0012 accepted by the product owner on 2026-09-14 when Phase 1 was authorised; ADR-0013…0020 accepted with them | Done |
 | Hosting accounts available | Railway, Cloudflare, GitHub, Grafana Cloud, Sentry, object storage, email sandbox | Product owner / SRE to provision (after D-01) |
 | Identity-provider test tenant available | Needed for OIDC and SAML spikes (Entra ID test tenant and/or Okta developer org) | Product owner |
 | Domain names available | Depends on OD-06 | Product owner |
@@ -45,7 +45,7 @@ PH-1 ends with the specification's walking skeleton: **create tenant → SSO log
 
 ## 4. What the platform squad needs on day one
 
-- Accepted decisions: D-01, OD-06 (or a placeholder domain), ADR-0001…0012.
+- Accepted decisions: D-01 (option A, closed), ADR-0001…0020. Still needed: OD-06 (or a placeholder domain).
 - Access: GitHub organisation with branch protection and CODEOWNERS; Railway project with three environments; Cloudflare zone; observability accounts; a test identity provider tenant; an Apple Developer account request started (needed by PH-2).
 - People: tech lead, 3–4 full-stack engineers, 1 DevOps/SRE, 1 designer, 1 PM; QA from week 4.
 

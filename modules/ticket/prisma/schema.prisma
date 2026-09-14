@@ -1,0 +1,252 @@
+/// MOD-04 Ticket and interaction core — the system of record.
+
+model Ticket {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  orgId          String?   @map("org_id") @db.Uuid
+  number         String
+  type           String
+  title          String
+  description    String?
+  descriptionFormat String @default("text") @map("description_format")
+  status         String
+  statusCategory String    @map("status_category")
+  priority       String    @default("P3")
+  impact         String?
+  urgency        String?
+  requesterId    String?   @map("requester_id") @db.Uuid
+  affectedUserId String?   @map("affected_user_id") @db.Uuid
+  assigneeId     String?   @map("assignee_id") @db.Uuid
+  groupId        String?   @map("group_id") @db.Uuid
+  serviceId      String?   @map("service_id") @db.Uuid
+  categoryId     String?   @map("category_id") @db.Uuid
+  sourceChannel  String    @default("api") @map("source_channel")
+  channelRef     String?   @map("channel_ref")
+  parentId       String?   @map("parent_id") @db.Uuid
+  slaPolicyId    String?   @map("sla_policy_id") @db.Uuid
+  dueAt          DateTime? @map("due_at") @db.Timestamptz(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz(6)
+  reopenCount    Int       @default(0) @map("reopen_count")
+  mergedIntoId   String?   @map("merged_into_id") @db.Uuid
+  externalRef    String?   @map("external_ref")
+  custom         Json      @default("{}")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy      String?   @map("created_by") @db.Uuid
+  createdByType  String    @default("user") @map("created_by_type")
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy      String?   @map("updated_by") @db.Uuid
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version        Int       @default(1)
+
+  comments    TicketComment[]
+  events      TicketEvent[]
+  tasks       TicketTask[]
+  attachments Attachment[]
+  watchers    TicketWatcher[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, statusCategory, priority, dueAt])
+  @@index([tenantId, assigneeId, statusCategory])
+  @@index([tenantId, groupId, statusCategory, createdAt(sort: Desc)])
+  @@index([tenantId, requesterId, createdAt(sort: Desc)])
+  @@index([tenantId, serviceId, createdAt(sort: Desc)])
+  @@index([tenantId, type, statusCategory])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("ticket")
+}
+
+model TicketComment {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  ticketId   String    @map("ticket_id") @db.Uuid
+  authorId   String?   @map("author_id") @db.Uuid
+  authorType String    @default("user") @map("author_type")
+  visibility String    @default("public")
+  body       String
+  bodyFormat String    @default("text") @map("body_format")
+  channel    String    @default("api")
+  externalRef String?  @map("external_ref")
+  quotedBody String?   @map("quoted_body")
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Uuid
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version    Int       @default(1)
+
+  ticket     Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId, createdAt])
+  @@index([tenantId, visibility])
+  @@map("ticket_comment")
+}
+
+/// Structured timeline entries: status changes, assignments, SLA events,
+/// automation. Distinct from comments, which are conversation.
+model TicketEvent {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  ticketId   String   @map("ticket_id") @db.Uuid
+  type       String
+  actorType  String   @map("actor_type")
+  actorId    String?  @map("actor_id") @db.Uuid
+  payload    Json     @default("{}")
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId, occurredAt])
+  @@map("ticket_event")
+}
+
+model Attachment {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  ticketId     String    @map("ticket_id") @db.Uuid
+  commentId    String?   @map("comment_id") @db.Uuid
+  objectKey    String    @map("object_key")
+  filename     String
+  mime         String
+  size         Int
+  scanStatus   String    @default("pending") @map("scan_status")
+  scanVerdict  String?   @map("scan_verdict")
+  scannedAt    DateTime? @map("scanned_at") @db.Timestamptz(6)
+  classification String  @default("internal")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy    String?   @map("created_by") @db.Uuid
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, scanStatus])
+  @@map("attachment")
+}
+
+model TicketTask {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  ticketId    String    @map("ticket_id") @db.Uuid
+  key         String?
+  title       String
+  description String?
+  status      String    @default("open")
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  groupId     String?   @map("group_id") @db.Uuid
+  dueAt       DateTime? @map("due_at") @db.Timestamptz(6)
+  order       Int       @default(0)
+  blockedBy   String[]  @default([]) @map("blocked_by")
+  visibility  String    @default("internal")
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId, order])
+  @@index([tenantId, assigneeId, status])
+  @@map("ticket_task")
+}
+
+model TicketLink {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  sourceId  String   @map("source_id") @db.Uuid
+  targetId  String   @map("target_id") @db.Uuid
+  linkType  String   @map("link_type")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([sourceId, targetId, linkType])
+  @@index([tenantId, targetId])
+  @@map("ticket_link")
+}
+
+model TicketWatcher {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  reason    String   @default("manual")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@index([tenantId, userId])
+  @@map("ticket_watcher")
+}
+
+model SavedView {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  orgId     String?  @map("org_id") @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String
+  query     Json     @default("{}")
+  isShared  Boolean  @default(false) @map("is_shared")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1)
+
+  @@index([tenantId, ownerId])
+  @@map("saved_view")
+}
+
+model Category {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  orgId          String?   @map("org_id") @db.Uuid
+  parentId       String?   @map("parent_id") @db.Uuid
+  name           String
+  key            String
+  path           String
+  defaultGroupId String?   @map("default_group_id") @db.Uuid
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version        Int       @default(1)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, path])
+  @@map("category")
+}
+
+/// Custom fields (PH-2 feature flag `ticket.customFields`), defined in PH-1 so
+/// the ticket API validates `custom` against them from the start.
+model FieldDefinition {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  orgId        String?   @map("org_id") @db.Uuid
+  key          String
+  label        String
+  type         String
+  options      Json      @default("[]")
+  appliesTo    Json      @default("{}") @map("applies_to")
+  requiredWhen Json?     @map("required_when")
+  visibleTo    String[]  @default([]) @map("visible_to")
+  classification String  @default("internal")
+  order        Int       @default(0)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version      Int       @default(1)
+
+  @@unique([tenantId, key])
+  @@map("field_definition")
+}
+
+/// Per-tenant, per-type sequence for human-readable numbers. Incremented inside
+/// the creating transaction so a rollback leaves no gap (ADR-0020).
+model TicketCounter {
+  tenantId String @map("tenant_id") @db.Uuid
+  type     String
+  next     Int    @default(1)
+
+  @@id([tenantId, type])
+  @@map("ticket_counter")
+}

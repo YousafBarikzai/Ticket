@@ -1,6 +1,6 @@
 # ADR-0020 · Identifiers: application-generated UUID v7 primary keys and transactional per-type human numbers
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** §5 (UUID v7), §7 Identifiers, MOD-04-E1-S1
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** §5 (UUID v7), §7 Identifiers, MOD-04-E1-S1
 
 ## Context
 

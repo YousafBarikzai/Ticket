@@ -1,6 +1,6 @@
 # ADR-0005 · One design system with shared tokens for web and native
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-05
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-05
 
 ## Context
 

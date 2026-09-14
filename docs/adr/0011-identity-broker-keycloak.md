@@ -1,6 +1,6 @@
 # ADR-0011 · Identity broker: self-hosted Keycloak with one realm and Organizations per tenant
 
-**Status:** Proposed (OD-01 closed by the product owner, 2026-09) · **Date:** 2026-09 · **Specification reference:** OD-01, MOD-01
+**Status:** Accepted 2026-09-14 (OD-01 closed by the product owner) · **Date:** 2026-09 · **Specification reference:** OD-01, MOD-01
 
 ## Context
 

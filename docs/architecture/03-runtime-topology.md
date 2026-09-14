@@ -65,15 +65,15 @@ flowchart TB
 
 ### 2.1 Region and residency stance
 
-Railway offers US West, US East, EU West (Amsterdam) and Singapore regions; there is no UK region. The initial deployment therefore runs in **EU West (Amsterdam)**, which satisfies UK GDPR for a UK controller under the UK's adequacy regulations for the EEA. If the steering group requires data *at rest inside the United Kingdom*, the architecture supports two alternatives without structural change, because every data store sits behind a connection string and every deployable is a container:
+**Decision D-01 is closed: option A.** Railway offers US West, US East, EU West (Amsterdam) and Singapore regions; there is no UK region. The deployment therefore runs in **EU West (Amsterdam)** with object storage in Cloudflare R2's EU jurisdiction, which satisfies UK GDPR for a UK controller under the UK's adequacy regulations for the EEA. The two alternatives below remain available without structural change, because every data store sits behind a connection string and every deployable is a container:
 
 | Option | Compute | PostgreSQL | Object storage | Trade-off |
 |---|---|---|---|---|
-| A · EEA under adequacy *(default assumed here)* | Railway Amsterdam | Railway Amsterdam | R2, EU jurisdiction | Simplest; matches the specification's hosting choice. |
+| **A · EEA under adequacy — chosen** | Railway Amsterdam | Railway Amsterdam | R2, EU jurisdiction | Simplest; matches the specification's hosting choice. |
 | B · Hybrid UK data | Railway Amsterdam | Managed PostgreSQL in London (AWS RDS, Neon or Supabase `eu-west-2`) | S3 `eu-west-2` | ≈ 8–12 ms per round trip between Amsterdam and London; mitigated by fewer round trips per request (see 08 §4 and §8) but material for chatty endpoints. |
 | C · Full UK | AWS London (ECS Fargate) | RDS London | S3 London | No Railway; more infrastructure work in PH-1; no later migration. |
 
-This is decision **D-01** in [19 · Risks and decisions](19-risks-and-decisions.md) and must be closed in PH-1 week 1. Tenant records carry `region` from PH-1 so that a later multi-region layout (PH-5, [17](17-evolution-and-extraction.md)) is a data-driven routing change.
+Tenant records carry `region` from PH-1 (default `eu-west`) so that a move to option B or C, or a later multi-region layout (PH-5, [17](17-evolution-and-extraction.md)), is a data-driven routing change rather than a redesign.
 
 ## 3. Request paths
 

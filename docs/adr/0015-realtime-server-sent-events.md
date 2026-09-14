@@ -1,6 +1,6 @@
 # ADR-0015 · Realtime updates via server-sent events backed by Redis pub/sub
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** MOD-02-E1-S2, MOD-04 NFR (timeline updates within 2 s)
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** MOD-02-E1-S2, MOD-04 NFR (timeline updates within 2 s)
 
 ## Context
 

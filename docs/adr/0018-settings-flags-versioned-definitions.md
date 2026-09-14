@@ -1,6 +1,6 @@
 # ADR-0018 · Settings, feature flags and versioned definitions as one configuration framework
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** MOD-13 definition of done, §4.4 configuration resolution, §10.4
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** MOD-13 definition of done, §4.4 configuration resolution, §10.4
 
 ## Context
 

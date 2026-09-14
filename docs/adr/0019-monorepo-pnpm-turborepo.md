@@ -1,6 +1,6 @@
 # ADR-0019 · Monorepo with pnpm workspaces and Turborepo; modules and packages as workspace packages
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** §4.3
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** §4.3
 
 ## Context
 

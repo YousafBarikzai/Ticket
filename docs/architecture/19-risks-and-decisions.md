@@ -4,15 +4,17 @@
 
 ### D-01
 
-**UK data residency versus Railway regions.** The product owner asked for tenant data resident in the United Kingdom and for hosting on Railway with Cloudflare in front. Railway's regions are US West, US East, EU West (Amsterdam) and Singapore; Cloudflare R2 offers an EU jurisdiction but no UK one. The architecture is designed so that all three options below are configuration and infrastructure choices, not structural changes, but one must be selected in **PH-1 week 1** because it determines the accounts to provision and the latency budget for the API.
+**Status: closed — option A, chosen by the product owner on 2026-09-14.** Tenant data rests in the EEA (Railway EU West, Amsterdam; Cloudflare R2 EU jurisdiction), lawful for a UK controller under the UK's adequacy regulations for the EEA. Options B and C remain documented because the architecture keeps them as infrastructure-only changes, and a customer contract requiring UK-at-rest storage would trigger a new decision rather than a redesign.
+
+**Original context.** The product owner asked for tenant data resident in the United Kingdom and for hosting on Railway with Cloudflare in front. Railway's regions are US West, US East, EU West (Amsterdam) and Singapore; Cloudflare R2 offers an EU jurisdiction but no UK one.
 
 | Option | Where data rests | Compliance basis | Latency | Effort | Recommendation |
 |---|---|---|---|---|---|
-| **A · Railway EU West + R2 EU** | EEA (Netherlands; R2 EU data centres) | UK GDPR international transfer to the EEA under the UK adequacy regulations; standard for UK controllers | Best (single region) | Lowest | **Recommended** unless a contractual or policy requirement says "UK only" |
+| **A · Railway EU West + R2 EU** | EEA (Netherlands; R2 EU data centres) | UK GDPR international transfer to the EEA under the UK adequacy regulations; standard for UK controllers | Best (single region) | Lowest | **Chosen (2026-09-14)** |
 | B · Railway compute + London data stores | UK (AWS RDS/Neon/Supabase `eu-west-2`, S3 `eu-west-2`); processing in the EEA | Data at rest in the UK; in-memory processing in the EEA (still an EEA transfer for processing) | ≈ 8–12 ms per database round trip; mitigated by composed endpoints but material | Medium | Only if "at rest in UK" is the actual requirement and processing in the EEA is acceptable |
 | C · AWS London | UK for everything | No international transfer | Best | Highest in PH-1 (ECS, RDS, ElastiCache, S3, IAM, CI deploy) | If "UK only" is contractual; the containerised design ports without code change |
 
-Evidence to gather before deciding: the pilot organisation's data-protection requirements, any customer contracts with residency clauses, and the DPIA stance on email (Postmark processes in the US; Microsoft Graph keeps mail in the tenant's Microsoft geography).
+Follow-up that option A carries into PH-2: the DPIA stance on email must be settled with OD-03, because Postmark processes in the US while the Microsoft Graph adapter keeps mail inside the tenant's Microsoft geography. Until that is settled, the default transport for pilot tenants is Graph where the tenant is on Microsoft 365.
 
 ### Other open decisions from the specification
 
@@ -25,7 +27,7 @@ Evidence to gather before deciding: the pilot organisation's data-protection req
 | OD-05 | Commercial model | Open | Metering design supports seats and usage meters; MSP roll-ups via tenant hierarchy (10 §1, §5) | PH-3 |
 | OD-06 | Product name, domain, branding | Open | Domain layout assumed: `help`, `desk`, `admin`, `api`, `auth`, `status` subdomains plus wildcard for tenants (16 §2) | PH-2 |
 | OD-07 | Time tracking default | Open | Default off (module disabled per tenant unless enabled) | PH-3 |
-| — | Hosting target | **Closed:** Railway + Cloudflare (ADR-0012), subject to D-01 | | — |
+| — | Hosting target | **Closed:** Railway + Cloudflare, EU West region (ADR-0012, D-01 option A) | | — |
 | — | Deliverable format | **Closed:** Markdown in the repository | | — |
 
 ## 2. Architecture risks

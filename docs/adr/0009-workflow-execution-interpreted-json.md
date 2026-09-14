@@ -1,6 +1,6 @@
 # ADR-0009 · Workflow execution: interpreted, versioned JSON definitions with persisted run state
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-09
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-09
 
 ## Context
 

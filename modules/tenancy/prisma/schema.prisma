@@ -1,0 +1,107 @@
+/// MOD-21 Tenancy, licensing and billing.
+/// Tenant, TenantDomain, ChannelDirectory, ConsumerRegistry and Plan are
+/// PLATFORM tables: they carry no tenant_id because they are what resolves a
+/// tenant in the first place. See docs/architecture/05 §2 and 06 §3.
+
+model Tenant {
+  id              String    @id @db.Uuid
+  name            String
+  slug            String    @unique
+  status          String    @default("provisioning")
+  parentTenantId  String?   @map("parent_tenant_id") @db.Uuid
+  region          String    @default("eu-west")
+  planKey         String?   @map("plan_key")
+  settings        Json      @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  suspendedAt     DateTime? @map("suspended_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  domains         TenantDomain[]
+  provisioning    TenantProvisioningJob[]
+
+  @@index([status])
+  @@map("tenant")
+}
+
+model TenantDomain {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  host      String   @unique
+  isPrimary Boolean  @default(false) @map("is_primary")
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tenant_domain")
+}
+
+/// Maps an external channel account (mailbox, workspace, number) to a tenant so
+/// an inbound provider webhook can be routed before any tenant context exists.
+model ChannelDirectory {
+  id         String   @id @db.Uuid
+  channel    String
+  externalId String   @map("external_id")
+  tenantId   String   @map("tenant_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([channel, externalId])
+  @@map("channel_directory")
+}
+
+model TenantGrant {
+  id               String    @id @db.Uuid
+  granteeTenantId  String    @map("grantee_tenant_id") @db.Uuid
+  targetTenantId   String    @map("target_tenant_id") @db.Uuid
+  scope            Json      @default("{}")
+  grantedBy        String    @map("granted_by") @db.Uuid
+  validFrom        DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo          DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([granteeTenantId, targetTenantId])
+  @@index([targetTenantId])
+  @@map("tenant_grant")
+}
+
+model TenantProvisioningJob {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  steps      Json      @default("[]")
+  status     String    @default("pending")
+  error      String?
+  startedAt  DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tenant_provisioning_job")
+}
+
+/// Organisations are a soft boundary INSIDE a tenant: nested, with a
+/// materialised path for subtree queries used by scoped permissions.
+model Organisation {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  parentId  String?   @map("parent_id") @db.Uuid
+  name      String
+  code      String
+  type      String    @default("business_unit")
+  path      String
+  settings  Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version   Int       @default(1)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, path])
+  @@index([tenantId, parentId])
+  @@map("organisation")
+}

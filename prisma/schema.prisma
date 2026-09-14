@@ -1,0 +1,1164 @@
+// GENERATED FILE — do not edit.
+// Assembled by `pnpm db:assemble` from each module's prisma/schema.prisma.
+// Edit the module fragment instead; a module owns its own tables (ADR-0001).
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// modules/admin/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-13 Administration, configuration and module marketplace.
+/// Every configurable item in every module goes through this framework: there
+/// are no ad-hoc configuration tables (MOD-13 definition of done).
+
+model Setting {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  scopeType String   @map("scope_type")
+  scopeId   String?  @map("scope_id") @db.Uuid
+  ownerId   String?  @map("owner_id") @db.Uuid
+  currentVersion Int @default(1) @map("current_version")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  versions  SettingVersion[]
+
+  @@unique([tenantId, key, scopeType, scopeId])
+  @@index([tenantId, key])
+  @@map("setting")
+}
+
+model SettingVersion {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  settingId   String   @map("setting_id") @db.Uuid
+  version     Int
+  value       Json
+  reason      String?
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy String?  @map("published_by") @db.Uuid
+
+  setting     Setting  @relation(fields: [settingId], references: [id], onDelete: Cascade)
+
+  @@unique([settingId, version])
+  @@index([tenantId])
+  @@map("setting_version")
+}
+
+model FeatureFlagOverride {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  scopeType String   @default("tenant") @map("scope_type")
+  scopeId   String?  @map("scope_id") @db.Uuid
+  value     Boolean
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key, scopeType, scopeId])
+  @@map("feature_flag_override")
+}
+
+model InstalledModule {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  moduleId    String    @map("module_id")
+  version     String
+  enabled     Boolean   @default(true)
+  seededAt    DateTime? @map("seeded_at") @db.Timestamptz(6)
+  installedAt DateTime  @default(now()) @map("installed_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, moduleId])
+  @@map("installed_module")
+}
+
+// ===========================================================================
+// modules/identity/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-01 Identity, organisations and access.
+
+model User {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  primaryOrgId  String?   @map("primary_org_id") @db.Uuid
+  email         String
+  displayName   String    @map("display_name")
+  idpSubject    String?   @map("idp_subject")
+  status        String    @default("active")
+  managerId     String?   @map("manager_id") @db.Uuid
+  locale        String    @default("en-GB")
+  timeZone      String    @default("Europe/London") @map("time_zone")
+  a11yPrefs     Json      @default("{}") @map("a11y_prefs")
+  isExternal    Boolean   @default(false) @map("is_external")
+  isBreakGlass  Boolean   @default(false) @map("is_break_glass")
+  lastSeenAt    DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy     String?   @map("created_by") @db.Uuid
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy     String?   @map("updated_by") @db.Uuid
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+
+  memberships     TeamMembership[]
+  roleAssignments RoleAssignment[]
+  sessions        Session[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+  @@index([tenantId, idpSubject])
+  @@index([tenantId, managerId])
+  @@map("app_user_account")
+}
+
+model Team {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String
+  key         String
+  type        String    @default("support_group")
+  emailAlias  String?   @map("email_alias")
+  managerId   String?   @map("manager_id") @db.Uuid
+  calendarId  String?   @map("calendar_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy   String?   @map("updated_by") @db.Uuid
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+
+  members     TeamMembership[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, orgId])
+  @@map("team")
+}
+
+model TeamMembership {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  teamId     String    @map("team_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  roleInTeam String    @default("member") @map("role_in_team")
+  isLead     Boolean   @default(false) @map("is_lead")
+  validFrom  DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo    DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  team       Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([tenantId, userId])
+  @@map("team_membership")
+}
+
+model Location {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  name       String
+  address    String?
+  timeZone   String    @default("Europe/London") @map("time_zone")
+  calendarId String?   @map("calendar_id") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version    Int       @default(1)
+
+  @@index([tenantId, orgId])
+  @@map("location")
+}
+
+model Role {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  version     Int      @default(1)
+
+  permissions RolePermission[]
+  assignments RoleAssignment[]
+
+  @@unique([tenantId, key])
+  @@map("role")
+}
+
+/// A role is a set of (permission key, scope) pairs. Keys come from the module
+/// manifests' permission registry; the seed matrix is Appendix B.
+model RolePermission {
+  id            String @id @db.Uuid
+  tenantId      String @map("tenant_id") @db.Uuid
+  roleId        String @map("role_id") @db.Uuid
+  permissionKey String @map("permission_key")
+  scope         String @default("own")
+
+  role          Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionKey, scope])
+  @@index([tenantId, permissionKey])
+  @@map("role_permission")
+}
+
+model RoleAssignment {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  roleId    String    @map("role_id") @db.Uuid
+  scopeType String?   @map("scope_type")
+  scopeId   String?   @map("scope_id") @db.Uuid
+  validFrom DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo   DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?   @map("created_by") @db.Uuid
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, scopeType, scopeId])
+  @@index([tenantId, userId])
+  @@map("role_assignment")
+}
+
+model Session {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  sid        String
+  device     String?
+  ip         String?
+  userAgent  String?   @map("user_agent")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sid])
+  @@index([tenantId, userId])
+  @@map("session")
+}
+
+model ApiKey {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  name       String
+  prefix     String
+  hash       String
+  scopes     String[]  @default([])
+  serviceUserId String @map("service_user_id") @db.Uuid
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Uuid
+
+  @@unique([tenantId, prefix])
+  @@index([tenantId])
+  @@map("api_key")
+}
+
+model Delegate {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  principalId String    @map("principal_id") @db.Uuid
+  delegateId  String    @map("delegate_id") @db.Uuid
+  capability  String    @default("approve")
+  validFrom   DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo     DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([principalId, delegateId, capability])
+  @@index([tenantId, delegateId])
+  @@map("delegate")
+}
+
+// ===========================================================================
+// modules/integrations/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-14 Integrations, API and developer platform.
+
+/// Written in the same transaction as the change that caused it (ADR-0002).
+model OutboxEvent {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  type          String
+  version       Int       @default(1)
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  aggregateVersion Int?   @map("aggregate_version")
+  envelope      Json
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error")
+
+  @@index([createdAt])
+  @@index([tenantId, aggregateType, aggregateId])
+  @@index([type])
+  @@map("outbox_event")
+}
+
+/// A consumer claims an event here before doing work, which is what makes
+/// duplicate deliveries (retries, replays, Redis loss) no-ops.
+model InboxEvent {
+  consumer    String
+  eventId     String   @map("event_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+  outcome     String   @default("done")
+  error       String?
+
+  @@id([consumer, eventId])
+  @@index([tenantId, processedAt])
+  @@map("inbox_event")
+}
+
+/// Platform table: which consumers exist and which events each requires.
+/// Upserted from the module manifests at boot; the reconciler reads it.
+model ConsumerRegistry {
+  consumer   String   @id
+  moduleId   String   @map("module_id")
+  eventTypes String[] @map("event_types")
+  required   Boolean  @default(true)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("consumer_registry")
+}
+
+model WebhookSubscription {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  orgId       String?   @map("org_id") @db.Uuid
+  name        String
+  url         String
+  secret      String
+  eventTypes  String[]  @map("event_types")
+  filters     Json?
+  status      String    @default("pending")
+  ownerId     String?   @map("owner_id") @db.Uuid
+  failureCount Int      @default(0) @map("failure_count")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+
+  deliveries  WebhookDelivery[]
+
+  @@index([tenantId, status])
+  @@map("webhook_subscription")
+}
+
+model WebhookDelivery {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  subscriptionId String    @map("subscription_id") @db.Uuid
+  eventId        String    @map("event_id") @db.Uuid
+  eventType      String    @map("event_type")
+  attempt        Int       @default(1)
+  status         String    @default("pending")
+  responseCode   Int?      @map("response_code")
+  latencyMs      Int?      @map("latency_ms")
+  error          String?
+  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, subscriptionId, createdAt(sort: Desc)])
+  @@index([tenantId, status])
+  @@map("webhook_delivery")
+}
+
+// ===========================================================================
+// modules/notifications/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-11 Notifications, collaboration and communications.
+
+model NotificationTemplate {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  orgId     String?  @map("org_id") @db.Uuid
+  key       String
+  channel   String
+  locale    String   @default("en-GB")
+  subject   String?
+  body      String
+  bodyFormat String  @default("text") @map("body_format")
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key, channel, locale])
+  @@map("notification_template")
+}
+
+model NotificationRule {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  orgId       String?  @map("org_id") @db.Uuid
+  key         String
+  eventType   String   @map("event_type")
+  conditions  Json?
+  /// Audience descriptors: requester, assignee, group, watchers, role:<key>.
+  audience    Json     @default("[]")
+  templateKey String   @map("template_key")
+  channels    String[] @default(["inapp"])
+  isEmergency Boolean  @default(false) @map("is_emergency")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int      @default(1)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, eventType, isActive])
+  @@map("notification_rule")
+}
+
+model Notification {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  eventId     String    @map("event_id") @db.Uuid
+  eventType   String    @map("event_type")
+  recipientId String    @map("recipient_id") @db.Uuid
+  ruleKey     String    @map("rule_key")
+  templateKey String    @map("template_key")
+  ticketId    String?   @map("ticket_id") @db.Uuid
+  subject     String?
+  body        String
+  status      String    @default("queued")
+  readAt      DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  attempts    DeliveryAttempt[]
+
+  /// One notification per recipient per event per rule: the uniqueness that
+  /// makes dispatch idempotent under retries.
+  @@unique([eventId, recipientId, ruleKey])
+  @@index([tenantId, recipientId, createdAt(sort: Desc)])
+  @@index([tenantId, status])
+  @@map("notification")
+}
+
+model DeliveryAttempt {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  notificationId String    @map("notification_id") @db.Uuid
+  channel        String
+  attempt        Int       @default(1)
+  status         String    @default("pending")
+  providerRef    String?   @map("provider_ref")
+  error          String?
+  attemptedAt    DateTime  @default(now()) @map("attempted_at") @db.Timestamptz(6)
+
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, notificationId])
+  @@index([tenantId, status, attemptedAt(sort: Desc)])
+  @@map("delivery_attempt")
+}
+
+model NotificationPreference {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  channel    String
+  enabled    Boolean  @default(true)
+  quietHours Json?    @map("quiet_hours")
+  digestMode String   @default("immediate") @map("digest_mode")
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, channel])
+  @@index([tenantId, userId])
+  @@map("notification_preference")
+}
+
+model DeviceRegistration {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  platform   String
+  pushToken  String   @map("push_token")
+  appVersion String?  @map("app_version")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, pushToken])
+  @@index([tenantId, userId])
+  @@map("device_registration")
+}
+
+// ===========================================================================
+// modules/search/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-09 Search infrastructure (PH-1 slice: the projection and its indexer).
+/// A rebuildable read model: it can be dropped and replayed from the outbox.
+
+model SearchDocument {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  orgId      String?  @map("org_id") @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  title      String
+  bodyText   String   @map("body_text")
+  /// Minimal visibility predicate, applied BEFORE ranking so results are
+  /// permission-filtered at retrieval rather than after it.
+  acl        Json     @default("{}")
+  facets     Json     @default("{}")
+  sourceUpdatedAt DateTime @map("source_updated_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entityType, entityId])
+  @@index([tenantId, entityType, updatedAt(sort: Desc)])
+  @@map("search_document")
+}
+
+// ===========================================================================
+// modules/security/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-15 Security, privacy, audit and resilience.
+
+/// Append-only and hash-chained per tenant (ADR-0014). The application database
+/// role is granted INSERT and SELECT only; there is no UPDATE or DELETE grant.
+model AuditEvent {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  seq           BigInt   @default(autoincrement())
+  actorType     String   @map("actor_type")
+  actorId       String?  @map("actor_id") @db.Uuid
+  onBehalfOf    String?  @map("on_behalf_of") @db.Uuid
+  granteeTenantId String? @map("grantee_tenant_id") @db.Uuid
+  action        String
+  targetType    String   @map("target_type")
+  targetId      String?  @map("target_id")
+  before        Json?
+  after         Json?
+  reason        String?
+  correlationId String   @map("correlation_id")
+  ip            String?
+  userAgent     String?  @map("user_agent")
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  hash          String
+  prevHash      String?  @map("prev_hash")
+
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@index([tenantId, targetType, targetId])
+  @@index([tenantId, actorId])
+  @@index([tenantId, action])
+  @@index([tenantId, seq])
+  @@map("audit_event")
+}
+
+model SecurityAlert {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  type      String
+  severity  String    @default("medium")
+  details   Json      @default("{}")
+  status    String    @default("open")
+  ticketId  String?   @map("ticket_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@map("security_alert")
+}
+
+/// Field-level classification drives masking in serialisers, redaction in logs
+/// and audit, and exclusion from AI context.
+model DataClassification {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  entity       String
+  field        String
+  level        String   @default("internal")
+  maskingRule  String?  @map("masking_rule")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entity, field])
+  @@map("data_classification")
+}
+
+model RetentionPolicy {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  recordType      String   @map("record_type")
+  keepDays        Int      @map("keep_days")
+  action          String   @default("delete")
+  legalHoldExempt Boolean  @default(false) @map("legal_hold_exempt")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, recordType])
+  @@map("retention_policy")
+}
+
+// ===========================================================================
+// modules/sla/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-07 SLA, OLA and entitlement management (PH-1 slice: the timer engine).
+
+model BusinessCalendar {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  orgId     String?  @map("org_id") @db.Uuid
+  key       String
+  name      String
+  timeZone  String   @map("time_zone")
+  hours     Json
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1)
+
+  exceptions CalendarException[]
+
+  @@unique([tenantId, key])
+  @@map("business_calendar")
+}
+
+model CalendarException {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  calendarId String   @map("calendar_id") @db.Uuid
+  date       String
+  type       String   @default("holiday")
+  hours      Json?
+  name       String?
+
+  calendar   BusinessCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@unique([calendarId, date])
+  @@index([tenantId])
+  @@map("calendar_exception")
+}
+
+model SlaPolicy {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  orgId        String?  @map("org_id") @db.Uuid
+  key          String
+  name         String
+  /// Expression matched against the ticket; the most specific match wins.
+  match        Json     @default("{\"always\":true}")
+  specificity  Int      @default(0)
+  calendarMode String   @default("group") @map("calendar_mode")
+  calendarId   String?  @map("calendar_id") @db.Uuid
+  status       String   @default("published")
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  targets      SlaTarget[]
+  escalations  EscalationRule[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status, specificity(sort: Desc)])
+  @@map("sla_policy")
+}
+
+model SlaTarget {
+  id                String   @id @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  policyId          String   @map("policy_id") @db.Uuid
+  priority          String
+  targetType        String   @map("target_type")
+  minutes           Int
+  warningThresholds Int[]    @default([50, 75, 90]) @map("warning_thresholds")
+
+  policy            SlaPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, priority, targetType])
+  @@index([tenantId])
+  @@map("sla_target")
+}
+
+model SlaTimer {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  ticketId      String    @map("ticket_id") @db.Uuid
+  taskId        String?   @map("task_id") @db.Uuid
+  targetType    String    @map("target_type")
+  policyId      String    @map("policy_id") @db.Uuid
+  policyVersion Int       @map("policy_version")
+  calendarId    String?   @map("calendar_id") @db.Uuid
+  targetMs      Int       @map("target_ms")
+  startedAt     DateTime  @map("started_at") @db.Timestamptz(6)
+  dueAt         DateTime? @map("due_at") @db.Timestamptz(6)
+  pausedAt      DateTime? @map("paused_at") @db.Timestamptz(6)
+  lastResumedAt DateTime? @map("last_resumed_at") @db.Timestamptz(6)
+  elapsedMs     Int       @default(0) @map("elapsed_ms")
+  remainingMs   Int       @map("remaining_ms")
+  state         String    @default("running")
+  warningsFired Int[]     @default([]) @map("warnings_fired")
+  nextWarningAt DateTime? @map("next_warning_at") @db.Timestamptz(6)
+  metAt         DateTime? @map("met_at") @db.Timestamptz(6)
+  breachedAt    DateTime? @map("breached_at") @db.Timestamptz(6)
+  /// hash(ticket_id) % 16: the scheduler scans one partition per tick job.
+  partition     Int       @default(0)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+
+  pauses        SlaPause[]
+
+  @@unique([tenantId, ticketId, targetType])
+  @@index([tenantId, ticketId])
+  @@index([state, partition, dueAt])
+  @@map("sla_timer")
+}
+
+model SlaPause {
+  id       String    @id @db.Uuid
+  tenantId String    @map("tenant_id") @db.Uuid
+  timerId  String    @map("timer_id") @db.Uuid
+  reason   String
+  from     DateTime  @db.Timestamptz(6)
+  to       DateTime? @db.Timestamptz(6)
+
+  timer    SlaTimer  @relation(fields: [timerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, timerId])
+  @@map("sla_pause")
+}
+
+model PriorityMatrix {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  orgId    String? @map("org_id") @db.Uuid
+  impact   String
+  urgency  String
+  priority String
+
+  @@unique([tenantId, orgId, impact, urgency])
+  @@map("priority_matrix")
+}
+
+model EscalationRule {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  policyId String @map("policy_id") @db.Uuid
+  on       String
+  step     Int    @default(1)
+  notify   Json   @default("{}")
+  action   Json?
+
+  policy   SlaPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, policyId])
+  @@map("escalation_rule")
+}
+
+model BreachRecord {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  timerId      String    @unique @map("timer_id") @db.Uuid
+  ticketId     String    @map("ticket_id") @db.Uuid
+  breachedAt   DateTime  @map("breached_at") @db.Timestamptz(6)
+  reasonCode   String?   @map("reason_code")
+  excusedBy    String?   @map("excused_by") @db.Uuid
+  excuseReason String?   @map("excuse_reason")
+  excusedAt    DateTime? @map("excused_at") @db.Timestamptz(6)
+
+  @@index([tenantId, breachedAt(sort: Desc)])
+  @@map("breach_record")
+}
+
+// ===========================================================================
+// modules/tenancy/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-21 Tenancy, licensing and billing.
+/// Tenant, TenantDomain, ChannelDirectory, ConsumerRegistry and Plan are
+/// PLATFORM tables: they carry no tenant_id because they are what resolves a
+/// tenant in the first place. See docs/architecture/05 §2 and 06 §3.
+
+model Tenant {
+  id              String    @id @db.Uuid
+  name            String
+  slug            String    @unique
+  status          String    @default("provisioning")
+  parentTenantId  String?   @map("parent_tenant_id") @db.Uuid
+  region          String    @default("eu-west")
+  planKey         String?   @map("plan_key")
+  settings        Json      @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  suspendedAt     DateTime? @map("suspended_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  domains         TenantDomain[]
+  provisioning    TenantProvisioningJob[]
+
+  @@index([status])
+  @@map("tenant")
+}
+
+model TenantDomain {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  host      String   @unique
+  isPrimary Boolean  @default(false) @map("is_primary")
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tenant_domain")
+}
+
+/// Maps an external channel account (mailbox, workspace, number) to a tenant so
+/// an inbound provider webhook can be routed before any tenant context exists.
+model ChannelDirectory {
+  id         String   @id @db.Uuid
+  channel    String
+  externalId String   @map("external_id")
+  tenantId   String   @map("tenant_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([channel, externalId])
+  @@map("channel_directory")
+}
+
+model TenantGrant {
+  id               String    @id @db.Uuid
+  granteeTenantId  String    @map("grantee_tenant_id") @db.Uuid
+  targetTenantId   String    @map("target_tenant_id") @db.Uuid
+  scope            Json      @default("{}")
+  grantedBy        String    @map("granted_by") @db.Uuid
+  validFrom        DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo          DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([granteeTenantId, targetTenantId])
+  @@index([targetTenantId])
+  @@map("tenant_grant")
+}
+
+model TenantProvisioningJob {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  steps      Json      @default("[]")
+  status     String    @default("pending")
+  error      String?
+  startedAt  DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tenant_provisioning_job")
+}
+
+/// Organisations are a soft boundary INSIDE a tenant: nested, with a
+/// materialised path for subtree queries used by scoped permissions.
+model Organisation {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  parentId  String?   @map("parent_id") @db.Uuid
+  name      String
+  code      String
+  type      String    @default("business_unit")
+  path      String
+  settings  Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version   Int       @default(1)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, path])
+  @@index([tenantId, parentId])
+  @@map("organisation")
+}
+
+// ===========================================================================
+// modules/ticket/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-04 Ticket and interaction core — the system of record.
+
+model Ticket {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  orgId          String?   @map("org_id") @db.Uuid
+  number         String
+  type           String
+  title          String
+  description    String?
+  descriptionFormat String @default("text") @map("description_format")
+  status         String
+  statusCategory String    @map("status_category")
+  priority       String    @default("P3")
+  impact         String?
+  urgency        String?
+  requesterId    String?   @map("requester_id") @db.Uuid
+  affectedUserId String?   @map("affected_user_id") @db.Uuid
+  assigneeId     String?   @map("assignee_id") @db.Uuid
+  groupId        String?   @map("group_id") @db.Uuid
+  serviceId      String?   @map("service_id") @db.Uuid
+  categoryId     String?   @map("category_id") @db.Uuid
+  sourceChannel  String    @default("api") @map("source_channel")
+  channelRef     String?   @map("channel_ref")
+  parentId       String?   @map("parent_id") @db.Uuid
+  slaPolicyId    String?   @map("sla_policy_id") @db.Uuid
+  dueAt          DateTime? @map("due_at") @db.Timestamptz(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz(6)
+  reopenCount    Int       @default(0) @map("reopen_count")
+  mergedIntoId   String?   @map("merged_into_id") @db.Uuid
+  externalRef    String?   @map("external_ref")
+  custom         Json      @default("{}")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy      String?   @map("created_by") @db.Uuid
+  createdByType  String    @default("user") @map("created_by_type")
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy      String?   @map("updated_by") @db.Uuid
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version        Int       @default(1)
+
+  comments    TicketComment[]
+  events      TicketEvent[]
+  tasks       TicketTask[]
+  attachments Attachment[]
+  watchers    TicketWatcher[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, statusCategory, priority, dueAt])
+  @@index([tenantId, assigneeId, statusCategory])
+  @@index([tenantId, groupId, statusCategory, createdAt(sort: Desc)])
+  @@index([tenantId, requesterId, createdAt(sort: Desc)])
+  @@index([tenantId, serviceId, createdAt(sort: Desc)])
+  @@index([tenantId, type, statusCategory])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("ticket")
+}
+
+model TicketComment {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  ticketId   String    @map("ticket_id") @db.Uuid
+  authorId   String?   @map("author_id") @db.Uuid
+  authorType String    @default("user") @map("author_type")
+  visibility String    @default("public")
+  body       String
+  bodyFormat String    @default("text") @map("body_format")
+  channel    String    @default("api")
+  externalRef String?  @map("external_ref")
+  quotedBody String?   @map("quoted_body")
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Uuid
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version    Int       @default(1)
+
+  ticket     Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId, createdAt])
+  @@index([tenantId, visibility])
+  @@map("ticket_comment")
+}
+
+/// Structured timeline entries: status changes, assignments, SLA events,
+/// automation. Distinct from comments, which are conversation.
+model TicketEvent {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  ticketId   String   @map("ticket_id") @db.Uuid
+  type       String
+  actorType  String   @map("actor_type")
+  actorId    String?  @map("actor_id") @db.Uuid
+  payload    Json     @default("{}")
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId, occurredAt])
+  @@map("ticket_event")
+}
+
+model Attachment {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  ticketId     String    @map("ticket_id") @db.Uuid
+  commentId    String?   @map("comment_id") @db.Uuid
+  objectKey    String    @map("object_key")
+  filename     String
+  mime         String
+  size         Int
+  scanStatus   String    @default("pending") @map("scan_status")
+  scanVerdict  String?   @map("scan_verdict")
+  scannedAt    DateTime? @map("scanned_at") @db.Timestamptz(6)
+  classification String  @default("internal")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy    String?   @map("created_by") @db.Uuid
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, scanStatus])
+  @@map("attachment")
+}
+
+model TicketTask {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  ticketId    String    @map("ticket_id") @db.Uuid
+  key         String?
+  title       String
+  description String?
+  status      String    @default("open")
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  groupId     String?   @map("group_id") @db.Uuid
+  dueAt       DateTime? @map("due_at") @db.Timestamptz(6)
+  order       Int       @default(0)
+  blockedBy   String[]  @default([]) @map("blocked_by")
+  visibility  String    @default("internal")
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId, order])
+  @@index([tenantId, assigneeId, status])
+  @@map("ticket_task")
+}
+
+model TicketLink {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  sourceId  String   @map("source_id") @db.Uuid
+  targetId  String   @map("target_id") @db.Uuid
+  linkType  String   @map("link_type")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([sourceId, targetId, linkType])
+  @@index([tenantId, targetId])
+  @@map("ticket_link")
+}
+
+model TicketWatcher {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  reason    String   @default("manual")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@index([tenantId, userId])
+  @@map("ticket_watcher")
+}
+
+model SavedView {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  orgId     String?  @map("org_id") @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String
+  query     Json     @default("{}")
+  isShared  Boolean  @default(false) @map("is_shared")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1)
+
+  @@index([tenantId, ownerId])
+  @@map("saved_view")
+}
+
+model Category {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  orgId          String?   @map("org_id") @db.Uuid
+  parentId       String?   @map("parent_id") @db.Uuid
+  name           String
+  key            String
+  path           String
+  defaultGroupId String?   @map("default_group_id") @db.Uuid
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version        Int       @default(1)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, path])
+  @@map("category")
+}
+
+/// Custom fields (PH-2 feature flag `ticket.customFields`), defined in PH-1 so
+/// the ticket API validates `custom` against them from the start.
+model FieldDefinition {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  orgId        String?   @map("org_id") @db.Uuid
+  key          String
+  label        String
+  type         String
+  options      Json      @default("[]")
+  appliesTo    Json      @default("{}") @map("applies_to")
+  requiredWhen Json?     @map("required_when")
+  visibleTo    String[]  @default([]) @map("visible_to")
+  classification String  @default("internal")
+  order        Int       @default(0)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version      Int       @default(1)
+
+  @@unique([tenantId, key])
+  @@map("field_definition")
+}
+
+/// Per-tenant, per-type sequence for human-readable numbers. Incremented inside
+/// the creating transaction so a rollback leaves no gap (ADR-0020).
+model TicketCounter {
+  tenantId String @map("tenant_id") @db.Uuid
+  type     String
+  next     Int    @default(1)
+
+  @@id([tenantId, type])
+  @@map("ticket_counter")
+}
+

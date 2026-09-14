@@ -1,0 +1,68 @@
+/// MOD-13 Administration, configuration and module marketplace.
+/// Every configurable item in every module goes through this framework: there
+/// are no ad-hoc configuration tables (MOD-13 definition of done).
+
+model Setting {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  scopeType String   @map("scope_type")
+  scopeId   String?  @map("scope_id") @db.Uuid
+  ownerId   String?  @map("owner_id") @db.Uuid
+  currentVersion Int @default(1) @map("current_version")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  versions  SettingVersion[]
+
+  @@unique([tenantId, key, scopeType, scopeId])
+  @@index([tenantId, key])
+  @@map("setting")
+}
+
+model SettingVersion {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  settingId   String   @map("setting_id") @db.Uuid
+  version     Int
+  value       Json
+  reason      String?
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy String?  @map("published_by") @db.Uuid
+
+  setting     Setting  @relation(fields: [settingId], references: [id], onDelete: Cascade)
+
+  @@unique([settingId, version])
+  @@index([tenantId])
+  @@map("setting_version")
+}
+
+model FeatureFlagOverride {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  scopeType String   @default("tenant") @map("scope_type")
+  scopeId   String?  @map("scope_id") @db.Uuid
+  value     Boolean
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key, scopeType, scopeId])
+  @@map("feature_flag_override")
+}
+
+model InstalledModule {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  moduleId    String    @map("module_id")
+  version     String
+  enabled     Boolean   @default(true)
+  seededAt    DateTime? @map("seeded_at") @db.Timestamptz(6)
+  installedAt DateTime  @default(now()) @map("installed_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, moduleId])
+  @@map("installed_module")
+}

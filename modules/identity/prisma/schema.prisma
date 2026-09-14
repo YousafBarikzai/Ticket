@@ -1,0 +1,204 @@
+/// MOD-01 Identity, organisations and access.
+
+model User {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  primaryOrgId  String?   @map("primary_org_id") @db.Uuid
+  email         String
+  displayName   String    @map("display_name")
+  idpSubject    String?   @map("idp_subject")
+  status        String    @default("active")
+  managerId     String?   @map("manager_id") @db.Uuid
+  locale        String    @default("en-GB")
+  timeZone      String    @default("Europe/London") @map("time_zone")
+  a11yPrefs     Json      @default("{}") @map("a11y_prefs")
+  isExternal    Boolean   @default(false) @map("is_external")
+  isBreakGlass  Boolean   @default(false) @map("is_break_glass")
+  lastSeenAt    DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy     String?   @map("created_by") @db.Uuid
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy     String?   @map("updated_by") @db.Uuid
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+
+  memberships     TeamMembership[]
+  roleAssignments RoleAssignment[]
+  sessions        Session[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+  @@index([tenantId, idpSubject])
+  @@index([tenantId, managerId])
+  @@map("app_user_account")
+}
+
+model Team {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String
+  key         String
+  type        String    @default("support_group")
+  emailAlias  String?   @map("email_alias")
+  managerId   String?   @map("manager_id") @db.Uuid
+  calendarId  String?   @map("calendar_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy   String?   @map("updated_by") @db.Uuid
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+
+  members     TeamMembership[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, orgId])
+  @@map("team")
+}
+
+model TeamMembership {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  teamId     String    @map("team_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  roleInTeam String    @default("member") @map("role_in_team")
+  isLead     Boolean   @default(false) @map("is_lead")
+  validFrom  DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo    DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  team       Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([tenantId, userId])
+  @@map("team_membership")
+}
+
+model Location {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  name       String
+  address    String?
+  timeZone   String    @default("Europe/London") @map("time_zone")
+  calendarId String?   @map("calendar_id") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version    Int       @default(1)
+
+  @@index([tenantId, orgId])
+  @@map("location")
+}
+
+model Role {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  version     Int      @default(1)
+
+  permissions RolePermission[]
+  assignments RoleAssignment[]
+
+  @@unique([tenantId, key])
+  @@map("role")
+}
+
+/// A role is a set of (permission key, scope) pairs. Keys come from the module
+/// manifests' permission registry; the seed matrix is Appendix B.
+model RolePermission {
+  id            String @id @db.Uuid
+  tenantId      String @map("tenant_id") @db.Uuid
+  roleId        String @map("role_id") @db.Uuid
+  permissionKey String @map("permission_key")
+  scope         String @default("own")
+
+  role          Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionKey, scope])
+  @@index([tenantId, permissionKey])
+  @@map("role_permission")
+}
+
+model RoleAssignment {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  roleId    String    @map("role_id") @db.Uuid
+  scopeType String?   @map("scope_type")
+  scopeId   String?   @map("scope_id") @db.Uuid
+  validFrom DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo   DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?   @map("created_by") @db.Uuid
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, scopeType, scopeId])
+  @@index([tenantId, userId])
+  @@map("role_assignment")
+}
+
+model Session {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  sid        String
+  device     String?
+  ip         String?
+  userAgent  String?   @map("user_agent")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sid])
+  @@index([tenantId, userId])
+  @@map("session")
+}
+
+model ApiKey {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  name       String
+  prefix     String
+  hash       String
+  scopes     String[]  @default([])
+  serviceUserId String @map("service_user_id") @db.Uuid
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Uuid
+
+  @@unique([tenantId, prefix])
+  @@index([tenantId])
+  @@map("api_key")
+}
+
+model Delegate {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  principalId String    @map("principal_id") @db.Uuid
+  delegateId  String    @map("delegate_id") @db.Uuid
+  capability  String    @default("approve")
+  validFrom   DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo     DateTime? @map("valid_to") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([principalId, delegateId, capability])
+  @@index([tenantId, delegateId])
+  @@map("delegate")
+}

@@ -1,6 +1,6 @@
 # ADR-0001 · Deployment topology: modular monolith with service-ready modules
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-01 · **Deciders:** tech lead, steering group
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-01 · **Deciders:** tech lead, steering group
 
 ## Context
 

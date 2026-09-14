@@ -1,0 +1,167 @@
+/// MOD-07 SLA, OLA and entitlement management (PH-1 slice: the timer engine).
+
+model BusinessCalendar {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  orgId     String?  @map("org_id") @db.Uuid
+  key       String
+  name      String
+  timeZone  String   @map("time_zone")
+  hours     Json
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1)
+
+  exceptions CalendarException[]
+
+  @@unique([tenantId, key])
+  @@map("business_calendar")
+}
+
+model CalendarException {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  calendarId String   @map("calendar_id") @db.Uuid
+  date       String
+  type       String   @default("holiday")
+  hours      Json?
+  name       String?
+
+  calendar   BusinessCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@unique([calendarId, date])
+  @@index([tenantId])
+  @@map("calendar_exception")
+}
+
+model SlaPolicy {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  orgId        String?  @map("org_id") @db.Uuid
+  key          String
+  name         String
+  /// Expression matched against the ticket; the most specific match wins.
+  match        Json     @default("{\"always\":true}")
+  specificity  Int      @default(0)
+  calendarMode String   @default("group") @map("calendar_mode")
+  calendarId   String?  @map("calendar_id") @db.Uuid
+  status       String   @default("published")
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  targets      SlaTarget[]
+  escalations  EscalationRule[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status, specificity(sort: Desc)])
+  @@map("sla_policy")
+}
+
+model SlaTarget {
+  id                String   @id @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  policyId          String   @map("policy_id") @db.Uuid
+  priority          String
+  targetType        String   @map("target_type")
+  minutes           Int
+  warningThresholds Int[]    @default([50, 75, 90]) @map("warning_thresholds")
+
+  policy            SlaPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, priority, targetType])
+  @@index([tenantId])
+  @@map("sla_target")
+}
+
+model SlaTimer {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  ticketId      String    @map("ticket_id") @db.Uuid
+  taskId        String?   @map("task_id") @db.Uuid
+  targetType    String    @map("target_type")
+  policyId      String    @map("policy_id") @db.Uuid
+  policyVersion Int       @map("policy_version")
+  calendarId    String?   @map("calendar_id") @db.Uuid
+  targetMs      Int       @map("target_ms")
+  startedAt     DateTime  @map("started_at") @db.Timestamptz(6)
+  dueAt         DateTime? @map("due_at") @db.Timestamptz(6)
+  pausedAt      DateTime? @map("paused_at") @db.Timestamptz(6)
+  lastResumedAt DateTime? @map("last_resumed_at") @db.Timestamptz(6)
+  elapsedMs     Int       @default(0) @map("elapsed_ms")
+  remainingMs   Int       @map("remaining_ms")
+  state         String    @default("running")
+  warningsFired Int[]     @default([]) @map("warnings_fired")
+  nextWarningAt DateTime? @map("next_warning_at") @db.Timestamptz(6)
+  metAt         DateTime? @map("met_at") @db.Timestamptz(6)
+  breachedAt    DateTime? @map("breached_at") @db.Timestamptz(6)
+  /// hash(ticket_id) % 16: the scheduler scans one partition per tick job.
+  partition     Int       @default(0)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+
+  pauses        SlaPause[]
+
+  @@unique([tenantId, ticketId, targetType])
+  @@index([tenantId, ticketId])
+  @@index([state, partition, dueAt])
+  @@map("sla_timer")
+}
+
+model SlaPause {
+  id       String    @id @db.Uuid
+  tenantId String    @map("tenant_id") @db.Uuid
+  timerId  String    @map("timer_id") @db.Uuid
+  reason   String
+  from     DateTime  @db.Timestamptz(6)
+  to       DateTime? @db.Timestamptz(6)
+
+  timer    SlaTimer  @relation(fields: [timerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, timerId])
+  @@map("sla_pause")
+}
+
+model PriorityMatrix {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  orgId    String? @map("org_id") @db.Uuid
+  impact   String
+  urgency  String
+  priority String
+
+  @@unique([tenantId, orgId, impact, urgency])
+  @@map("priority_matrix")
+}
+
+model EscalationRule {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  policyId String @map("policy_id") @db.Uuid
+  on       String
+  step     Int    @default(1)
+  notify   Json   @default("{}")
+  action   Json?
+
+  policy   SlaPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, policyId])
+  @@map("escalation_rule")
+}
+
+model BreachRecord {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  timerId      String    @unique @map("timer_id") @db.Uuid
+  ticketId     String    @map("ticket_id") @db.Uuid
+  breachedAt   DateTime  @map("breached_at") @db.Timestamptz(6)
+  reasonCode   String?   @map("reason_code")
+  excusedBy    String?   @map("excused_by") @db.Uuid
+  excuseReason String?   @map("excuse_reason")
+  excusedAt    DateTime? @map("excused_at") @db.Timestamptz(6)
+
+  @@index([tenantId, breachedAt(sort: Desc)])
+  @@map("breach_record")
+}

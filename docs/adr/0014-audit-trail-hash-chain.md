@@ -1,6 +1,6 @@
 # ADR-0014 · Audit trail: written in the change's transaction, append-only, hash-chained per tenant
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** MOD-15-E1-S1, module contract rules
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** MOD-15-E1-S1, module contract rules
 
 ## Context
 

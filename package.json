@@ -1,0 +1,50 @@
+{
+  "name": "itsm-platform",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "db:migrate": "tsx infra/scripts/migrate.ts",
+    "db:reset": "tsx infra/scripts/migrate.ts --reset",
+    "seed": "tsx infra/scripts/seed.ts",
+    "platform": "tsx infra/scripts/platform-cli.ts",
+    "dev:api": "tsx watch apps/api/src/main.ts",
+    "dev:worker": "tsx watch apps/worker/src/main.ts",
+    "openapi:build": "tsx infra/scripts/openapi.ts",
+    "db:assemble": "tsx infra/scripts/assemble-schema.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/instrumentation-http": "^0.222.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.70.0",
+    "@opentelemetry/instrumentation-pg": "^0.74.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
+    "@prisma/client": "^6.19.3",
+    "@types/pg": "^8.23.1",
+    "bullmq": "^6.3.6",
+    "dotenv": "^17.4.2",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.0",
+    "prisma": "^6.19.3",
+    "zod": "^3.25.76"
+  }
+}

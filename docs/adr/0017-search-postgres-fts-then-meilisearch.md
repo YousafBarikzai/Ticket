@@ -1,6 +1,6 @@
 # ADR-0017 · Search: PostgreSQL full-text projection first; Meilisearch from PH-3 behind the same interface
 
-**Status:** Proposed (OD-02 recommendation) · **Date:** 2026-09 · **Specification reference:** §4.2 Search, MOD-09-E1, OD-02
+**Status:** Accepted 2026-09-14 (OD-02 recommendation; revisit at PH-3 start) · **Date:** 2026-09 · **Specification reference:** §4.2 Search, MOD-09-E1, OD-02
 
 ## Context
 

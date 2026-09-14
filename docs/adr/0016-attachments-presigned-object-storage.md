@@ -1,6 +1,6 @@
 # ADR-0016 · Attachments: direct presigned uploads to object storage; visible only after malware scan
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** §4.2 Object storage, MOD-04-E1, MOD-15
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** §4.2 Object storage, MOD-04-E1, MOD-15
 
 ## Context
 

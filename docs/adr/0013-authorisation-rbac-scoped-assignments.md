@@ -1,6 +1,6 @@
 # ADR-0013 · Authorisation: RBAC with scoped assignments, resolved per aggregate, enforced in the service layer
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** §7 Authorisation, Appendix B, MOD-01-E2
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** §7 Authorisation, Appendix B, MOD-01-E2
 
 ## Context
 

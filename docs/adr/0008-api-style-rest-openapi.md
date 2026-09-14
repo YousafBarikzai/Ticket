@@ -1,6 +1,6 @@
 # ADR-0008 · API style: REST + JSON, URL-versioned, OpenAPI generated from Zod contracts
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-08
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-08
 
 ## Context
 

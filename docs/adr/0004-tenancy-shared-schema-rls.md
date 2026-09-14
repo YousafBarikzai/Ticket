@@ -1,6 +1,6 @@
 # ADR-0004 · Tenancy: shared database, shared schema, row-level security plus a tenant-aware client
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-04
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-04
 
 ## Context
 

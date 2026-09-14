@@ -1,0 +1,22 @@
+/// MOD-09 Search infrastructure (PH-1 slice: the projection and its indexer).
+/// A rebuildable read model: it can be dropped and replayed from the outbox.
+
+model SearchDocument {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  orgId      String?  @map("org_id") @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  title      String
+  bodyText   String   @map("body_text")
+  /// Minimal visibility predicate, applied BEFORE ranking so results are
+  /// permission-filtered at retrieval rather than after it.
+  acl        Json     @default("{}")
+  facets     Json     @default("{}")
+  sourceUpdatedAt DateTime @map("source_updated_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entityType, entityId])
+  @@index([tenantId, entityType, updatedAt(sort: Desc)])
+  @@map("search_document")
+}

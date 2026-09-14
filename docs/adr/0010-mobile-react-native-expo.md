@@ -1,6 +1,6 @@
 # ADR-0010 · Mobile strategy: one React Native (Expo) codebase, iOS first, Android later; PWAs from the Next.js apps
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-10
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-10
 
 ## Context
 

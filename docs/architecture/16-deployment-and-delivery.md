@@ -16,7 +16,7 @@ Railway project: itsm-platform
 - Every service is a Docker image built by CI (multi-stage, distroless Node 22 base, non-root, pinned base digests, SBOM attached). Railway config-as-code (`railway.json` per app) sets start commands, health checks, replicas and region.
 - Public services use Railway custom domains fronted by Cloudflare with authenticated origin pulls; private services have no public networking.
 - Environment variables and secrets are managed in Railway per environment and referenced by the typed config schema; shared variables (database URLs) use Railway variable references.
-- Object storage: Cloudflare R2 bucket with EU jurisdiction per environment (or S3 `eu-west-2` under option B/C of D-01); CORS allows presigned PUTs from the app origins only.
+- Object storage: Cloudflare R2 bucket with EU jurisdiction per environment (D-01 option A, chosen); CORS allows presigned PUTs from the app origins only.
 
 ## 2. Cloudflare configuration
 

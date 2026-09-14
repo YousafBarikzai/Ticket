@@ -1,6 +1,6 @@
 # ADR-0006 · AI as a governed capability service
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-06
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-06
 
 ## Context
 

@@ -19,7 +19,7 @@ The drivers below are derived from the specification (Parts 2, 4, 5, 7 and 10) a
 | Secure by construction | Audit written in the same transaction as every change, hash-chained; permission checks in the service layer; secrets outside the repo; scanned attachments; classification-aware masking. |
 | Small team, one language | TypeScript end to end; one monorepo; shared contracts and design system across web, worker, mobile and SDK. |
 | Observable | Correlation and tenant identifiers on every request, job, event and log; SLOs for the domain signals that matter (outbox lag, timer lateness, notification hand-off, search freshness). |
-| UK data residency | Region is a first-class tenant attribute; the initial deployment runs in the nearest Railway region (EU West, Amsterdam) under the UK adequacy basis, with a documented path to UK-located data stores. See [19 · Risks and decisions](19-risks-and-decisions.md#d-01). |
+| UK data residency | Region is a first-class tenant attribute. **Decision D-01 is closed: option A.** The deployment runs in Railway EU West (Amsterdam) with Cloudflare R2 in the EU jurisdiction, under the UK adequacy regulations for the EEA, with a documented path to UK-located data stores if a contract later requires it. See [19 · Risks and decisions](19-risks-and-decisions.md#d-01). |
 
 ## 3. Quality attribute targets (headline)
 
@@ -108,7 +108,7 @@ flowchart TB
 | Audit chain, permission model, classification hooks | Commercial model and metering design (PH-3, OD-05) |
 | Settings/flags framework, versioned-definition pattern | Email provider selection (PH-2 start, OD-03; recommendation given) |
 | Workflow and timer execution models | Extraction candidates and order (PH-5, from measurement) |
-| Hosting topology on Railway + Cloudflare; CI/CD stages | Hosting location for strict UK-at-rest residency (PH-1 week 1, D-01) |
+| Hosting topology on Railway + Cloudflare; region EU West under UK adequacy (D-01 option A) | Relocation to UK-at-rest stores if a customer contract demands it (option B or C, infrastructure only) |
 
 ## 7. How to change this architecture
 

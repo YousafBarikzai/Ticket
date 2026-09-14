@@ -1,6 +1,6 @@
 # ADR-0003 · Source of truth: PostgreSQL; everything else is a rebuildable projection
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-03
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-03
 
 ## Context
 

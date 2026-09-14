@@ -1,6 +1,6 @@
 # ADR-0007 · Telemetry: OpenTelemetry end to end with correlation and tenant on everything
 
-**Status:** Proposed · **Date:** 2026-09 · **Specification reference:** ADR-07
+**Status:** Accepted 2026-09-14 · **Date:** 2026-09 · **Specification reference:** ADR-07
 
 ## Context
 
