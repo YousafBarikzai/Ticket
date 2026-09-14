@@ -31,6 +31,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The secret scanner walks history, not just the working tree: a secret
+          # committed and later removed is still a leaked secret. The default
+          # shallow clone leaves it unable to resolve the range, which it reports
+          # as a partial scan and then fails on.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
