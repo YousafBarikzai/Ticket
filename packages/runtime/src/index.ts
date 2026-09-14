@@ -25,6 +25,7 @@ import { notificationsManifest, seedNotificationDefaults } from '@itsm/module-no
 import { searchManifest } from '@itsm/module-search';
 import { slaManifest, seedDefaultSlaPolicy } from '@itsm/module-sla';
 import { adminManifest, syncInstalledModules } from '@itsm/module-admin';
+import { rulesManifest, seedDefaultRules } from '@itsm/module-rules';
 
 /** Every module in this deployment, in dependency order. */
 export const ALL_MODULES: ModuleManifest[] = [
@@ -36,6 +37,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   slaManifest,
   notificationsManifest,
   searchManifest,
+  rulesManifest,
   adminManifest,
 ];
 
@@ -71,6 +73,9 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('notifications.defaults', async (ctx: TenantContext) => {
     await seedNotificationDefaults(ctx);
+  });
+  registerSeedStep('rules.defaults', async (ctx: TenantContext) => {
+    await seedDefaultRules(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

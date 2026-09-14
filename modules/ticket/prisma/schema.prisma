@@ -44,6 +44,7 @@ model Ticket {
   tasks       TicketTask[]
   attachments Attachment[]
   watchers    TicketWatcher[]
+  tags        TicketTag[]
 
   @@unique([tenantId, number])
   @@index([tenantId, statusCategory, priority, dueAt])
@@ -163,6 +164,25 @@ model TicketLink {
   @@unique([sourceId, targetId, linkType])
   @@index([tenantId, targetId])
   @@map("ticket_link")
+}
+
+/// Free-form labels. A table rather than an array column so that a tag can be
+/// renamed, counted and indexed, and so the rules engine adding one is an
+/// ordinary insert rather than a read-modify-write race on a JSON column.
+model TicketTag {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  tag       String
+  addedBy   String?  @map("added_by") @db.Uuid
+  addedByType String @default("user") @map("added_by_type")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, tag])
+  @@index([tenantId, tag])
+  @@map("ticket_tag")
 }
 
 model TicketWatcher {

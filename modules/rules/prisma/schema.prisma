@@ -1,0 +1,79 @@
+/// MOD-06 Workflow and rules (PH-2 slice: the business rules engine).
+///
+/// Rules are data, not code (ADR-0009): a row here is interpreted, never
+/// generated or evaluated as a script. The workflow engine of PH-3 is a
+/// sibling model in this module and shares the same versioned-definition
+/// lifecycle.
+
+model BusinessRule {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  orgId       String?  @map("org_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// The event this rule reacts to; one of RULE_EVENTS.
+  event       String
+  /// An expression from @itsm/expr, evaluated against the rule facts.
+  conditions  Json     @default("{\"always\":true}")
+  /// An ordered list of actions from the closed set in domain/actions.ts.
+  actions     Json     @default("[]")
+  /// Rules for one event run in ascending order.
+  order       Int      @default(100)
+  /// stop: no further rule runs for this event once this one matches.
+  mode        String   @default("continue")
+  status      String   @default("draft")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  publishedBy String?  @map("published_by") @db.Uuid
+
+  versions    BusinessRuleVersion[]
+  applications RuleApplication[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, event, status, order])
+  @@map("business_rule")
+}
+
+/// One immutable snapshot per publish, so a rule can be rolled back and so an
+/// application can name exactly which text of the rule ran.
+model BusinessRuleVersion {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  ruleId      String   @map("rule_id") @db.Uuid
+  version     Int
+  snapshot    Json
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy String?  @map("published_by") @db.Uuid
+
+  rule        BusinessRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, version])
+  @@index([tenantId])
+  @@map("business_rule_version")
+}
+
+/// What a rule actually did. The audit trail records it too, but this is the
+/// shape the rule author needs: one row per rule per event, with the actions
+/// that were applied and the ones that were skipped because an earlier rule had
+/// already set that field.
+model RuleApplication {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  ruleId      String   @map("rule_id") @db.Uuid
+  ruleVersion Int      @map("rule_version")
+  ticketId    String?  @map("ticket_id") @db.Uuid
+  event       String
+  applied     Json     @default("[]")
+  skipped     Json     @default("[]")
+  appliedAt   DateTime @default(now()) @map("applied_at") @db.Timestamptz(6)
+
+  rule        BusinessRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, ruleId, appliedAt(sort: Desc)])
+  @@map("rule_application")
+}

@@ -82,6 +82,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'identity.user.read', scope: 'team' },
       { key: 'identity.session.manage', scope: 'own' },
       { key: 'tenant.read', scope: 'any' },
+      { key: 'rules.rule.read', scope: 'any' },
     ],
   },
   {
@@ -146,6 +147,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'integration.log.read', scope: 'any' },
       { key: 'tenant.read', scope: 'any' },
       { key: 'tenant.org.manage', scope: 'any' },
+      { key: 'rules.rule.read', scope: 'any' },
+      { key: 'rules.rule.manage', scope: 'any' },
+      { key: 'rules.rule.publish', scope: 'any' },
     ],
   },
 ];

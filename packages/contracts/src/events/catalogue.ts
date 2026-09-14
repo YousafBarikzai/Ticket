@@ -378,6 +378,23 @@ export const searchDocumentIndexed = defineEvent({
   payload: z.object({ entityType: z.string(), entityId: id, lagMs: z.number().int() }),
 });
 
+// ---- MOD-06 Workflow and rules (PH-2) -------------------------------------
+export const ruleApplied = defineEvent({
+  type: 'rule.applied',
+  version: 1,
+  aggregateType: 'ticket',
+  webhook: true,
+  description: 'A business rule matched an event and changed a ticket.',
+  payload: z.object({
+    ruleId: id,
+    ruleKey: z.string(),
+    ruleVersion: z.number().int(),
+    event: z.string(),
+    ticketId: id.nullable(),
+    actions: z.array(z.string()),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -389,6 +406,7 @@ export const eventCatalogue = [
   notificationQueued, notificationSent, notificationFailed,
   configPublished, configRolledBack, moduleEnabled, moduleDisabled,
   securityAlertRaised, webhookDeliveryFailed, searchDocumentIndexed,
+  ruleApplied,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

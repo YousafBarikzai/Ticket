@@ -186,6 +186,12 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  app.get('/tickets/:idOrNumber/tags', async (request) => {
+    const ctx = contextOf(request);
+    const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
+    return { data: await ticketService.listTags(ctx, idOrNumber) };
+  });
+
   app.get('/tickets/:idOrNumber/timeline', async (request) => {
     const ctx = contextOf(request);
     const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);

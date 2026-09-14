@@ -30,7 +30,15 @@ import {
   inverseLinkType,
   type LinkType,
 } from '@itsm/contracts';
-import { assertTransition, categoryOf, effectsOf, isRequesterTransition, requiresAdministratorOverride, STATES } from '../domain/state-machine.js';
+import {
+  assertTransition,
+  canTransition,
+  categoryOf,
+  effectsOf,
+  isRequesterTransition,
+  requiresAdministratorOverride,
+  STATES,
+} from '../domain/state-machine.js';
 import * as repo from '../repo/ticket-repo.js';
 
 /**
@@ -776,3 +784,237 @@ async function notifyChange(ctx: TenantContext, ticket: repo.TicketRow, action: 
 }
 
 export { repo, STATES };
+
+// ---------------------------------------------------------------------------
+// The automation write path.
+//
+// MOD-04 stays the only writer of a ticket row (docs/architecture/04 §3), so
+// the rules engine — and the workflow engine after it — hands a described change
+// to this function rather than reaching for the table. Everything here runs on
+// the caller's transaction, which is what lets a rule be exactly-once with the
+// event that triggered it.
+// ---------------------------------------------------------------------------
+
+/** Fields automation may write. Narrower than a person's update on purpose. */
+const AUTOMATION_FIELDS = new Set([
+  'impact',
+  'urgency',
+  'priority',
+  'categoryId',
+  'subcategoryId',
+  'serviceId',
+  'orgId',
+  'locationId',
+  'groupId',
+  'dueAt',
+]);
+
+export interface AutomationProvenance {
+  kind: 'rule' | 'workflow';
+  id: string;
+  key: string;
+  version: number;
+  /** Why, in the author's words — carried into the audit entry. */
+  reason?: string;
+}
+
+export interface AutomatedChange {
+  patch?: Record<string, unknown>;
+  tags?: string[];
+  watchers?: string[];
+  status?: { status: string; reason?: string };
+}
+
+export interface AutomationOutcome {
+  changed: Record<string, { before: unknown; after: unknown }>;
+  tagsAdded: string[];
+  watchersAdded: string[];
+  statusChanged: { from: string; to: string } | null;
+  refused: { what: string; why: string }[];
+}
+
+/**
+ * Applies an automated change to a ticket.
+ *
+ * Automation is trusted to have been authorised when the rule was published, not
+ * when it fires — there is no acting user at that point. What it is *not*
+ * trusted to do is produce an impossible ticket, so the state machine still
+ * decides whether a status change is legal, and a refused effect is reported
+ * rather than thrown: one bad action in a rule must not roll back the event that
+ * triggered it.
+ */
+export async function applyAutomatedChange(
+  ctx: TenantContext,
+  tx: Tx,
+  ticketId: string,
+  change: AutomatedChange,
+  provenance: AutomationProvenance,
+): Promise<AutomationOutcome> {
+  const outcome: AutomationOutcome = {
+    changed: {},
+    tagsAdded: [],
+    watchersAdded: [],
+    statusChanged: null,
+    refused: [],
+  };
+
+  const ticket = await repo.findById(tx, ticketId);
+  if (!ticket) throw new NotFoundError('ticket not found');
+
+  // --- field writes --------------------------------------------------------
+  const data: Record<string, unknown> = {};
+  for (const [field, after] of Object.entries(change.patch ?? {})) {
+    if (!AUTOMATION_FIELDS.has(field)) {
+      outcome.refused.push({ what: `setField ${field}`, why: 'automation may not write this field' });
+      continue;
+    }
+    const before = (ticket as unknown as Record<string, unknown>)[field];
+    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    outcome.changed[field] = { before, after };
+    data[field] = after;
+  }
+
+  if (Object.keys(data).length > 0) {
+    data.updatedBy = null;
+    const affected = await repo.updateWithVersion(tx, ticket.id, ticket.version, data as never);
+    if (affected === 0) {
+      // Someone edited the ticket between the event and the rule running. The
+      // rule loses: a person's edit is never overwritten by automation.
+      outcome.refused.push({ what: 'field changes', why: 'the ticket changed while the rule was running' });
+      outcome.changed = {};
+    } else {
+      await repo.insertTicketEvent(tx, ctx, ticket.id, 'updated', {
+        changed: outcome.changed,
+        by: { automation: provenance.kind, key: provenance.key, version: provenance.version },
+      });
+      await recordAudit(tx, ctx, {
+        action: 'ticket.updated',
+        targetType: 'ticket',
+        targetId: ticket.id,
+        before: Object.fromEntries(Object.entries(outcome.changed).map(([k, v]) => [k, v.before])),
+        after: Object.fromEntries(Object.entries(outcome.changed).map(([k, v]) => [k, v.after])),
+        reason: provenance.reason ?? `${provenance.kind} ${provenance.key} v${provenance.version}`,
+      });
+      await publish(tx, ctx, {
+        definition: events.ticketUpdated,
+        aggregateId: ticket.id,
+        aggregateVersion: ticket.version + 1,
+        payload: { ticketId: ticket.id, number: ticket.number, changed: outcome.changed },
+        actorOverride: automationActor(provenance),
+      });
+    }
+  }
+
+  // --- tags ----------------------------------------------------------------
+  for (const tag of change.tags ?? []) {
+    const existing = await tx.ticketTag.findFirst({ where: { ticketId: ticket.id, tag } });
+    if (existing) continue;
+    await tx.ticketTag.create({
+      data: {
+        id: newId(),
+        tenantId: ctx.tenantId,
+        ticketId: ticket.id,
+        tag,
+        addedBy: null,
+        addedByType: provenance.kind,
+      },
+    });
+    outcome.tagsAdded.push(tag);
+  }
+
+  // --- watchers ------------------------------------------------------------
+  for (const userId of change.watchers ?? []) {
+    const existing = await tx.ticketWatcher.findFirst({ where: { ticketId: ticket.id, userId } });
+    if (existing) continue;
+    await tx.ticketWatcher.create({
+      data: { id: newId(), tenantId: ctx.tenantId, ticketId: ticket.id, userId, reason: provenance.kind },
+    });
+    outcome.watchersAdded.push(userId);
+  }
+
+  // --- status --------------------------------------------------------------
+  if (change.status) {
+    const from = ticket.status as CanonicalState;
+    const to = change.status.status as CanonicalState;
+    if (!canTransition(from, to)) {
+      outcome.refused.push({ what: `setStatus ${to}`, why: `a ticket cannot move from ${from} to ${to}` });
+    } else if (from !== to) {
+      const at = new Date();
+      const stateEffects = effectsOf(from, to, at);
+      const statusData: Record<string, unknown> = {
+        status: to,
+        statusCategory: stateEffects.statusCategory,
+        updatedBy: null,
+      };
+      if (stateEffects.resolvedAt !== 'unchanged') statusData.resolvedAt = stateEffects.resolvedAt;
+      if (stateEffects.closedAt !== 'unchanged') statusData.closedAt = stateEffects.closedAt;
+      if (stateEffects.incrementReopenCount) statusData.reopenCount = { increment: 1 };
+
+      const current = (await repo.findById(tx, ticket.id))!;
+      const affected = await repo.updateWithVersion(tx, current.id, current.version, statusData as never);
+      if (affected === 0) {
+        outcome.refused.push({ what: `setStatus ${to}`, why: 'the ticket changed while the rule was running' });
+      } else {
+        outcome.statusChanged = { from, to };
+        await repo.insertTicketEvent(tx, ctx, ticket.id, 'status.changed', {
+          from,
+          to,
+          reason: change.status.reason ?? null,
+          by: { automation: provenance.kind, key: provenance.key, version: provenance.version },
+        });
+        await recordAudit(tx, ctx, {
+          action: 'ticket.status.changed',
+          targetType: 'ticket',
+          targetId: ticket.id,
+          before: { status: from },
+          after: { status: to },
+          reason: change.status.reason ?? `${provenance.kind} ${provenance.key} v${provenance.version}`,
+        });
+        await publish(tx, ctx, {
+          definition: events.ticketStatusChanged,
+          aggregateId: ticket.id,
+          aggregateVersion: current.version + 1,
+          payload: {
+            ticketId: ticket.id,
+            number: ticket.number,
+            from,
+            to,
+            fromCategory: categoryOf(from),
+            toCategory: stateEffects.statusCategory,
+            reason: change.status.reason ?? null,
+          },
+          actorOverride: automationActor(provenance),
+        });
+      }
+    }
+  }
+
+  return outcome;
+}
+
+/**
+ * Automation acts as itself, not as whoever happened to trigger the event.
+ *
+ * This is what stops a rule reacting to its own write: a consumer that sees a
+ * `workflow` actor knows the change came from automation, and the rules engine
+ * uses exactly that to avoid looping.
+ */
+function automationActor(provenance: AutomationProvenance) {
+  return { type: 'workflow' as const, id: provenance.id, displayName: `${provenance.kind}:${provenance.key}` };
+}
+
+/**
+ * The tags on a ticket.
+ *
+ * Goes through `loadVisible` rather than straight to the table: a tag can say
+ * "vip" or "security-incident", so listing one must refuse for the same people,
+ * and in the same way, as reading the ticket itself.
+ */
+export async function listTags(ctx: TenantContext, idOrNumber: string): Promise<string[]> {
+  return transaction(ctx, async (tx) => {
+    const ticket = await loadVisible(tx, ctx, idOrNumber);
+    authz.require(ctx, 'ticket.read', { aggregate: 'ticket', record: ticket });
+    const rows = await tx.ticketTag.findMany({ where: { ticketId: ticket.id }, orderBy: { tag: 'asc' } });
+    return rows.map((row) => row.tag);
+  });
+}

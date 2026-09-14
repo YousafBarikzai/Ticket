@@ -324,3 +324,100 @@ export async function markRead(ctx: TenantContext, notificationId: string | 'all
     return result.count;
   });
 }
+
+/**
+ * Queues a notification that a business rule asked for (MOD-06-E0).
+ *
+ * A rule names a template and an audience directly rather than going through a
+ * notification rule, because the administrator already expressed the condition
+ * in the business rule: asking them to write it twice, in two places that can
+ * disagree, is how "why did nobody get emailed?" happens.
+ *
+ * The triggering event and the rule's key are carried through rather than
+ * invented, so the existing uniqueness — one notification per recipient per
+ * event per rule — dedupes a replayed event exactly as it does for the
+ * event-driven path. Runs on the caller's transaction, so the message and the
+ * change that prompted it commit together.
+ */
+export async function queueFromRule(
+  ctx: TenantContext,
+  tx: Tx,
+  input: {
+    ticketId: string;
+    template: string;
+    to: 'requester' | 'assignee' | 'group' | 'watchers';
+    eventId: string;
+    ruleKey: string;
+  },
+): Promise<number> {
+  const ticket = (await tx.ticket.findFirst({ where: { id: input.ticketId } })) as TicketLike | null;
+  if (!ticket) return 0;
+
+  const recipients = await resolveAudience(tx, ctx, [{ kind: input.to } as AudienceDescriptor], ticket);
+  const emailEnabled = await getSetting<boolean>(ctx, 'notification.email.enabled');
+  let queued = 0;
+
+  for (const recipientId of recipients) {
+    const recipient = await tx.user.findFirst({ where: { id: recipientId, status: 'active', deletedAt: null } });
+    if (!recipient) continue;
+
+    const template = await tx.notificationTemplate.findFirst({
+      where: { key: input.template, channel: 'inapp', locale: { in: [recipient.locale, 'en-GB'] } },
+      orderBy: { locale: 'desc' },
+    });
+    if (!template) {
+      // The rule names a template that does not exist. Say so once, against the
+      // rule, rather than once per recipient.
+      logger.warn('a rule named a template that does not exist', { templateKey: input.template, ruleKey: input.ruleKey });
+      return queued;
+    }
+
+    const renderContext = {
+      ticket,
+      event: { type: 'rule.applied' },
+      recipient: { displayName: recipient.displayName },
+      payload: { ticketId: ticket.id },
+    };
+
+    const notificationId = newId();
+    const created = await tx.notification.createMany({
+      data: [
+        {
+          id: notificationId,
+          tenantId: ctx.tenantId,
+          eventId: input.eventId,
+          eventType: 'rule.applied',
+          recipientId,
+          ruleKey: input.ruleKey,
+          templateKey: input.template,
+          ticketId: ticket.id,
+          subject: template.subject ? renderTemplate(template.subject, renderContext) : null,
+          body: renderTemplate(template.body, renderContext),
+          status: 'queued',
+        },
+      ],
+      skipDuplicates: true,
+    });
+    if (created.count === 0) continue;
+
+    await publish(tx, ctx, {
+      definition: events.notificationQueued,
+      aggregateId: notificationId,
+      payload: { notificationId, recipientId, channel: 'inapp', templateKey: input.template },
+    });
+
+    for (const channel of emailEnabled ? ['inapp', 'email'] : ['inapp']) {
+      await enqueue(
+        ctx,
+        'notify',
+        'notification.dispatch',
+        { notificationId, channel },
+        { idempotencyKey: `notify-${notificationId}-${channel}` },
+      );
+    }
+    queued += 1;
+  }
+
+  metrics.increment('notifications_queued_total', { event: 'rule.applied' }, queued);
+  return queued;
+}

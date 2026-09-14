@@ -20,5 +20,10 @@ export {
   type StateDefinition,
   type TransitionEffects,
 } from './domain/state-machine.js';
+export type {
+  AutomatedChange,
+  AutomationOutcome,
+  AutomationProvenance,
+} from './service/ticket-service.js';
 export type { TicketRow, ListFilter } from './repo/ticket-repo.js';
 import './handlers/index.js';

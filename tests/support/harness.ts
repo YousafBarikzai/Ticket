@@ -203,3 +203,46 @@ export async function request<T = unknown>(
   }
   return { status: response.statusCode, body, headers: response.headers as Record<string, unknown> };
 }
+
+/**
+ * Runs the event handlers the way the worker would, in process.
+ *
+ * Phase 1's event-driven behaviour was proved by the walking skeleton against a
+ * real worker, which is the right test but a slow one to write against. From
+ * Phase 2 the rules engine, approvals and the email channel are all reached
+ * only through events, so the suite needs to be able to drive a handler
+ * directly. This reads the outbox exactly as the publisher does and hands each
+ * envelope to each registered consumer, then repeats: a handler may publish
+ * events of its own, and a rule that changes a ticket is precisely that case.
+ *
+ * Returns how many deliveries were made, so a test can assert that something
+ * actually ran rather than silently passing on an empty outbox.
+ */
+export async function drainEvents(tenantId: string, rounds = 5): Promise<number> {
+  const { consumersFor, systemContext, transaction, withContext } = await import('@itsm/platform');
+  const { outboxPublisher } = await import('@itsm/module-integrations');
+
+  const ctx = systemContext(tenantId, { region: 'eu-west' });
+  let delivered = 0;
+  const seen = new Set<string>();
+
+  for (let round = 0; round < rounds; round += 1) {
+    const rows = await withContext(ctx, () =>
+      transaction(ctx, (tx) =>
+        tx.outboxEvent.findMany({ orderBy: { createdAt: 'asc' }, take: 500 }),
+      ),
+    );
+    const fresh = rows.filter((row) => !seen.has(row.id));
+    if (fresh.length === 0) return delivered;
+
+    for (const row of fresh) {
+      seen.add(row.id);
+      const envelope = row.envelope as never as { type: string };
+      for (const consumer of consumersFor(envelope.type)) {
+        await outboxPublisher.dispatchToConsumer(consumer, row.envelope as never);
+        delivered += 1;
+      }
+    }
+  }
+  return delivered;
+}

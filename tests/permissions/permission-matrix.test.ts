@@ -160,6 +160,36 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'read the business rules',
+    path: () => '/api/v1/rules',
+    // A lead needs to see why their queue is routed as it is; an agent does not.
+    allowed: ['admin', 'lead'],
+    deniedStatus: { requester: 403, agent: 403, otherAgent: 403 },
+  },
+  {
+    what: 'write a business rule',
+    method: 'POST',
+    path: () => '/api/v1/rules',
+    body: () => ({
+      key: `matrix-${Date.now()}`,
+      name: 'Matrix rule',
+      event: 'ticket.created',
+      conditions: { always: true },
+      actions: [{ type: 'addTag', tag: 'matrix' }],
+    }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'publish a business rule',
+    method: 'POST',
+    path: () => '/api/v1/rules/major-incident-p1/publish',
+    // Publishing changes what happens to every team's tickets, so it is the
+    // administrator's, not a lead's.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.

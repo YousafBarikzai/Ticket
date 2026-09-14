@@ -150,6 +150,9 @@ importers:
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../../modules/notifications
+      '@itsm/module-rules':
+        specifier: workspace:*
+        version: link:../../modules/rules
       '@itsm/module-search':
         specifier: workspace:*
         version: link:../../modules/search
@@ -195,6 +198,9 @@ importers:
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../../modules/notifications
+      '@itsm/module-rules':
+        specifier: workspace:*
+        version: link:../../modules/rules
       '@itsm/module-security':
         specifier: workspace:*
         version: link:../../modules/security
@@ -270,6 +276,27 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/rules:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/expr':
+        specifier: workspace:*
+        version: link:../../packages/expr
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -415,6 +442,9 @@ importers:
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../../modules/notifications
+      '@itsm/module-rules':
+        specifier: workspace:*
+        version: link:../../modules/rules
       '@itsm/module-search':
         specifier: workspace:*
         version: link:../../modules/search

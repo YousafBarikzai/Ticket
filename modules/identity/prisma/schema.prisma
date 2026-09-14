@@ -12,6 +12,10 @@ model User {
   locale        String    @default("en-GB")
   timeZone      String    @default("Europe/London") @map("time_zone")
   a11yPrefs     Json      @default("{}") @map("a11y_prefs")
+  /// Tenant-visible standing of the person, used by business rules and by the
+  /// SLA policy matcher (docs/architecture/11 §1, 12 §1).
+  vip           Boolean   @default(false)
+  tier          String?
   isExternal    Boolean   @default(false) @map("is_external")
   isBreakGlass  Boolean   @default(false) @map("is_break_glass")
   lastSeenAt    DateTime? @map("last_seen_at") @db.Timestamptz(6)

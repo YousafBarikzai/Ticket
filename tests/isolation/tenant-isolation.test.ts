@@ -7,7 +7,7 @@ import {
   withContext,
   cache,
 } from '@itsm/platform';
-import { closeHarness, createTestTenant, deleteTestTenant, request, type TestTenant } from '../support/harness.js';
+import { closeHarness, contextFor, createTestTenant, deleteTestTenant, request, type TestTenant } from '../support/harness.js';
 
 /**
  * The tenant isolation suite (specification Appendix D).
@@ -187,6 +187,41 @@ describe('database layer', () => {
         }),
       ),
     ).rejects.toThrow(/permission denied|append-only/i);
+  });
+});
+
+describe('configuration is per tenant too', () => {
+  it('never shows one tenant the other\'s business rules', async () => {
+    // Rules carry routing, priority and notification decisions: seeing another
+    // tenant's rule set is seeing how they run their service desk.
+    const response = await request<{ data: { key: string }[] }>('/api/v1/rules', {
+      token: beta.people.admin!.token,
+    });
+    expect(response.status).toBe(200);
+    // Both tenants seed the same keys, so identity is what must be compared.
+    const ctx = contextFor(beta.id);
+    const { transaction, withContext } = await import('@itsm/platform');
+    const visible = await withContext(ctx, () =>
+      transaction(ctx, (tx) => tx.businessRule.findMany({})),
+    );
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.every((rule) => rule.tenantId === beta.id)).toBe(true);
+  });
+
+  it('never lets one tenant publish into another\'s rule set', async () => {
+    const alphaCtx = contextFor(alpha.id);
+    const { transaction, withContext } = await import('@itsm/platform');
+    const alphaRules = await withContext(alphaCtx, () =>
+      transaction(alphaCtx, (tx) => tx.businessRule.findMany({})),
+    );
+    const target = alphaRules[0]!;
+
+    // Same key in both tenants, so this resolves to beta's own rule, never alpha's.
+    const response = await request<{ id: string }>(`/api/v1/rules/${target.id}/publish`, {
+      method: 'POST',
+      token: beta.people.admin!.token,
+    });
+    expect(response.status).toBe(404);
   });
 });
 

@@ -3,16 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "tsx watch src/main.ts", "start": "tsx src/main.ts", "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
   "dependencies": {
     "@itsm/contracts": "workspace:*",
-    "@itsm/platform": "workspace:*",
-    "@itsm/runtime": "workspace:*",
     "@itsm/module-integrations": "workspace:*",
     "@itsm/module-notifications": "workspace:*",
+    "@itsm/module-rules": "workspace:*",
     "@itsm/module-security": "workspace:*",
     "@itsm/module-sla": "workspace:*",
     "@itsm/module-tenancy": "workspace:*",
+    "@itsm/platform": "workspace:*",
+    "@itsm/runtime": "workspace:*",
     "bullmq": "^5",
     "zod": "^3.24.1"
   }
