@@ -40,7 +40,9 @@ export function useIds<const T extends readonly string[]>(
  * same as omitting the attribute — some screen readers announce an empty
  * description as a pause — so callers should spread `undefined` instead.
  */
-export function joinIds(...ids: readonly (string | false | null | undefined)[]): string | undefined {
+export function joinIds(...ids: readonly unknown[]): string | undefined {
+  // `unknown` rather than a union of falsy types because callers pass guards
+  // such as `hint && ids.hint`, where `hint` is a ReactNode and may be 0.
   const present = ids.filter((id): id is string => typeof id === 'string' && id.length > 0);
   return present.length > 0 ? present.join(' ') : undefined;
 }

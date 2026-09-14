@@ -76,7 +76,8 @@ export const createTicketSchema = z.object({
   externalRef: z.string().max(200).optional(),
   custom: z.record(z.unknown()).default({}),
 });
-export type CreateTicketInput = z.infer<typeof createTicketSchema>;
+/** The caller supplies what they know; the schema fills in the defaults. */
+export type CreateTicketInput = z.input<typeof createTicketSchema>;
 
 export const updateTicketSchema = z
   .object({
@@ -490,7 +491,7 @@ export const addCommentSchema = z.object({
   channel: z.enum(['portal', 'email', 'api', 'slack', 'teams', 'whatsapp', 'voice', 'mobile', 'import', 'system']).default('api'),
   externalRef: z.string().max(500).optional(),
 });
-export type AddCommentInput = z.infer<typeof addCommentSchema>;
+export type AddCommentInput = z.input<typeof addCommentSchema>;
 
 export async function addComment(ctx: TenantContext, idOrNumber: string, input: AddCommentInput) {
   const parsed = addCommentSchema.parse(input);

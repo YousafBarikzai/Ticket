@@ -48,6 +48,18 @@ export function withContext<T>(ctx: TenantContext, fn: () => T): T {
   return storage.run(ctx, fn);
 }
 
+/**
+ * Sets the context for the rest of the current execution, including everything
+ * awaited after it.
+ *
+ * `withContext` cannot be used from a web-framework hook, because a hook
+ * returns before the route handler runs and so the handler would fall outside
+ * the callback. `enterWith` is the primitive designed for exactly that shape.
+ */
+export function enterContext(ctx: TenantContext): void {
+  storage.enterWith(ctx);
+}
+
 export interface CreateContextInput {
   tenantId: string;
   region?: string;

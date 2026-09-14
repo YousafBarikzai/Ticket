@@ -41,7 +41,8 @@ export const createUserSchema = z.object({
   timeZone: z.string().max(60).default('Europe/London'),
   isExternal: z.boolean().default(false),
 });
-export type CreateUserInput = z.infer<typeof createUserSchema>;
+/** The caller supplies what they know; the schema fills in the defaults. */
+export type CreateUserInput = z.input<typeof createUserSchema>;
 
 export async function createUser(ctx: TenantContext, input: CreateUserInput, source: 'admin' | 'jit' | 'import' | 'seed' = 'admin') {
   const parsed = createUserSchema.parse(input);

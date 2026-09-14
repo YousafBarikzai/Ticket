@@ -1,0 +1,22 @@
+{
+  "name": "@itsm/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": {
+    "@itsm/platform": "workspace:*",
+    "@itsm/contracts": "workspace:*",
+    "@itsm/module-admin": "workspace:*",
+    "@itsm/module-identity": "workspace:*",
+    "@itsm/module-integrations": "workspace:*",
+    "@itsm/module-notifications": "workspace:*",
+    "@itsm/module-search": "workspace:*",
+    "@itsm/module-security": "workspace:*",
+    "@itsm/module-sla": "workspace:*",
+    "@itsm/module-tenancy": "workspace:*",
+    "@itsm/module-ticket": "workspace:*"
+  }
+}

@@ -82,13 +82,37 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<{ te
 
   const jobId = newId();
   const steps: ProvisionStep[] = seedSteps.map((s) => ({ key: s.key, status: 'pending' as const }));
-  await db.tenantProvisioningJob.create({
-    data: { id: jobId, tenantId, steps: steps as never, status: 'running', startedAt: new Date() },
-  });
-
   const ctx = systemContext(tenantId, { permissions: SYSTEM_PERMISSIONS, region: parsed.region });
 
+  // The provisioning job belongs to the tenant it is building, so it is written
+  // inside that tenant's context. Row-level security refuses it otherwise, and
+  // that refusal is the point: nothing tenant-scoped is written without a
+  // tenant, not even by the platform role.
+  const recordSteps = async (status: string, error?: string): Promise<void> => {
+    await platformTransaction(ctx, async (tx) => {
+      await tx.tenantProvisioningJob.upsert({
+        where: { id: jobId },
+        create: {
+          id: jobId,
+          tenantId,
+          steps: steps as never,
+          status,
+          ...(error ? { error } : {}),
+          startedAt: new Date(),
+        },
+        update: {
+          steps: steps as never,
+          status,
+          ...(error ? { error } : {}),
+          ...(status === 'done' || status === 'failed' ? { finishedAt: new Date() } : {}),
+        },
+      });
+    });
+  };
+
   await withContext(ctx, async () => {
+    await recordSteps('running');
+
     for (const step of seedSteps) {
       const record = steps.find((s) => s.key === step.key)!;
       try {
@@ -98,21 +122,15 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<{ te
       } catch (error) {
         record.status = 'failed';
         record.error = (error as Error).message;
-        await db.tenantProvisioningJob.update({
-          where: { id: jobId },
-          data: { steps: steps as never, status: 'failed', error: record.error, finishedAt: new Date() },
-        });
+        await recordSteps('failed', record.error);
         logger.error('tenant provisioning failed', { tenantId, step: step.key, error: record.error });
         throw error;
       }
-      await db.tenantProvisioningJob.update({ where: { id: jobId }, data: { steps: steps as never } });
+      await recordSteps('running');
     }
 
+    await recordSteps('done');
     await db.tenant.update({ where: { id: tenantId }, data: { status: 'active' } });
-    await db.tenantProvisioningJob.update({
-      where: { id: jobId },
-      data: { status: 'done', finishedAt: new Date() },
-    });
 
     // The audit row and the event go through the ordinary tenant-scoped path,
     // so a tenant's history starts with its own creation.

@@ -19,6 +19,21 @@ export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegist
 /** Models that carry tenant_id but are readable by the platform role pre-context. */
 export const DIRECTORY_MODELS = new Set(['TenantDomain', 'ChannelDirectory']);
 
+/**
+ * The client's model delegate properties, taken from the generated data model.
+ *
+ * The transaction proxy below must touch ONLY these: Prisma's own internals
+ * (`_tracingHelper`, `_engine`, `_middlewares`) are also plain objects, and
+ * wrapping one of those breaks the client in ways that surface far from here.
+ */
+const MODEL_PROPERTIES = new Set(
+  Prisma.dmmf.datamodel.models.map((model) => model.name.charAt(0).toLowerCase() + model.name.slice(1)),
+);
+
+export function isModelProperty(property: string): boolean {
+  return MODEL_PROPERTIES.has(property);
+}
+
 export type Tx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
 
 let appClient: PrismaClient | undefined;
@@ -149,9 +164,11 @@ export async function platformTransaction<T>(ctx: TenantContext, fn: (tx: Tx) =>
  */
 function extendTx(tx: Prisma.TransactionClient, ctx: TenantContext): Tx {
   return new Proxy(tx as unknown as Tx, {
-    get(target, prop: string) {
-      const value = (target as unknown as Record<string, unknown>)[prop];
-      if (typeof prop !== 'string' || prop.startsWith('$') || typeof value !== 'object' || value === null) {
+    get(target, prop: string | symbol) {
+      const value = (target as unknown as Record<string | symbol, unknown>)[prop];
+      // Only model delegates are wrapped; everything else, including Prisma's
+      // internals and the $-prefixed helpers, is passed straight through.
+      if (typeof prop !== 'string' || !isModelProperty(prop) || typeof value !== 'object' || value === null) {
         return value;
       }
       const modelName = prop.charAt(0).toUpperCase() + prop.slice(1);

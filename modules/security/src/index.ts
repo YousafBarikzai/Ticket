@@ -2,6 +2,6 @@
 export { securityManifest } from './manifest.js';
 export * as auditService from './service/audit-service.js';
 export { scanAttachment, setScanner, setObjectReader, developmentScanner, type Scanner } from './jobs/scan.js';
-export { seedClassifications } from './seed/classifications.js';
+export { seedClassifications, registerDefaultClassifications, DEFAULT_CLASSIFICATIONS } from './seed/classifications.js';
 import './handlers/index.js';
 import './jobs/scan.js';

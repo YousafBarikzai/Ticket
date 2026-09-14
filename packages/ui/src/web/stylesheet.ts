@@ -444,7 +444,6 @@ export const componentStylesheet = `
   font-size: var(--itsm-font-size-xs);
   line-height: var(--itsm-line-height-snug);
   width: max-content;
-  pointer-events: none;
 }
 
 /* --------------------------------------------------------------- Timeline */
@@ -574,7 +573,7 @@ export const componentStylesheet = `
 @media (max-width: 767px) {
   .itsm-AppShell__main { flex-direction: column; }
   .itsm-AppShell__nav { inline-size: 100%; border-inline-end: 0; border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle); }
-  .itsm-AppShell__nav[hidden] { display: none; }
+  .itsm-AppShell__nav[data-open="false"] { display: none; }
   .itsm-AppShell__aside { inline-size: 100%; border-inline-start: 0; }
   .itsm-AppShell__navToggle { display: inline-flex; }
   .itsm-AppShell__content { padding: var(--itsm-space-md); }

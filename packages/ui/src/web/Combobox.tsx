@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import { cx } from './cx.js';
 import { announce } from '../a11y/announcer.js';
 import { useStableId } from '../a11y/ids.js';
+import { scrollIntoViewIfPossible } from '../a11y/motion.js';
 
 export interface ComboboxOption<T = unknown> {
   readonly value: string;
@@ -166,8 +167,7 @@ export function Combobox<T = unknown>({
   // keyboard when a key is held down.
   useEffect(() => {
     if (!open || activeIndex < 0) return;
-    const option = listRef.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`);
-    option?.scrollIntoView({ block: 'nearest' });
+    scrollIntoViewIfPossible(listRef.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`));
   }, [open, activeIndex]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {

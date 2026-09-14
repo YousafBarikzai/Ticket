@@ -36,3 +36,19 @@ export function useReducedMotion(): boolean {
 export function scrollBehaviour(): ScrollBehavior {
   return prefersReducedMotion() ? 'auto' : 'smooth';
 }
+
+/**
+ * Scrolls an element into view where the platform supports it.
+ *
+ * `scrollIntoView` does not exist in jsdom and is missing from some embedded
+ * WebViews; a keystroke that moves a highlight must not throw because the
+ * environment cannot scroll. Uses `block: "nearest"` so a keyboard user who is
+ * holding an arrow key does not get the list yanked about.
+ */
+export function scrollIntoViewIfPossible(
+  element: Element | null | undefined,
+  options: ScrollIntoViewOptions = { block: 'nearest' },
+): void {
+  if (!element || typeof element.scrollIntoView !== 'function') return;
+  element.scrollIntoView(options);
+}
