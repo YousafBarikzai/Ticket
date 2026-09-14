@@ -16,6 +16,12 @@ export interface PermissionDeclaration {
   key: string;
   scopes: Scope[];
   description?: string;
+  /**
+   * The phase in which this permission becomes usable. A permission may be
+   * declared ahead of the feature that needs it, so that contracts and tests
+   * are stable across the phase boundary; until then no system role holds it.
+   */
+  phase?: string;
 }
 
 export interface GrantedPermission {

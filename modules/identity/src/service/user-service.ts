@@ -166,10 +166,24 @@ export async function getUser(ctx: TenantContext, id: string) {
 
 export async function listUsers(ctx: TenantContext, options: { search?: string; limit: number; status?: string }) {
   authz.require(ctx, 'identity.user.read');
+
+  // A directory listing must honour the caller's scope, not merely the fact
+  // that they hold the permission at all: a requester holds `identity.user.read`
+  // so they can read their own profile, which is not licence to enumerate
+  // everyone in the tenant (Appendix B: Requester → own profile).
+  const scope = authz.effectiveScope(ctx, 'identity.user.read');
+  const scopeFilter =
+    scope === 'any'
+      ? {}
+      : scope === 'team'
+        ? { OR: [{ id: ctx.actor.id ?? '' }, ...(ctx.organisationIds.length ? [{ primaryOrgId: { in: ctx.organisationIds } }] : [])] }
+        : { id: ctx.actor.id ?? '' };
+
   return transaction(ctx, async (tx) =>
     tx.user.findMany({
       where: {
         deletedAt: null,
+        ...scopeFilter,
         ...(options.status ? { status: options.status } : {}),
         ...(options.search
           ? {

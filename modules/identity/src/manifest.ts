@@ -18,7 +18,7 @@ export const identityManifest: ModuleManifest = registerModule({
     { key: 'identity.role.manage', scopes: ['any'], description: 'Grant and revoke roles.' },
     { key: 'identity.session.manage', scopes: ['own', 'any'], description: 'List and revoke sessions.' },
     { key: 'identity.apikey.manage', scopes: ['any'], description: 'Create and revoke API keys.' },
-    { key: 'identity.impersonate', scopes: ['any'], description: 'Act as another user, with a reason (PH-4).' },
+    { key: 'identity.impersonate', scopes: ['any'], phase: 'PH-4', description: 'Act as another user, with a reason.' },
   ],
   events: {
     publishes: [
