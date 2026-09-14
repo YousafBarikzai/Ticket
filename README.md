@@ -4,20 +4,53 @@ A browser-first, omnichannel IT service-management platform: one canonical ticke
 
 ## Status
 
-**Architecture defined; Phase 1 (Foundation) not yet started.** The source requirements are the *Modular IT Ticketing Platform — Build Specification v2.0* (September 2026).
+**Phase 1 (Foundation) built and verified.** The walking skeleton runs end to
+end: create a tenant, sign in, raise a ticket, work it, resolve it, and see the
+audit trail, SLA timers, notifications and search index all follow from the
+events. 286 tests pass, including the release-blocking tenant-isolation and
+permission-matrix suites against a real PostgreSQL and Redis.
+
+The source requirements are the *Modular IT Ticketing Platform — Build
+Specification v2.0* (September 2026). Phase 2 is the service desk MVP.
+
+## Getting started
+
+```bash
+pnpm install
+pnpm dev:services         # PostgreSQL, Redis, Keycloak, MinIO, Mailpit
+pnpm db:prepare           # roles, databases, extensions
+pnpm db:migrate           # schema, row-level security, indexes
+pnpm seed                 # two tenants with deliberately identical data
+pnpm dev:api              # and, in another shell, pnpm dev:worker
+pnpm skeleton             # the walking skeleton, as a smoke test
+```
+
+| Command | What it does |
+|---|---|
+| `pnpm check` | Schema drift, module contract, typecheck, unit tests |
+| `pnpm test` | Everything, including the integration suites |
+| `pnpm test:isolation` | The release-blocking tenant-isolation suite |
+| `pnpm test:permissions` | The release-blocking permission matrix |
+| `pnpm platform` | Tenant provisioning, tokens, audit verification, event replay |
 
 ## Documentation
 
 - [`docs/architecture`](docs/architecture/README.md) — the software architecture (20 documents: context, runtime topology, modules, platform primitives, data, eventing, API, identity and security, tenancy, engines, AI, experience, operations, deployment, evolution, quality attributes, risks, Phase 1 readiness).
 - [`docs/adr`](docs/adr/README.md) — Architecture Decision Records (ADR-0001 … ADR-0020).
 
-## Planned repository layout (created in Phase 1)
+## Repository layout
 
 ```
-apps/        api · worker · portal · workbench · admin · status · mobile
-modules/     one package per functional module (MOD-01 … MOD-24) and per channel adapter
-packages/    contracts · platform · ui · sdk · config · expr · business-time · i18n
-packs/       enterprise service-management configuration packs
-infra/       Dockerfiles · Railway config · Keycloak realm · GitHub Actions · seed · load tests · alerts
+apps/        api · worker                    (portal, workbench, admin, mobile follow in PH-2)
+modules/     tenancy · identity · ticket · sla · notifications · search · security ·
+             integrations · admin           (one package per MOD-nn; the rest arrive by phase)
+packages/    platform · contracts · expr · business-time · ui · runtime · config
+infra/       docker · railway · scripts (migrate, seed, platform console, walking skeleton)
+prisma/      schema assembled from each module's fragment, plus migrations
+tests/       integration · isolation · permissions
 docs/        architecture · adr · runbooks
 ```
+
+Each module owns its tables and is reachable only through its entry point;
+`pnpm lint:boundaries` enforces that, which is what keeps a later extraction a
+deployment change rather than a rewrite.

@@ -9,7 +9,6 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
     "test": "turbo run test",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
@@ -20,7 +19,15 @@
     "dev:api": "tsx watch apps/api/src/main.ts",
     "dev:worker": "tsx watch apps/worker/src/main.ts",
     "openapi:build": "tsx infra/scripts/openapi.ts",
-    "db:assemble": "tsx infra/scripts/assemble-schema.ts"
+    "db:assemble": "tsx infra/scripts/assemble-schema.ts",
+    "db:prepare": "./infra/scripts/prepare-database.sh",
+    "skeleton": "tsx infra/scripts/walking-skeleton.ts",
+    "test:isolation": "vitest run --project integration tests/isolation",
+    "test:permissions": "vitest run --project integration tests/permissions",
+    "dev:services": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "check": "pnpm db:check && pnpm lint:boundaries && tsc --noEmit -p tsconfig.json && vitest run --project unit",
+    "db:check": "tsx infra/scripts/assemble-schema.ts --check",
+    "lint:boundaries": "tsx infra/scripts/check-boundaries.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

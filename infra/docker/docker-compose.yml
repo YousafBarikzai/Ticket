@@ -1,0 +1,68 @@
+# Local development (docs/architecture/16 §5).
+#
+# The same components as a deployed environment, so that something which works
+# locally is not relying on anything a deployment will not have: PostgreSQL with
+# the extensions, Redis, Keycloak, an S3-compatible store, a mail catcher.
+
+name: itsm
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: postgres
+    ports: ['5432:5432']
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../scripts/prepare-database.sh:/docker-entrypoint-initdb.d/10-prepare.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ['start-dev', '--import-realm']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: 'true'
+    ports: ['8080:8080']
+    volumes:
+      - ../keycloak:/opt/keycloak/data/import:ro
+
+  # Attachments: the presigned upload path is exercised locally rather than
+  # stubbed, because that path is where tenant prefixes are enforced.
+  minio:
+    image: minio/minio:latest
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: itsm
+      MINIO_ROOT_PASSWORD: itsmdevpassword
+    ports: ['9000:9000', '9001:9001']
+    volumes:
+      - minio-data:/data
+
+  # Catches outbound mail so a developer can read what the platform sent.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ['1025:1025', '8025:8025']
+
+  clamav:
+    image: clamav/clamav:stable
+    ports: ['3310:3310']
+    profiles: ['scanning']
+
+volumes:
+  postgres-data:
+  minio-data:

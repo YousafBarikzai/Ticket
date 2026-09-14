@@ -39,6 +39,10 @@ Platform console
   pnpm platform token <slug> <email>        Mint a development access token
   pnpm platform verify-audit <slug>         Verify a tenant's audit hash chain
   pnpm platform modules                     List registered modules
+  pnpm platform publish                     Publish any waiting outbox events now
+  pnpm platform reconcile                   Re-enqueue events no required consumer acknowledged
+  pnpm platform replay --consumer <c> --type <t> [--tenant <slug>]
+                                            Re-deliver historical events to one consumer
 `);
 }
 
@@ -149,6 +153,79 @@ try {
       const result = await withContext(ctx, () => auditService.verifyTenantChain(ctx));
       console.log(result.valid ? `audit chain intact (${result.checked} events)` : `AUDIT CHAIN BROKEN after ${result.checked} events`);
       if (!result.valid) process.exitCode = 1;
+      break;
+    }
+
+    case 'publish': {
+      const { outboxPublisher } = await import('@itsm/module-integrations');
+      let total = 0;
+      for (let pass = 0; pass < 50; pass += 1) {
+        const dispatched = await outboxPublisher.publishBatch();
+        total += dispatched;
+        if (dispatched === 0) break;
+      }
+      console.log(`published ${total} event(s)`);
+      break;
+    }
+
+    case 'reconcile': {
+      const { outboxPublisher } = await import('@itsm/module-integrations');
+      const requeued = await outboxPublisher.reconcileUnacknowledged(0);
+      console.log(`re-enqueued ${requeued} event(s)`);
+      break;
+    }
+
+    case 'replay': {
+      const options = new Map<string, string>();
+      for (let i = 0; i < args.length; i += 2) {
+        const key = args[i]?.replace(/^--/, '');
+        const value = args[i + 1];
+        if (key && value) options.set(key, value);
+      }
+      const consumer = options.get('consumer');
+      const type = options.get('type');
+      if (!consumer || !type) {
+        console.error('usage: pnpm platform replay --consumer <c> --type <t> [--tenant <slug>] [--from <iso-date>]');
+        process.exit(1);
+      }
+
+      const slug = options.get('tenant');
+      const tenants = slug ? [await tenantBySlugOrFail(slug)] : await tenantService.listTenants();
+      const from = options.get('from') ? new Date(options.get('from')!) : new Date(0);
+      const pattern = type.endsWith('*') ? type.slice(0, -1) : null;
+
+      let replayed = 0;
+      for (const tenant of tenants) {
+        const ctx = createContext({ tenantId: tenant.id, actor: { type: 'system', id: null }, permissions: SYSTEM_PERMISSIONS });
+        const { transaction } = await import('@itsm/platform');
+        const { outboxPublisher } = await import('@itsm/module-integrations');
+
+        // Read in one short transaction, then dispatch outside it: each
+        // dispatch opens its own transaction, and nesting them would hold this
+        // one open until it timed out.
+        const rows = await withContext(ctx, () =>
+          transaction(ctx, async (tx) => {
+            const found = await tx.outboxEvent.findMany({
+              where: {
+                createdAt: { gte: from },
+                ...(pattern ? { type: { startsWith: pattern } } : { type }),
+              },
+              orderBy: { createdAt: 'asc' },
+              take: 10_000,
+            });
+            // The inbox makes a replay a no-op, so the claims for this consumer
+            // and range are cleared first: that is what "replay" has to mean.
+            await tx.inboxEvent.deleteMany({ where: { consumer, eventId: { in: found.map((row) => row.id) } } });
+            return found;
+          }),
+        );
+
+        for (const row of rows) {
+          await withContext(ctx, () => outboxPublisher.dispatchToConsumer(consumer, row.envelope as never));
+          replayed += 1;
+        }
+      }
+      console.log(`replayed ${replayed} event(s) to ${consumer}`);
       break;
     }
 

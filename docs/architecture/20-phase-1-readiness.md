@@ -1,8 +1,13 @@
-# 20 · Phase 1 readiness
+# 20 · Phase 1 readiness and delivery record
 
 ## 1. What PH-1 builds (walking skeleton)
 
 PH-1 ends with the specification's walking skeleton: **create tenant → SSO login → create ticket via API and a minimal form → comment → audit event visible → email and in-app notification delivered → trace visible**, plus the isolation suite, the pipeline and the design system. The architecture fixes the following for PH-1 so that squads can work in parallel from PH-2.
+
+> **Status: built and verified.** The walking skeleton runs green end to end
+> (`pnpm skeleton`, 24 assertions) and the full suite is 286 tests across unit,
+> integration, isolation and permission projects. Section 6 records what was
+> delivered, what it cost and what remains.
 
 | Area | Delivered in PH-1 | Architecture reference |
 |---|---|---|
@@ -52,3 +57,67 @@ PH-1 ends with the specification's walking skeleton: **create tenant → SSO log
 ## 5. Readiness statement
 
 The architecture is complete for its purpose: every PH-1 epic has a defined mechanism, every foundation the later phases rely on (tenancy, identity, eventing, audit, configuration model, expression language, engines, AI hooks, experience stack, operations, extraction path) is specified, and the specification's non-functional requirements are traced to mechanisms and tests. The only inputs still required before building are the D-01 residency choice and the accounts and identity-provider test tenant listed above; none of them changes the design.
+
+
+## 6. Delivery record
+
+Written at the end of the Phase 1 build, from the state of the repository rather than from the plan.
+
+### 6.1 What was built
+
+| Area | Delivered | Where |
+|---|---|---|
+| Monorepo and toolchain (MOD-00-E1) | pnpm workspaces, Turborepo, TypeScript strict, Vitest projects, Docker images, compose stack, seed, platform console | `package.json`, `infra/` |
+| CI/CD (MOD-00-E2) | Stages 1–3: schema-drift check, module-contract check, typecheck, unit tests, secret scan, image build and scan, integration/isolation/permission suites against real PostgreSQL and Redis | `.github/workflows/ci.yml` |
+| Tenant model (MOD-21-E1) | Tenant, organisation tree with materialised paths, four database roles, forced row-level security applied by a function that cannot skip a table, tenant-aware client, provisioning with resumable steps, region on every tenant | `modules/tenancy`, `prisma/migrations` |
+| Authentication and sessions (MOD-01-E1) | Token verification against Keycloak's JWKS with a development signer, just-in-time provisioning, session records and revocation denylist, API keys | `apps/api/src/auth`, `modules/identity` |
+| Organisations and RBAC (MOD-01-E2) | Permission registry from manifests, roles as (key, scope) pairs, scoped assignments, per-aggregate scope resolvers, cached resolution invalidated by events, Appendix B seeded as system roles | `packages/platform/src/authz.ts`, `modules/identity/src/seed/roles.ts` |
+| Ticket schema and core API (MOD-04-E1) | Canonical state machine, per-tenant per-type numbering with no gaps, CRUD, transitions, comments, tasks, links, watchers, attachments by presigned upload, optimistic locking | `modules/ticket`, `apps/api/src/routes/tickets.ts` |
+| Audit and security baseline (MOD-15-E1) | Audit written in the change's transaction, hash-chained per tenant, append-only by grant and by trigger, nightly verifier, classification registry, attachment scanning | `packages/platform/src/audit.ts`, `modules/security` |
+| Event bus and outbox (MOD-14-E1) | Transactional outbox, leader-elected publisher, inbox claims, reconciler, replay, webhooks with signing and backoff | `modules/integrations` |
+| Notification engine (MOD-11-E1) | Rules from events, audience resolution, template rendering, in-app inbox, email transport behind an interface, delivery attempts | `modules/notifications` |
+| Search infrastructure (MOD-09-E1) | Projection with generated tsvector, indexer fed by events, retrieval filtered by permission before ranking | `modules/search` |
+| Design system and shells (MOD-16-E1) | Tokens single-sourced to CSS and a React Native theme, 24 accessible components, focus trap and roving tabindex, form renderer sharing the server's expression language, contrast audit over 192 pairings | `packages/ui` |
+| Basic admin console (MOD-13-E1) | Settings framework with versions, scopes and rollback; feature flags; module enable/disable; admin activity log | `modules/admin` |
+| Telemetry foundations (MOD-12-E1) | Structured logs with redaction, metrics with Prometheus exposition, OpenTelemetry when an endpoint is configured, correlation and tenant on every line | `packages/platform/src/telemetry.ts` |
+| API foundations (MOD-14-E2) | Problem details, cursor pagination, idempotency keys, rate limits, `If-Match` concurrency, health and metrics endpoints, server-sent events | `apps/api` |
+| SLA timer engine (MOD-07-E0) | Business-time library with daylight-saving and holiday handling, timer rows, partitioned minute scheduler, pause and resume, warnings and breaches | `packages/business-time`, `modules/sla` |
+
+### 6.2 Verification
+
+| Check | Result |
+|---|---|
+| Unit tests | 152 passing (expression language, business time, platform primitives, state machine, design system) |
+| Integration, isolation and permission suites | 134 passing against real PostgreSQL and Redis |
+| Walking skeleton | 24 assertions passing end to end against a live API and worker |
+| Module contract | No violations; the checker is itself verified against a deliberate breach |
+| Schema drift | The committed Prisma schema matches its module fragments |
+| Row-level security | Forced on 55 tables; a query without tenant context returns nothing, a cross-tenant write is refused, the application role can neither disable it nor amend the audit trail |
+
+### 6.3 Defects the build found
+
+Each was fixed rather than worked around, and each has a test that would catch it again.
+
+| Defect | Why it mattered |
+|---|---|
+| Tenant provisioning wrote a tenant-scoped table with no tenant context | Row-level security refused it, correctly; provisioning now runs inside the new tenant's context |
+| The transaction proxy wrapped Prisma's internals as though they were model delegates | Broke the client in ways that surfaced far from the cause |
+| The data client did not wrap operations in a tenant transaction | A read outside an explicit transaction silently returned nothing, which reads as missing data rather than a missing tenant |
+| The outbox publisher read across tenants | Row-level security refused it, so no event was ever published; it now works tenant by tenant |
+| BullMQ rejects a job id containing a colon | Every idempotency key was rejected, so the SLA tick never ran |
+| A newly raised ticket with no group was invisible to every agent | Nobody could triage it; unrouted tickets now sit in their organisation's triage pool |
+| Team scope let an agent read another team's tickets in the same organisation | Over-broad by default; now narrowed to the triage pool |
+| PostgreSQL resets a transaction-local setting to an empty string, not null | The policy raised an invalid-uuid error instead of matching no rows: failing closed, but as an incident rather than a refusal |
+| Listing users honoured the permission but not its scope | A requester could enumerate every person in the tenant |
+
+### 6.4 Deviations from the architecture, and what remains
+
+| Item | Status |
+|---|---|
+| Declarative monthly partitioning of `audit_event` and `outbox_event` | **Deferred.** Prisma cannot express partitioned tables, and hand-writing them would have split the schema's source of truth. The indexes carry current volumes; partitioning is a PH-2 migration with no application change. |
+| ESLint with custom boundary rules | **Replaced.** The module contract is enforced by `pnpm lint:boundaries`, a dependency-free checker that runs in under a second and is itself tested against a deliberate violation. Formatting and style rules remain to add. |
+| OpenAPI generation and the published SDK | **Partly done.** Route contracts and the `defineRoute` declaration exist; generating the document and the client from them is the remaining piece of MOD-14-E2. |
+| Keycloak realm as code | **Interface done, realm pending.** Token verification against a JWKS is implemented and the development signer stands in; the realm export and the identity-provider spike need the test tenant named in the entry criteria. |
+| Storybook stories and axe-core tests per component | **Deferred.** The contrast audit and keyboard tests cover the accessibility ground that matters most; Storybook is a PH-2 addition. |
+| React Native component set | **Deferred to PH-2** with the iOS app. The shared theme is delivered. |
+| Preview, staging and production deploys (pipeline stages 4–6) | **Pending accounts.** The stages are specified in `16 §3`; they need the Railway, Cloudflare and observability accounts from the entry criteria. |
