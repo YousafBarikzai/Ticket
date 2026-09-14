@@ -96,7 +96,9 @@ Written at the end of the Phase 1 build, from the state of the repository rather
 
 ### 6.3 Defects the build found
 
-Each was fixed rather than worked around, and each has a test that would catch it again.
+Each was fixed rather than worked around, and each has a test that would catch it again. The last two were found by the
+first run of the pipeline rather than by a test, which is the pipeline doing its job: both were invisible on a developer
+machine that had already generated a client.
 
 | Defect | Why it mattered |
 |---|---|
@@ -109,6 +111,8 @@ Each was fixed rather than worked around, and each has a test that would catch i
 | Team scope let an agent read another team's tickets in the same organisation | Over-broad by default; now narrowed to the triage pool |
 | PostgreSQL resets a transaction-local setting to an empty string, not null | The policy raised an invalid-uuid error instead of matching no rows: failing closed, but as an incident rather than a refusal |
 | Listing users honoured the permission but not its scope | A requester could enumerate every person in the tenant |
+| A fresh checkout had no generated Prisma client | The typecheck fell back to `any` across 15 files and passed locally only because a client generated earlier was still in the store; generation now happens on install |
+| The image build assembled the schema where it should have asserted it | It would have quietly absorbed a module fragment that was changed without regenerating the committed schema — the drift it exists to catch |
 
 ### 6.4 Deviations from the architecture, and what remains
 
