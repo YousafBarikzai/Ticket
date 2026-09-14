@@ -7,6 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "postinstall": "pnpm db:generate",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
@@ -20,12 +21,13 @@
     "dev:worker": "tsx watch apps/worker/src/main.ts",
     "openapi:build": "tsx infra/scripts/openapi.ts",
     "db:assemble": "tsx infra/scripts/assemble-schema.ts",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:prepare": "./infra/scripts/prepare-database.sh",
     "skeleton": "tsx infra/scripts/walking-skeleton.ts",
     "test:isolation": "vitest run --project integration tests/isolation",
     "test:permissions": "vitest run --project integration tests/permissions",
     "dev:services": "docker compose -f infra/docker/docker-compose.yml up -d",
-    "check": "pnpm db:check && pnpm lint:boundaries && tsc --noEmit -p tsconfig.json && vitest run --project unit",
+    "check": "pnpm db:check && pnpm db:generate && pnpm lint:boundaries && tsc --noEmit -p tsconfig.json && vitest run --project unit",
     "db:check": "tsx infra/scripts/assemble-schema.ts --check",
     "lint:boundaries": "tsx infra/scripts/check-boundaries.ts"
   },

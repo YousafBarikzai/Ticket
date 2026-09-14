@@ -20,10 +20,12 @@ COPY infra ./infra
 COPY prisma ./prisma
 COPY tsconfig.json turbo.json ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
-# The client is generated at build time so the image never needs the schema at
-# start-up, and so a schema drift fails the build rather than the deployment.
-RUN pnpm exec tsx infra/scripts/assemble-schema.ts \
- && pnpm exec prisma generate --schema prisma/schema.prisma
+# Assert rather than assemble: assembling here would quietly paper over a module
+# fragment that was changed without regenerating the committed schema, which is
+# the drift this step exists to catch. The client is then generated at build time
+# so the image never needs the schema at start-up.
+RUN pnpm exec tsx infra/scripts/assemble-schema.ts --check \
+ && pnpm db:generate
 
 FROM deps AS runtime
 # Never run as root: a container escape should not start as the machine's owner.

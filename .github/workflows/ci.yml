@@ -5,13 +5,14 @@ name: CI
 # accounts exist.
 
 on:
+  # Pull requests plus the default branch, not every branch: a push to a branch
+  # with an open pull request would otherwise run the whole pipeline twice.
   push:
-    branches: ['**']
-  pull_request:
     branches: [main]
+  pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -119,6 +120,9 @@ jobs:
           file: infra/docker/Dockerfile
           target: api
           push: false
+          # Without this the image stays in the build cache and never reaches the
+          # daemon, so the scan below would have nothing to look at.
+          load: true
           tags: itsm-api:${{ github.sha }}
       - name: Build the worker image
         uses: docker/build-push-action@v6
@@ -128,6 +132,8 @@ jobs:
           target: worker
           push: false
           tags: itsm-worker:${{ github.sha }}
+      # One scan covers both: the API and worker images share every filesystem
+      # layer and differ only in their entry point, environment and health check.
       - name: Scan the images
         uses: aquasecurity/trivy-action@0.28.0
         with:
