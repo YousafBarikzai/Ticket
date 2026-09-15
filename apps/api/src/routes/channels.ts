@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   acceptInbound,
-  emailTransport,
+  transportForAccount,
   execute,
   normalise,
   resolveAccountTenant,
@@ -27,10 +27,22 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     const { accountKey } = z.object({ accountKey: z.string().min(1).max(200) }).parse(request.params);
     const headers = request.headers as Record<string, string | undefined>;
 
-    const transportName = process.env.EMAIL_TRANSPORT ?? 'development';
-    const transport = emailTransport(transportName);
+    // Which mailbox this claims to be for, before anything is trusted. Since
+    // PH-3 each mailbox chooses its own provider (OD-03), so the delivery has
+    // to be verified with that provider's rules rather than the deployment's —
+    // a Graph notification and a Postmark webhook are verified in entirely
+    // different ways, and a tenant on one must not be checked against the
+    // other's rules.
+    const address = decodeURIComponent(accountKey);
+    const account = await resolveAccountTenant('email', address);
+    if (!account) {
+      reply.code(202);
+      return { status: 'ignored' };
+    }
+
+    const transport = transportForAccount(account.config);
     if (!transport) {
-      logger.error('inbound email received with no transport registered', { transport: transportName });
+      logger.error('inbound email received for a mailbox with no usable transport', { address });
       reply.code(202);
       return { status: 'ignored' };
     }
@@ -46,13 +58,6 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
     const parsed = transport.parseInbound(request.body, headers);
     if (!parsed) {
-      reply.code(202);
-      return { status: 'ignored' };
-    }
-
-    const address = decodeURIComponent(accountKey);
-    const account = await resolveAccountTenant('email', address);
-    if (!account) {
       reply.code(202);
       return { status: 'ignored' };
     }

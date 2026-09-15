@@ -8,9 +8,31 @@ export {
   registeredEmailTransports,
   developmentTransport,
   verifyHmac,
+  constantTimeEquals,
   type EmailTransport,
   type OutboundEmail,
+  type ProviderRef,
 } from './service/email-transport.js';
+export { postmarkTransport, type PostmarkOptions } from './service/postmark.js';
+export {
+  microsoftGraphTransport,
+  fetchGraphMessage,
+  renewGraphSubscription,
+  type GraphOptions,
+} from './service/microsoft-graph.js';
+export {
+  transportForAccount,
+  checkTransportConfig,
+  transportConfigSchema,
+  type TransportConfig,
+  type ConfigurationProblem,
+} from './service/transport-registry.js';
+export {
+  resolveCredential,
+  missingCredentials,
+  environmentNameFor,
+  type ResolvedCredential,
+} from './service/credentials.js';
 export {
   CHANNELS,
   channelCommandSchema,

@@ -52,17 +52,23 @@ export interface AcceptResult {
 export async function resolveAccountTenant(
   channel: string,
   address: string,
-): Promise<{ tenantId: string; accountId: string } | null> {
+): Promise<{ tenantId: string; accountId: string; config: unknown } | null> {
   // The directory lookup runs on the platform role: at this point there is no
   // tenant context to run it in, which is precisely why channel_directory is on
   // the platform table allowlist.
-  const rows = await platformDb().$queryRaw<{ tenant_id: string; id: string }[]>`
-    SELECT tenant_id, id FROM channel_account
+  //
+  // The account's config comes back with it because since PH-3 each mailbox
+  // chooses its own provider, and the delivery has to be verified with *that*
+  // provider's rules. Looking up which mailbox a request claims to be for is
+  // not the same as trusting the request: nothing is accepted until the
+  // verification that follows.
+  const rows = await platformDb().$queryRaw<{ tenant_id: string; id: string; config: unknown }[]>`
+    SELECT tenant_id, id, config FROM channel_account
     WHERE channel = ${channel} AND lower(address) = lower(${address}) AND status = 'active'
     LIMIT 1
   `;
   const row = rows[0];
-  return row ? { tenantId: row.tenant_id, accountId: row.id } : null;
+  return row ? { tenantId: row.tenant_id, accountId: row.id, config: row.config } : null;
 }
 
 /**

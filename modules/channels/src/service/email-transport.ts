@@ -108,6 +108,20 @@ export function developmentTransport(): EmailTransport {
   };
 }
 
+/**
+ * Compares two secrets without leaking the answer through timing.
+ *
+ * Shared for the same reason `verifyHmac` is: `a === b` on a secret returns
+ * faster the sooner it differs, and each adapter would otherwise reach for it.
+ */
+export function constantTimeEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  // Length is not secret, and timingSafeEqual throws on a mismatch.
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
 const transports = new Map<string, EmailTransport>();
 
 export function registerEmailTransport(transport: EmailTransport): void {

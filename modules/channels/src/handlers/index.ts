@@ -1,6 +1,6 @@
 import { defineHandler, logger } from '@itsm/platform';
 import { outboundSubject, outboundMessageId, TICKET_HEADER } from '../domain/threading.js';
-import { emailTransport } from '../service/email-transport.js';
+import { transportForAccount } from '../service/transport-registry.js';
 
 /**
  * The outbound half of the adapter pattern (docs/architecture/07 §5).
@@ -47,11 +47,13 @@ defineHandler({
       const account = await tx.channelAccount.findFirst({ where: { id: conversation.accountId } });
       if (!account) continue;
 
-      const transportName = ((account.config ?? {}) as { transport?: string }).transport ?? 'development';
-      const transport = emailTransport(transportName);
+      const transport = transportForAccount(account.config ?? { transport: 'development' });
       if (!transport) {
-        logger.warn('no email transport registered; outbound reply not sent', {
-          transport: transportName,
+        // Not sent through some other provider instead: a tenant on Graph chose
+        // it so their mail stays inside their own Microsoft geography, and
+        // quietly sending through Postmark would break exactly that.
+        logger.warn('this mailbox has no usable transport; the reply was not sent', {
+          account: account.key,
           ticket: payload.number,
         });
         continue;
