@@ -34,6 +34,16 @@ export const planSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(500).nullable().optional(),
   features: z.array(z.string().min(1).max(120)).max(100).default([]),
+  /**
+   * Per agent, per month, in micro-pence (OD-05). Null for a plan with no list
+   * price: a trial, or an enterprise agreement negotiated per customer.
+   *
+   * Micro-pence because every other amount in this platform is held that way,
+   * and a second money convention is how two numbers that look comparable turn
+   * out to be a thousand times apart. £29.00 is 29_000_000.
+   */
+  pricePerAgentMicros: z.union([z.number().int().min(0), z.bigint()]).nullable().optional(),
+  currency: z.string().length(3).default('GBP'),
   sortOrder: z.number().int().min(0).max(10_000).default(100),
   isRetired: z.boolean().default(false),
   limits: z
@@ -84,6 +94,8 @@ export async function savePlan(ctx: TenantContext, input: PlanInput) {
       name: parsed.name,
       description: parsed.description ?? null,
       features: parsed.features,
+      pricePerAgentMicros: parsed.pricePerAgentMicros == null ? null : BigInt(parsed.pricePerAgentMicros),
+      currency: parsed.currency,
       sortOrder: parsed.sortOrder,
       isRetired: parsed.isRetired,
     },
@@ -91,6 +103,8 @@ export async function savePlan(ctx: TenantContext, input: PlanInput) {
       name: parsed.name,
       description: parsed.description ?? null,
       features: parsed.features,
+      pricePerAgentMicros: parsed.pricePerAgentMicros == null ? null : BigInt(parsed.pricePerAgentMicros),
+      currency: parsed.currency,
       sortOrder: parsed.sortOrder,
       isRetired: parsed.isRetired,
     },

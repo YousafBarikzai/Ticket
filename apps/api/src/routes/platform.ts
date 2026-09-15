@@ -42,6 +42,19 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     return result;
   });
 
+  /**
+   * Where a tenant's prompts may be processed.
+   *
+   * A platform door, not a tenant one. Residency is a contractual term, and a
+   * tenant that could widen its own would be a control it could remove; a
+   * tenant that could narrow it could lock itself out of every configured
+   * provider and have no way to say why.
+   */
+  app.put('/tenants/:id/ai-regions', async (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    return tenantService.setAiRegions(id, tenantService.aiRegionsSchema.strict().parse(request.body));
+  });
+
   app.post('/tenants/:id/suspend', async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z.object({ reason: z.string().max(1000).optional() }).parse(request.body ?? {});
@@ -75,11 +88,26 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
   // Plans are the deployment's, not a tenant's: defined here, read by every
   // tenant, and changed by nobody else (ADR-0038).
 
-  const shape = (plan: { key: string; name: string; description: string | null; features: string[]; isRetired: boolean; sortOrder: number; limits: { meter: string; soft: bigint | null; hard: bigint | null }[] }) => ({
+  const shape = (plan: {
+    key: string;
+    name: string;
+    description: string | null;
+    features: string[];
+    pricePerAgentMicros: bigint | null;
+    currency: string;
+    isRetired: boolean;
+    sortOrder: number;
+    limits: { meter: string; soft: bigint | null; hard: bigint | null }[];
+  }) => ({
     key: plan.key,
     name: plan.name,
     description: plan.description,
     features: plan.features,
+    // A string, like every other micro-pence amount this API returns: a
+    // bigint does not survive JSON, and a number would silently lose precision
+    // on an annual figure for a large tenant.
+    pricePerAgentMicros: plan.pricePerAgentMicros === null ? null : plan.pricePerAgentMicros.toString(),
+    currency: plan.currency,
     isRetired: plan.isRetired,
     sortOrder: plan.sortOrder,
     limits: plan.limits

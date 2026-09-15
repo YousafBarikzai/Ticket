@@ -123,11 +123,24 @@ capability that calls a model refuses with a 503 naming the configuration.
 Three things this section describes are **not** built, and each is a real
 constraint rather than a detail:
 
-- **`tenant.ai_policy` does not exist.** There is one provider per deployment,
-  chosen by configuration, and no per-tenant allow-list, region or retention
-  setting. A tenant that forbids external processing, or requires a UK
-  endpoint, cannot be served by this deployment — the honest answer today is a
-  separate deployment, not a setting.
+- **Residency is built; the rest of `tenant.ai_policy` is not** (ADR-0047).
+  `tenant.ai_allowed_regions` states where a tenant's prompts may be processed;
+  a provider declares its own `processingRegion`, or `null` when it makes no
+  external call; and the gateway refuses a call outside the list rather than
+  falling back to another provider — a fallback would be this platform deciding
+  on a customer's behalf that somewhere else is close enough. An empty list
+  means "wherever this tenant's own data lives", resolved against
+  `tenant.region`. The check runs *before* the prompt is rendered, so a
+  forbidden call never interpolates ticket text into a prompt at all. Written
+  through `PUT /api/platform/v1/tenants/:id/ai-regions`, which is a platform
+  door rather than a tenant one: a tenant that could widen its own residency
+  could remove the control.
+
+  What is still missing from §5's `ai_policy` is the rest of it — there is no
+  per-tenant **provider** allow-list, no per-tenant retention setting and no
+  `allowTraining` flag. There is still one provider per deployment, so a tenant
+  whose allowed regions exclude it is refused rather than routed to a second
+  one; multi-provider routing is the piece that would change that.
 - **No Azure, Bedrock or self-hosted adapter.** The socket takes them
   (`registerAiProvider`); nobody has written them.
 - **Prices are configuration, not code** (`AI_MODEL_PRICES`, micro-pence per

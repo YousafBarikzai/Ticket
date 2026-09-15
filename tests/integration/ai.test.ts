@@ -3,7 +3,7 @@ import { systemContext, transaction, withContext } from '@itsm/platform';
 import { settingsService } from '@itsm/module-admin';
 import { userService } from '@itsm/module-identity';
 import { articleService } from '@itsm/module-knowledge';
-import { runSuggestionJob, sweepPrompts } from '@itsm/module-ai';
+import { activeProvider, registerAiProvider, runSuggestionJob, stubProvider, sweepPrompts } from '@itsm/module-ai';
 import { closeHarness, contextFor, createTestTenant, deleteTestTenant, drainEvents, request, type TestTenant } from '../support/harness.js';
 
 /**
@@ -265,6 +265,55 @@ describe('the controls that stop it', () => {
     expect(stillWorks.body.status).toBe('completed');
 
     await request('/api/v1/ai/budget', { method: 'PUT', token: asAdmin(), body: { limitPence: null, warnPence: null } });
+  });
+
+  /**
+   * Residency, end to end.
+   *
+   * The unit test proves the comparison; this proves it is wired into the one
+   * path that calls a model. Worth having separately because the failure mode
+   * is invisible: a policy that is never consulted looks exactly like a policy
+   * that is satisfied, and nothing in a passing suggestion would say which.
+   *
+   * The stub declares no region, so it can never be refused. A provider that
+   * makes a call has to name one, and this registers a stub that does.
+   */
+  it('refuses a provider that processes outside the tenant\u2019s regions', async () => {
+    const ticketId = await raiseTicket('Laptop will not wake from sleep', 'Since the update.');
+    const original = activeProvider();
+
+    // Everything the stub does, plus a jurisdiction.
+    registerAiProvider({ ...stubProvider(), processingRegion: 'us-east' });
+    const setRegions = await request('/api/platform/v1/tenants/' + tenant.id + '/ai-regions', {
+      method: 'PUT',
+      token: asAdmin(),
+      body: { regions: ['eu-west'] },
+    });
+    expect(setRegions.status).toBe(200);
+
+    try {
+      const refused = await suggest('ticket-summary', ticketId);
+      // 403, not 503: waiting will not change the answer, and an error that
+      // looks transient invites a retry loop against a policy.
+      expect(refused.status).toBe(403);
+      expect(JSON.stringify(refused.body)).toMatch(/us-east/);
+
+      // And the same tenant with the region permitted gets its suggestion.
+      await request('/api/platform/v1/tenants/' + tenant.id + '/ai-regions', {
+        method: 'PUT',
+        token: asAdmin(),
+        body: { regions: ['eu-west', 'us-east'] },
+      });
+      const allowed = await suggest('ticket-summary', ticketId);
+      expect(allowed.status).toBe(201);
+    } finally {
+      if (original) registerAiProvider(original);
+      await request('/api/platform/v1/tenants/' + tenant.id + '/ai-regions', {
+        method: 'PUT',
+        token: asAdmin(),
+        body: { regions: [] },
+      });
+    }
   });
 
   it('refuses a warning line above the cap, which could never be reached', async () => {

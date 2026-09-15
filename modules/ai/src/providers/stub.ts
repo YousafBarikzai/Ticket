@@ -84,6 +84,11 @@ export function stubProvider(): AiProvider {
   return {
     name: 'stub',
     models: ['stub-small', 'stub-large'],
+    // Nothing leaves the process, so there is no jurisdiction to name. Not a
+    // loophole: the stub is registered only outside production, and any
+    // provider that does make a call has to name a region for the gateway to
+    // check it against.
+    processingRegion: null,
     async complete(request: CompletionRequest): Promise<Completion> {
       const text = JSON.stringify(answerFor(request), null, 2);
       return {

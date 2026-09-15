@@ -1,4 +1,4 @@
-import { DependencyUnavailableError, ValidationError, logger, metrics } from '@itsm/platform';
+import { DependencyUnavailableError, ForbiddenError, ValidationError, logger, metrics } from '@itsm/platform';
 import { renderStrict } from '@itsm/module-workflow';
 import { DEFAULT_MODEL, costOf, isPriced, pricedModels } from '../domain/budget.js';
 import type { Capability } from '../domain/capabilities.js';
@@ -38,6 +38,16 @@ export interface GatewayCall {
   context: Record<string, unknown>;
   model?: string;
   maxOutputTokens?: number;
+  /**
+   * Where this tenant permits its prompts to be processed.
+   *
+   * Required, and not optional with a permissive default, for the same reason
+   * `isPriced` is checked before the call rather than after: a residency
+   * control that a caller can forget to pass is a control that is missing
+   * wherever somebody forgot. There is one call site, and the compiler makes
+   * a second one answer this question too.
+   */
+  readonly allowedRegions: readonly string[];
 }
 
 export interface GatewayResult {
@@ -66,9 +76,49 @@ export class ModelNotPriced extends ValidationError {
   }
 }
 
+/**
+ * A tenant's prompts are not processed where it has not agreed.
+ *
+ * Refused rather than routed elsewhere. A fallback to a second provider would
+ * be this platform deciding, on a customer's behalf, that somewhere else is
+ * close enough — which is the whole of what a residency commitment is meant to
+ * stop. 403 rather than 503: waiting will not change the answer, and an error
+ * that looks transient invites a retry loop against a policy.
+ */
+export class ProviderOutsideResidency extends ForbiddenError {
+  constructor(provider: string, region: string, allowed: readonly string[]) {
+    super(
+      'ai.suggest',
+      `the configured AI provider (${provider}) processes in ${region}, and this tenant permits ` +
+        `${allowed.join(', ')}. Nothing was sent. Change the tenant's AI regions, or configure a ` +
+        `provider that processes within them.`,
+    );
+  }
+}
+
+/**
+ * Whether a provider may be used for a tenant.
+ *
+ * Exported and pure so the decision is one expression with its own tests
+ * rather than a condition buried in the call path. `null` is a provider that
+ * makes no external call — the stub — and has no jurisdiction to be outside of.
+ */
+export function residencyPermits(processingRegion: string | null, allowed: readonly string[]): boolean {
+  if (processingRegion === null) return true;
+  return allowed.includes(processingRegion);
+}
+
 export async function callModel(call: GatewayCall): Promise<GatewayResult> {
   const provider = activeProvider();
   if (!provider) throw new NoProviderConfigured();
+
+  // Before the model check and before the render, so that a tenant whose
+  // policy forbids this provider never has its ticket text interpolated into
+  // a prompt string at all. Nothing is built that is not allowed to be sent.
+  if (!residencyPermits(provider.processingRegion, call.allowedRegions)) {
+    metrics.increment('ai_calls_refused_total', { reason: 'residency', provider: provider.name });
+    throw new ProviderOutsideResidency(provider.name, provider.processingRegion ?? 'unknown', call.allowedRegions);
+  }
 
   const model = call.model ?? DEFAULT_MODEL;
   if (!isPriced(model)) throw new ModelNotPriced(model);

@@ -3,6 +3,7 @@ import {
   ForbiddenError,
   NotFoundError,
   ValidationError,
+  aiRegions,
   authz,
   createContext,
   enqueue,
@@ -309,6 +310,7 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
       template: version.template,
       context: renderable(assembled.context),
       model: job.model,
+      allowedRegions: aiRegions(ctx),
     });
     const parsedOut = parseCompletion(capability, result.completion.text);
 
