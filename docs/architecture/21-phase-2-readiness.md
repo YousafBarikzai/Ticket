@@ -193,7 +193,7 @@ Recorded because each cost time and would cost it again.
 | npm ships inside the Node base image and bundles a critical CVE | The third time the same principle applied: the runtime image executes `node dist/…` and needs neither a transpiler, a package manager, nor npm. |
 | A base image carries whatever has been published since it was built | Two HIGH findings in libpcre2 alone, both with Debian fixes already released. The runtime base now runs `apt-get upgrade`, not just `install`. |
 | `deepmerge-ts` arrived transitively through the Prisma CLI | Pinned with a pnpm override, and `prisma generate` and `migrate deploy` were re-run against a real database rather than assumed to still work. |
-| The expression language compares mismatched types lexically | `ticket.title > 5` is **true**, because `"V"` sorts after `"5"`. A rule written that way matches everything and reports no error. Pinned by a test; **open for decision** — see below. |
+| The expression language compares mismatched types lexically | `ticket.title > 5` is **true**, because `"V"` sorts after `"5"`. A rule written that way matches everything and reports no error. **Closed in PH-3:** it raises (ADR-0021, [22 §2](22-phase-3-readiness.md)). |
 | Two tenants could claim the same inbound email address | `channel_account` is the one table read *across* tenants — a provider webhook arrives with no tenant context — so duplicates meant mail routed to whichever row came back first. Now a partial unique index on the active rows. |
 | Deleting a tenant left all its data behind | Only the directory row went. Every tenant-scoped table kept its rows, and an orphaned mailbox from a deleted tenant went on receiving mail. `purgeTenant` now deletes for real. |
 | A data migration on a tenant-scoped table silently does nothing | Migrations run as a role that forced row-level security applies to, so an `UPDATE` with no `app.tenant_id` matches zero rows — and then fails on the index it was meant to clear the way for. |
@@ -203,7 +203,11 @@ Recorded because each cost time and would cost it again.
 | A ticket raised by email had no organisation | Which put it outside every agent's scope — the same shape as the Phase 1 triage-pool finding, arriving by a different route. |
 | `onBehalfOf` is a UUID column, not a note | Putting the channel name there failed the insert deep inside the audit writer, where the cause is hard to see. |
 
-### 6.1 Open for decision
+### 6.1 Open for decision — *closed in Phase 3*
+
+> **Resolved.** The recommendation below was taken: mixed-type ordering now
+> raises, caught per rule, and is refused at publish where the caller can type
+> its facts. See ADR-0021 and [22 §2](22-phase-3-readiness.md).
 
 **Mixed-type comparison.** `compare()` in `packages/expr` falls back to comparing
 operands as strings when they are not both numbers. That is defensible as a

@@ -30,6 +30,7 @@ This folder defines the complete software architecture for the browser-first, om
 | 19 | [Risks and decisions](19-risks-and-decisions.md) | Architecture risks, the specification's open decisions with recommendations, and assumptions. | Steering group |
 | 20 | [Phase 1 readiness and delivery record](20-phase-1-readiness.md) | What PH-1 builds, in what order, the entry-criteria checklist and the readiness statement. | Steering group, platform squad |
 | 21 | [Phase 2 readiness and delivery record](21-phase-2-readiness.md) | What PH-2 has built and verified, what remains, the traps it found, and the one decision it leaves open. | Steering group, platform squad |
+| 22 | [Phase 3 readiness and delivery record](22-phase-3-readiness.md) | What PH-3 has built and verified, the two decisions it closes, what remains, and the traps it found. | Steering group, platform squad |
 
 Decisions are recorded in [`../adr`](../adr/README.md). Where a document says "see ADR-nnnn" the ADR is authoritative.
 
