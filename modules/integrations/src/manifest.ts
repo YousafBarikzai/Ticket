@@ -12,6 +12,23 @@ export const integrationsManifest: ModuleManifest = registerModule({
     { key: 'webhook.read', scopes: ['any'], description: 'See webhook subscriptions and deliveries.' },
     { key: 'webhook.manage', scopes: ['any'], description: 'Create and change webhook subscriptions.' },
     { key: 'integration.log.read', scopes: ['any'], description: 'Read integration logs.' },
+    {
+      key: 'integration.credential.read',
+      scopes: ['any'],
+      description: 'See which credentials exist, never their values.',
+    },
+    {
+      key: 'integration.credential.manage',
+      scopes: ['any'],
+      description: 'Store, rotate and delete credentials.',
+    },
+    { key: 'integration.action.read', scopes: ['any'], description: 'See actions and the error queue.' },
+    { key: 'integration.action.manage', scopes: ['any'], description: 'Write and publish actions.' },
+    {
+      key: 'integration.action.replay',
+      scopes: ['any'],
+      description: 'Replay or dismiss a failed action. Separate from managing them: a replay makes a real call.',
+    },
   ],
   events: { publishes: ['integration.webhook.delivery.failed'], consumes: [] },
   featureFlags: [],

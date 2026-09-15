@@ -47,7 +47,7 @@ defineHandler({
       const account = await tx.channelAccount.findFirst({ where: { id: conversation.accountId } });
       if (!account) continue;
 
-      const transport = transportForAccount(account.config ?? { transport: 'development' });
+      const transport = await transportForAccount(account.config ?? { transport: 'development' }, ctx);
       if (!transport) {
         // Not sent through some other provider instead: a tenant on Graph chose
         // it so their mail stays inside their own Microsoft geography, and

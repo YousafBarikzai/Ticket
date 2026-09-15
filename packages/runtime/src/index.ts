@@ -8,9 +8,11 @@
  * the platform contains.
  */
 import {
+  environmentResolver,
   logger,
   modules,
   registerModule,
+  registerSecretResolver,
   validateRegistry,
   type ModuleManifest,
   type TenantContext,
@@ -20,7 +22,7 @@ import { identityManifest, seedSystemRoles } from '@itsm/module-identity';
 import { tenancyManifest, registerSeedStep } from '@itsm/module-tenancy';
 import { ticketManifest } from '@itsm/module-ticket';
 import { securityManifest, seedClassifications, registerDefaultClassifications } from '@itsm/module-security';
-import { integrationsManifest } from '@itsm/module-integrations';
+import { integrationsManifest, registerCredentialStore } from '@itsm/module-integrations';
 import { notificationsManifest, seedNotificationDefaults } from '@itsm/module-notifications';
 import { searchManifest } from '@itsm/module-search';
 import { slaManifest, seedDefaultSlaPolicy } from '@itsm/module-sla';
@@ -76,6 +78,13 @@ export function bootstrapModules(): BootstrapResult {
   // Masking rules are in-process state, so they are registered at boot rather
   // than read from the database on every serialisation.
   registerDefaultClassifications();
+
+  // Credential resolution, in order. The encrypted per-tenant store first, so a
+  // tenant's own credential wins over a deployment-wide one of the same name;
+  // the environment last, which is what a single-tenant deployment relies on
+  // and what the pre-tenant inbound path uses.
+  registerCredentialStore(registerSecretResolver);
+  registerSecretResolver('environment', environmentResolver);
 
   // The development email transport verifies nothing, so it is registered only
   // outside production. In production its presence would turn "no provider is

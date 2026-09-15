@@ -1,4 +1,6 @@
 export * from './ids.js';
+export * from './crypto.js';
+export * from './secrets.js';
 export * from './errors.js';
 export * from './config.js';
 export * from './context.js';

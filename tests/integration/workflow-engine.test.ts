@@ -105,7 +105,12 @@ describe('publishing', () => {
     expect(published.body.detail).toMatch(/would never run/);
   });
 
-  it('refuses an action step, naming the phase that delivers it', async () => {
+  it('publishes an action step, now that the gateway carries it out', async () => {
+    // For the whole of PH-3 this asserted a refusal naming MOD-06-E2, in the
+    // same way the graph validator's unit test did. That test was updated when
+    // the node was delivered and this one was missed, which is the argument for
+    // the assertion below being about behaviour rather than about a message:
+    // a publish that succeeds is checkable for as long as the node exists.
     await request('/api/v1/workflows', {
       method: 'POST',
       token: admin(),
@@ -128,8 +133,17 @@ describe('publishing', () => {
       method: 'POST',
       token: admin(),
     });
-    expect(published.status).toBe(422);
-    expect(published.body.detail).toMatch(/MOD-06-E2/);
+    expect(published.status).toBe(200);
+
+    // Nothing is left refusing at publish. The graph is still checked for
+    // everything that would fail silently — an action node with nothing after
+    // it stops a run as quietly as any other node — and a destination the
+    // gateway will not allow is refused by the action definition rather than by
+    // the graph, which is where that check belongs.
+    const listed = await request<{ data: { key: string; status: string }[] }>('/api/v1/workflows', {
+      token: admin(),
+    });
+    expect(listed.body.data.find((workflow) => workflow.key === 'calls-out')?.status).toBe('published');
   });
 });
 

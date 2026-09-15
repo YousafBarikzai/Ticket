@@ -139,20 +139,47 @@ describe('validation refuses what would fail silently', () => {
     expect(validateGraph(graph).map((p) => p.code)).toContain('wait_shape');
   });
 
-  it('an action step, which this phase cannot carry out', () => {
-    // Refused at publish rather than skipped at run time: a workflow that
-    // silently skips a step is worse than one that will not go live.
+  it('no longer refuses an action step, now that the gateway exists', () => {
+    // This asserted a refusal for the whole of PH-3, naming MOD-06-E2. PH-4
+    // delivered it. The node is validated like any other now — an action
+    // pointing at a destination the gateway will not allow is refused by the
+    // action definition, not by the graph.
     const graph = minimal({
       start: 'call',
       nodes: [
-        { key: 'call', type: 'action', action: 'http.entra.createUser', input: {} },
+        { key: 'call', type: 'action', action: 'entra.create-user', input: { email: '{{ticket.requesterEmail}}' } },
         { key: 'end', type: 'end' },
       ],
       edges: [{ from: 'call', to: 'end' }],
     });
-    const problems = validateGraph(graph);
-    expect(problems.map((p) => p.code)).toContain('not_yet_available');
-    expect(problems.find((p) => p.code === 'not_yet_available')?.message).toMatch(/MOD-06-E2/);
+    expect(validateGraph(graph).map((p) => p.code)).not.toContain('not_yet_available');
+  });
+
+  it('still checks an action step for the things that would fail silently', () => {
+    // Being available does not exempt it: an action node with nothing after it
+    // stops a run just as quietly as any other node would.
+    const graph = minimal({
+      start: 'call',
+      nodes: [
+        { key: 'call', type: 'action', action: 'entra.create-user', input: {} },
+        { key: 'end', type: 'end' },
+      ],
+      edges: [],
+    });
+    expect(validateGraph(graph).map((p) => p.code)).toContain('dead_end');
+  });
+
+  it('checks the templates in an action\'s inputs', () => {
+    const graph = minimal({
+      start: 'call',
+      nodes: [
+        { key: 'call', type: 'action', action: 'entra.create-user', input: { email: '{{tickt.email}}' } },
+        { key: 'end', type: 'end' },
+      ],
+      edges: [{ from: 'call', to: 'end' }],
+    });
+    const problems = unresolvedPaths(graph, RUN_FACTS);
+    expect(problems.map((p) => p.message).join(' ')).toMatch(/tickt\.email/);
   });
 });
 

@@ -27,6 +27,7 @@ import { channelRoutes } from './channels.js';
 import { catalogueRoutes } from './catalogue.js';
 import { knowledgeRoutes } from './knowledge.js';
 import { workflowRoutes } from './workflows.js';
+import { integrationRoutes } from './integrations.js';
 import { workloadRoutes } from './workload.js';
 import { platformRoutes } from './platform.js';
 
@@ -44,6 +45,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await catalogueRoutes(v1);
       await knowledgeRoutes(v1);
       await workflowRoutes(v1);
+      await integrationRoutes(v1);
       await workloadRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);

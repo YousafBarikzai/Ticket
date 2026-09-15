@@ -110,7 +110,7 @@ export type WorkflowGraph = z.infer<typeof graphSchema>;
  * and the step it skipped is usually the one that mattered.
  */
 export const NODES_NOT_YET_AVAILABLE: Partial<Record<NodeType, string>> = {
-  action: 'MOD-06-E2 actions and connectors (PH-4), which needs the integration gateway for rate limits, credentials and redacted logs',
+  // `action` was here until PH-4 delivered the integration gateway.
 };
 
 /** Node types that end a branch: nothing may follow them. */
