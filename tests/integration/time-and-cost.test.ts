@@ -191,8 +191,10 @@ describe('elapsed time', () => {
     }
 
     const rows = await read((tx) => tx.timeEntry.findMany({ where: { ticketId, kind: 'automatic', deletedAt: null } }));
-    // Two stints in progress: before pending and after it.
-    expect(rows.length).toBe(2);
+    // Three stints in a working state: `new` once it was assigned (category
+    // open, like in_progress), in progress before pending, and after it. The
+    // pause in between is measured and not recorded.
+    expect(rows.length).toBe(3);
     expect(rows.every((row) => Number(row.cost) === 0 && row.billable === false && row.userId === tenant.people.agent!.id)).toBe(true);
 
     const summary = await request<{ summary: { loggedMinutes: number; elapsedMinutes: number } }>(`/api/v1/tickets/${ticketId}/time`, { token: tenant.people.admin!.token });
