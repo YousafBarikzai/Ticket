@@ -71,7 +71,8 @@ pages, the vendor's status and priority words — for the reason MOD-10 gave:
 a preset that drifts is a mapping to correct rather than a connector to
 rewrite, and a tool none of these cover is `http_json` with the same boxes
 filled by hand. Every byte goes through the MOD-14 gateway. A CSV export is
-uploaded into a bounded table and read once.
+uploaded into a bounded table and kept for a week, so the dry run, the
+commit and a re-run all read the same file.
 
 ## Consequences
 

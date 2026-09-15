@@ -2617,8 +2617,9 @@ model ImportMapping {
   @@map("import_mapping")
 }
 
-/// A file somebody uploaded to import from. Kept as text, bounded, and
-/// deleted once the job that read it is finished or a week has passed.
+/// A file somebody uploaded to import from. Kept as text, bounded, for a
+/// week: long enough for the dry run, the commit, and the re-run that proves
+/// the commit changed nothing.
 model ImportFile {
   id         String   @id @db.Uuid
   tenantId   String   @map("tenant_id") @db.Uuid

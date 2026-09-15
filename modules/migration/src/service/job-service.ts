@@ -352,9 +352,9 @@ export async function runJob(ctx: TenantContext, jobId: string, deps: FetchDeps 
         finishedAt: new Date(),
       },
     });
-    // The file was for this job. A dry run keeps it for the commit that
-    // follows; a commit is the last reader.
-    if (commit && job.fileId) await tx.importFile.deleteMany({ where: { id: job.fileId } });
+    // The file is not deleted here: a dry run, its commit, and the commit
+    // run again to prove it changed nothing all read the same upload. The
+    // sweep removes it after a week.
     await recordAudit(tx, ctx, { action: 'import.job.finished', targetType: 'import_job', targetId: jobId, after: { ...result } });
     await publish(tx, ctx, {
       definition: events.importJobFinished,
