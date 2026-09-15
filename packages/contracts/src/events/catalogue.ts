@@ -520,6 +520,41 @@ export const knowledgeArticleFeedback = defineEvent({
   payload: z.object({ articleId: id, userId: id, helpful: z.boolean(), comment: z.string().nullable() }),
 });
 
+// ---- MOD-06-E1 Workflow engine (PH-3) --------------------------------------
+export const workflowRunStarted = defineEvent({
+  type: 'workflow.run.started',
+  version: 1,
+  aggregateType: 'workflow_run',
+  webhook: true,
+  description: 'A workflow began running against a ticket or on its own.',
+  payload: z.object({
+    runId: id,
+    definitionId: id,
+    definitionKey: z.string(),
+    version: z.number().int(),
+    ticketId: id.nullable(),
+    triggeredBy: z.string(),
+  }),
+});
+
+export const workflowRunCompleted = defineEvent({
+  type: 'workflow.run.completed',
+  version: 1,
+  aggregateType: 'workflow_run',
+  webhook: true,
+  description: 'A workflow reached an end step, or stopped because no branch applied.',
+  payload: z.object({ runId: id, definitionId: id, ticketId: id.nullable(), status: z.string() }),
+});
+
+export const workflowRunFailed = defineEvent({
+  type: 'workflow.run.failed',
+  version: 1,
+  aggregateType: 'workflow_run',
+  webhook: true,
+  description: 'A step failed after its retries; the run is paused for an operator.',
+  payload: z.object({ runId: id, definitionId: id, ticketId: id.nullable(), stepKey: z.string(), error: z.string() }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -536,6 +571,7 @@ export const eventCatalogue = [
   channelMessageReceived, channelHealthDegraded,
   catalogueItemPublished, requestSubmitted,
   knowledgeArticleSubmitted, knowledgeArticlePublished, knowledgeArticleRetired, knowledgeArticleFeedback,
+  workflowRunStarted, workflowRunCompleted, workflowRunFailed,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

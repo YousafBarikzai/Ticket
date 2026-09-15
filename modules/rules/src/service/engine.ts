@@ -120,12 +120,14 @@ export interface RuleEffects {
   watchers: string[];
   notifications: { template: string; to: 'requester' | 'assignee' | 'group' | 'watchers' }[];
   links: { of: string }[];
+  /** Workflows this rule set would start, by definition key (MOD-06-E1). */
+  workflows: { definitionKey: string }[];
   status?: { status: string; reason?: string };
   priorityReason?: string;
 }
 
 export function effectsOf(decision: Decision): RuleEffects {
-  const effects: RuleEffects = { patch: {}, tags: [], watchers: [], notifications: [], links: [] };
+  const effects: RuleEffects = { patch: {}, tags: [], watchers: [], notifications: [], links: [], workflows: [] };
 
   for (const { action } of decision.applied) {
     switch (action.type) {
@@ -158,8 +160,13 @@ export function effectsOf(decision: Decision): RuleEffects {
       case 'linkDuplicate':
         effects.links.push({ of: action.of });
         break;
-      case 'assignStrategy':
       case 'startWorkflow':
+        // Delivered in PH-3. The rule decides *whether*; the workflow engine
+        // decides what happens over the following minutes or days, which is the
+        // division of labour the two engines exist for.
+        effects.workflows.push({ definitionKey: action.definitionKey });
+        break;
+      case 'assignStrategy':
         // Rejected at publish (ACTIONS_NOT_YET_AVAILABLE), so reaching here means
         // a rule was published before that check existed. Refuse quietly rather
         // than pretend, and say so loudly enough to be found.

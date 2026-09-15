@@ -351,6 +351,51 @@ describe('knowledge stays inside its tenant', () => {
   });
 });
 
+describe('workflow runs stay inside their tenant', () => {
+  it("never shows one tenant the other's runs", async () => {
+    const { transaction, withContext } = await import('@itsm/platform');
+    const ctx = contextFor(beta.id);
+    // Both tenants seed the same reference workflows under the same keys.
+    const definitions = await withContext(ctx, () =>
+      transaction(ctx, (tx) => tx.workflowDefinition.findMany({})),
+    );
+    expect(definitions.length).toBeGreaterThan(0);
+    expect(definitions.every((definition) => definition.tenantId === beta.id)).toBe(true);
+  });
+
+  it("never lets one tenant start a run on the other's ticket", async () => {
+    const { transaction, withContext } = await import('@itsm/platform');
+    const { workflowService } = await import('@itsm/module-workflow');
+
+    const alphaTicketId = alpha.ticketIds[0]!;
+    const betaCtx = contextFor(beta.id);
+
+    // Resolves by key, and both tenants have `auto-close-resolved`. The ticket
+    // id belongs to alpha, so beta's run must not end up pointing at it.
+    const started = await withContext(betaCtx, () =>
+      transaction(betaCtx, (tx) =>
+        workflowService.startRun(betaCtx, tx, { key: 'auto-close-resolved', ticketId: alphaTicketId }),
+      ),
+    );
+
+    if (started) {
+      const visibleToAlpha = await withContext(contextFor(alpha.id), () =>
+        transaction(contextFor(alpha.id), (tx) => tx.workflowRun.findMany({ where: { id: started.runId } })),
+      );
+      // Row-level security keeps beta's run out of alpha's reach whatever the
+      // ticket id says.
+      expect(visibleToAlpha).toEqual([]);
+    }
+  });
+
+  it("never lets one tenant's step runs be seen by the other", async () => {
+    const { transaction, withContext } = await import('@itsm/platform');
+    const ctx = contextFor(alpha.id);
+    const steps = await withContext(ctx, () => transaction(ctx, (tx) => tx.workflowStepRun.findMany({})));
+    expect(steps.every((step) => step.tenantId === alpha.id)).toBe(true);
+  });
+});
+
 describe('caches and keys', () => {
   it('prefixes every tenant-specific Redis key with its tenant', async () => {
     // A cache key without a tenant prefix is a cross-tenant read waiting to

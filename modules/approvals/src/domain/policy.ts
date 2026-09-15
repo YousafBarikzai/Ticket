@@ -10,7 +10,10 @@ import { exprSchema } from '@itsm/expr';
  * on the day of the decision, not as it was on the day of the policy.
  */
 
-export const SUBJECT_TYPES = ['request', 'change', 'knowledge', 'config', 'ticket'] as const;
+// `workflow_run` joined the list in PH-3: an approval node parks its run on an
+// approval, and the subject is the run rather than the ticket it is attached to
+// — a run may have several approvals, and one may not be about a ticket at all.
+export const SUBJECT_TYPES = ['request', 'change', 'knowledge', 'config', 'ticket', 'workflow_run'] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
 export const approverRuleSchema = z.discriminatedUnion('kind', [

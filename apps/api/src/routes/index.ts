@@ -26,6 +26,7 @@ import { notificationPreferenceRoutes } from './notification-preferences.js';
 import { channelRoutes } from './channels.js';
 import { catalogueRoutes } from './catalogue.js';
 import { knowledgeRoutes } from './knowledge.js';
+import { workflowRoutes } from './workflows.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -41,6 +42,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await channelRoutes(v1);
       await catalogueRoutes(v1);
       await knowledgeRoutes(v1);
+      await workflowRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },

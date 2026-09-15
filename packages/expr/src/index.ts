@@ -356,7 +356,11 @@ function looseEqual(a: unknown, b: unknown): boolean {
   if (ca === null || cb === null) return ca === cb;
   if (typeof ca === 'string' && typeof cb === 'string') return ca === cb;
   if (typeof ca === 'number' && typeof cb === 'number') return ca === cb;
-  if (typeof ca === 'boolean' || typeof cb === 'boolean') return Boolean(ca) === Boolean(cb);
+  // A boolean is only equal to a boolean. Comparing truthiness instead made
+  // `{ eq: [x, true] }` hold for every non-empty string, which is the exact
+  // shape a condition node's branch takes — so a workflow would have followed
+  // its "yes" edge whatever the step returned.
+  if (typeof ca === 'boolean' || typeof cb === 'boolean') return ca === cb;
   return String(ca) === String(cb);
 }
 

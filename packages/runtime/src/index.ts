@@ -29,6 +29,7 @@ import { rulesManifest, seedDefaultRules } from '@itsm/module-rules';
 import { approvalsManifest, seedApprovalDefaults } from '@itsm/module-approvals';
 import { catalogueManifest, seedCatalogueDefaults } from '@itsm/module-catalogue';
 import { knowledgeManifest, seedKnowledgeDefaults } from '@itsm/module-knowledge';
+import { workflowManifest, seedWorkflowDefaults } from '@itsm/module-workflow';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -51,6 +52,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   channelsManifest,
   catalogueManifest,
   knowledgeManifest,
+  workflowManifest,
   adminManifest,
 ];
 
@@ -108,6 +110,9 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('knowledge.defaults', async (ctx: TenantContext) => {
     await seedKnowledgeDefaults(ctx);
+  });
+  registerSeedStep('workflow.defaults', async (ctx: TenantContext) => {
+    await seedWorkflowDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

@@ -51,6 +51,7 @@
     "@itsm/module-sla": "workspace:*",
     "@itsm/module-tenancy": "workspace:*",
     "@itsm/module-ticket": "workspace:*",
+    "@itsm/module-workflow": "workspace:*",
     "@itsm/platform": "workspace:*",
     "@itsm/runtime": "workspace:*",
     "@types/node": "^22.10.2",

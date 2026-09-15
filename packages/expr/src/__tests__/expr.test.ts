@@ -143,6 +143,27 @@ describe('ordering across types', () => {
   });
 });
 
+describe('equality', () => {
+  it('holds a boolean to being a boolean', () => {
+    // Found by the workflow engine: `eq` used to compare truthiness whenever
+    // either side was a boolean, so `{ eq: [x, true] }` held for any non-empty
+    // string. That is the exact shape a workflow branch takes, so every
+    // condition node would have followed its "yes" edge whatever the step
+    // returned.
+    expect(evaluate({ eq: [{ var: 'requester.vip' }, true] }, ticket)).toBe(true);
+    expect(evaluate({ eq: [{ var: 'ticket.title' }, true] }, ticket)).toBe(false);
+    expect(evaluate({ eq: [{ var: 'answers.amount' }, true] }, ticket)).toBe(false);
+    expect(evaluate({ eq: [{ var: 'ticket.resolvedAt' }, false] }, ticket)).toBe(false);
+  });
+
+  it('still compares a number to the string of that number', () => {
+    // Left as it was, deliberately. A cross-type equality answers false or
+    // matches one specific value; a cross-type ordering matched everything,
+    // which is why only ordering was made to raise (ADR-0021).
+    expect(evaluate({ eq: [{ var: 'answers.amount' }, '4500'] }, ticket)).toBe(true);
+  });
+});
+
 describe('checkExpr', () => {
   const types = { 'ticket.title': 'string', 'ticket.impact': 'number', 'ticket.createdAt': 'date' } as const;
 

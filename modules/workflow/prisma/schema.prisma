@@ -1,0 +1,140 @@
+/// MOD-06-E1 Workflow engine (PH-3), per ADR-0009 and docs/architecture/11 §2–3.
+///
+/// The run tables are the engine's memory. Everything about exactly-once
+/// execution rests on `wf_step_run`: a step is claimed by inserting a row, and
+/// the unique constraint on (run, step, attempt) is what stops two workers
+/// running the same step. Losing Redis loses scheduling, not state.
+
+model WorkflowDefinition {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// The version runs start on. Null until first publication.
+  currentVersionId String? @map("current_version_id") @db.Uuid
+  status      String   @default("draft")
+  ownerId     String?  @map("owner_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  versions    WorkflowVersion[]
+  runs        WorkflowRun[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("wf_definition")
+}
+
+/// One immutable published graph. A run finishes on the version it started on,
+/// so publishing a change never rewrites what is already in flight.
+model WorkflowVersion {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  definitionId String   @map("definition_id") @db.Uuid
+  version      Int
+  /// The graph: trigger, nodes, edges (docs/architecture/11 §2).
+  graph        Json
+  status       String   @default("draft")
+  changeNote   String?  @map("change_note")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt  DateTime? @map("published_at") @db.Timestamptz(6)
+  publishedBy  String?  @map("published_by") @db.Uuid
+
+  definition   WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  runs         WorkflowRun[]
+
+  @@unique([tenantId, definitionId, version])
+  @@map("wf_version")
+}
+
+model WorkflowRun {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  definitionId String   @map("definition_id") @db.Uuid
+  versionId    String   @map("version_id") @db.Uuid
+  ticketId     String?  @map("ticket_id") @db.Uuid
+  /// queued | running | waiting | failed | completed | cancelled
+  status       String   @default("queued")
+  /// Everything `{{path}}` and conditions read: trigger payload, ticket facts,
+  /// and each completed node's output under its key.
+  context      Json     @default("{}")
+  /// The nodes due to run next. An array because PH-4 adds parallel branches;
+  /// a single column would have to be migrated rather than extended.
+  currentKeys  String[] @default([]) @map("current_keys")
+  /// Why a run started, for the question "what set this off?".
+  triggeredBy  String?  @map("triggered_by")
+  error        String?
+  startedAt    DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz(6)
+
+  definition   WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  workflowVersion WorkflowVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  steps        WorkflowStepRun[]
+  waits        WorkflowWait[]
+
+  @@index([tenantId, status, startedAt(sort: Desc)])
+  @@index([tenantId, ticketId])
+  @@map("wf_run")
+}
+
+/// One attempt at one node.
+///
+/// The unique constraint is the concurrency control: claiming a step means
+/// inserting this row, and a second worker trying the same step fails the
+/// constraint and stops. Nothing else is needed, and nothing else is trusted.
+model WorkflowStepRun {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  runId     String   @map("run_id") @db.Uuid
+  stepKey   String   @map("step_key")
+  attempt   Int      @default(1)
+  /// started | done | failed | skipped
+  status    String   @default("started")
+  input     Json     @default("{}")
+  output    Json     @default("{}")
+  /// Stable across attempts on purpose: a retry after a crash mid-effect must
+  /// deduplicate against the effect the crashed attempt may already have had.
+  idempotencyKey String @map("idempotency_key")
+  error     String?
+  startedAt DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz(6)
+
+  run       WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, runId, stepKey, attempt])
+  @@index([tenantId, runId, startedAt])
+  @@index([tenantId, status])
+  @@map("wf_step_run")
+}
+
+/// A run parked on a timer or an event.
+///
+/// In PostgreSQL rather than only as a delayed job: Redis is a scheduler, not a
+/// system of record, and a run that disappears because a queue was flushed is
+/// the failure people never forgive an automation engine for.
+model WorkflowWait {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  runId       String   @map("run_id") @db.Uuid
+  stepKey     String   @map("step_key")
+  /// timer | event
+  kind        String
+  eventType   String?  @map("event_type")
+  /// Expression matched against the event payload, so one wait is not woken by
+  /// another ticket's event.
+  eventFilter Json?    @map("event_filter")
+  dueAt       DateTime? @map("due_at") @db.Timestamptz(6)
+  /// Where to go if the timeout fires before the event.
+  onTimeoutKey String? @map("on_timeout_key")
+  status      String   @default("waiting")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  run         WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, runId, stepKey])
+  @@index([tenantId, status, dueAt])
+  @@index([tenantId, status, eventType])
+  @@map("wf_wait")
+}

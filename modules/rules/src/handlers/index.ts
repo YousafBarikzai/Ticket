@@ -1,6 +1,7 @@
 import { defineHandler, logger, type TenantContext, type Tx } from '@itsm/platform';
 import { ticketService } from '@itsm/module-ticket';
 import { notificationService } from '@itsm/module-notifications';
+import { startRun } from '@itsm/module-workflow';
 import { decide, effectsOf, recordApplications } from '../service/engine.js';
 import { loadPublishedRules } from '../service/rule-service.js';
 import { factsForTicket } from '../service/facts.js';
@@ -80,6 +81,26 @@ async function runRules(
       eventId,
       ruleKey: decision.matched.map((m) => m.ruleKey).join(','),
     });
+  }
+
+  for (const workflow of effects.workflows) {
+    // Started inside the same transaction as the rule's other effects, so a
+    // rule that fires exactly once starts exactly one run. The run itself is
+    // enqueued rather than executed here: a workflow takes as long as it takes,
+    // and the event handler has a budget.
+    const started = await startRun(ctx, tx, {
+      key: workflow.definitionKey,
+      ticketId,
+      context: { ticket: { id: ticketId }, event: { type: event } },
+      triggeredBy: `rule:${decision.matched.map((m) => m.ruleKey).join(',')}`,
+      dedupeOn: { eventId },
+    });
+    if (!started) {
+      logger.warn('a rule asked for a workflow that is not published', {
+        workflow: workflow.definitionKey,
+        rules: decision.matched.map((m) => m.ruleKey),
+      });
+    }
   }
 
   await recordApplications(ctx, tx, decision, event, ticketId);

@@ -77,6 +77,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.read', scope: 'any' },
       { key: 'knowledge.write', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      // Reading runs answers "why did this ticket go on hold?" without asking
+      // an administrator. Operating them is somebody else's.
+      { key: 'workflow.read', scope: 'any' },
     ],
   },
   {
@@ -119,6 +122,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.write', scope: 'any' },
       { key: 'knowledge.publish', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      // A lead sees and unblocks runs without being able to change what they
+      // do: rescuing a stuck run at 3am is operations, editing the automation
+      // is a change.
+      { key: 'workflow.read', scope: 'any' },
+      { key: 'workflow.operate', scope: 'any' },
     ],
   },
   {
@@ -205,6 +213,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.write', scope: 'any' },
       { key: 'knowledge.publish', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      { key: 'workflow.read', scope: 'any' },
+      { key: 'workflow.manage', scope: 'any' },
+      { key: 'workflow.publish', scope: 'any' },
+      { key: 'workflow.operate', scope: 'any' },
+      { key: 'workflow.start', scope: 'any' },
       { key: 'catalogue.form.read', scope: 'any' },
       { key: 'catalogue.form.manage', scope: 'any' },
     ],

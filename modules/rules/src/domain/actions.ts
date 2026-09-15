@@ -65,7 +65,7 @@ export type ActionType = RuleAction['type'];
  */
 export const ACTIONS_NOT_YET_AVAILABLE: Partial<Record<ActionType, string>> = {
   assignStrategy: 'MOD-20 Workload and routing (PH-4)',
-  startWorkflow: 'MOD-06-E1 Workflow engine (PH-3)',
+  // `startWorkflow` was here until PH-3 delivered the engine.
 };
 
 /**
