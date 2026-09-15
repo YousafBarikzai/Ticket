@@ -37,6 +37,7 @@ import { incidentManifest } from '@itsm/module-incident';
 import { problemManifest } from '@itsm/module-problem';
 import { changeManifest } from '@itsm/module-change';
 import { assetsManifest } from '@itsm/module-assets';
+import { analyticsManifest } from '@itsm/module-analytics';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -65,6 +66,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   problemManifest,
   changeManifest,
   assetsManifest,
+  analyticsManifest,
   adminManifest,
 ];
 

@@ -86,6 +86,410 @@ model InstalledModule {
 }
 
 // ===========================================================================
+// modules/analytics/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-12 Reporting and analytics (PH-4).
+///
+/// A star schema, populated from domain events rather than read from the
+/// modules that own the data. That is the decision the rest follows from: a
+/// dashboard that joined across MOD-04, MOD-07 and MOD-17 would be a fourth
+/// reader of three modules' tables, would break when any of them changed, and
+/// would put an analyst's year-long query on the same connection pool as the
+/// ticket somebody is trying to save.
+///
+/// Facts are immutable rows about something that happened. Dimensions are the
+/// things facts point at, denormalised on purpose: a report that needs a join
+/// to answer "how many P1s did the payments team close last quarter" is a
+/// report that will be slow at exactly the size where somebody starts caring.
+
+/// A row per day, so a report can say "including days with none".
+///
+/// Without it, a query grouped by day silently omits quiet days and a chart of
+/// ticket volume looks like the desk closed at the weekend rather than that
+/// nobody rang.
+model DimDate {
+  /// The date itself, as the key: readable in a query and sortable.
+  date       DateTime @id @db.Date
+  year       Int
+  quarter    Int
+  month      Int
+  day        Int
+  /// ISO week, so a "last 12 weeks" report does not drift.
+  isoWeek    Int      @map("iso_week")
+  isoYear    Int      @map("iso_year")
+  dayOfWeek  Int      @map("day_of_week")
+  isWeekend  Boolean  @map("is_weekend")
+
+  @@index([year, month])
+  @@map("dim_date")
+}
+
+/// Who, as they were. Slowly changing: a person who moves team should not
+/// retroactively move every ticket they closed last year.
+model DimUser {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  displayName String  @map("display_name")
+  teamId     String?  @map("team_id") @db.Uuid
+  teamName   String?  @map("team_name")
+  orgId      String?  @map("org_id") @db.Uuid
+  /// When this version of the row started and stopped being true.
+  validFrom  DateTime @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validTo    DateTime? @map("valid_to") @db.Timestamptz(6)
+
+  @@unique([tenantId, userId, validFrom])
+  @@index([tenantId, userId, validTo])
+  @@map("dim_user")
+}
+
+model DimTeam {
+  id       String  @id @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
+  teamId   String  @map("team_id") @db.Uuid
+  name     String
+  orgId    String? @map("org_id") @db.Uuid
+
+  @@unique([tenantId, teamId])
+  @@map("dim_team")
+}
+
+model DimService {
+  id        String  @id @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  serviceId String  @map("service_id") @db.Uuid
+  name      String
+  ownerId   String? @map("owner_id") @db.Uuid
+
+  @@unique([tenantId, serviceId])
+  @@map("dim_service")
+}
+
+model DimCategory {
+  id         String  @id @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  categoryId String  @map("category_id") @db.Uuid
+  name       String
+  parentName String? @map("parent_name")
+
+  @@unique([tenantId, categoryId])
+  @@map("dim_category")
+}
+
+/// The channel a thing arrived on: portal, email, slack, teams, whatsapp,
+/// voice, api. A dimension rather than a string on every fact, so "which
+/// channels do we actually get work from" is one small scan.
+model DimChannel {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  key      String
+  name     String
+
+  @@unique([tenantId, key])
+  @@map("dim_channel")
+}
+
+/// One row per ticket, updated as it moves.
+///
+/// Not one row per transition: a fact table that grew a row every time
+/// somebody changed a priority would be enormous and would make "how many
+/// tickets" a distinct count. Transitions live in the timestamps here, which is
+/// what nearly every question actually needs.
+model FactTicket {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  ticketId      String    @map("ticket_id") @db.Uuid
+  number        String
+  type          String
+  /// Denormalised, because every report groups by at least one of these and a
+  /// join to find out that a ticket was a P1 is a join per row.
+  priority      String?
+  status        String
+  serviceId     String?   @map("service_id") @db.Uuid
+  categoryId    String?   @map("category_id") @db.Uuid
+  teamId        String?   @map("team_id") @db.Uuid
+  assigneeId    String?   @map("assignee_id") @db.Uuid
+  requesterId   String?   @map("requester_id") @db.Uuid
+  channel       String?
+
+  createdDate   DateTime  @map("created_date") @db.Date
+  createdAt     DateTime  @map("created_at") @db.Timestamptz(6)
+  firstResponseAt DateTime? @map("first_response_at") @db.Timestamptz(6)
+  resolvedAt    DateTime? @map("resolved_at") @db.Timestamptz(6)
+  closedAt      DateTime? @map("closed_at") @db.Timestamptz(6)
+
+  /// Durations in **business** minutes, computed by `@itsm/business-time` at
+  /// projection and stored. A dashboard must never recompute a calendar: it
+  /// would need every calendar and every exception in scope, and the same
+  /// figure would change when somebody edited an opening hour last March.
+  timeToFirstResponseMinutes Int? @map("time_to_first_response_minutes")
+  timeToResolveMinutes       Int? @map("time_to_resolve_minutes")
+  /// Wall-clock, kept alongside: "it took four days" is what a requester
+  /// experienced, and both numbers get asked for.
+  elapsedToResolveMinutes    Int? @map("elapsed_to_resolve_minutes")
+
+  reopenCount   Int       @default(0) @map("reopen_count")
+  commentCount  Int       @default(0) @map("comment_count")
+  breached      Boolean   @default(false)
+
+  /// The event that last wrote this row, so a replay is idempotent and a
+  /// late-arriving duplicate cannot double-count.
+  lastEventId   String    @map("last_event_id") @db.Uuid
+  /// When that event happened. Delivery is at-least-once and unordered, so a
+  /// late arrival must not overwrite newer state with older state.
+  lastEventAt   DateTime  @map("last_event_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, ticketId])
+  @@index([tenantId, createdDate])
+  @@index([tenantId, teamId, createdDate])
+  @@index([tenantId, serviceId, createdDate])
+  @@index([tenantId, status, createdDate])
+  @@map("fact_ticket")
+}
+
+/// One row per timer, which is one row per target per ticket.
+model FactSlaTimer {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  timerId     String    @map("timer_id") @db.Uuid
+  ticketId    String    @map("ticket_id") @db.Uuid
+  policyId    String?   @map("policy_id") @db.Uuid
+  target      String
+  priority    String?
+  teamId      String?   @map("team_id") @db.Uuid
+  serviceId   String?   @map("service_id") @db.Uuid
+
+  startedDate DateTime  @map("started_date") @db.Date
+  startedAt   DateTime  @map("started_at") @db.Timestamptz(6)
+  dueAt       DateTime? @map("due_at") @db.Timestamptz(6)
+  stoppedAt   DateTime? @map("stopped_at") @db.Timestamptz(6)
+
+  /// met | breached | running. A timer still running is a row, because "how
+  /// many are at risk right now" is a question about the ones without an
+  /// outcome yet.
+  outcome     String    @default("running")
+  /// How long it was paused for, in business minutes. Kept separately because
+  /// "we were waiting on the customer" is the answer to most breach questions
+  /// and a duration that hides it is a duration that starts arguments.
+  pausedMinutes Int     @default(0) @map("paused_minutes")
+  businessMinutes Int?  @map("business_minutes")
+  /// Negative where it finished early; the margin is more useful than the flag.
+  marginMinutes Int?    @map("margin_minutes")
+
+  lastEventId String    @map("last_event_id") @db.Uuid
+  lastEventAt DateTime  @map("last_event_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, timerId])
+  @@index([tenantId, startedDate])
+  @@index([tenantId, outcome, startedDate])
+  @@index([tenantId, teamId, outcome])
+  @@map("fact_sla_timer")
+}
+
+model FactApproval {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  requestId   String    @map("request_id") @db.Uuid
+  subjectType String    @map("subject_type")
+  subjectId   String    @map("subject_id") @db.Uuid
+  policyId    String?   @map("policy_id") @db.Uuid
+
+  requestedDate DateTime @map("requested_date") @db.Date
+  requestedAt DateTime  @map("requested_at") @db.Timestamptz(6)
+  decidedAt   DateTime? @map("decided_at") @db.Timestamptz(6)
+  deciderId   String?   @map("decider_id") @db.Uuid
+  /// approved | rejected | pending
+  outcome     String    @default("pending")
+  /// Business minutes from request to decision: the number that says whether
+  /// approvals are a control or a queue.
+  turnaroundMinutes Int? @map("turnaround_minutes")
+
+  lastEventId String    @map("last_event_id") @db.Uuid
+  lastEventAt DateTime  @map("last_event_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, requestId])
+  @@index([tenantId, requestedDate])
+  @@index([tenantId, outcome, requestedDate])
+  @@map("fact_approval")
+}
+
+model FactTask {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  taskId      String    @map("task_id") @db.Uuid
+  ticketId    String    @map("ticket_id") @db.Uuid
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  teamId      String?   @map("team_id") @db.Uuid
+
+  createdDate DateTime  @map("created_date") @db.Date
+  createdAt   DateTime  @map("created_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  completionMinutes Int? @map("completion_minutes")
+
+  lastEventId String    @map("last_event_id") @db.Uuid
+  lastEventAt DateTime  @map("last_event_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, taskId])
+  @@index([tenantId, createdDate])
+  @@map("fact_task")
+}
+
+/// One row per notification, for the operational question rather than the
+/// service one: is the platform actually reaching people?
+model FactNotification {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  notificationId String @map("notification_id") @db.Uuid
+  channel      String
+  templateKey  String?  @map("template_key")
+  queuedDate   DateTime @map("queued_date") @db.Date
+  queuedAt     DateTime @map("queued_at") @db.Timestamptz(6)
+  sentAt       DateTime? @map("sent_at") @db.Timestamptz(6)
+  /// queued | sent | failed
+  outcome      String   @default("queued")
+  failureReason String? @map("failure_reason")
+  latencyMinutes Int?   @map("latency_minutes")
+
+  lastEventId  String   @map("last_event_id") @db.Uuid
+  lastEventAt  DateTime @map("last_event_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, notificationId])
+  @@index([tenantId, queuedDate])
+  @@index([tenantId, outcome, channel])
+  @@map("fact_notification")
+}
+
+/// Satisfaction, waiting on its source.
+///
+/// The table exists now so MOD-18 needs no migration when it lands, and so a
+/// dashboard can declare a satisfaction widget that reads zero rows rather than
+/// failing. **There is no projector**: `survey.*` events are not in the
+/// catalogue because the module that publishes them does not exist yet, and a
+/// handler registered for an event type nobody emits is a handler nobody will
+/// remember to finish.
+model FactSurvey {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  responseId   String   @map("response_id") @db.Uuid
+  surveyId     String   @map("survey_id") @db.Uuid
+  ticketId     String?  @map("ticket_id") @db.Uuid
+  respondentId String?  @map("respondent_id") @db.Uuid
+  teamId       String?  @map("team_id") @db.Uuid
+  serviceId    String?  @map("service_id") @db.Uuid
+
+  respondedDate DateTime @map("responded_date") @db.Date
+  respondedAt  DateTime @map("responded_at") @db.Timestamptz(6)
+  /// The headline number, whatever scale the survey used, normalised to 0-100
+  /// at projection so two surveys are comparable.
+  score        Int?
+  scale        String?
+  comment      String?
+
+  lastEventId  String   @map("last_event_id") @db.Uuid
+  lastEventAt  DateTime @map("last_event_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, responseId])
+  @@index([tenantId, respondedDate])
+  @@map("fact_survey")
+}
+
+/// The pre-aggregation that makes a year of data answerable in under a second.
+///
+/// One row per day, per grouping. A year of a busy tenant is a few thousand
+/// rows here against a million in `fact_ticket`, which is the difference
+/// between a dashboard that loads and one somebody stops opening.
+///
+/// Maintained incrementally as facts are written and rebuilt nightly, because
+/// an incremental count drifts — an event replayed, a fact corrected — and a
+/// rollup nobody rebuilds is a rollup that is quietly wrong by March.
+model RollupTicketDaily {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  date        DateTime @db.Date
+  /// The grouping, spelled out: `all`, `team:<id>`, `service:<id>|priority:P1`.
+  ///
+  /// The unique key is this string rather than the three nullable columns
+  /// below, because PostgreSQL treats NULLs in a unique index as distinct from
+  /// one another: `(tenant, date, NULL, NULL, NULL)` would not conflict with
+  /// itself, so the "all" row would silently duplicate on every upsert and
+  /// every total would climb. The columns stay for filtering and grouping.
+  groupingKey String   @map("grouping_key")
+  /// Null means "all", so one table answers both the totals and the breakdown
+  /// without a second query or a union.
+  teamId      String?  @map("team_id") @db.Uuid
+  serviceId   String?  @map("service_id") @db.Uuid
+  priority    String?
+
+  created     Int      @default(0)
+  resolved    Int      @default(0)
+  closed      Int      @default(0)
+  reopened    Int      @default(0)
+  breached    Int      @default(0)
+  /// Sum and count rather than a stored mean: averages do not add up, and a
+  /// weekly figure built from seven daily means is wrong in a way nobody spots.
+  resolveMinutesSum   Int @default(0) @map("resolve_minutes_sum")
+  resolveMinutesCount Int @default(0) @map("resolve_minutes_count")
+  firstResponseMinutesSum   Int @default(0) @map("first_response_minutes_sum")
+  firstResponseMinutesCount Int @default(0) @map("first_response_minutes_count")
+
+  rebuiltAt   DateTime @default(now()) @map("rebuilt_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, date, groupingKey])
+  @@index([tenantId, date])
+  @@index([tenantId, teamId, date])
+  @@index([tenantId, serviceId, date])
+  @@map("rollup_ticket_daily")
+}
+
+/// What a projector has already seen.
+///
+/// The inbox for the analytics consumer. A projection that is not idempotent
+/// double-counts on any redelivery, and the outbox guarantees at-least-once
+/// rather than exactly-once — so this is what turns one into the other.
+model ProjectionCursor {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  projector   String
+  lastEventId String?  @map("last_event_id") @db.Uuid
+  lastEventAt DateTime? @map("last_event_at") @db.Timestamptz(6)
+  processed   BigInt   @default(0)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, projector])
+  @@map("projection_cursor")
+}
+
+/// A recorded disagreement between the facts and the truth.
+///
+/// Kept rather than only alerted: "the projection was 0.8 % light for three
+/// days in March" is a thing somebody needs to be able to look up when a
+/// quarterly number is questioned, and an alert that has scrolled away cannot
+/// answer it.
+model ProjectionDrift {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  checkedAt  DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+  projector  String
+  /// What the owning module says, asked through its own service.
+  expected   Int
+  /// What the fact table holds.
+  actual     Int
+  driftRatio Float    @map("drift_ratio")
+  resolved   Boolean  @default(false)
+
+  @@index([tenantId, checkedAt])
+  @@index([tenantId, resolved, checkedAt])
+  @@map("projection_drift")
+}
+
+// ===========================================================================
 // modules/approvals/prisma/schema.prisma
 // ===========================================================================
 

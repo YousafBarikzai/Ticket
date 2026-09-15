@@ -13,8 +13,18 @@ import { loadConfig } from './config.js';
  * A bug in one is caught by the other, and by the isolation suite.
  */
 
-/** Models that are NOT tenant-scoped. Kept in step with the SQL allow-list. */
-export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegistry']);
+/**
+ * Models that are NOT tenant-scoped. Kept in step with the SQL allow-list.
+ *
+ * `DimDate` is the one that needs a word: it is a calendar, not data. A Tuesday
+ * in March is the same Tuesday for every tenant, and giving it a `tenant_id`
+ * would mean a row per day per tenant to record that the 3rd fell in week 10.
+ * It carries no `tenant_id` column, so row-level security has nothing to attach
+ * to and the SQL allow-list has nothing to say about it — but the query
+ * extension would still try to filter by a column that does not exist, which is
+ * what this entry prevents.
+ */
+export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegistry', 'DimDate']);
 
 /** Models that carry tenant_id but are readable by the platform role pre-context. */
 export const DIRECTORY_MODELS = new Set(['TenantDomain', 'ChannelDirectory']);

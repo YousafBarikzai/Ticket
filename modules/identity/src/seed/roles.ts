@@ -200,6 +200,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // it takes `cmdb.manage`, which a lead already has.
       { key: 'discovery.read', scope: 'any' },
       { key: 'contract.read', scope: 'any' },
+      // Their own team's figures. Scoped to the team rather than the tenant,
+      // because a lead comparing their numbers with another team's is a
+      // conversation that should start with the other lead, not a dashboard.
+      { key: 'analytics.read', scope: 'team' },
     ],
   },
   {
@@ -233,6 +237,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Owns the budget the contract sits in, so sees what it costs and when
       // notice is due.
       { key: 'contract.read', scope: 'any' },
+      // Across teams, because a service is delivered by more than one of them
+      // and the owner is the person accountable for the whole of it.
+      { key: 'analytics.read', scope: 'any' },
     ],
   },
   {
@@ -341,6 +348,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'discovery.manage', scope: 'any' },
       { key: 'contract.read', scope: 'any' },
       { key: 'contract.manage', scope: 'any' },
+      { key: 'analytics.read', scope: 'any' },
+      // Rebuilding a projection and reading where it has drifted is an
+      // operational act, not a reporting one: it changes what every other role
+      // is looking at.
+      { key: 'analytics.admin', scope: 'any' },
     ],
   },
 ];

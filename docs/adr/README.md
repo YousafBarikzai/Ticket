@@ -43,6 +43,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0028](0028-discovery-proposes-a-person-confirms.md) | Discovery proposes; a person confirms | Accepted | MOD-10-E2 |
 | [0029](0029-request-signing-belongs-in-the-gateway.md) | Request signing belongs in the gateway, and both halves of a credential travel together | Accepted | MOD-14-E3, MOD-10-E2 |
 | [0030](0030-chat-identity-has-a-middle-state.md) | Chat identity has a middle state, and it buys exactly one thing | Accepted | MOD-03 |
+| [0031](0031-reporting-projects-events-and-is-rebuilt.md) | Reporting is a projection of events, and it is rebuilt rather than trusted | Accepted | MOD-12 |
 
 ## Template
 

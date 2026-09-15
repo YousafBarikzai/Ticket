@@ -268,6 +268,23 @@ export async function listTickets(
 }
 
 /**
+ * How many tickets match a filter, without fetching any of them.
+ *
+ * Added for MOD-12: a reporting module that wants to check its own projection
+ * against the truth has to be able to ask the module that owns the truth, and
+ * the alternative — reading `ticket` directly from the analytics code — would
+ * make the check agree with the projection precisely when both are wrong about
+ * the same thing. It is a normal query-service function, so it carries the same
+ * permission check and the same scope filter as `listTickets`; a caller who can
+ * only see their own tickets counts only their own.
+ */
+export async function countTickets(ctx: TenantContext, filter: repo.ListFilter = {}): Promise<number> {
+  authz.require(ctx, 'ticket.read');
+  const scope = scopeFilterFor(ctx);
+  return transaction(ctx, async (tx) => repo.countTickets(tx, filter, scope));
+}
+
+/**
  * Turns the caller's permission scope into a SQL predicate, so a list query
  * filters in the database rather than loading rows and discarding them.
  */

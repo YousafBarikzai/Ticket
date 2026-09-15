@@ -90,6 +90,9 @@ importers:
       '@itsm/module-admin':
         specifier: workspace:*
         version: link:modules/admin
+      '@itsm/module-analytics':
+        specifier: workspace:*
+        version: link:modules/analytics
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:modules/approvals
@@ -315,6 +318,24 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+
+  modules/analytics:
+    dependencies:
+      '@itsm/business-time':
+        specifier: workspace:*
+        version: link:../../packages/business-time
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-sla':
+        specifier: workspace:*
+        version: link:../sla
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
 
   modules/approvals:
     dependencies:
@@ -694,6 +715,9 @@ importers:
       '@itsm/module-admin':
         specifier: workspace:*
         version: link:../../modules/admin
+      '@itsm/module-analytics':
+        specifier: workspace:*
+        version: link:../../modules/analytics
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals

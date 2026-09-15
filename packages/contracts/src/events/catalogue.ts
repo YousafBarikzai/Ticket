@@ -930,6 +930,25 @@ export const contractExpiring = defineEvent({
   }),
 });
 
+// ---- MOD-12 Reporting and analytics (PH-4) --------------------------------
+export const analyticsDriftDetected = defineEvent({
+  type: 'analytics.drift.detected',
+  version: 1,
+  aggregateType: 'projection',
+  webhook: false,
+  description: 'A projection disagrees with the module that owns the data by more than the tolerance.',
+  payload: z.object({
+    projector: z.string(),
+    /** What the owning module says, asked through its own service. */
+    expected: z.number().int(),
+    /** What the fact table holds. */
+    actual: z.number().int(),
+    driftRatio: z.number(),
+    windowFrom: z.string(),
+    windowTo: z.string(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -954,6 +973,7 @@ export const eventCatalogue = [
   changeSubmitted, changeApproved, changeRejected, changeScheduled, changeClosed,
   ciRegistered, ciStatusChanged, ciRetired, assetAssigned, assetRetired,
   discoveryRunCompleted, discoveryProposalDecided, contractExpiring,
+  analyticsDriftDetected,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

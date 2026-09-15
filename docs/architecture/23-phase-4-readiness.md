@@ -534,6 +534,61 @@ Voice takes no automated replies. Calling somebody back is a person's decision,
 and an automated outbound call is a different product with different regulations
 attached.
 
+### 2.11 The analytics projection pipeline (MOD-12-E1a)
+
+**Reporting keeps its own star schema, fed by events, and rebuilds it rather
+than trusting it** (ADR-0031). Fifteen tables: six dimensions, six fact tables,
+a daily rollup, a cursor per projector and a drift log. Projectors run as
+`required` consumers of seventeen event types across MOD-04, MOD-07, MOD-11 and
+MOD-17.
+
+The decision that shapes everything else is that **durations are computed once,
+at projection, and stored**. A dashboard that recomputed a business-time
+duration would need every calendar and every exception in scope for the whole
+period being charted — and, worse, the same figure would change when somebody
+edited an opening hour last March. A resolution time is a fact about what
+happened, so it is fixed when it happens. Both numbers are kept: business
+minutes, which is what an SLA was measured against, and elapsed minutes, which
+is what the requester actually waited. A report that shows only the first
+quietly disagrees with everybody's experience.
+
+**Projectors read the source row rather than replaying the event payload.**
+Delivery is at-least-once and unordered — two workers can process a status
+change and an assignment for the same ticket at the same time, in either order
+— so a projector that applied "status became resolved" from the payload would
+produce a different answer depending on which finished last. The event says
+*look again*; the row says *at what*. Two things cannot be read back and are
+handled explicitly: the first response takes the earlier of the two candidate
+times, and the comment count only ever rises.
+
+**The rollup is treated as a cache of the facts.** Six slices per ticket per day
+— all, team, service, priority, team+priority, service+priority — maintained by
+addition and subtraction, and rebuilt nightly. For the rebuild to be a
+*correction* rather than a *second opinion*, every counter has to be derivable
+from a fact row, which is why reopens and breaches are counted against the day
+the ticket was **raised** rather than the day they happened: the fact records the
+former and not the latter. The integration suite asserts the two paths agree,
+because if they did not, the drift check below would be measuring the difference
+between two implementations rather than between the projection and the truth.
+
+**Drift is measured against the module that owns the truth, through that
+module's own service.** `ticketService.countTickets` was added for it. Reading
+`ticket` from the analytics code would produce a check that agrees with the
+projection exactly when both are wrong about the same thing — the soft-delete
+predicate, the scope filter — which is the failure a reconciliation exists to
+catch. Above 0.5 % over a thirty-day window ending an hour ago, a drift row is
+written and `analytics.drift.detected` is published. The window ends an hour ago
+because an event published a second ago has not been projected yet, and a check
+that counted it would report drift on every run and teach everybody to ignore
+the alert.
+
+`fact_survey` exists with **no projector**. MOD-18 does not exist, so there are
+no `survey.*` events to consume; the table is here so satisfaction needs no
+migration when it lands, and so a dashboard can declare a widget that reads zero
+rows rather than failing.
+
+---
+
 ---
 
 ## 3. What remains in Phase 4
@@ -543,7 +598,8 @@ attached.
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
-| MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
+| **MOD-12 metrics and dashboards (E1b)** | E1a delivers the pipeline that fills the star schema. The metric definitions, dashboards and scheduled reports that read it are the second half, and land as their own change so the projection can be reviewed on its own. |
+| MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
 
 ---
 
@@ -560,6 +616,8 @@ attached.
 | The same trap was already in MOD-04, and the platform had already solved it once | Auditing for the row below found `JSON.stringify(before) === JSON.stringify(after)` in `ticket-service.ts`, where `MUTABLE_FIELDS` includes `custom` — a JSONB column. Re-sending identical custom fields recorded a change: an audit row, a version bump, a `ticket.updated` event and every rule and notification waiting on one. Nothing failed; the ticket simply acquired a history of edits nobody made. The same audit found `packages/platform/src/audit.ts` already carrying a correct private `canonical()` for the hash chain — so the idea existed three times, once right and twice missing. It is now one helper in the platform, with a module-contract rule (8) failing the build on a hand-rolled comparison, proved to fail before it was trusted to pass. **The audit copy was deliberately left alone**: it sorts with `localeCompare` where the shared helper sorts by code point, and the two disagree on any key starting with a capital, so adopting the shared one would change historical hashes and make the nightly verifier report tampering that never happened. That `localeCompare` is itself locale-dependent, and therefore a reproducibility risk across Node builds with different ICU data, is recorded as a separate finding: fixing it needs a hash version on the row and a verifier that understands both. |
 | `JSON.stringify` is not a value comparison once a value has been through JSONB | MOD-10-E2 fingerprints a discovery proposal so that one a person already rejected is not raised again. The fingerprint was `JSON.stringify(proposed)` on both sides — but PostgreSQL JSONB does not preserve key order, so the stored copy came back with its keys rearranged and never matched. The effect was not a crash: rejecting a proposal simply stopped working, and the same suggestion returned every run for ever, which is the behaviour the feature exists to prevent. Unit tests could not see it, because in JavaScript the object never round-trips; the integration suite found it on the first run against a real database. The same flaw was latent in the reconciler's object comparison, where it would have reported an unchanged attribute as changed on every run. Both now use a canonical fingerprint with sorted keys, and the unit tests assert that reordering keys does not change it while reordering a *list* does — order is information in one and not the other. |
 | The fixture lesson held, and cost nothing to apply | MOD-14-E3's SigV4 tests began with AWS's published example credentials, both halves. The secret half is forty characters of mixed-case base64 assigned to a field called `secretAccessKey`, which reads to a scanner as exactly what it looks like — the same shape as the Stripe fixture two rows down. The reflex was to write an allowlist entry. The better question was what the fixture buys: **nothing**. The canonical request and the string to sign do not contain the secret, the signing-key tests use their own values, and no test pins a signature. So the key *id* stayed, because assertions quote it, and the secret became `not-a-real-secret-for-signing-tests`. No exemption, no scan to argue with, and not one assertion weaker. Worth recording because the reflex was wrong in a way that would have looked reasonable in review: an allowlist is where a scanner stops protecting you, and the first question is always whether the credential-shaped thing needs to be there at all. |
+| The worker scheduled four jobs by hand, and the manifests declared five | `registerSchedules` in `apps/worker` was a list of four cron entries copied from module manifests. MOD-04's manifest declares `ticket.autoClose` hourly; nothing scheduled it, and nothing implements it either, so the manifest has been promising a job that does not exist since Phase 1. Found because MOD-12 needed two schedules and adding two more lines would have repeated the mistake. The list is now derived from the manifests at boot and skips any declared job with no registered handler, saying so in the log. That is the same shape as three earlier rows: a declaration copied into a second place drifts, and the fix is to have one place. |
+| A unique index over nullable columns does not enforce uniqueness | The rollup's natural key is `(tenant, date, team, service, priority)` where the last three are null for "all". PostgreSQL treats NULLs in a unique index as distinct from one another, so `(t, d, NULL, NULL, NULL)` never conflicts with itself: the "all" row would have inserted a fresh duplicate on every upsert and every headline total would have climbed with every event. Caught reading the schema back before the migration was written, not by a test — the unit tests could not see it because no row ever reaches a database there. The row's identity is now a spelled-out grouping key (`all`, `team:<id>|priority:P1`) with a constraint that it is non-empty; the nullable columns stay for filtering. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -568,7 +626,7 @@ attached.
 
 | Check | Result |
 |---|---|
-| Unit tests | 703 passing, 380 of them over the eight modules |
+| Unit tests | 732 passing, 409 of them over the nine modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -588,7 +646,9 @@ attached.
 | — field mapping | 18, including each built-in preset's mapping |
 | — reconciliation | 17, written so that removing the absence-is-silence rule fails, and so that a key-order difference from JSONB is not read as a change |
 | — contract dates | 12, over notice, expiry and both sides of auto-renewal |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| — the rollup arithmetic | 19, written so that a create-then-withdraw cycle must sum to zero and a team change must leave the headline total alone |
+| — durations and ISO weeks | 10, including the year boundary where 1 January belongs to the previous ISO year |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift
