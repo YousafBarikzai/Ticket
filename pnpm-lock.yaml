@@ -174,6 +174,9 @@ importers:
       '@itsm/runtime':
         specifier: workspace:*
         version: link:packages/runtime
+      '@itsm/sdk':
+        specifier: workspace:*
+        version: link:packages/sdk
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.2
@@ -991,6 +994,12 @@ importers:
       '@itsm/platform':
         specifier: workspace:*
         version: link:../platform
+
+  packages/sdk:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/ui:
     dependencies:

@@ -6,7 +6,10 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['packages/*/src/**/__tests__/**/*.test.ts', 'modules/*/src/**/__tests__/**/*.test.ts'],
+          // `.tsx` as well as `.ts`: a component test that can write JSX reads
+          // like the thing it is testing, where one that calls `createElement`
+          // reads like a puzzle.
+          include: ['packages/*/src/**/__tests__/**/*.test.ts?(x)', 'modules/*/src/**/__tests__/**/*.test.ts?(x)'],
           environment: 'node',
         },
       },
