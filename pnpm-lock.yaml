@@ -147,6 +147,9 @@ importers:
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:modules/ticket
+      '@itsm/module-time':
+        specifier: workspace:*
+        version: link:modules/time
       '@itsm/module-workflow':
         specifier: workspace:*
         version: link:modules/workflow
@@ -655,6 +658,24 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  modules/time:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
   modules/workflow:
     dependencies:
       '@itsm/contracts':
@@ -802,6 +823,9 @@ importers:
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../../modules/ticket
+      '@itsm/module-time':
+        specifier: workspace:*
+        version: link:../../modules/time
       '@itsm/module-workflow':
         specifier: workspace:*
         version: link:../../modules/workflow

@@ -42,7 +42,7 @@ export const metricDefinitionSchema = z.object({
   filters: z.array(filterSchema).max(20).default([]),
   numeratorFilters: z.array(filterSchema).max(20).optional(),
   timeField: z.string().max(60).optional(),
-  unit: z.enum(['count', 'minutes', 'percent']).default('count'),
+  unit: z.enum(['count', 'minutes', 'percent', 'money']).default('count'),
 });
 export type MetricDefinitionInput = z.input<typeof metricDefinitionSchema>;
 

@@ -251,6 +251,8 @@ const SEEDED: { key: string; name: string; description: string; widgets: WidgetI
       { title: 'First response, by team', type: 'bar', metricKey: 'tickets.first_response', groupBy: 'teamId', range: '90d', width: 6 },
       { title: 'Breached, by team', type: 'bar', metricKey: 'tickets.breached', groupBy: 'teamId', range: '90d', width: 6 },
       { title: 'Task completion time', type: 'timeseries', metricKey: 'tasks.completion_time', range: '90d', width: 12 },
+      { title: 'Time logged, by team', type: 'bar', metricKey: 'time.logged', groupBy: 'teamId', range: '90d', width: 6 },
+      { title: 'Cost of time, by service', type: 'bar', metricKey: 'time.cost', groupBy: 'serviceId', range: '90d', width: 6 },
     ],
   },
   {

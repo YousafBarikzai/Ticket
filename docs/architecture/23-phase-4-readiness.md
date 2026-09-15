@@ -707,6 +707,43 @@ answers.
 
 ---
 
+### 2.14 Time and cost (MOD-19)
+
+**Three kinds of time, and one of them is free** (ADR-0034). `manual` is what
+somebody wrote down; `timer` is what a clock they started measured; `automatic`
+is how long the ticket sat in a working state, recorded when it leaves one,
+against whoever held it then. The third is elapsed time, never effort: it is
+priced at nothing and billable never, by a database constraint, reported beside
+effort rather than added to it, and no built-in metric sums across the kinds.
+Paused and settled states are measured but not recorded — waiting is not
+working.
+
+**The rate is written on the entry.** Resolved when the entry is logged — the
+team's override, else the activity's default — so a rate changed next month
+changes nothing already logged. Per team, not per person: a per-person rate is
+a salary by another name. Every rate seeds at zero, because money is the
+tenant's to state; cost appears the day a rate is entered, for entries logged
+after it.
+
+**One timer per person, not believed past twelve hours.** A second start names
+the first; a stop after longer is capped and the cap is written into the note.
+
+**Budgets** bound a tenant, a service, an organisation or a team for a month,
+quarter or year. The running total moves as entries land and is recomputed
+nightly — MOD-12's rollup shape, for the same reason — and each line (the
+warning at 80 %, the limit at 100 %) is published once per period through
+markers on the period row, so the recompute can correct drift without
+re-announcing a line already crossed. Entries in another currency are logged
+and skipped, not summed. The owner is told through MOD-11.
+
+**MOD-12** gains `fact_time_entry` — the table doc 06 named before the module
+existed — projected on `time.entry.logged`, removed on `time.entry.deleted`,
+with three built-in metrics (`time.logged`, `time.cost`, `time.elapsed`) that
+keep the kinds apart, a `money` unit, and two widgets on the seeded teams
+dashboard.
+
+---
+
 ---
 
 ## 3. What remains in Phase 4
@@ -716,7 +753,7 @@ answers.
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
-| MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
+| MOD-23, MOD-24, SCIM, metering | Not started. |
 
 ---
 
@@ -748,7 +785,7 @@ answers.
 
 | Check | Result |
 |---|---|
-| Unit tests | 800 passing, 472 of them over the ten modules |
+| Unit tests | 812 passing, 484 of them over the eleven modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -775,7 +812,8 @@ answers.
 | — ranges, schedules, the trend line and CSV | 21, including the same 08:00 on both sides of daylight saving and the formula guard that leaves numbers alone |
 | — survey documents, scoring and throttling | 19, including the scale that would have reported a 7 as 150 % and the button row that refuses to be a keyboard |
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| — time pricing, periods and thresholds | 12, including that one entry crossing both budget lines reports both and a decrement reports neither |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift

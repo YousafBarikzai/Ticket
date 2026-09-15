@@ -467,6 +467,26 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'log time on a ticket they can see',
+    method: 'POST',
+    path: () => '/api/v1/time-entries',
+    body: (t) => ({ ticketId: t.ticketIds[0], activityKey: 'work', minutes: 5 }),
+    // Ticket 0 is the primary team's. The other team's agent cannot see it, so
+    // 404; the requester holds no time.log at all.
+    allowed: ['agent', 'lead', 'admin'],
+    deniedStatus: { requester: 403, otherAgent: 404 },
+  },
+  {
+    what: 'set a budget',
+    method: 'POST',
+    path: () => '/api/v1/budgets',
+    body: () => ({ key: 'matrix-budget', name: 'Matrix', scopeType: 'tenant', periodKind: 'month', amount: 1000, currency: 'GBP' }),
+    // Money is the service owner's and the administrator's; neither is a
+    // persona here, so only the administrator succeeds.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.
