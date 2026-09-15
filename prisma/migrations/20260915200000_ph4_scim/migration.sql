@@ -5,14 +5,15 @@
 -- in hand-written SQL.
 
 -- The identity provider's own identifiers, kept apart from the OIDC subject.
-ALTER TABLE "user" ADD COLUMN "scim_external_id" TEXT;
+-- (The User model's table is app_user_account: "user" is a reserved word.)
+ALTER TABLE "app_user_account" ADD COLUMN "scim_external_id" TEXT;
 ALTER TABLE "team" ADD COLUMN "scim_external_id" TEXT;
 -- Which SCIM group granted a role, so leaving the group revokes it and
 -- nothing granted by hand is touched.
 ALTER TABLE "role_assignment" ADD COLUMN "via_scim_team_id" UUID;
 
 -- CreateIndex
-CREATE INDEX "user_tenant_id_scim_external_id_idx" ON "user"("tenant_id", "scim_external_id");
+CREATE INDEX "app_user_account_tenant_id_scim_external_id_idx" ON "app_user_account"("tenant_id", "scim_external_id");
 CREATE INDEX "team_tenant_id_scim_external_id_idx" ON "team"("tenant_id", "scim_external_id");
 CREATE INDEX "role_assignment_tenant_id_via_scim_team_id_idx" ON "role_assignment"("tenant_id", "via_scim_team_id");
 
