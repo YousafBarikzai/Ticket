@@ -91,3 +91,37 @@ model WebhookDelivery {
   @@index([tenantId, status])
   @@map("webhook_delivery")
 }
+
+/// MOD-14-E3 Integration gateway (PH-4).
+///
+/// Every outbound call a tenant's configuration can cause, recorded so that
+/// "the connector stopped working on Tuesday" is answerable. Bodies and headers
+/// are redacted before they reach this table: it is read by support, exported
+/// with configuration, and kept for as long as retention says.
+model IntegrationLog {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  connector      String
+  /// outbound | inbound
+  direction      String
+  method         String
+  /// Already stripped of credentials in the userinfo and query string.
+  url            String
+  requestHeaders Json     @default("{}") @map("request_headers")
+  requestBody    Json?    @map("request_body")
+  /// 0 when no response was received at all: a timeout, a refusal, a reset.
+  status         Int      @default(0)
+  responseBody   Json?    @map("response_body")
+  durationMs     Int      @default(0) @map("duration_ms")
+  error          String?
+  correlationId  String?  @map("correlation_id")
+  /// What caused the call — a workflow run, a rule, a sync job.
+  causeKind      String?  @map("cause_kind")
+  causeId        String?  @map("cause_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, connector, createdAt(sort: Desc)])
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([tenantId, causeKind, causeId])
+  @@map("integration_log")
+}
