@@ -785,7 +785,7 @@ dashboard.
 
 | Check | Result |
 |---|---|
-| Unit tests | 812 passing, 484 of them over the eleven modules |
+| Unit tests | 811 passing, 483 of them over the eleven modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
