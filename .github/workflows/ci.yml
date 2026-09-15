@@ -1,0 +1,177 @@
+name: CI
+
+# Stages 1 to 3 of the pipeline in docs/architecture/16 §3. Preview, staging and
+# production deploys are stages 4 to 6 and live in deploy.yml once the hosting
+# accounts exist.
+
+on:
+  # Pull requests plus the default branch, not every branch: a push to a branch
+  # with an open pull request would otherwise run the whole pipeline twice.
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege, declared rather than inherited. The secret scanner reads the
+# pull request's commits to work out what to scan, so it needs more than the
+# default contents scope; nothing here needs write access to anything.
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  validate:
+    name: 1 · Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The secret scanner walks history, not just the working tree: a secret
+          # committed and later removed is still a leaked secret. The default
+          # shallow clone leaves it unable to resolve the range, which it reports
+          # as a partial scan and then fails on.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: The committed Prisma schema matches its module fragments
+        run: pnpm db:check
+
+      # The module contract is what makes extraction a deployment change rather
+      # than a rewrite, so it is checked mechanically (docs/architecture/04 §3).
+      - name: Module contract
+        run: pnpm lint:boundaries
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+
+      - name: Unit tests
+        run: pnpm exec vitest run --project unit
+
+      - name: No secrets in the tree
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Named rather than left to auto-detection, so a config that fails to
+          # load is a loud error instead of a silently stricter scan.
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  integration:
+    name: 3 · Integration, isolation and permissions
+    runs-on: ubuntu-latest
+    needs: validate
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: devpass
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports: ['5432:5432']
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports: ['6379:6379']
+      # The search engine PH-3 added (ADR-0017). No container health check: the
+      # image carries neither curl nor wget, so a health-cmd would fail for the
+      # wrong reason. The test setup polls /health from the runner instead.
+      meilisearch:
+        image: getmeili/meilisearch:v1.11
+        env:
+          MEILI_MASTER_KEY: devsearchkey
+          MEILI_NO_ANALYTICS: 'true'
+          MEILI_ENV: development
+          # One line per HTTP request at INFO, and the runner prints service
+          # logs after every step — which buries the test output that says what
+          # actually failed under several hundred lines of noise.
+          MEILI_LOG_LEVEL: WARN
+        ports: ['7700:7700']
+    env:
+      TEST_DATABASE_URL: postgresql://app_owner:devpass@127.0.0.1:5432/itsm_test?schema=public
+      TEST_DATABASE_URL_APP: postgresql://app_user:devpass@127.0.0.1:5432/itsm_test?schema=public
+      TEST_DATABASE_URL_PLATFORM: postgresql://app_platform:devpass@127.0.0.1:5432/itsm_test?schema=public
+      DATABASE_URL_APP: postgresql://app_user:devpass@127.0.0.1:5432/itsm_test?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      MEILISEARCH_URL: http://127.0.0.1:7700
+      MEILISEARCH_API_KEY: devsearchkey
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Create roles, database and extensions
+        run: ./infra/scripts/prepare-database.sh
+        env:
+          PGPASSWORD: devpass
+          PGHOST: 127.0.0.1
+          PGUSER: postgres
+
+      - name: Migrate
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      # Release-blocking: a cross-tenant leak or a permission regression stops
+      # the build here rather than at a release gate (docs/architecture/18 §3).
+      - name: Integration, isolation and permission suites
+        run: pnpm exec vitest run --project integration
+
+  build:
+    name: 2 · Build images
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: api
+          push: false
+          # Without this the image stays in the build cache and never reaches the
+          # daemon, so the scan below would have nothing to look at.
+          load: true
+          tags: itsm-api:${{ github.sha }}
+      - name: Build the worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: worker
+          push: false
+          tags: itsm-worker:${{ github.sha }}
+      # One scan covers both: the API and worker images share every filesystem
+      # layer and differ only in their entry point, environment and health check.
+      - name: Scan the images
+        # The tag carries a `v`: `0.28.0` does not exist and fails the job at
+        # set-up, before any step runs, with only "unable to find version".
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: itsm-api:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true

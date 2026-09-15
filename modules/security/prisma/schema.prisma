@@ -1,0 +1,78 @@
+/// MOD-15 Security, privacy, audit and resilience.
+
+/// Append-only and hash-chained per tenant (ADR-0014). The application database
+/// role is granted INSERT and SELECT only; there is no UPDATE or DELETE grant.
+model AuditEvent {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  seq           BigInt   @default(autoincrement())
+  actorType     String   @map("actor_type")
+  actorId       String?  @map("actor_id") @db.Uuid
+  onBehalfOf    String?  @map("on_behalf_of") @db.Uuid
+  granteeTenantId String? @map("grantee_tenant_id") @db.Uuid
+  action        String
+  targetType    String   @map("target_type")
+  targetId      String?  @map("target_id")
+  before        Json?
+  after         Json?
+  reason        String?
+  correlationId String   @map("correlation_id")
+  ip            String?
+  userAgent     String?  @map("user_agent")
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  hash          String
+  prevHash      String?  @map("prev_hash")
+
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@index([tenantId, targetType, targetId])
+  @@index([tenantId, actorId])
+  @@index([tenantId, action])
+  @@index([tenantId, seq])
+  @@map("audit_event")
+}
+
+model SecurityAlert {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  type      String
+  severity  String    @default("medium")
+  details   Json      @default("{}")
+  status    String    @default("open")
+  ticketId  String?   @map("ticket_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@map("security_alert")
+}
+
+/// Field-level classification drives masking in serialisers, redaction in logs
+/// and audit, and exclusion from AI context.
+model DataClassification {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  entity       String
+  field        String
+  level        String   @default("internal")
+  maskingRule  String?  @map("masking_rule")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entity, field])
+  @@map("data_classification")
+}
+
+model RetentionPolicy {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  recordType      String   @map("record_type")
+  keepDays        Int      @map("keep_days")
+  action          String   @default("delete")
+  legalHoldExempt Boolean  @default(false) @map("legal_hold_exempt")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, recordType])
+  @@map("retention_policy")
+}

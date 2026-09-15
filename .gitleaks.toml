@@ -1,0 +1,36 @@
+# Secret scanning configuration.
+#
+# The default rule set is kept in full. This file narrows it in exactly one
+# place, because an allowlist is where a scanner stops protecting you and nobody
+# gets an alert about it, so each entry has to earn its place.
+#
+# Written in the singular `[allowlist]` form on purpose: the plural
+# `[[allowlists]]` block and its `targetRules` key are silently ignored by the
+# version the pipeline runs, so a config written that way looks correct, changes
+# nothing, and the build stays red with no explanation.
+#
+# Deliberately not here: the development credentials in the compose file, the
+# database preparation script and the CI service containers. They were exempted
+# in a first draft and then removed, because the scanner does not flag them and
+# exempting a whole file hides whatever is added to it next.
+
+title = "ITSM platform"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Business rule and approval policy keys.
+
+The generic-api-key rule fires on `key: '...'`, and a rule key is exactly that
+shape: a short lower-case slug such as 'major-incident-p1'. The pattern is
+restricted to that shape, so a real credential assigned to a field called `key`
+is still reported — anything containing upper case, an underscore, or a run of
+digits falls outside it and is caught.
+"""
+regexTarget = "line"
+# Case-sensitive on purpose. An earlier draft used (?i) for the field name,
+# which also made the *value* case-insensitive and would have exempted an
+# upper-case credential such as an AWS key id assigned to `key:`.
+regexes = ['''(?:rule|policy|template|setting)?[Kk]ey['"]?\s*[:=]\s*['"][a-z][a-z0-9]*(?:-[a-z0-9]+)*['"]''']

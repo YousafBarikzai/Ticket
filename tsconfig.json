@@ -1,0 +1,16 @@
+{
+  "extends": "./packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@itsm/contracts": ["packages/contracts/src/index.ts"],
+      "@itsm/platform": ["packages/platform/src/index.ts"],
+      "@itsm/expr": ["packages/expr/src/index.ts"],
+      "@itsm/business-time": ["packages/business-time/src/index.ts"],
+      "@itsm/module-*": ["modules/*/src/index.ts"]
+    }
+  },
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "modules/**/*.ts", "infra/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "**/dist/**", "**/.next/**"]
+}

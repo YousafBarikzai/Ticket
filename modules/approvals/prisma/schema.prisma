@@ -1,0 +1,139 @@
+/// MOD-17 Approvals (PH-2).
+///
+/// An approval policy is a versioned definition like every other builder object
+/// (docs/architecture/05 §8): steps are JSON, interpreted at run time, and a
+/// request pins the version it started on so a policy edited mid-flight cannot
+/// change the rules under a decision already in progress.
+
+model ApprovalPolicy {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  orgId       String?  @map("org_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// What this policy applies to: request, change, knowledge, config, ticket.
+  subjectType String   @map("subject_type")
+  /// Expression matched against the subject; the most specific match wins.
+  match       Json     @default("{\"always\":true}")
+  specificity Int      @default(0)
+  /// An ordered list of steps; see domain/policy.ts for the shape.
+  steps       Json     @default("[]")
+  status      String   @default("draft")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  publishedBy String?  @map("published_by") @db.Uuid
+
+  versions    ApprovalPolicyVersion[]
+  requests    ApprovalRequest[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, subjectType, status, specificity(sort: Desc)])
+  @@map("approval_policy")
+}
+
+model ApprovalPolicyVersion {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  policyId    String   @map("policy_id") @db.Uuid
+  version     Int
+  snapshot    Json
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy String?  @map("published_by") @db.Uuid
+
+  policy      ApprovalPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, version])
+  @@index([tenantId])
+  @@map("approval_policy_version")
+}
+
+model ApprovalRequest {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  policyId      String    @map("policy_id") @db.Uuid
+  policyVersion Int       @map("policy_version")
+  subjectType   String    @map("subject_type")
+  subjectId     String    @map("subject_id") @db.Uuid
+  ticketId      String?   @map("ticket_id") @db.Uuid
+  status        String    @default("pending")
+  outcome       String?
+  requestedBy   String?   @map("requested_by") @db.Uuid
+  requestedAt   DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedAt     DateTime? @map("decided_at") @db.Timestamptz(6)
+  dueAt         DateTime? @map("due_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+
+  policy        ApprovalPolicy @relation(fields: [policyId], references: [id])
+  steps         ApprovalStep[]
+
+  /// One live approval per subject: a second request for the same change is a
+  /// bug, not a second opinion.
+  @@unique([tenantId, subjectType, subjectId])
+  @@index([tenantId, status, dueAt])
+  @@index([tenantId, ticketId])
+  @@map("approval_request")
+}
+
+model ApprovalStep {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  requestId   String    @map("request_id") @db.Uuid
+  sequence    Int
+  name        String
+  /// How many of the resolved approvers must approve for the step to pass.
+  quorum      Int       @default(1)
+  /// Resolved when the step opens, not when the policy was written: who someone
+  /// reports to changes, and the decision must reflect the org chart as it is.
+  approverIds String[]  @map("approver_ids")
+  status      String    @default("waiting")
+  openedAt    DateTime? @map("opened_at") @db.Timestamptz(6)
+  decidedAt   DateTime? @map("decided_at") @db.Timestamptz(6)
+  dueAt       DateTime? @map("due_at") @db.Timestamptz(6)
+  onTimeout   String    @default("escalate") @map("on_timeout")
+
+  request     ApprovalRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  decisions   ApprovalDecision[]
+
+  @@unique([requestId, sequence])
+  @@index([tenantId, status, dueAt])
+  @@map("approval_step")
+}
+
+model ApprovalDecision {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  stepId     String   @map("step_id") @db.Uuid
+  approverId String   @map("approver_id") @db.Uuid
+  /// Who actually decided, when a delegate acted for the named approver.
+  actedById  String?  @map("acted_by_id") @db.Uuid
+  decision   String
+  comment    String?
+  via        String   @default("api")
+  decidedAt  DateTime @default(now()) @map("decided_at") @db.Timestamptz(6)
+
+  step       ApprovalStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  /// One decision per approver per step; changing your mind is a new step, not
+  /// an edit, so the trail stays honest.
+  @@unique([stepId, approverId])
+  @@index([tenantId, approverId])
+  @@map("approval_decision")
+}
+
+model ApprovalDelegation {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  fromUserId   String   @map("from_user_id") @db.Uuid
+  toUserId     String   @map("to_user_id") @db.Uuid
+  reason       String?
+  startsAt     DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt       DateTime @map("ends_at") @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy    String?  @map("created_by") @db.Uuid
+
+  @@index([tenantId, fromUserId, startsAt, endsAt])
+  @@map("approval_delegation")
+}

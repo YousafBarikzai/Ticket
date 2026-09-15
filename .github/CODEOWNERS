@@ -1,0 +1,34 @@
+# Module ownership (docs/architecture/04 §7).
+# A change crossing two modules needs a reviewer from each owning squad.
+#
+# The teams below are the squads named in the architecture, not teams that exist
+# in the GitHub organisation yet. Until they are created, GitHub reports them as
+# unknown owners and requests no reviews; the file still records who owns what.
+
+/packages/platform/    @platform-squad
+/packages/contracts/   @platform-squad
+/packages/expr/        @catalogue-workflow-squad
+/packages/business-time/ @core-squad
+/packages/ui/          @experience-squad
+/packages/runtime/     @platform-squad
+
+/modules/tenancy/      @platform-squad
+/modules/identity/     @platform-squad
+/modules/security/     @platform-squad
+/modules/integrations/ @platform-squad
+/modules/admin/        @platform-squad
+/modules/ticket/       @core-squad
+/modules/sla/          @core-squad
+/modules/notifications/ @experience-squad
+/modules/search/       @ai-knowledge-squad
+
+/apps/api/             @platform-squad
+/apps/worker/          @platform-squad
+
+/prisma/migrations/    @platform-squad
+/infra/                @platform-squad @sre
+/.github/              @platform-squad @sre
+
+# Architecture and decisions need the tech lead.
+/docs/architecture/    @tech-lead
+/docs/adr/             @tech-lead

@@ -1,0 +1,111 @@
+/// MOD-03 Omnichannel — the shared adapter framework (PH-2).
+///
+/// Email is the reference channel; Slack, Teams, WhatsApp and voice arrive in
+/// PH-4 and reuse every table here (docs/architecture/07 §5). The framework
+/// holds what is common to all of them: which account received the message,
+/// whose identity it maps to, which conversation it belongs to, and whether it
+/// has been seen before.
+
+model ChannelAccount {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  orgId        String?  @map("org_id") @db.Uuid
+  channel      String
+  key          String
+  name         String
+  /// The mailbox, workspace or number this account receives on.
+  address      String
+  /// Per-channel settings: transport, signing secret reference, defaults.
+  config       Json     @default("{}")
+  status       String   @default("active")
+  /// Health, tracked so a silently broken inbound path is visible.
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
+  failureCount Int      @default(0) @map("failure_count")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  identities   ChannelIdentity[]
+  conversations Conversation[]
+  inbound      InboundMessage[]
+
+  @@unique([tenantId, channel, key])
+  @@index([tenantId, channel, status])
+  @@map("channel_account")
+}
+
+/// Which person a channel address belongs to.
+///
+/// Verified before any ticket data is revealed: an email envelope is trivially
+/// forged, so an unverified identity may only ask to be linked, never to read
+/// (docs/architecture/07 §5).
+model ChannelIdentity {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  accountId  String    @map("account_id") @db.Uuid
+  channel    String
+  /// Lower-cased address, handle or number as the provider reports it.
+  externalId String    @map("external_id")
+  userId     String?   @map("user_id") @db.Uuid
+  verified   Boolean   @default(false)
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(6)
+  /// How it was verified: provider_verified, one_time_code, admin.
+  method     String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account    ChannelAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channel, externalId])
+  @@index([tenantId, userId])
+  @@map("channel_identity")
+}
+
+/// A thread on one channel about one ticket. A ticket may have several, which
+/// is what makes cross-channel continuity possible.
+model Conversation {
+  id               String   @id @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  accountId        String   @map("account_id") @db.Uuid
+  channel          String
+  ticketId         String?  @map("ticket_id") @db.Uuid
+  /// The provider's thread identifier, for replying into the same thread.
+  externalThreadId String?  @map("external_thread_id")
+  state            Json     @default("{}")
+  lastInboundAt    DateTime? @map("last_inbound_at") @db.Timestamptz(6)
+  lastOutboundAt   DateTime? @map("last_outbound_at") @db.Timestamptz(6)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account          ChannelAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channel, externalThreadId])
+  @@index([tenantId, ticketId])
+  @@map("conversation")
+}
+
+/// Every message the platform accepted, kept so the same provider delivery can
+/// never be processed twice and so an inbound path can be replayed.
+model InboundMessage {
+  id                String   @id @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  accountId         String   @map("account_id") @db.Uuid
+  channel           String
+  /// The provider's own message id: the idempotency key for the whole path.
+  externalMessageId String   @map("external_message_id")
+  fromAddress       String   @map("from_address")
+  subject           String?
+  body              String?
+  /// The raw provider payload, redacted of secrets, for replay and support.
+  raw               Json     @default("{}")
+  conversationId    String?  @map("conversation_id") @db.Uuid
+  ticketId          String?  @map("ticket_id") @db.Uuid
+  status            String   @default("received")
+  rejectedReason    String?  @map("rejected_reason")
+  receivedAt        DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt       DateTime? @map("processed_at") @db.Timestamptz(6)
+
+  account           ChannelAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channel, externalMessageId])
+  @@index([tenantId, status, receivedAt(sort: Desc)])
+  @@index([tenantId, fromAddress, receivedAt(sort: Desc)])
+  @@map("inbound_message")
+}
