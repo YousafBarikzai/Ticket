@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agrees, flatten, policyFor, reconcile, unflatten, type Rule } from '../domain/reconcile.js';
+import { agrees, fingerprint, flatten, policyFor, reconcile, unflatten, type Rule } from '../domain/reconcile.js';
 
 /**
  * The decision this whole epic turns on: what happens when the feed and the
@@ -89,6 +89,45 @@ describe('reconcile', () => {
   it('compares lists and objects by value, so a reordered feed is not a change', () => {
     const verdict = reconcile({ 'attributes.tags': ['a', 'b'] }, { 'attributes.tags': ['a', 'b'] }, noRules, sourceId);
     expect(verdict.unchanged).toEqual(['attributes.tags']);
+  });
+
+  it('does not call an object changed because JSONB handed back its keys in another order', () => {
+    const verdict = reconcile(
+      { 'attributes.spec': { cores: 8, ram: 32 } },
+      { 'attributes.spec': { ram: 32, cores: 8 } },
+      noRules,
+      sourceId,
+    );
+    expect(verdict.propose).toEqual([]);
+    expect(verdict.unchanged).toEqual(['attributes.spec']);
+  });
+});
+
+describe('fingerprint', () => {
+  /**
+   * PostgreSQL JSONB does not preserve key order. A proposal written as
+   * `{name, serial}` comes back in JSONB's own order, so comparing the two raw
+   * `JSON.stringify` strings says "different" every time — which turns "has
+   * somebody already rejected this?" into "no" for ever, and the rejected
+   * proposal returns every single run.
+   */
+  it('is the same however the keys were ordered', () => {
+    expect(fingerprint({ name: 'a', serial: 'b' })).toBe(fingerprint({ serial: 'b', name: 'a' }));
+  });
+
+  it('sorts nested objects and objects inside lists too', () => {
+    expect(fingerprint({ a: { x: 1, y: 2 }, list: [{ p: 1, q: 2 }] })).toBe(
+      fingerprint({ list: [{ q: 2, p: 1 }], a: { y: 2, x: 1 } }),
+    );
+  });
+
+  it('keeps list order, which is information', () => {
+    expect(fingerprint([1, 2])).not.toBe(fingerprint([2, 1]));
+  });
+
+  it('still tells different values apart', () => {
+    expect(fingerprint({ serial: 'SN-1' })).not.toBe(fingerprint({ serial: 'SN-2' }));
+    expect(fingerprint({ cpuCount: 8 })).not.toBe(fingerprint({ cpuCount: '8' }));
   });
 });
 

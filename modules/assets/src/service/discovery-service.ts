@@ -17,7 +17,7 @@ import {
 import { SOURCE_KINDS, isSourceKind, presetFor } from '../sources/presets.js';
 import { fetchRecords, resolveSource, sourceConfigSchema, type FetchDeps } from '../sources/fetch.js';
 import { isMapped, mapRecord, type MappedRecord } from '../domain/mapping.js';
-import { POLICIES, flatten, reconcile, type Rule } from '../domain/reconcile.js';
+import { POLICIES, fingerprint, flatten, reconcile, type Rule } from '../domain/reconcile.js';
 import { assertAttributes, inheritedAttributes } from '../domain/attributes.js';
 import { classChain } from '../repo/graph-repo.js';
 import { invalidateTraversals } from './impact-service.js';
@@ -472,13 +472,16 @@ async function raise(
     result: RunResult;
   },
 ): Promise<void> {
-  const fingerprint = JSON.stringify(input.proposed);
+  // Canonical on both sides: the stored copy has been through JSONB, which does
+  // not keep key order, so a raw string comparison never matches and a rejection
+  // is never recognised.
+  const wanted = fingerprint(input.proposed);
 
   const refused = await tx.discoveryProposal.findFirst({
     where: { sourceId: input.sourceId, externalKey: input.externalKey, kind: input.kind, status: 'rejected' },
     orderBy: { decidedAt: 'desc' },
   });
-  if (refused && JSON.stringify(refused.proposed) === fingerprint) {
+  if (refused && fingerprint(refused.proposed) === wanted) {
     input.result.unchanged += 1;
     return;
   }

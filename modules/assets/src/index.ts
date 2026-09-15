@@ -149,6 +149,7 @@ export {
 export {
   POLICIES,
   agrees,
+  fingerprint,
   flatten,
   policyFor,
   reconcile,

@@ -57,11 +57,38 @@ export interface Reconciliation {
   ignored: string[];
 }
 
+/**
+ * A stable string for a value, whatever order its keys arrived in.
+ *
+ * `JSON.stringify` alone is wrong here, and wrong in a way that only shows
+ * against a real database: PostgreSQL JSONB does not preserve key order, so a
+ * value written as `{name, serial}` reads back as `{name, serial}` sorted by
+ * JSONB's own rules. Comparing the two raw strings says "different" every time,
+ * which turns "has this proposal already been rejected?" into "no" for ever.
+ */
+export function fingerprint(value: unknown): string {
+  return JSON.stringify(canonical(value));
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value !== null && typeof value === 'object') {
+    const source = value as Record<string, unknown>;
+    // Order is not information here: two objects with the same entries are the
+    // same value, and only the database's storage order differs.
+    return Object.fromEntries(Object.keys(source).sort().map((key) => [key, canonical(source[key])]));
+  }
+  return value;
+}
+
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null || a === undefined || b === undefined) return false;
   if (typeof a !== typeof b) return false;
-  if (typeof a === 'object') return JSON.stringify(a) === JSON.stringify(b);
+  // Same reasoning as `fingerprint`: an attribute holding an object or a list
+  // would otherwise look changed on every run purely because it came back from
+  // JSONB with its keys in a different order.
+  if (typeof a === 'object') return fingerprint(a) === fingerprint(b);
   return false;
 }
 
