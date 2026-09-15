@@ -46,6 +46,25 @@ const schema = z.object({
   MEILISEARCH_URL: z.string().url().optional(),
   MEILISEARCH_API_KEY: z.string().optional(),
 
+  /**
+   * The AI model provider (ADR-0040, ADR-0042). `stub` answers without a model
+   * and is refused in production; `anthropic` needs a key. Unset means no
+   * provider, and every capability that calls a model is refused loudly rather
+   * than answered with something plausible.
+   */
+  AI_PROVIDER: z.enum(['none', 'stub', 'anthropic']).default('none'),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.string().url().optional(),
+  /** The model a prompt version gets when it names none. */
+  AI_DEFAULT_MODEL: z.string().optional(),
+  /**
+   * What each model costs, as JSON: micro-pence per thousand tokens, keyed by
+   * model. Operator-supplied because a vendor's published price changes
+   * without asking this repository and is quoted in another currency — and
+   * because an unpriced model is refused rather than counted as free.
+   */
+  AI_MODEL_PRICES: z.string().optional(),
+
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
   OTEL_SERVICE_NAME: z.string().default('itsm-api'),
 

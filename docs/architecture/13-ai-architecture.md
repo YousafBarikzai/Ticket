@@ -114,6 +114,33 @@ flowchart LR
 - Default for UK/EEA tenants: Azure OpenAI (UK South / Sweden Central) or AWS Bedrock (`eu-west-2` London) endpoints; Anthropic direct where the tenant accepts the provider's processing terms; local models (self-hosted OpenAI-compatible) for tenants that forbid external processing.
 - Prompts and completions are stored in the platform database (tenant-scoped, classified `confidential`) for audit and evaluation, not with the provider beyond the provider's transient processing.
 
+### 6.1 What is built (ADR-0042)
+
+OD-04 is closed: `AI_PROVIDER=anthropic` with `ANTHROPIC_API_KEY` registers
+the adapter, `stub` throws at boot in production, and unset means every
+capability that calls a model refuses with a 503 naming the configuration.
+
+Three things this section describes are **not** built, and each is a real
+constraint rather than a detail:
+
+- **`tenant.ai_policy` does not exist.** There is one provider per deployment,
+  chosen by configuration, and no per-tenant allow-list, region or retention
+  setting. A tenant that forbids external processing, or requires a UK
+  endpoint, cannot be served by this deployment — the honest answer today is a
+  separate deployment, not a setting.
+- **No Azure, Bedrock or self-hosted adapter.** The socket takes them
+  (`registerAiProvider`); nobody has written them.
+- **Prices are configuration, not code** (`AI_MODEL_PRICES`, micro-pence per
+  thousand tokens). A model with no price is refused before it is called,
+  because a budget that cannot see a cost is not a budget. Only the stub is
+  priced in code.
+
+The prompt is also the reason the adapter does not go through the integration
+gateway, which is otherwise the only way out of the platform (ADR-0023): the
+gateway records request bodies to `integration_log`, and a prompt is a
+rendered ticket. It would be copied into a table with a different retention
+policy and a different audience.
+
 ## 7. What PH-1 must include for this design
 
 - `Actor.type = 'ai'` and `on_behalf_of` in the audit and event envelopes.

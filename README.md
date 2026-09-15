@@ -26,8 +26,13 @@ requester portal, and the first interface to any of it. See
 [docs/architecture/14 §10](docs/architecture/14-experience-architecture.md)
 for what exists and where the experience documents are still ahead of it.
 
+The AI provider is settled (ADR-0042): `AI_PROVIDER=anthropic` with a key.
+Model prices are the operator's to supply, and a model with no price is
+refused rather than counted as free. Residency is still open — there is one
+provider per deployment and no per-tenant policy.
+
 `pnpm skeleton` runs 59 assertions end to end against the bundled production
-artefacts — a demo that needs no code reading. 1135 unit tests pass, plus the
+artefacts — a demo that needs no code reading. 1158 unit tests pass, plus the
 release-blocking tenant-isolation and permission-matrix suites against a real
 PostgreSQL and Redis.
 
@@ -63,7 +68,7 @@ does not exist in production (ADR-0041).
 ## Documentation
 
 - [`docs/architecture`](docs/architecture/README.md) — the software architecture (23 documents: context, runtime topology, modules, platform primitives, data, eventing, API, identity and security, tenancy, engines, AI, experience, operations, deployment, evolution, quality attributes, risks, and a readiness record per phase).
-- [`docs/adr`](docs/adr/README.md) — Architecture Decision Records (ADR-0001 … ADR-0041).
+- [`docs/adr`](docs/adr/README.md) — Architecture Decision Records (ADR-0001 … ADR-0042).
 
 ## Repository layout
 
