@@ -46,6 +46,12 @@ export const rawBodyPlugin = fp(async (app: FastifyInstance) => {
     }
   });
 
+  // A CSV export posted as itself (MOD-24). Kept as the string it is; the
+  // route that takes it carries its own body limit.
+  app.addContentTypeParser(['text/csv', 'text/plain'], { parseAs: 'string' }, (_request, body, done) => {
+    done(null, typeof body === 'string' ? body : body.toString('utf8'));
+  });
+
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (request, body, done) => {
     const text = typeof body === 'string' ? body : body.toString('utf8');
     remember(request, text);

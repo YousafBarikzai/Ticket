@@ -21,6 +21,7 @@ import { checkTicketDrift, rebuildRecent, reportService } from '@itsm/module-ana
 import { invitationService } from '@itsm/module-feedback';
 import { budgetService } from '@itsm/module-time';
 import { incidentService as statusIncidentService } from '@itsm/module-statuspage';
+import { sweepFiles } from '@itsm/module-migration';
 import type { EventEnvelope } from '@itsm/contracts';
 
 /**
@@ -179,6 +180,16 @@ defineJob('analytics', 'budget.sweep', async () => {
     await withContext(ctx, async () => {
       const result = await budgetService.recomputeAll(ctx);
       if (result.corrected > 0) logger.info('budget totals corrected', { tenantId: tenant.id, ...result });
+    });
+  }
+});
+
+defineJob('retention', 'import.file.sweep', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const removed = await sweepFiles(ctx);
+      if (removed > 0) logger.debug('import files swept', { tenantId: tenant.id, removed });
     });
   }
 });

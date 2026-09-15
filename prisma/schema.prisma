@@ -2585,6 +2585,139 @@ model KnowledgeCategory {
 }
 
 // ===========================================================================
+// modules/migration/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-24 Migration (PH-4).
+///
+/// Bringing another tool's records in: users, teams, services and tickets,
+/// from a file somebody uploaded or an API the gateway may reach. Every job
+/// runs as a dry run first if anybody is sensible, and every row's outcome is
+/// kept so a re-run picks up the ones that were fixed and leaves the ones
+/// that landed alone (ADR-0036).
+
+/// A saved mapping from a source's field names to ours, per entity. The
+/// built-in presets are code; these are the tenant's own, or a preset a
+/// tenant copied and changed.
+model ImportMapping {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  /// users | teams | services | tickets | comments
+  entity      String
+  /// The mapping document: where each field is in a record, the value maps,
+  /// the constants. Validated by the entity's schema before it is saved.
+  document    Json
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key])
+  @@map("import_mapping")
+}
+
+/// A file somebody uploaded to import from. Kept as text, bounded, and
+/// deleted once the job that read it is finished or a week has passed.
+model ImportFile {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  filename   String
+  mime       String
+  bytes      Int
+  content    String
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, createdAt])
+  @@map("import_file")
+}
+
+/// One run: what to read, how to read it, whether to write anything, and
+/// how it went. A dry run is a job whose mode says so; it writes records and
+/// nothing else.
+model ImportJob {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  name        String
+  /// users | teams | services | tickets | comments
+  entity      String
+  /// csv | http_json | servicenow | jira | freshservice
+  source      String
+  /// The source configuration: url, paging, credential reference, CSV
+  /// options, or the uploaded file's id.
+  config      Json      @default("{}")
+  /// The mapping used, copied at creation so a later edit to the saved
+  /// mapping does not change what this job did.
+  mapping     Json
+  /// dry_run | commit
+  mode        String    @default("dry_run")
+  /// pending | running | completed | failed | cancelled
+  status      String    @default("pending")
+  seen        Int       @default(0)
+  created     Int       @default(0)
+  updated     Int       @default(0)
+  unchanged   Int       @default(0)
+  failed      Int       @default(0)
+  /// Why the whole job stopped, when it did: the source answered 401, the
+  /// file was not CSV, the mapping named a field that does not exist.
+  error       String?
+  fileId      String?   @map("file_id") @db.Uuid
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  records     ImportRecord[]
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, status])
+  @@map("import_job")
+}
+
+/// One row of one job: what it was, what became of it, and why not. The
+/// record is the report; a dry run's records say what a commit would do.
+model ImportRecord {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  jobId       String   @map("job_id") @db.Uuid
+  rowNumber   Int      @map("row_number")
+  externalKey String?  @map("external_key")
+  /// would_create | would_update | would_skip | created | updated | unchanged | failed
+  outcome     String
+  entityId    String?  @map("entity_id") @db.Uuid
+  /// The mapped record, for a dry run's preview and for the failure's context.
+  mapped      Json?
+  problems    String[] @default([])
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job         ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, jobId, outcome])
+  @@index([tenantId, jobId, rowNumber])
+  @@map("import_record")
+}
+
+/// The durable map from a source's identifier to ours. What makes a re-run
+/// an update rather than a duplicate, and what lets a ticket row's
+/// `caller_id` find the user a previous job created.
+model ImportLink {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  /// users | teams | services | tickets | comments
+  entity      String
+  externalKey String   @map("external_key")
+  entityId    String   @map("entity_id") @db.Uuid
+  jobId       String?  @map("job_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entity, externalKey])
+  @@index([tenantId, entity, entityId])
+  @@map("import_link")
+}
+
+// ===========================================================================
 // modules/notifications/prisma/schema.prisma
 // ===========================================================================
 

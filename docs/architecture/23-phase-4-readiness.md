@@ -789,6 +789,43 @@ one somebody cancelled.
 
 ---
 
+### 2.16 Migration (MOD-24)
+
+**An import is not a creation** (ADR-0036). MOD-04 grows `importTicket` and
+`importComments`, which insert a ticket with the status and dates it had
+and publish `ticket.imported` rather than `ticket.created`: search and
+reporting follow it, and no SLA clock, rule, notification or survey fires
+for a ticket closed in 2021. Users, teams and services go through the
+existing services, which react to nothing already.
+
+**Every row is remembered** in a link table from the source's identifier to
+ours, per entity, so a re-run is a delta, a dry run followed by a commit
+doubles nothing, and a ticket row's `caller_id` finds the user a previous
+job created. References resolve through the link first, then by natural
+key; a requester nobody has, named by an email, becomes an external user
+with a warning on the row.
+
+**Nothing is guessed.** A status the value map does not name, a date in an
+unknown form, a field the entity does not have: the first two are failed
+rows, the third a mapping refused when it is saved. A row with only warnings
+is imported, and the warning is on the record.
+
+**Dry run first, and the records are the report.** The same code as a
+commit with the writes turned off, references resolved so a wrong mapping
+shows on every row of the preview; a commit is the same job again, for real.
+Every row's outcome and problems are an `import_record`; the totals are on
+the job; the person who started it is told through MOD-11.
+
+**Sources.** A CSV upload (its own body limit, kept in a bounded table for a
+week), a generic JSON endpoint through the gateway, and three named
+adapters — ServiceNow, Jira Service Management, Freshservice — that are the
+generic source with the boxes filled in: path, records path, paging
+strategy (offset, page, link), the vendor's status and priority words. The
+CSV reader and dotted-path reader moved from MOD-10 into the platform
+package; MOD-10 re-exports them.
+
+---
+
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
@@ -797,7 +834,7 @@ one somebody cancelled.
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
 | **MOD-23 static export** | The page is served by the API (ADR-0035). The edge-hosted export that survives an API outage is a job that renders the same JSON to a file, and waits on a hosting account (OD-06). |
-| MOD-24, SCIM, metering | Not started. |
+| SCIM, metering | Not started. |
 
 ---
 
@@ -826,6 +863,7 @@ one somebody cancelled.
 | A dependency named a module that does not exist | MOD-23's first manifest depended on `MOD-08`, which is the specification's name for a practice and nobody's module id: the incident, problem and change modules are `MOD-08-E1`, `-E2` and `-E3`. `validateRegistry` would have logged it at boot and carried on. Found by reading the id list before the first typecheck; the fix is the three real ids, and the reminder is that a manifest's `dependsOn` is checked against what is registered, not against the document it was copied from. |
 | A public page nearly ran on the platform role | The first draft of MOD-23's slug lookup read `status_page` through `platformDb()`, because a public request has no tenant to read as. That read returns nothing — the table is isolated like every other — and the honest fix was to allowlist it, which is a public endpoint running on the role that sees every tenant. The better fix was to drop the page's own slug and use the tenant's: the directory is the one pre-tenant lookup the platform already permits, and everything after it reads as that tenant (ADR-0035). One fewer table on the allowlist, and nothing to enumerate. |
 | The context plugin let `/status/` through, but not `/status` | The unauthenticated-path rule was a prefix match on `/status/`, written when the page had only a slug form. The host-resolved form has no slug and no trailing slash, and would have answered 401 on a tenant's own domain — the one URL a customer is most likely to be given. One more clause, and the comment on the rule now says what both forms are. |
+| Uploads had a front door and no back room | ADR-0016 presigns uploads to object storage and nothing in the repository reads an object back; MOD-24 needed to read a CSV the administrator uploaded. Rather than build a read path against a store that has no account yet (OD-06), the file goes into a bounded table with its own body limit and a seven-day life. Small, honest, and the first thing to replace when object storage is real. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -834,7 +872,7 @@ one somebody cancelled.
 
 | Check | Result |
 |---|---|
-| Unit tests | 835 passing, 507 of them over the modules |
+| Unit tests | 861 passing, 533 of them over the modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -863,8 +901,9 @@ one somebody cancelled.
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
 | — time pricing, periods and thresholds | 12, including that one entry crossing both budget lines reports both and a decrement reports neither |
 | — the MOD-11 listener list | 2, proving the boot-time check refuses a rule for an event nobody listens for and names the list to extend |
+| — import mappings, presets and paging | 26, including that a status the map does not name is a failed row and not a guess, that every vendor preset passes its entity's checks, and that each paging strategy stops when it should and never before |
 | — the status page vocabulary, allowance and rendering | 22, including that maintenance loses to anything actually broken, that the sweep never revives a cancelled window, that a refused subscribe attempt does not count against the person behind the script, and that a title of `<script>` renders as text |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), a 22-test status-page suite (a customer-facing major incident marking its service's component and an internal one never appearing, an internal update kept off the page beside a public one shown, resolution applied once from two events, a scheduled change becoming a notice that moves rather than multiplies, the sweep marking the component under maintenance, a subscriber confirmed by link, told once and not again after unsubscribing, and a private page answering nothing either way), seven permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), a 13-test migration suite (teams and users from CSV with a dry run that writes nothing and a commit that lands the good rows and reports the bad one, the same commit again doubling nothing, tickets from a ServiceNow-shaped API arriving resolved and dated when raised with their references resolved, no SLA clock and no email, present in search and in the reporting facts, and a journal export landing on the tickets it belongs to), a 22-test status-page suite (a customer-facing major incident marking its service's component and an internal one never appearing, an internal update kept off the page beside a public one shown, resolution applied once from two events, a scheduled change becoming a notice that moves rather than multiplies, the sweep marking the component under maintenance, a subscriber confirmed by link, told once and not again after unsubscribing, and a private page answering nothing either way), eight permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift

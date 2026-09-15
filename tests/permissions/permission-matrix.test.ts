@@ -505,6 +505,17 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'start an import',
+    method: 'POST',
+    path: () => '/api/v1/import/jobs',
+    body: () => ({ name: 'Matrix', entity: 'users', source: 'csv', config: {}, mapping: { externalKeyFrom: 'id', fields: { email: 'email', displayName: 'name' } } }),
+    // Writes users, teams, services and tickets in bulk: an administrator's
+    // act. The administrator gets 422 because no file was uploaded, which is
+    // the line being drawn: refused on permission first, on content second.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 422 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.
