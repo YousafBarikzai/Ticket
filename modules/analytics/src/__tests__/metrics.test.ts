@@ -92,6 +92,23 @@ describe('what reaches SQL', () => {
     expect(where.values).toEqual([period.from, period.to, 'P1', 'P2', '11111111-1111-4111-8111-111111111111', 0]);
   });
 
+  it('casts a parameter compared with a UUID column, in a list too', () => {
+    // Prisma sends a string as text, and PostgreSQL refuses `uuid = text`; the
+    // first CI run of the team-scope test was a 500 for exactly this reason.
+    const team = '11111111-1111-4111-8111-111111111111';
+    const where = whereFor({
+      metric: created,
+      filters: [{ field: 'teamId', op: 'eq', value: team }, { field: 'assigneeId', op: 'in', value: [team, team] }],
+      period,
+    });
+    expect(where.sql).toMatch(/"team_id" = (\$\d+|\?)::uuid/);
+    expect(where.sql).toMatch(/"assignee_id" IN \((\$\d+|\?)::uuid,(\$\d+|\?)::uuid\)/);
+    expect(where.sql).not.toContain(team);
+    // A plain string column is not cast.
+    const plain = whereFor({ metric: created, filters: [{ field: 'priority', op: 'eq', value: 'P1' }], period });
+    expect(plain.sql).not.toContain('::uuid');
+  });
+
   it('casts a date value at the parameter, not in the text', () => {
     const where = whereFor({ metric: created, filters: [{ field: 'resolvedAt', op: 'gte', value: '2026-03-15T00:00:00Z' }], period });
     expect(where.sql).toMatch(/"resolved_at" >= \$\d+::timestamptz|"resolved_at" >= \?::timestamptz/);

@@ -24,6 +24,12 @@ export interface FieldSpec {
   /** The column, as the database names it. Never user-supplied. */
   column: string;
   type: FieldType;
+  /**
+   * The column is a UUID. A bound parameter arrives as text, and PostgreSQL
+   * will not compare `uuid = text` on its own, so the parameter is cast. The
+   * value is still a parameter; only the cast is in the statement.
+   */
+  uuid?: boolean;
   /** May a widget break a metric down by this field? */
   dimension?: boolean;
   /** For a dimension: the table that names it, for labelling a chart. */
@@ -53,11 +59,11 @@ export const FACT_CATALOGUE: Record<FactName, FactSpec> = {
       type: { column: 'type', type: 'string', dimension: true },
       priority: { column: 'priority', type: 'string', dimension: true },
       status: { column: 'status', type: 'string', dimension: true },
-      serviceId: { column: 'service_id', type: 'string', dimension: true, labelledBy: 'dim_service' },
-      categoryId: { column: 'category_id', type: 'string', dimension: true, labelledBy: 'dim_category' },
-      teamId: { column: 'team_id', type: 'string', dimension: true, labelledBy: 'dim_team' },
-      assigneeId: { column: 'assignee_id', type: 'string', dimension: true, labelledBy: 'dim_user' },
-      requesterId: { column: 'requester_id', type: 'string' },
+      serviceId: { column: 'service_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_service' },
+      categoryId: { column: 'category_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_category' },
+      teamId: { column: 'team_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_team' },
+      assigneeId: { column: 'assignee_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_user' },
+      requesterId: { column: 'requester_id', type: 'string', uuid: true },
       channel: { column: 'channel', type: 'string', dimension: true, labelledBy: 'dim_channel' },
       ...eventTimeFields('createdAt'),
       firstResponseAt: { column: 'first_response_at', type: 'date' },
@@ -77,8 +83,8 @@ export const FACT_CATALOGUE: Record<FactName, FactSpec> = {
     fields: {
       target: { column: 'target', type: 'string', dimension: true },
       priority: { column: 'priority', type: 'string', dimension: true },
-      teamId: { column: 'team_id', type: 'string', dimension: true, labelledBy: 'dim_team' },
-      serviceId: { column: 'service_id', type: 'string', dimension: true, labelledBy: 'dim_service' },
+      teamId: { column: 'team_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_team' },
+      serviceId: { column: 'service_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_service' },
       outcome: { column: 'outcome', type: 'string', dimension: true },
       startedAt: { column: 'started_at', type: 'date' },
       stoppedAt: { column: 'stopped_at', type: 'date' },
@@ -93,7 +99,7 @@ export const FACT_CATALOGUE: Record<FactName, FactSpec> = {
     fields: {
       subjectType: { column: 'subject_type', type: 'string', dimension: true },
       outcome: { column: 'outcome', type: 'string', dimension: true },
-      deciderId: { column: 'decider_id', type: 'string', dimension: true, labelledBy: 'dim_user' },
+      deciderId: { column: 'decider_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_user' },
       requestedAt: { column: 'requested_at', type: 'date' },
       decidedAt: { column: 'decided_at', type: 'date' },
       turnaroundMinutes: { column: 'turnaround_minutes', type: 'number' },
@@ -103,8 +109,8 @@ export const FACT_CATALOGUE: Record<FactName, FactSpec> = {
     table: 'fact_task',
     timeColumn: 'created_at',
     fields: {
-      assigneeId: { column: 'assignee_id', type: 'string', dimension: true, labelledBy: 'dim_user' },
-      teamId: { column: 'team_id', type: 'string', dimension: true, labelledBy: 'dim_team' },
+      assigneeId: { column: 'assignee_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_user' },
+      teamId: { column: 'team_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_team' },
       createdAt: { column: 'created_at', type: 'date' },
       completedAt: { column: 'completed_at', type: 'date' },
       completionMinutes: { column: 'completion_minutes', type: 'number' },
@@ -126,8 +132,8 @@ export const FACT_CATALOGUE: Record<FactName, FactSpec> = {
     table: 'fact_survey',
     timeColumn: 'responded_at',
     fields: {
-      teamId: { column: 'team_id', type: 'string', dimension: true, labelledBy: 'dim_team' },
-      serviceId: { column: 'service_id', type: 'string', dimension: true, labelledBy: 'dim_service' },
+      teamId: { column: 'team_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_team' },
+      serviceId: { column: 'service_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_service' },
       scale: { column: 'scale', type: 'string', dimension: true },
       respondedAt: { column: 'responded_at', type: 'date' },
       score: { column: 'score', type: 'number' },

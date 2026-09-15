@@ -13,9 +13,22 @@ import { ensureDate } from './dimension-repo.js';
  * see `rebuildDay`.
  */
 
+const COUNTERS = [
+  'created',
+  'resolved',
+  'closed',
+  'reopened',
+  'breached',
+  'resolveMinutesSum',
+  'resolveMinutesCount',
+  'firstResponseMinutesSum',
+  'firstResponseMinutesCount',
+] as const;
+
 export async function applyEntries(tx: Tx, tenantId: string, entries: RollupEntry[]): Promise<void> {
   for (const entry of entries) {
     const key = groupingKey(entry.grouping);
+    const withdraws = COUNTERS.some((counter) => entry.delta[counter] < 0);
     await ensureDate(tx, entry.date);
     await tx.rollupTicketDaily.upsert({
       where: { tenantId_date_groupingKey: { tenantId, date: entry.date, groupingKey: key } },
@@ -49,6 +62,17 @@ export async function applyEntries(tx: Tx, tenantId: string, entries: RollupEntr
         firstResponseMinutesCount: { increment: entry.delta.firstResponseMinutesCount },
       },
     });
+
+    // A row every counter of which has gone back to zero is removed, so the
+    // incremental path and the rebuild — which never writes an empty row —
+    // leave the same rows behind. Without this the first CI run found seven
+    // rows on one side and six on the other, with identical numbers.
+    if (withdraws) {
+      const row = await tx.rollupTicketDaily.findFirst({ where: { date: entry.date, groupingKey: key } });
+      if (row && COUNTERS.every((counter) => row[counter] === 0)) {
+        await tx.rollupTicketDaily.delete({ where: { id: row.id } });
+      }
+    }
   }
 }
 

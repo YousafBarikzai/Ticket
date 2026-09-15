@@ -161,8 +161,10 @@ describe('metrics', () => {
 
 describe('dashboards', () => {
   it('starts with the three seeded dashboards', async () => {
+    // A lead reads analytics at team scope; an agent holds no analytics.read
+    // at all, which the permission matrix pins separately.
     const response = await request<{ data: { key: string; personal: boolean; seeded: boolean }[] }>('/api/v1/analytics/dashboards', {
-      token: tenant.people.agent!.token,
+      token: tenant.people.lead!.token,
     });
     expect(response.status).toBe(200);
     expect(response.body.data.filter((row) => row.seeded).map((row) => row.key).sort()).toEqual(['service-desk', 'sla', 'teams']);
@@ -184,13 +186,13 @@ describe('dashboards', () => {
   it('keeps a personal dashboard out of everybody else\'s list', async () => {
     const created = await request<{ id: string; personal: boolean }>('/api/v1/analytics/dashboards', {
       method: 'POST',
-      token: tenant.people.agent!.token,
+      token: tenant.people.lead!.token,
       body: { name: 'My week', personal: true, widgets: [{ title: 'Raised', type: 'number', metricKey: 'tickets.created' }] },
     });
     expect(created.status).toBe(201);
     expect(created.body.personal).toBe(true);
 
-    const mine = await request<{ data: { id: string }[] }>('/api/v1/analytics/dashboards', { token: tenant.people.agent!.token });
+    const mine = await request<{ data: { id: string }[] }>('/api/v1/analytics/dashboards', { token: tenant.people.lead!.token });
     expect(mine.body.data.map((row) => row.id)).toContain(created.body.id);
 
     const theirs = await request<{ data: { id: string }[] }>('/api/v1/analytics/dashboards', { token: tenant.people.admin!.token });
@@ -202,12 +204,14 @@ describe('dashboards', () => {
   });
 
   it('lets only a manager change a shared dashboard', async () => {
-    const list = await request<{ data: { id: string; key: string }[] }>('/api/v1/analytics/dashboards', { token: tenant.people.agent!.token });
+    // The lead can read it and cannot change it: reading and managing are
+    // different permissions, and a lead holds only the first.
+    const list = await request<{ data: { id: string; key: string }[] }>('/api/v1/analytics/dashboards', { token: tenant.people.lead!.token });
     const shared = list.body.data.find((row) => row.key === 'sla')!;
     const refused = await request(`/api/v1/analytics/dashboards/${shared.id}`, {
       method: 'PATCH',
-      token: tenant.people.agent!.token,
-      body: { name: 'Renamed by an agent' },
+      token: tenant.people.lead!.token,
+      body: { name: 'Renamed by a lead' },
     });
     expect(refused.status).toBe(403);
 

@@ -46,7 +46,8 @@ function column(fact: FactName, field: string): FieldSpec {
 function predicate(fact: FactName, filter: Filter): Prisma.Sql {
   const spec = column(fact, filter.field);
   const col = Prisma.raw(`"${spec.column}"`);
-  const cast = spec.type === 'date' ? Prisma.raw('::timestamptz') : Prisma.empty;
+  const cast = spec.type === 'date' ? Prisma.raw('::timestamptz') : spec.uuid ? Prisma.raw('::uuid') : Prisma.empty;
+  const list = (values: (string | number)[]) => Prisma.join(values.map((value) => Prisma.sql`${value}${cast}`));
 
   switch (filter.op) {
     case 'is_null':
@@ -66,9 +67,9 @@ function predicate(fact: FactName, filter: Filter): Prisma.Sql {
     case 'lte':
       return Prisma.sql`${col} <= ${filter.value}${cast}`;
     case 'in':
-      return Prisma.sql`${col} IN (${Prisma.join(filter.value as (string | number)[])})`;
+      return Prisma.sql`${col} IN (${list(filter.value as (string | number)[])})`;
     case 'not_in':
-      return Prisma.sql`${col} NOT IN (${Prisma.join(filter.value as (string | number)[])})`;
+      return Prisma.sql`${col} NOT IN (${list(filter.value as (string | number)[])})`;
   }
 }
 
