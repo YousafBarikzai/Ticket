@@ -57,6 +57,12 @@ RUN pnpm exec prisma generate --schema prisma/schema.prisma
 
 FROM runtime-base AS runtime
 ENV NODE_ENV=production
+# npm ships inside the Node image and bundles its own copy of its dependencies.
+# The image scan flagged a critical CVE in one of them (`tar`), in code this
+# application never loads — npm is not run here, or anywhere in the container.
+# Third time the same principle: whatever the runtime does not execute should
+# not be in the image to be found.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/package.json ./package.json
 COPY --from=prod-deps /app/prisma ./prisma
