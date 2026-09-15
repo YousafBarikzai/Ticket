@@ -98,7 +98,12 @@ export const packArticleSchema = z
     title: z.string().min(1).max(200),
     summary: z.string().max(500).optional(),
     body: z.array(z.unknown()).default([]),
-    audience: z.enum(['public', 'internal', 'agent', 'organisation']).optional(),
+    // The three MOD-09 actually has. The first draft of this line invented
+    // `public` and `agent` and left out `tenant`, which parsed happily here
+    // and would have been refused by `createArticle` at install — the shipped
+    // packs all use `internal`, so nothing hit it. A vocabulary copied by hand
+    // from memory rather than from the module that owns it.
+    audience: z.enum(['internal', 'tenant', 'organisation']).optional(),
     keywords: z.array(z.string().max(60)).max(20).optional(),
   })
   .strict();
