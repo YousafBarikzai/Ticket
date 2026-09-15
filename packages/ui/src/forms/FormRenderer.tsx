@@ -382,6 +382,15 @@ export function FormRenderer({
 
   return (
     <div className={cx('itsm-FormRenderer', className)}>
+      {/* A misconfigured form is not the requester's fault and not theirs to
+          fix, so it says so at the top rather than rendering fields that behave
+          unpredictably. `validateForm` returns this under `_form` when a
+          condition cannot be evaluated at all (ADR-0021). */}
+      {errors._form ? (
+        <p className="itsm-FormRenderer__error" role="alert">
+          {errors._form}
+        </p>
+      ) : null}
       {definition.ui.elements.map(renderElement)}
     </div>
   );

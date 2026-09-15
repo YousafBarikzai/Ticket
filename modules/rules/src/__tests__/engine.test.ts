@@ -175,18 +175,35 @@ describe('a rule that cannot be evaluated', () => {
     expect(effectsOf(decision).patch.priority).toBeUndefined();
   });
 
-  it('compares mismatched types lexically rather than refusing', () => {
-    // Pinned because it surprises people: comparing a string to a number is not
-    // an error and is not false — the language falls back to comparing them as
-    // strings, so "VPN will not connect" > 5 holds, because "V" sorts after "5".
-    // A rule written that way matches everything. Raised for a decision in the
-    // Phase 2 delivery record; pinned here so a change to it is deliberate.
+  it('refuses a mismatched comparison rather than matching everything', () => {
+    // Until Phase 3 this was true rather than an error: the language compared a
+    // string to a number as strings, so "VPN will not connect" > 5 held because
+    // "V" sorts after "5", and the rule matched every ticket while reporting
+    // nothing. It now fails the one rule and says why (docs/architecture/22 §2).
     const decision = decide(
-      [rule({ key: 'mismatched', conditions: { gt: [{ var: 'ticket.title' }, 5] }, actions: [setP1] })],
+      [
+        rule({ key: 'mismatched', order: 1, conditions: { gt: [{ var: 'ticket.title' }, 5] }, actions: [setP1] }),
+        rule({ key: 'sound', order: 2, actions: [{ type: 'addTag', tag: 'ok' }] }),
+      ],
+      factsForTicket(ticket),
+    );
+    expect(decision.errors).toEqual([{ ruleKey: 'mismatched', message: 'cannot compare string with number using gt' }]);
+    expect(decision.matched.map((m) => m.ruleKey)).toEqual(['sound']);
+    // The rest of the rule set still runs: one broken rule is not an outage.
+    expect(effectsOf(decision).tags).toEqual(['ok']);
+    expect(effectsOf(decision).patch.priority).toBeUndefined();
+  });
+
+  it('does not treat a blank optional field as a mismatch', () => {
+    // The distinction that makes the change safe: absent is not wrong. A rule
+    // reading a custom field nobody filled in fails its comparison quietly, as
+    // it always has, rather than being reported to its author as broken.
+    const decision = decide(
+      [rule({ key: 'blank', conditions: { gt: [{ var: 'fields.costCentre' }, 5] }, actions: [setP1] })],
       factsForTicket(ticket),
     );
     expect(decision.errors).toEqual([]);
-    expect(decision.matched.map((m) => m.ruleKey)).toEqual(['mismatched']);
+    expect(decision.matched).toEqual([]);
   });
 });
 

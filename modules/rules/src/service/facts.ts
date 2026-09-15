@@ -1,4 +1,4 @@
-import type { EvalContext } from '@itsm/expr';
+import type { DeclaredType, EvalContext } from '@itsm/expr';
 
 /**
  * The facts a rule condition may read.
@@ -42,6 +42,44 @@ export const FACT_PATHS = [
   'requester.tier',
   'event.type',
 ] as const;
+
+/**
+ * What kind of value each fact holds, so that a nonsense comparison is refused
+ * when the rule is published rather than the first time a ticket hits it.
+ *
+ * `fields.*` and `answers.*` are absent on purpose: they are tenant-defined and
+ * cannot be typed at build time, so they are checked at evaluation instead.
+ */
+export const FACT_TYPES: Readonly<Record<(typeof FACT_PATHS)[number], DeclaredType>> = {
+  'ticket.type': 'string',
+  'ticket.title': 'string',
+  'ticket.description': 'string',
+  'ticket.status': 'string',
+  'ticket.statusCategory': 'string',
+  'ticket.priority': 'string',
+  'ticket.impact': 'string',
+  'ticket.urgency': 'string',
+  'ticket.sourceChannel': 'string',
+  'ticket.orgId': 'string',
+  'ticket.serviceId': 'string',
+  'ticket.categoryId': 'string',
+  'ticket.groupId': 'string',
+  'ticket.assigneeId': 'string',
+  'ticket.requesterId': 'string',
+  'ticket.affectedUserId': 'string',
+  'ticket.reopenCount': 'number',
+  'ticket.hasAssignee': 'boolean',
+  'ticket.hasGroup': 'boolean',
+  'ticket.ageMinutes': 'number',
+  'comment.visibility': 'string',
+  'comment.authorId': 'string',
+  'comment.isFromRequester': 'boolean',
+  'requester.orgId': 'string',
+  'requester.locationId': 'string',
+  'requester.vip': 'boolean',
+  'requester.tier': 'string',
+  'event.type': 'string',
+};
 
 export interface TicketFacts {
   id: string;

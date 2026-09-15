@@ -6,5 +6,5 @@ export { eventCatalogue, eventTypes, findEvent } from './events/catalogue.js';
 export * from './api/route.js';
 export * from './forms/schema.js';
 export * from './forms/logic.js';
-export type { Expr } from '@itsm/expr';
-export { evaluate, parseExpr, exprSchema, referencedVars } from '@itsm/expr';
+export type { DeclaredType, Expr, ExprKind, TypeConflict } from '@itsm/expr';
+export { ExprError, ExprTypeError, checkExpr, evaluate, parseExpr, exprSchema, referencedVars } from '@itsm/expr';

@@ -10,7 +10,7 @@ import {
   recordAudit,
   transaction,
 } from '@itsm/platform';
-import { referencedVars } from '@itsm/expr';
+import { checkExpr, referencedVars } from '@itsm/expr';
 import {
   ACTIONS_NOT_YET_AVAILABLE,
   RULE_EVENTS,
@@ -19,7 +19,7 @@ import {
   type RuleEvent,
 } from '../domain/actions.js';
 import { decide, effectsOf, type Decision, type LoadedRule } from './engine.js';
-import { FACT_PATHS, factsForTicket } from './facts.js';
+import { FACT_PATHS, FACT_TYPES, factsForTicket } from './facts.js';
 
 /**
  * MOD-06-E0 rule administration.
@@ -364,6 +364,22 @@ export function validateDefinition(conditions: unknown, actions: RuleAction[]): 
         field: `conditions.${path}`,
         code: 'unknown_fact',
         message: `no fact is called ${path}`,
+      })),
+    );
+  }
+
+  // A comparison that can never be evaluated — `ticket.title > 5` — used to be
+  // silently true, which matched every ticket. It now raises at evaluation, and
+  // is refused here so the author finds out in the builder rather than from a
+  // log entry days later (docs/architecture/22 §2).
+  const conflicts = checkExpr(conditions as never, FACT_TYPES);
+  if (conflicts.length > 0) {
+    throw new ValidationError(
+      `this condition compares values that cannot be compared: ${conflicts.map((c) => c.message).join('; ')}`,
+      conflicts.map((conflict) => ({
+        field: conflict.path ? `conditions.${conflict.path}` : 'conditions',
+        code: 'type_mismatch',
+        message: conflict.message,
       })),
     );
   }

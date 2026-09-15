@@ -12,6 +12,8 @@ import {
 } from '@itsm/platform';
 import {
   validateForm,
+  checkExpr,
+  type DeclaredType,
   submissionValues,
   withDefaults,
   referencedVars,
@@ -184,6 +186,29 @@ async function loadForm(tx: Tx, key: string) {
  * property with no element asks for an answer the person is never shown a box
  * for — so the form can never be submitted and nobody can tell why.
  */
+/**
+ * The expression-language kind of a schema property. A `date`-formatted string
+ * is a date, so comparing it to an ISO literal is sound; everything else maps
+ * straight across, and anything unrecognised is left unchecked rather than
+ * guessed at.
+ */
+function declaredTypeOf(property: { type?: string; format?: string } | undefined): DeclaredType {
+  if (!property) return 'unknown';
+  switch (property.type) {
+    case 'string':
+      return property.format === 'date' || property.format === 'date-time' ? 'date' : 'string';
+    case 'number':
+    case 'integer':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'array':
+      return 'array';
+    default:
+      return 'unknown';
+  }
+}
+
 export function assertDocumentIsCoherent(document: FormDefinition): void {
   const properties = new Set(Object.keys(document.schema?.properties ?? {}));
   const bound = new Set<string>();
@@ -222,6 +247,24 @@ export function assertDocumentIsCoherent(document: FormDefinition): void {
     }
   };
   collect(document.ui?.elements ?? []);
+
+  // A form knows the type of every answer, so a comparison that can never be
+  // evaluated is caught exactly rather than heuristically: `form.reason > 5`
+  // against a string property is refused here, not discovered by a requester
+  // opening the form (ADR-0021).
+  const declared: Record<string, DeclaredType> = { now: 'date' };
+  for (const [field, property] of Object.entries(document.schema?.properties ?? {})) {
+    declared[`form.${field}`] = declaredTypeOf(property);
+  }
+  for (const condition of conditions) {
+    for (const conflict of checkExpr(condition as never, declared)) {
+      issues.push({
+        field: conflict.path ?? 'ui',
+        code: 'type_mismatch',
+        message: conflict.message,
+      });
+    }
+  }
 
   for (const condition of conditions) {
     for (const path of referencedVars(condition as never)) {

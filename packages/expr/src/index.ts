@@ -111,6 +111,38 @@ function resolve(operand: Operand, ctx: EvalContext): unknown {
   return isVarRef(operand) ? readPath(ctx, operand.var) : operand;
 }
 
+/** The kinds of value the language can order. Anything else is not comparable. */
+export type ExprKind = 'number' | 'string' | 'boolean' | 'date';
+
+/** Raised when two present values of different kinds are ordered against each other. */
+export class ExprTypeError extends ExprError {
+  constructor(
+    readonly left: ExprKind,
+    readonly right: ExprKind,
+    readonly operator: string,
+  ) {
+    super(`cannot compare ${left} with ${right} using ${operator}`);
+  }
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ]|$)/;
+
+/**
+ * The kind of a runtime value, or undefined when it is absent, and 'invalid'
+ * when it is present but not orderable (an array, an object).
+ *
+ * A string that looks like an ISO date is still a string. It only acts as a
+ * date when the other operand is one — see `compare`.
+ */
+function kindOf(v: unknown): ExprKind | 'invalid' | undefined {
+  if (v === null || v === undefined) return undefined;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? 'invalid' : 'date';
+  if (typeof v === 'number') return Number.isNaN(v) ? 'invalid' : 'number';
+  if (typeof v === 'boolean') return 'boolean';
+  if (typeof v === 'string') return 'string';
+  return 'invalid';
+}
+
 function toComparable(v: unknown): number | string | boolean | null | undefined {
   if (v === null || v === undefined) return v as null | undefined;
   if (v instanceof Date) return v.getTime();
@@ -139,21 +171,65 @@ export function parseDuration(iso: string): number {
   return ms;
 }
 
-function compare(a: unknown, b: unknown): number | undefined {
-  const ca = toComparable(a);
-  const cb = toComparable(b);
-  if (ca === undefined || cb === undefined || ca === null || cb === null) return undefined;
-  if (typeof ca === 'number' && typeof cb === 'number') return ca - cb;
-  if (typeof ca === 'boolean' || typeof cb === 'boolean') return Number(ca) - Number(cb);
-  const sa = String(ca);
-  const sb = String(cb);
-  // Dates written as ISO strings compare correctly as instants, not lexically.
-  const ta = toTime(sa);
-  const tb = toTime(sb);
-  if (ta !== undefined && tb !== undefined && /\d{4}-\d{2}-\d{2}/.test(sa) && /\d{4}-\d{2}-\d{2}/.test(sb)) {
-    return ta - tb;
+/**
+ * Orders two values, or returns undefined when either is absent.
+ *
+ * Two present values of different kinds raise. The language used to fall back
+ * to comparing them as strings, which made `ticket.title > 5` true — because
+ * "V" sorts after "5" — so a nonsense condition matched every ticket and
+ * reported no error. Refusing is louder and, for a rule-authoring product,
+ * safer: every caller catches the error and fails that one rule, policy or
+ * field rather than the request (docs/architecture/22 §2).
+ *
+ * A missing value is not a type error. An optional field that nobody filled in
+ * simply fails its comparison, so a rule cannot break a ticket because a custom
+ * field is blank.
+ *
+ * The one crossing allowed is date against a string that parses as a date, and
+ * it is load-bearing rather than a convenience: on the server a timestamp
+ * arrives from the database as a `Date`, and in the browser the same value has
+ * been through JSON and is an ISO string. Without this, the dry-run panel and
+ * the live path would disagree about the same condition, which is the one thing
+ * the shared language exists to prevent.
+ */
+function compare(a: unknown, b: unknown, operator: string): number | undefined {
+  const ka = kindOf(a);
+  const kb = kindOf(b);
+  if (ka === undefined || kb === undefined) return undefined;
+  if (ka === 'invalid' || kb === 'invalid') {
+    throw new ExprTypeError((ka === 'invalid' ? 'string' : ka) as ExprKind, (kb === 'invalid' ? 'string' : kb) as ExprKind, operator);
   }
-  return sa < sb ? -1 : sa > sb ? 1 : 0;
+
+  if (ka === kb) {
+    switch (ka) {
+      case 'number':
+        return (a as number) - (b as number);
+      case 'boolean':
+        return Number(a) - Number(b);
+      case 'date':
+        return (a as Date).getTime() - (b as Date).getTime();
+      case 'string': {
+        const sa = a as string;
+        const sb = b as string;
+        // Two ISO dates compare as instants, so 2026-01-02T09:00Z sorts before
+        // 2026-01-02T10:00+01:00 rather than after it.
+        if (ISO_DATE.test(sa) && ISO_DATE.test(sb)) {
+          const ta = toTime(sa);
+          const tb = toTime(sb);
+          if (ta !== undefined && tb !== undefined) return ta - tb;
+        }
+        return sa < sb ? -1 : sa > sb ? 1 : 0;
+      }
+    }
+  }
+
+  if ((ka === 'date' && kb === 'string') || (ka === 'string' && kb === 'date')) {
+    const ta = toTime(a);
+    const tb = toTime(b);
+    if (ta !== undefined && tb !== undefined) return ta - tb;
+  }
+
+  throw new ExprTypeError(ka, kb, operator);
 }
 
 function asArray(v: unknown): unknown[] {
@@ -161,9 +237,16 @@ function asArray(v: unknown): unknown[] {
 }
 
 /**
- * Evaluates an expression. Never throws for missing context values: a missing
- * value simply fails its comparison, so a rule cannot break a request because
- * an optional field is absent. Malformed expressions do throw.
+ * Evaluates an expression.
+ *
+ * Never throws for a missing context value: an absent optional field simply
+ * fails its comparison, so a rule cannot break a request because somebody left
+ * a custom field blank.
+ *
+ * It does throw for a malformed expression, an invalid pattern, and — since
+ * Phase 3 — an ordering comparison between two present values of different
+ * kinds (`ExprTypeError`). Every caller catches, so the failure lands on the
+ * one rule, policy or field that is wrong rather than on the request.
  */
 export function evaluate(expr: Expr, ctx: EvalContext, depth = 0): boolean {
   if (depth > MAX_DEPTH) throw new ExprError('expression nested too deeply');
@@ -198,19 +281,19 @@ export function evaluate(expr: Expr, ctx: EvalContext, depth = 0): boolean {
     return !looseEqual(l, r);
   }
   if ('gt' in e) {
-    const c = compare(...bin('gt'));
+    const c = compare(...bin('gt'), 'gt');
     return c !== undefined && c > 0;
   }
   if ('gte' in e) {
-    const c = compare(...bin('gte'));
+    const c = compare(...bin('gte'), 'gte');
     return c !== undefined && c >= 0;
   }
   if ('lt' in e) {
-    const c = compare(...bin('lt'));
+    const c = compare(...bin('lt'), 'lt');
     return c !== undefined && c < 0;
   }
   if ('lte' in e) {
-    const c = compare(...bin('lte'));
+    const c = compare(...bin('lte'), 'lte');
     return c !== undefined && c <= 0;
   }
   if ('in' in e) {
@@ -296,6 +379,94 @@ function safeRegex(pattern: string): RegExp {
   if (regexCache.size > 500) regexCache.clear();
   regexCache.set(pattern, re);
   return re;
+}
+
+/** A declared type for a context path, used by the authoring-time checker. */
+export type DeclaredType = ExprKind | 'array' | 'unknown';
+
+export interface TypeConflict {
+  /** The context path whose declared type is contradicted, when one operand is a path. */
+  path?: string;
+  operator: string;
+  left: DeclaredType;
+  right: DeclaredType;
+  message: string;
+}
+
+const ORDERING_OPERATORS = ['gt', 'gte', 'lt', 'lte'] as const;
+
+function literalType(v: unknown): DeclaredType {
+  if (Array.isArray(v)) return 'array';
+  if (typeof v === 'number') return 'number';
+  if (typeof v === 'boolean') return 'boolean';
+  if (typeof v === 'string') return ISO_DATE.test(v) ? 'date' : 'string';
+  return 'unknown';
+}
+
+/** Whether two declared types may legitimately meet under an ordering operator. */
+function orderable(a: DeclaredType, b: DeclaredType): boolean {
+  if (a === 'unknown' || b === 'unknown') return true;
+  if (a === b) return a !== 'array';
+  // A date and a string are allowed to meet: the same instant is a Date on the
+  // server and an ISO string in the browser (see `compare`).
+  return (a === 'date' && b === 'string') || (a === 'string' && b === 'date');
+}
+
+/**
+ * Finds ordering comparisons that can never be evaluated, before the definition
+ * is published.
+ *
+ * Making `compare` raise tells an author their rule is broken the first time a
+ * ticket happens to hit it, which may be days later and is reported in a log
+ * rather than in the builder they are using. This is the other half: given what
+ * the caller knows about its own facts, it reports the conflict at save time,
+ * on the field, in words.
+ *
+ * `types` maps a context path to its declared type. A path that is absent, or
+ * declared `unknown`, is not checked — tenant-defined custom fields and form
+ * answers cannot be enumerated at build time, so the runtime error remains the
+ * backstop for those.
+ */
+export function checkExpr(expr: Expr, types: Readonly<Record<string, DeclaredType>> = {}): TypeConflict[] {
+  const conflicts: TypeConflict[] = [];
+
+  const typeOf = (operand: Operand): { type: DeclaredType; path?: string } =>
+    isVarRef(operand)
+      ? { type: types[operand.var] ?? 'unknown', path: operand.var }
+      : { type: literalType(operand) };
+
+  const walk = (node: unknown, depth: number): void => {
+    if (depth > MAX_DEPTH || !node || typeof node !== 'object') return;
+    const e = node as Record<string, unknown>;
+
+    for (const operator of ORDERING_OPERATORS) {
+      if (!(operator in e)) continue;
+      const [l, r] = e[operator] as [Operand, Operand];
+      const left = typeOf(l);
+      const right = typeOf(r);
+      if (orderable(left.type, right.type)) continue;
+      conflicts.push({
+        ...(left.path ?? right.path ? { path: left.path ?? right.path } : {}),
+        operator,
+        left: left.type,
+        right: right.type,
+        message: `${describe(left, 'left')} cannot be compared with ${describe(right, 'right')} using ${operator}`,
+      });
+    }
+
+    for (const key of ['and', 'or'] as const) {
+      if (key in e) (e[key] as unknown[]).forEach((sub) => walk(sub, depth + 1));
+    }
+    if ('not' in e) walk(e.not, depth + 1);
+  };
+
+  walk(expr, 0);
+  return conflicts;
+}
+
+function describe(operand: { type: DeclaredType; path?: string }, side: string): string {
+  if (operand.path) return `${operand.path} (${operand.type})`;
+  return `the ${side}-hand ${operand.type}`;
 }
 
 /** Validates an expression's shape and returns it typed, for storing in a definition. */

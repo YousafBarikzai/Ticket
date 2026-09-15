@@ -157,6 +157,43 @@ describe('publishing', () => {
     expect(response.body.detail).toMatch(/ticket\.colour/);
   });
 
+  it('refuses a comparison between a string fact and a number', async () => {
+    // The Phase 2 open decision, closed. Before Phase 3 this published happily
+    // and then matched every ticket, because the language compared the two as
+    // strings and "V" sorts after "5" (docs/architecture/22 §2).
+    const response = await request<{ detail: string }>('/api/v1/rules', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: {
+        key: 'nonsense-comparison',
+        name: 'Compares a title to a number',
+        event: 'ticket.created',
+        conditions: { gt: [{ var: 'ticket.title' }, 5] },
+        actions: [{ type: 'addTag', tag: 'x' }],
+      },
+    });
+    expect(response.status).toBe(422);
+    expect(response.body.detail).toMatch(/cannot be compared/);
+    expect(response.body.detail).toMatch(/ticket\.title/);
+  });
+
+  it('still accepts a comparison against a custom field it cannot type', async () => {
+    // Custom fields are tenant-defined, so the checker has no type for them and
+    // must not guess. The runtime error is the backstop there, per rule.
+    const response = await request('/api/v1/rules', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: {
+        key: 'custom-field-comparison',
+        name: 'Compares a custom field',
+        event: 'ticket.created',
+        conditions: { gt: [{ var: 'fields.orderValue' }, 1000] },
+        actions: [{ type: 'addTag', tag: 'large-order' }],
+      },
+    });
+    expect(response.status).toBe(201);
+  });
+
   it('refuses an action that this phase cannot carry out', async () => {
     const response = await request<{ detail: string }>('/api/v1/rules', {
       method: 'POST',

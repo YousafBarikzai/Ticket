@@ -35,22 +35,79 @@ export function buildEvalContext(values: FormValues, extras: FormEvalExtras = {}
   return { ...extras, now: extras.now ?? new Date().toISOString(), form: { ...values } };
 }
 
-function test(condition: Expr | undefined, context: EvalContext, fallback: boolean): boolean {
-  if (!condition) return fallback;
-  return evaluate(condition, context);
+/**
+ * Evaluates one condition, or returns `absent` when there is none.
+ *
+ * A condition that cannot be evaluated — a mismatched comparison, a bad pattern
+ * — returns `broken`, which each caller below chooses for itself. The
+ * expression language raises on those rather than guessing (ADR-0021), and a
+ * form is rendered in a browser: letting the error escape would replace the
+ * page with nothing and tell the requester less than it tells nobody.
+ */
+function test(
+  condition: Expr | undefined,
+  context: EvalContext,
+  { absent, broken }: { absent: boolean; broken: boolean },
+): boolean {
+  if (!condition) return absent;
+  try {
+    return evaluate(condition, context);
+  } catch {
+    return broken;
+  }
 }
 
+/** Whether any condition in this definition could not be evaluated at all. */
+export function brokenConditions(definition: FormDefinition, context: EvalContext): readonly string[] {
+  const broken: string[] = [];
+  const check = (where: string, condition: Expr | undefined): void => {
+    if (!condition) return;
+    try {
+      evaluate(condition, context);
+    } catch {
+      broken.push(where);
+    }
+  };
+  const walk = (elements: readonly UiElement[]): void => {
+    for (const element of elements) {
+      const name = isFieldElement(element) ? element.field : isSectionElement(element) ? element.title : element.id;
+      check(name, element.visibleWhen);
+      if (isFieldElement(element)) {
+        check(name, element.requiredWhen);
+        check(name, element.readOnlyWhen);
+      }
+      if (isSectionElement(element)) walk(element.elements);
+    }
+  };
+  walk(definition.ui.elements);
+  return broken;
+}
+
+/**
+ * A field whose visibility cannot be decided is hidden, not shown. The same
+ * reasoning as catalogue entitlement: a condition nobody can evaluate is a
+ * misconfiguration, and revealing a field that was meant to be conditional is
+ * the more expensive way to be wrong.
+ */
 export function isVisible(element: UiElement, context: EvalContext): boolean {
-  return test(element.visibleWhen, context, true);
+  return test(element.visibleWhen, context, { absent: true, broken: false });
 }
 
+/**
+ * A field whose requirement cannot be decided is not required. It is already
+ * hidden or visible by the rule above; blocking submission on a condition the
+ * requester cannot see, cannot satisfy and cannot fix would leave them with a
+ * form that never submits and no way forward. `validateForm` reports the
+ * misconfiguration instead, which is addressed to somebody who can act on it.
+ */
 export function isRequired(element: UiFieldElement, definition: FormDefinition, context: EvalContext): boolean {
   if (definition.schema.required?.includes(element.field)) return true;
-  return test(element.requiredWhen, context, false);
+  return test(element.requiredWhen, context, { absent: false, broken: false });
 }
 
+/** A field whose read-only condition cannot be decided is read-only: do not invite an edit that may not be allowed. */
 export function isReadOnly(element: UiFieldElement, context: EvalContext): boolean {
-  return test(element.readOnlyWhen, context, false);
+  return test(element.readOnlyWhen, context, { absent: false, broken: true });
 }
 
 /**
@@ -114,6 +171,17 @@ export type FormErrors = Readonly<Record<string, string>>;
 export function validateForm(definition: FormDefinition, values: FormValues, extras: FormEvalExtras = {}): FormErrors {
   const context = buildEvalContext(values, extras);
   const errors: Record<string, string> = {};
+
+  // A form with a condition that cannot be evaluated is not the requester's
+  // fault and not theirs to fix, so it fails as a whole rather than presenting
+  // fields that behave unpredictably. The API returns the same error, so a
+  // client that skips this check gets the same answer.
+  const broken = brokenConditions(definition, context);
+  if (broken.length > 0) {
+    return {
+      _form: `This form is not configured correctly and cannot be submitted. Please report it, quoting: ${[...new Set(broken)].join(', ')}.`,
+    };
+  }
 
   for (const element of visibleFields(definition, context)) {
     const property = definition.schema.properties[element.field];

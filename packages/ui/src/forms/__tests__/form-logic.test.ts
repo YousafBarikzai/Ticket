@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  brokenConditions,
   buildEvalContext,
   isReadOnly,
+  isVisible,
   isRequired,
   submissionValues,
   validateForm,
@@ -240,5 +242,58 @@ describe('submission', () => {
 
   it('fills in schema defaults for unanswered fields', () => {
     expect(withDefaults(definition, { reason: 'x' })).toEqual({ reason: 'x', forSomeoneElse: false });
+  });
+});
+
+describe('a condition that cannot be evaluated', () => {
+  // Since Phase 3 the expression language raises on an ordering comparison
+  // between two present values of different kinds (ADR-0021), so a form
+  // definition can now contain a condition that throws rather than returning
+  // false. A form is rendered in a browser: letting that escape would replace
+  // the page with nothing.
+  const broken: FormDefinition = {
+    ...definition,
+    ui: {
+      elements: [
+        {
+          kind: 'field',
+          id: 'e-reason',
+          field: 'reason',
+          control: 'longtext',
+          label: 'Why do you need a laptop?',
+        } as UiFieldElement,
+        {
+          kind: 'field',
+          id: 'e-secret',
+          field: 'beneficiary',
+          control: 'text',
+          label: 'Who is it for?',
+          visibleWhen: { gt: [{ var: 'form.reason' }, 5] },
+        } as UiFieldElement,
+      ],
+    },
+  };
+
+  const context = buildEvalContext({ reason: 'A long enough reason here' }, requester);
+
+  it('hides the field rather than revealing it', () => {
+    const element = broken.ui.elements[1]!;
+    expect(isVisible(element, context)).toBe(false);
+    expect(visibleFields(broken, context).map((f) => f.field)).toEqual(['reason']);
+  });
+
+  it('names the field so somebody can fix the definition', () => {
+    expect(brokenConditions(broken, context)).toEqual(['beneficiary']);
+  });
+
+  it('fails the whole form rather than presenting one that behaves unpredictably', () => {
+    const errors = validateForm(broken, { reason: 'A long enough reason here' }, requester);
+    expect(Object.keys(errors)).toEqual(['_form']);
+    expect(errors._form).toMatch(/not configured correctly/);
+    expect(errors._form).toMatch(/beneficiary/);
+  });
+
+  it('leaves a sound definition alone', () => {
+    expect(brokenConditions(definition, context)).toEqual([]);
   });
 });
