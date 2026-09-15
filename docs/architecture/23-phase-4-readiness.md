@@ -128,13 +128,62 @@ assignment has its own ticket event, audit action and published event.
 `ACTIONS_NOT_YET_AVAILABLE` is now empty. Every action the rule schema accepts
 is one the platform carries out.
 
+### 2.3 Major incident management (MOD-08-E1)
+
+An ordinary ticket is one person's problem. A major incident is everybody's, and
+what makes it different is not severity but **coordination**: somebody has to be
+in charge, somebody has to keep the organisation informed on a promise it can
+rely on, and afterwards somebody has to be able to say what happened.
+
+**A commander is required at declaration.** The commonest way an hour is lost is
+that everybody assumed somebody else was in charge. The role can be handed over,
+and the hand-over goes on the timeline rather than only on the row, because "who
+was running it at 04:10?" is a question a review asks and a current-value column
+cannot answer.
+
+**One open major incident per ticket, enforced by a partial unique index.** Two
+people declaring the same outage within the same second is the normal case, not
+a rare one, and the symptom is two bridges with half the responders on each.
+Closed and stood-down incidents are excluded from the constraint, so a ticket
+that breaks again can be declared again.
+
+**The promise of an update is the product.** An organisation told "every thirty
+minutes" reorganises its morning around that, and the damage of missing it is
+not the missing information — it is that every future promise is discounted, so
+people ring the service desk instead and take the responders off the incident.
+The cadence comes from the severity so that nobody is choosing one at 3am; only
+a `comms` entry resets it, because an internal observation is not an update to
+the organisation; and when it is missed the sweep **reports** rather than posting
+something on somebody's behalf, which would keep the cadence and destroy the
+thing the cadence is for. The due time steps on by one interval rather than to
+now, so a long silence keeps ringing instead of being reported once.
+
+**Audience is access control, not presentation** — the lesson MOD-09 taught with
+article audiences, one module along. A public update on an incident nobody
+outside can see is refused rather than quietly downgraded, because downgrading
+would leave the person who wrote it believing customers had been told.
+
+**The timeline is append-only in the database.** A review answers "what did we
+know, and when?", and a timeline somebody can revise afterwards cannot answer
+it. UPDATE only: blocking DELETE would also block the tenant purge and leave a
+purged customer's timelines behind.
+
+**Resolved is not closed** (ADR-0025). Publishing the review is what closes the
+incident, in one transaction, so the middle state — a published review on an
+incident nobody closed — is not reachable. A review opens by itself when the
+incident resolves, because a review that has to be remembered is not written.
+Every action needs an owner and nothing else is demanded: a required root cause
+buys "human error" typed into a box, where an owner is the one field that cannot
+be fudged past the check.
+
 ---
 
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-08 ITIL practices** | Major incident, problem and change. Large, and self-contained: it touches no new infrastructure. The natural next module. |
+| **MOD-08-E2 Problem management** | Problems, known errors, and the link from a major incident's review to the problem it raises. The natural next module: it has somewhere to attach now. |
+| **MOD-08-E3 Change management** | Change records, CAB approval through MOD-17, change and blackout windows, standard change templates. |
 | **MOD-10 Assets and CMDB** | Needs the gateway's pull-connector half, which is not built yet. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
@@ -159,12 +208,13 @@ is one the platform carries out.
 
 | Check | Result |
 |---|---|
-| Unit tests | 428 passing, 105 of them over the two modules |
+| Unit tests | 445 passing, 122 of them over the three modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
 | — rotas and shifts | 26, including both daylight-saving transitions with real dates |
 | — routing strategies | 17, every tie-break and every refusal |
+| — the incident lifecycle | 17, each naming the way an incident goes wrong without the rule |
 | Integration, isolation and permissions | extended by 22 workload tests and four permission-matrix entries, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 

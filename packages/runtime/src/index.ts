@@ -33,6 +33,7 @@ import { catalogueManifest, seedCatalogueDefaults } from '@itsm/module-catalogue
 import { knowledgeManifest, seedKnowledgeDefaults } from '@itsm/module-knowledge';
 import { workflowManifest, seedWorkflowDefaults } from '@itsm/module-workflow';
 import { workloadManifest } from '@itsm/module-workload';
+import { incidentManifest } from '@itsm/module-incident';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -57,6 +58,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   knowledgeManifest,
   workflowManifest,
   workloadManifest,
+  incidentManifest,
   adminManifest,
 ];
 

@@ -15,6 +15,7 @@
     "@itsm/module-catalogue": "workspace:*",
     "@itsm/module-channels": "workspace:*",
     "@itsm/module-identity": "workspace:*",
+    "@itsm/module-incident": "workspace:*",
     "@itsm/module-integrations": "workspace:*",
     "@itsm/module-knowledge": "workspace:*",
     "@itsm/module-notifications": "workspace:*",

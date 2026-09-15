@@ -587,6 +587,79 @@ export const workloadOnCallOverridden = defineEvent({
   }),
 });
 
+// ---- MOD-08-E1 Major incidents (PH-4) --------------------------------------
+const incidentRef = { incidentId: id, number: z.string(), severity: z.string() };
+
+export const incidentMajorDeclared = defineEvent({
+  type: 'incident.major.declared',
+  version: 1,
+  aggregateType: 'major_incident',
+  webhook: true,
+  description: 'A major incident was declared and somebody was put in charge of it.',
+  payload: z.object({
+    ...incidentRef,
+    title: z.string(),
+    ticketId: id.nullable(),
+    commanderId: id,
+    customerFacing: z.boolean(),
+    affectedServiceIds: z.array(id),
+  }),
+});
+
+export const incidentMajorUpdated = defineEvent({
+  type: 'incident.major.updated',
+  version: 1,
+  aggregateType: 'major_incident',
+  webhook: true,
+  description: 'An entry was added to a major incident\'s timeline, with or without a status change.',
+  payload: z.object({
+    ...incidentRef,
+    updateId: id,
+    kind: z.string(),
+    /** internal | stakeholders | public. A consumer must honour it. */
+    audience: z.string(),
+    body: z.string(),
+    statusFrom: z.string().nullable(),
+    statusTo: z.string().nullable(),
+  }),
+});
+
+export const incidentMajorResolved = defineEvent({
+  type: 'incident.major.resolved',
+  version: 1,
+  aggregateType: 'major_incident',
+  webhook: true,
+  description: 'Service was restored. The review is still owed.',
+  payload: z.object({ ...incidentRef, ticketId: id.nullable(), durationMinutes: z.number().int() }),
+});
+
+export const incidentMajorClosed = defineEvent({
+  type: 'incident.major.closed',
+  version: 1,
+  aggregateType: 'major_incident',
+  webhook: true,
+  description: 'Resolved, reviewed, and the review published.',
+  payload: z.object({ ...incidentRef, reviewPublished: z.boolean() }),
+});
+
+export const incidentMajorUpdateOverdue = defineEvent({
+  type: 'incident.major.update.overdue',
+  version: 1,
+  aggregateType: 'major_incident',
+  webhook: true,
+  description: 'An update the organisation was promised has not been posted.',
+  payload: z.object({ ...incidentRef, dueAt: z.string(), overdueMinutes: z.number().int(), commanderId: id }),
+});
+
+export const incidentMajorReviewPublished = defineEvent({
+  type: 'incident.major.review.published',
+  version: 1,
+  aggregateType: 'major_incident',
+  webhook: true,
+  description: 'A post-incident review was published, with the actions somebody owns.',
+  payload: z.object({ ...incidentRef, reviewId: id, actionCount: z.number().int() }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -605,6 +678,8 @@ export const eventCatalogue = [
   knowledgeArticleSubmitted, knowledgeArticlePublished, knowledgeArticleRetired, knowledgeArticleFeedback,
   workflowRunStarted, workflowRunCompleted, workflowRunFailed,
   workloadAssignmentDeclined, workloadOnCallOverridden,
+  incidentMajorDeclared, incidentMajorUpdated, incidentMajorResolved, incidentMajorClosed,
+  incidentMajorUpdateOverdue, incidentMajorReviewPublished,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

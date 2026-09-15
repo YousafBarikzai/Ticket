@@ -177,6 +177,9 @@ importers:
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity
+      '@itsm/module-incident':
+        specifier: workspace:*
+        version: link:../../modules/incident
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:../../modules/integrations
@@ -354,6 +357,21 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/incident:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -619,6 +637,9 @@ importers:
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity
+      '@itsm/module-incident':
+        specifier: workspace:*
+        version: link:../../modules/incident
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:../../modules/integrations

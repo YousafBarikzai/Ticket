@@ -22,6 +22,7 @@
 /modules/notifications/ @experience-squad
 /modules/search/       @ai-knowledge-squad
 /modules/workload/     @core-squad
+/modules/incident/     @core-squad
 
 /apps/api/             @platform-squad
 /apps/worker/          @platform-squad
