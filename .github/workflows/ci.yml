@@ -99,6 +99,10 @@ jobs:
           MEILI_MASTER_KEY: devsearchkey
           MEILI_NO_ANALYTICS: 'true'
           MEILI_ENV: development
+          # One line per HTTP request at INFO, and the runner prints service
+          # logs after every step — which buries the test output that says what
+          # actually failed under several hundred lines of noise.
+          MEILI_LOG_LEVEL: WARN
         ports: ['7700:7700']
     env:
       TEST_DATABASE_URL: postgresql://app_owner:devpass@127.0.0.1:5432/itsm_test?schema=public

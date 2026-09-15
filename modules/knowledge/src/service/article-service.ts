@@ -399,7 +399,7 @@ export async function retireArticle(ctx: TenantContext, key: string, reason?: st
       data: { status: 'retired', retiredAt: new Date(), currentVersionId: null },
     });
 
-    await removeDocument(tx, 'knowledge', article.id);
+    await removeDocument(ctx, tx, 'knowledge', article.id);
 
     await recordAudit(tx, ctx, {
       action: 'knowledge.article.retired',

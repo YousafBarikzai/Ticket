@@ -79,8 +79,29 @@ export async function indexDocument(tx: Tx, ctx: TenantContext, input: IndexInpu
   });
 }
 
-export async function removeDocument(tx: Tx, entityType: string, entityId: string): Promise<void> {
+/**
+ * Removes a document from search.
+ *
+ * It publishes the same event an index does, because the consumer already reads
+ * the projection and removes from the external engine when the row has gone.
+ * Without this, deleting the projection row left the document in Meilisearch
+ * indefinitely — so a retired knowledge article stayed findable, which is worse
+ * than one that never existed: a reader has no way to know the instructions are
+ * withdrawn. The same shape as the Phase 2 tenant-purge defect, one layer out.
+ */
+export async function removeDocument(
+  ctx: TenantContext,
+  tx: Tx,
+  entityType: string,
+  entityId: string,
+): Promise<void> {
   await tx.searchDocument.deleteMany({ where: { entityType, entityId } });
+
+  await publish(tx, ctx, {
+    definition: events.searchDocumentIndexed,
+    aggregateId: entityId,
+    payload: { entityType, entityId, lagMs: 0 },
+  });
 }
 
 export interface SearchOptions {
