@@ -155,6 +155,7 @@ exists and who is likely to have one.
 | Admin console screens | MOD-13 | Every Phase 2 module's server side is complete and reachable through the API; no console screens yet. |
 | A real email provider | OD-03 | Only the development transport is registered, and only outside production. Postmark and Microsoft Graph are adapters behind the same interface; the decision is the blocker, not the code. |
 | Fulfilment plans and task templates | MOD-05 | Deferred to PH-3 with the workflow engine, which is what executes them. |
+| The Prisma CLI in the runtime image | — | The runtime image still carries a CLI it never executes; migrations run from the `migrate` target. Same shape as the transpiler, pnpm and npm, but removing it means generating the client somewhere the runtime stage can copy from, which is a deliberate change rather than a tidy-up. |
 
 ## 5. Verification
 
@@ -165,7 +166,7 @@ exists and who is likely to have one.
 | Walking skeleton, against `node dist/api.js` and `node dist/worker.js` | 35 of 35 |
 | — tenant isolation (Appendix D, release-blocking) | extended to rules and approvals |
 | — permission matrix (Appendix B, release-blocking) | 127 cases |
-| CI stages 1, 2 and 3 | green |
+| CI stages 1, 2 and 3 (validate; image build and scan; integration) | green |
 | Module contract | no violations |
 | Typecheck (TypeScript strict) | clean |
 | Secret scan, full history | clean |
@@ -190,6 +191,8 @@ Recorded because each cost time and would cost it again.
 | `aquasecurity/trivy-action@0.28.0` does not exist | The tags carry a `v`. The job fails at set-up with only "unable to find version", which says nothing about the prefix. |
 | A form condition reading `values.x` instead of `form.x` never holds | The obvious guess is always undefined, so the field never appears and nothing says why. Found by this module's own seed; now refused at save, like the rules engine's unknown-fact check. |
 | npm ships inside the Node base image and bundles a critical CVE | The third time the same principle applied: the runtime image executes `node dist/…` and needs neither a transpiler, a package manager, nor npm. |
+| A base image carries whatever has been published since it was built | Two HIGH findings in libpcre2 alone, both with Debian fixes already released. The runtime base now runs `apt-get upgrade`, not just `install`. |
+| `deepmerge-ts` arrived transitively through the Prisma CLI | Pinned with a pnpm override, and `prisma generate` and `migrate deploy` were re-run against a real database rather than assumed to still work. |
 | The expression language compares mismatched types lexically | `ticket.title > 5` is **true**, because `"V"` sorts after `"5"`. A rule written that way matches everything and reports no error. Pinned by a test; **open for decision** — see below. |
 | Two tenants could claim the same inbound email address | `channel_account` is the one table read *across* tenants — a provider webhook arrives with no tenant context — so duplicates meant mail routed to whichever row came back first. Now a partial unique index on the active rows. |
 | Deleting a tenant left all its data behind | Only the directory row went. Every tenant-scoped table kept its rows, and an orphaned mailbox from a deleted tenant went on receiving mail. `purgeTenant` now deletes for real. |
