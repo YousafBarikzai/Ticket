@@ -102,6 +102,9 @@ importers:
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:modules/identity
+      '@itsm/module-incident':
+        specifier: workspace:*
+        version: link:modules/incident
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:modules/integrations
@@ -132,6 +135,9 @@ importers:
       '@itsm/module-workflow':
         specifier: workspace:*
         version: link:modules/workflow
+      '@itsm/module-workload':
+        specifier: workspace:*
+        version: link:modules/workload
       '@itsm/platform':
         specifier: workspace:*
         version: link:packages/platform
