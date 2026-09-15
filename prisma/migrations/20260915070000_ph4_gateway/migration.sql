@@ -56,6 +56,54 @@ CREATE INDEX "connector_credential_tenant_id_kind_idx" ON "connector_credential"
 -- full scan of every tenant's credentials.
 CREATE INDEX "connector_credential_tenant_id_kek_version_idx" ON "connector_credential"("tenant_id", "kek_version");
 
+
+-- CreateTable
+CREATE TABLE "action_definition" (
+    "id" UUID NOT NULL,
+    "tenant_id" UUID NOT NULL,
+    "key" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "kind" TEXT NOT NULL,
+    "config" JSONB NOT NULL DEFAULT '{}',
+    "credential_ref" TEXT,
+    "credential_header" TEXT,
+    "retry_max" INTEGER NOT NULL DEFAULT 3,
+    "timeout_ms" INTEGER NOT NULL DEFAULT 15000,
+    "response_mapping" JSONB NOT NULL DEFAULT '{}',
+    "status" TEXT NOT NULL DEFAULT 'draft',
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "action_definition_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "error_queue_item" (
+    "id" UUID NOT NULL,
+    "tenant_id" UUID NOT NULL,
+    "source" TEXT NOT NULL,
+    "source_id" TEXT NOT NULL,
+    "action_key" TEXT,
+    "payload" JSONB NOT NULL DEFAULT '{}',
+    "idempotency_key" TEXT NOT NULL,
+    "error" TEXT NOT NULL,
+    "attempts" INTEGER NOT NULL DEFAULT 1,
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "dismissed_reason" TEXT,
+    "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "resolved_at" TIMESTAMPTZ(6),
+    "resolved_by" UUID,
+
+    CONSTRAINT "error_queue_item_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "action_definition_tenant_id_key_key" ON "action_definition"("tenant_id", "key");
+CREATE INDEX "action_definition_tenant_id_status_idx" ON "action_definition"("tenant_id", "status");
+
+CREATE INDEX "error_queue_item_tenant_id_status_created_at_idx" ON "error_queue_item"("tenant_id", "status", "created_at" DESC);
+CREATE INDEX "error_queue_item_tenant_id_source_source_id_idx" ON "error_queue_item"("tenant_id", "source", "source_id");
+
 -- -----------------------------------------------------------------------------
 -- Isolation and grants.
 --

@@ -158,3 +158,68 @@ model ConnectorCredential {
   @@index([tenantId, kekVersion])
   @@map("connector_credential")
 }
+
+/// MOD-06-E2 An action a workflow can take on the outside world.
+///
+/// A named, governed definition rather than a URL typed into a workflow node:
+/// the same call is reused by several workflows, its credential is named once,
+/// and an administrator can see every outbound call the platform can make by
+/// listing this table — which is the question a security review actually asks.
+model ActionDefinition {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  key             String
+  name            String
+  description     String?
+  /// http | transform. A closed set; `ticket.*` and `user.*` are the platform's
+  /// own services, reached through their modules rather than through here.
+  kind            String
+  /// Per-kind: for http, the method, URL, headers and body template.
+  config          Json     @default("{}")
+  /// The credential to attach, by name. Never the credential itself.
+  credentialRef   String?  @map("credential_ref")
+  /// Which header carries it, because vendors disagree.
+  credentialHeader String? @map("credential_header")
+  retryMax        Int      @default(3) @map("retry_max")
+  timeoutMs       Int      @default(15000) @map("timeout_ms")
+  /// Dotted paths from the response into the run context, e.g.
+  /// `{ "accountId": "body.data.id" }`.
+  responseMapping Json     @default("{}") @map("response_mapping")
+  status          String   @default("draft")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("action_definition")
+}
+
+/// A side effect that failed past its retries, kept so an operator can see it.
+///
+/// Separate from the workflow run: an action can fail from a rule, a sync job
+/// or a workflow, and "what is broken right now" is one list rather than three
+/// places to look.
+model ErrorQueueItem {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  /// workflow | rule | sync
+  source      String
+  sourceId    String   @map("source_id")
+  actionKey   String?  @map("action_key")
+  /// What was being attempted, so a replay can repeat it exactly.
+  payload     Json     @default("{}")
+  /// The idempotency key the original attempt used, and the replay reuses.
+  idempotencyKey String @map("idempotency_key")
+  error       String
+  attempts    Int      @default(1)
+  /// open | replayed | dismissed
+  status      String   @default("open")
+  dismissedReason String? @map("dismissed_reason")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedBy  String?  @map("resolved_by") @db.Uuid
+
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([tenantId, source, sourceId])
+  @@map("error_queue_item")
+}

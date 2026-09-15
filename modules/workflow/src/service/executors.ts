@@ -2,6 +2,7 @@ import { type TenantContext, type Tx, ValidationError, newId, transaction } from
 import { evaluate, parseDuration, type EvalContext } from '@itsm/expr';
 import { ticketService } from '@itsm/module-ticket';
 import { approvalService } from '@itsm/module-approvals';
+import { actionService } from '@itsm/module-integrations';
 import { notificationService } from '@itsm/module-notifications';
 import { renderStrict } from '../domain/template.js';
 import type { WorkflowNode } from '../domain/definition.js';
@@ -177,12 +178,40 @@ export const executeNode: StepExecutor = async (ctx, input) => {
       return { output: { template: node.template, to: node.to, queued } };
     }
 
-    case 'action':
-      // Refused at publish (NODES_NOT_YET_AVAILABLE), so reaching here means a
-      // definition published before that check existed.
-      throw new ValidationError(
-        `${node.key} is an action step, which arrives with MOD-06-E2 in PH-4; this run cannot carry it out`,
+    case 'action': {
+      // Through the gateway, with the step's idempotency key. The key is stable
+      // across attempts, so a worker killed after the call reached the far end
+      // retries into a duplicate-suppressing request rather than a second one —
+      // which for "create the user account" is the difference between a retry
+      // and an incident.
+      const outcome = await actionService.runAction(
+        ctx,
+        node.action,
+        { ...context, input: renderInputs(node.input, context) },
+        { idempotencyKey: input.idempotencyKey, cause: { kind: 'workflow', id: run.id } },
       );
+
+      if (!outcome.ok) {
+        if (outcome.permanent) {
+          // A refused destination or a missing credential will fail the same
+          // way five more times. Recorded for an operator and failed once.
+          await actionService.recordFailure(ctx, {
+            source: 'workflow',
+            sourceId: run.id,
+            actionKey: node.action,
+            payload: { ...context, input: renderInputs(node.input, context) },
+            idempotencyKey: input.idempotencyKey,
+            error: outcome.error ?? 'unknown',
+            attempts: 1,
+          });
+          throw new ValidationError(`${node.key} cannot run: ${outcome.error}`);
+        }
+        // Transient: thrown so the engine's own retry policy applies.
+        throw new Error(`${node.key} failed: ${outcome.error}`);
+      }
+
+      return { output: outcome.output };
+    }
 
     case 'end':
       return { output: { status: node.status ?? 'completed' } };
@@ -230,7 +259,9 @@ export function dryRunExecutor(
       case 'notify':
         return record({ template: node.template, to: node.to });
       case 'action':
-        return record({ action: node.action, refused: 'action steps arrive with MOD-06-E2 (PH-4)' });
+        // Recorded, never called: a rehearsal that made real HTTP requests
+        // would create real accounts.
+        return record({ action: node.action, input: renderInputs(node.input, context), called: false });
       case 'end':
         return record({ status: node.status ?? 'completed' });
     }
@@ -306,4 +337,13 @@ async function parkOnWait(ctx: TenantContext, runId: string, node: Extract<Workf
       },
     });
   });
+}
+
+/** Renders a node's templated inputs against the run context. */
+function renderInputs(input: Record<string, string>, context: EvalContext): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, template] of Object.entries(input ?? {})) {
+    out[name] = renderOrExplain(template, context);
+  }
+  return out;
 }

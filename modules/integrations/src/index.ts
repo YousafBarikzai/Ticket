@@ -29,3 +29,19 @@ export {
   type GatewayResponse,
   type GatewayDeps,
 } from './gateway/gateway.js';
+export * as actionService from './service/action-service.js';
+export {
+  createAction,
+  publishAction,
+  listActions,
+  runAction,
+  mapResponse,
+  recordFailure,
+  listErrorQueue,
+  replayError,
+  dismissError,
+  actionSchema,
+  httpConfigSchema,
+  transformConfigSchema,
+  type ActionOutcome,
+} from './service/action-service.js';

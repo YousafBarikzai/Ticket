@@ -127,6 +127,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // is a change.
       { key: 'workflow.read', scope: 'any' },
       { key: 'workflow.operate', scope: 'any' },
+      // Sees why an automation stopped, and can press retry. Writing the
+      // actions themselves is an administrator's: a replay repeats a call
+      // somebody already approved, where authoring one is approving a new one.
+      { key: 'integration.action.read', scope: 'any' },
+      { key: 'integration.action.replay', scope: 'any' },
     ],
   },
   {
@@ -218,6 +223,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'workflow.publish', scope: 'any' },
       { key: 'workflow.operate', scope: 'any' },
       { key: 'workflow.start', scope: 'any' },
+      { key: 'integration.credential.read', scope: 'any' },
+      { key: 'integration.credential.manage', scope: 'any' },
+      { key: 'integration.action.read', scope: 'any' },
+      { key: 'integration.action.manage', scope: 'any' },
+      { key: 'integration.action.replay', scope: 'any' },
       { key: 'catalogue.form.read', scope: 'any' },
       { key: 'catalogue.form.manage', scope: 'any' },
     ],
