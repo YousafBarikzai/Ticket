@@ -60,6 +60,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0045](0045-a-notice-is-a-nudge-and-a-topic-is-a-permission.md) | A notice is a nudge, and a topic is a permission | Accepted | MOD-16, MOD-04, doc 08 §6, ADR-0015 |
 | [0046](0046-a-second-reader-that-has-memorised-wcag.md) | A second reader that has memorised WCAG | Accepted | MOD-16-E1, doc 14 §4, doc 18 |
 | [0047](0047-four-decisions-and-the-shape-they-leave.md) | Four decisions, and the shape they leave | Accepted | MOD-21, MOD-19, MOD-09, doc 19 |
+| [0048](0048-a-custom-field-is-a-contract-not-a-bag.md) | A custom field is a contract, not a bag | Accepted | MOD-04, MOD-02, MOD-13 |
 
 ## Template
 

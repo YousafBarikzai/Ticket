@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { PreconditionRequiredError, ValidationError } from '@itsm/platform';
-import { ticketService, type TicketRow } from '@itsm/module-ticket';
+import { PreconditionRequiredError, ValidationError, authz, type TenantContext } from '@itsm/platform';
+import { fieldService, ticketService, type TicketRow } from '@itsm/module-ticket';
 import { timerService } from '@itsm/module-sla';
 import { canonicalStateSchema, linkTypeSchema } from '@itsm/contracts';
 import { contextOf } from '../plugins/context.js';
@@ -50,7 +50,34 @@ function toFilter(query: z.infer<typeof listQuerySchema>, actorId: string | null
   };
 }
 
-function present(ticket: TicketRow) {
+interface Lens {
+  readonly fields: fieldService.FieldRow[];
+  readonly reader: fieldService.Reader;
+}
+
+/**
+ * What this reader is allowed to see of a ticket's custom fields.
+ *
+ * Built once per request rather than per ticket: a queue of fifty would
+ * otherwise read the definitions fifty times to answer the same question.
+ *
+ * `worksTheDesk` is a `ticket.read` scope of `team` or `any`. A requester
+ * reads their own tickets and sees only `public` fields; anybody working the
+ * desk sees `internal` too, and a `restricted` field additionally needs one of
+ * the permissions it names.
+ */
+async function lensFor(ctx: TenantContext): Promise<Lens> {
+  const scope = authz.effectiveScope(ctx, 'ticket.read');
+  return {
+    fields: await fieldService.listFields(ctx),
+    reader: {
+      worksTheDesk: scope === 'team' || scope === 'any',
+      holds: (permission: string) => ctx.permissions.scopeFor(permission) !== undefined,
+    },
+  };
+}
+
+function present(ticket: TicketRow, lens?: Lens) {
   return {
     id: ticket.id,
     number: ticket.number,
@@ -75,7 +102,7 @@ function present(ticket: TicketRow) {
     resolvedAt: ticket.resolvedAt?.toISOString() ?? null,
     closedAt: ticket.closedAt?.toISOString() ?? null,
     reopenCount: ticket.reopenCount,
-    custom: ticket.custom,
+    custom: lens ? fieldService.visibleCustom(lens.fields, (ticket.custom as Record<string, unknown>) ?? {}, lens.reader) : ticket.custom,
     version: ticket.version,
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
@@ -98,7 +125,42 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const ticket = await ticketService.createTicket(ctx, ticketService.createTicketSchema.strict().parse(request.body));
     reply.status(201).header('etag', `"${ticket.version}"`).header('location', `/api/v1/tickets/${ticket.number}`);
-    return present(ticket);
+    return present(ticket, await lensFor(ctx));
+  });
+
+  /**
+   * Custom field definitions (MOD-04, feature flag `ticket.customFields`).
+   *
+   * `field_definition` has existed since Phase 1 and nothing read or wrote it,
+   * so `ticket.config.manage` ("Manage categories and field definitions")
+   * granted access to nothing and `custom` accepted whatever a caller sent.
+   * These are the doors that make the table, the permission and the validation
+   * all mean something.
+   */
+  app.get('/field-definitions', async (request) => {
+    const ctx = contextOf(request);
+    const query = z.object({ includeInactive: z.coerce.boolean().default(false) }).strict().parse(request.query);
+    return { data: await fieldService.listFields(ctx, { includeInactive: query.includeInactive }) };
+  });
+
+  app.put('/field-definitions/:key', async (request) => {
+    const ctx = contextOf(request);
+    const { key } = z.object({ key: z.string().min(1).max(64) }).parse(request.params);
+    // The key comes from the path, never the body: two sources for one
+    // identity is how a PUT to one key edits another.
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    return fieldService.saveField(ctx, { ...body, key } as never);
+  });
+
+  /**
+   * Deactivates. There is deliberately no DELETE: tickets hold values against
+   * a definition, and removing it would orphan them behind a validator that
+   * then refuses the next edit of every ticket carrying one.
+   */
+  app.delete('/field-definitions/:key', async (request) => {
+    const ctx = contextOf(request);
+    const { key } = z.object({ key: z.string().min(1).max(64) }).parse(request.params);
+    return fieldService.deactivateField(ctx, key);
   });
 
   app.get('/tickets', async (request) => {
@@ -109,7 +171,8 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       ...(query.cursor ? { cursor: query.cursor } : {}),
       sort: query.sort,
     });
-    return { data: result.data.map(present), nextCursor: result.nextCursor };
+    const lens = await lensFor(ctx);
+    return { data: result.data.map((row) => present(row, lens)), nextCursor: result.nextCursor };
   });
 
   app.get('/tickets/:idOrNumber', async (request, reply) => {
@@ -117,7 +180,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
     const ticket = await ticketService.getTicket(ctx, idOrNumber);
     reply.header('etag', `"${ticket.version}"`);
-    return present(ticket);
+    return present(ticket, await lensFor(ctx));
   });
 
   app.patch('/tickets/:idOrNumber', async (request, reply) => {
@@ -130,7 +193,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       ifMatch(request.headers['if-match'] as string | undefined, true),
     );
     reply.header('etag', `"${ticket.version}"`);
-    return present(ticket);
+    return present(ticket, await lensFor(ctx));
   });
 
   app.post('/tickets/:idOrNumber/transitions', async (request, reply) => {
@@ -150,7 +213,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       ...(request.headers['if-match'] ? { ifMatch: ifMatch(request.headers['if-match'] as string, false)! } : {}),
     });
     reply.header('etag', `"${ticket.version}"`);
-    return present(ticket);
+    return present(ticket, await lensFor(ctx));
   });
 
   app.post('/tickets/:idOrNumber/assign', async (request, reply) => {
@@ -176,7 +239,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
       ifMatch(request.headers['if-match'] as string | undefined, false),
     );
     reply.header('etag', `"${ticket.version}"`);
-    return present(ticket);
+    return present(ticket, await lensFor(ctx));
   });
 
   app.post('/tickets/:idOrNumber/comments', async (request, reply) => {
