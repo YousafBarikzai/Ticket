@@ -21,6 +21,7 @@
     "@itsm/module-integrations": "workspace:*",
     "@itsm/module-knowledge": "workspace:*",
     "@itsm/module-notifications": "workspace:*",
+    "@itsm/module-problem": "workspace:*",
     "@itsm/module-rules": "workspace:*",
     "@itsm/module-search": "workspace:*",
     "@itsm/module-security": "workspace:*",

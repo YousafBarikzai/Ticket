@@ -333,6 +333,22 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, otherAgent: 403 },
   },
   {
+    what: 'search the known errors',
+    path: () => '/api/v1/known-errors',
+    // What an agent reads before spending an hour on something already solved.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'raise a problem',
+    method: 'POST',
+    path: () => '/api/v1/problems',
+    body: () => ({ title: 'Raised during the permission matrix run', priority: 'P4' }),
+    // An agent raises one: they are the person who noticed it three times.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.

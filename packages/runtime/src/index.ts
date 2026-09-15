@@ -34,6 +34,7 @@ import { knowledgeManifest, seedKnowledgeDefaults } from '@itsm/module-knowledge
 import { workflowManifest, seedWorkflowDefaults } from '@itsm/module-workflow';
 import { workloadManifest } from '@itsm/module-workload';
 import { incidentManifest } from '@itsm/module-incident';
+import { problemManifest } from '@itsm/module-problem';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -59,6 +60,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   workflowManifest,
   workloadManifest,
   incidentManifest,
+  problemManifest,
   adminManifest,
 ];
 

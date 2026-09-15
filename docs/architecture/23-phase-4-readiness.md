@@ -176,14 +176,53 @@ Every action needs an owner and nothing else is demanded: a required root cause
 buys "human error" typed into a box, where an owner is the one field that cannot
 be fudged past the check.
 
+### 2.4 Problem management (MOD-08-E2)
+
+The ITIL practice with a reputation for being the one nobody does. The usual
+reason is structural: it is built around its least useful moment — finding the
+root cause, weeks later, when everybody has moved on.
+
+**So this module is built around the workaround instead.** A problem may become
+a known error with no root cause at all, because the workaround is usually known
+within hours — "use the old form", "restart the service" — and the cause within
+weeks, if ever. Making the useful output wait for the interesting one is why
+problem backlogs fill with problems nobody hears about again. Publishing a
+workaround and becoming a known error are the same call, because there is no
+useful moment at which a workaround exists and the problem is not one.
+
+**A workaround is retired the moment it is obsolete, in the same transaction
+that makes it obsolete.** The trap is specific: a problem is fixed, nobody
+remembers the known error, and agents go on applying a workaround for a bug that
+no longer exists — losing the time twice, once following it and once working out
+why it did not help. Worse, the known-error list becomes something experienced
+agents learn to ignore, which costs far more than the individual instances. The
+retirement event names the knowledge article carrying the same words, so that
+can be withdrawn too.
+
+**Linked tickets are the argument.** "This should be fixed" is an opinion; "this
+has hit forty-one people since March, and the workaround was applied to eleven
+of them" is a case, and it is the only thing that gets a problem prioritised
+against feature work. The link is unique per (problem, ticket), because two
+agents linking the same ticket is what happens and a duplicate would inflate the
+one number anybody uses.
+
+**Recurrence is suggested, never created** — the same posture as the knowledge
+review sweep. A platform that raised problems by itself would bury the three
+somebody cares about, and the costs are asymmetric: a wrong suggestion costs a
+glance, a wrong problem is a permanent list entry nobody dares delete.
+
+The single exception is a **severe major incident's review, which raises exactly
+one problem**, idempotent on the incident and held by a partial unique index. The
+objection to automatic creation does not apply to a handful of records a year
+that everybody already agrees need looking into.
+
 ---
 
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-08-E2 Problem management** | Problems, known errors, and the link from a major incident's review to the problem it raises. The natural next module: it has somewhere to attach now. |
-| **MOD-08-E3 Change management** | Change records, CAB approval through MOD-17, change and blackout windows, standard change templates. |
+| **MOD-08-E3 Change management** | Change records, CAB approval through MOD-17, change and blackout windows, standard change templates. The natural next module. |
 | **MOD-10 Assets and CMDB** | Needs the gateway's pull-connector half, which is not built yet. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
@@ -209,13 +248,14 @@ be fudged past the check.
 
 | Check | Result |
 |---|---|
-| Unit tests | 445 passing, 122 of them over the three modules |
+| Unit tests | 457 passing, 134 of them over the four modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
 | — rotas and shifts | 26, including both daylight-saving transitions with real dates |
 | — routing strategies | 17, every tie-break and every refusal |
 | — the incident lifecycle | 17, each naming the way an incident goes wrong without the rule |
+| — the problem lifecycle | 12, written so that reversing the workaround-first ordering fails |
 | Integration, isolation and permissions | extended by 22 workload tests and four permission-matrix entries, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
