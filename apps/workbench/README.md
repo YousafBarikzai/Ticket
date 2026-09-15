@@ -13,7 +13,6 @@ pnpm dev:workbench     # http://localhost:3100
 ```
 src/
   app/                  routes — pages under (desk), the BFF under api/
-  bff/                  session, cookies, PKCE, the proxy's rules       (no React)
   server/               the session and the SDK, for server components  (server-only)
   client/               the SDK, for client components                  (proxy-bound)
   components/           the client components
@@ -23,10 +22,11 @@ src/
 The browser holds an opaque `__Host-session` cookie and never an access token.
 Server components call the API directly with the session's token; client
 components call `/api/proxy/*`, which adds the token and forwards the request
-unchanged. The rules that make that safe — the path allow-list, the two header
-allow-lists and the same-origin check on writes — are pure functions in
-`src/bff/proxy.ts` with a test naming each request they refuse. ADR-0041 has
-the reasoning.
+unchanged. All of that is in `@itsm/bff` — the route handlers here are three
+lines each, and `src/bff.ts` supplies the four facts that make this app itself.
+The rules that make it safe (the path allow-list, the two header allow-lists,
+the same-origin check on writes) are pure functions in `packages/bff` with a
+test naming each request they refuse. ADR-0041 has the reasoning.
 
 ## Configuration
 
@@ -34,8 +34,8 @@ the reasoning.
 |---|---|---|
 | `API_BASE_URL` | `http://127.0.0.1:3000` | The API, on the private network. Never reached from a browser. |
 | `WORKBENCH_ORIGIN` | `http://localhost:3100` | This app's own public origin. The OIDC redirect URI and the same-origin check are both derived from it, so it is configuration rather than a request header. |
-| `REDIS_URL` | `redis://127.0.0.1:6379` | Where sessions live. Keys are namespaced `wb:`. |
-| `WORKBENCH_SESSION_TTL_SECONDS` | `43200` | How long a session survives. |
+| `REDIS_URL` | `redis://127.0.0.1:6379` | Where sessions live. Keys are namespaced `bff:workbench:`, so a session minted here never resolves in the portal. |
+| `BFF_SESSION_TTL_SECONDS` | `43200` | How long a session survives. |
 | `OIDC_ISSUER` | — | Keycloak's realm URL. **Required in production**: the app refuses to start without it, because no issuer enables the development sign-in. |
 | `OIDC_CLIENT_ID` | — | Required with an issuer. |
 | `OIDC_CLIENT_SECRET` | — | Required with an issuer. Never leaves the server. |
@@ -58,10 +58,11 @@ image that carries no `node_modules`.
 ## Tests
 
 `pnpm --filter @itsm/workbench test`, or as part of `pnpm check` at the root.
-The BFF's rules, the queue's URL parsing and the suggestion rendering are all
-pure functions tested directly; the composer has a jsdom test for the one
-property worth protecting — that an internal note cannot be sent without the
-person having said so, and that the screen says which it is three ways over.
+The queue's URL parsing and the suggestion rendering are pure functions tested
+directly; the composer has a jsdom test for the one property worth protecting
+— that an internal note cannot be sent without the person having said so, and
+that the screen says which it is three ways over. The BFF's own rules are
+tested in `packages/bff`.
 
 `src/queue/transitions.ts` is a copy of MOD-04's state machine, because this
 app cannot import a module package without importing Prisma with it. The test

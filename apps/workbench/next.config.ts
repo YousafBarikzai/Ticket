@@ -6,7 +6,7 @@ import type { NextConfig } from 'next';
  *
  * Two settings carry weight here.
  *
- * `transpilePackages` is what lets `@itsm/ui` and `@itsm/sdk` ship TypeScript
+ * `transpilePackages` is what lets the workspace packages ship TypeScript
  * source rather than a build step. Every workspace package in this repository
  * points `main` at `src/index.ts`; Next will not compile a dependency unless it
  * is named here, and the failure — a syntax error inside `node_modules` — reads
@@ -47,7 +47,7 @@ const nextConfig: NextConfig = {
    */
   output: 'standalone',
   outputFileTracingRoot: join(import.meta.dirname, '..', '..'),
-  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/contracts', '@itsm/expr'],
+  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/contracts', '@itsm/expr'],
   poweredByHeader: false,
   /**
    * Every module in this repository imports its neighbours with an explicit

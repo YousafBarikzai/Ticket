@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { STATES } from '@itsm/module-ticket';
-import { ageOf, categoryIntent, priorityEmphasis, priorityIntent, stateLabel, typeLabel } from '../queue/presentation.js';
+import { CANONICAL_STATES, STATES } from '@itsm/module-ticket';
+import { ageOf, categoryIntent, priorityEmphasis, priorityIntent, STATE_LABEL, stateLabel, typeLabel } from '../queue/presentation.js';
 import { ALLOWED_TRANSITIONS, transitionsFrom } from '../queue/transitions.js';
 import { queueHref, queueViewFrom } from '../queue/view.js';
 
@@ -56,6 +56,15 @@ describe('the queue view, read from the URL', () => {
 });
 
 describe('how a ticket reads', () => {
+  it('has a word for every canonical state MOD-04 defines', () => {
+    // A state with no entry falls through to the underscored value, which is
+    // legible but is the database's vocabulary. This fails when MOD-04 grows a
+    // state, which is the moment to decide what an agent should read.
+    for (const state of CANONICAL_STATES) {
+      expect(STATE_LABEL[state], state).toBeDefined();
+    }
+  });
+
   it('says the status in English', () => {
     expect(stateLabel('pending_third_party')).toBe('Waiting on supplier');
     expect(stateLabel('in_progress')).toBe('In progress');

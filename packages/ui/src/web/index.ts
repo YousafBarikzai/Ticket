@@ -39,6 +39,7 @@ export * from './Tabs.js';
 export * from './Dialog.js';
 export * from './Toast.js';
 export * from './Tooltip.js';
+export * from './RichText.js';
 export * from './Skeleton.js';
 export * from './EmptyState.js';
 export * from './FormField.js';

@@ -172,17 +172,21 @@ const EGRESS_ALLOWED = [
   // exists. The gateway needs one to log against, so this is a genuine
   // exception rather than an unconverted caller.
   'apps/api/src/auth/verify.ts',
-  // The workbench's backend-for-frontend. Its whole job is to make one request
-  // per incoming request — to this deployment's own API, or to the identity
-  // provider it is configured with — on behalf of a browser that has no token
-  // (doc 08 §9). Routing that through the integration gateway would put the
+  // The backend-for-frontend. Its whole job is to make one request per incoming
+  // request — to this deployment's own API, or to the identity provider it is
+  // configured with — on behalf of a browser that has no token (doc 08 §9).
+  // Routing that through the integration gateway would put the
   // tenant-configured egress policy in front of a call that has no tenant yet,
   // and give every page load a circuit breaker it shares with a supplier's
   // webhook.
-  'apps/workbench/src/bff/',
-  'apps/workbench/src/server/',
+  'packages/bff/',
+  // The browser-side SDK client in each application. Its base URL is
+  // `/api/proxy` — a relative path on the app's own origin — so this is not
+  // egress at all: the request goes to the BFF, which is the entry above.
+  // Listed per application rather than matched by pattern, so a third app
+  // reaching for `fetch` somewhere else is still a deliberate edit.
   'apps/workbench/src/client/',
-  'apps/workbench/src/app/api/proxy/',
+  'apps/portal/src/client/',
 ];
 
 const FETCH_PATTERN = /(?:^|[^.\w])fetch\s*\(/;

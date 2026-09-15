@@ -11,10 +11,10 @@
     "test": "vitest run --root ../.. --project unit apps/workbench"
   },
   "dependencies": {
+    "@itsm/bff": "workspace:*",
     "@itsm/contracts": "workspace:*",
     "@itsm/sdk": "workspace:*",
     "@itsm/ui": "workspace:*",
-    "ioredis": "^6",
     "next": "^16.3.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
