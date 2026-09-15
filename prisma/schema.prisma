@@ -688,6 +688,176 @@ model Delegate {
 }
 
 // ===========================================================================
+// modules/incident/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-08-E1 Major incident management (PH-4).
+///
+/// An ordinary ticket is one person's problem. A major incident is everybody's,
+/// and what makes it different is not severity but *coordination*: somebody has
+/// to be in charge, somebody has to keep the organisation informed on a promise
+/// it can rely on, and afterwards somebody has to be able to say what happened.
+/// Those three things are what this module exists to hold.
+
+/// A declared major incident.
+///
+/// Declared by a person, never derived. Severity is a judgement about business
+/// impact — an outage of a system nobody uses on a Sunday is not a SEV1 whatever
+/// the monitoring says, and a platform that guessed would cry wolf until people
+/// stopped answering.
+model MajorIncident {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  number         String
+  /// The ticket it was declared from. Null for one declared directly, which
+  /// happens when the outage is noticed before anybody raises a ticket.
+  ticketId       String?   @map("ticket_id") @db.Uuid
+  title          String
+  /// SEV1 widest, SEV3 narrowest. A separate scale from ticket priority on
+  /// purpose: priority orders one queue, severity says how much of the
+  /// organisation is affected, and conflating them makes both mean less.
+  severity       String    @default("SEV2")
+  /// declared | identified | mitigating | monitoring | resolved | closed | stood_down
+  status         String    @default("declared")
+  /// What is broken, for the people who have to be told. Plain language.
+  impactSummary  String?   @map("impact_summary")
+  /// Service ids this affects, so the status page and the portal can say so.
+  affectedServiceIds String[] @default([]) @map("affected_service_ids")
+  /// Whether customers outside the organisation can see it. Decides whether a
+  /// stakeholder update may leave the building.
+  customerFacing Boolean   @default(false) @map("customer_facing")
+  /// Where the people fixing it are talking. A link, not a transcript.
+  bridgeUrl      String?   @map("bridge_url")
+
+  /// Who is running it. Required from declaration: an incident where everybody
+  /// assumed somebody else was in charge is the commonest way an hour is lost.
+  commanderId    String    @map("commander_id") @db.Uuid
+  /// Who talks to the organisation. Separate from the commander because the
+  /// person fixing it should not be the person writing updates.
+  commsLeadId    String?   @map("comms_lead_id") @db.Uuid
+  /// Who writes down what happened, while it is happening.
+  scribeId       String?   @map("scribe_id") @db.Uuid
+
+  /// How often the organisation has been promised an update, in minutes.
+  updateIntervalMinutes Int @default(30) @map("update_interval_minutes")
+  /// When the next one is owed. Recomputed from the last update rather than
+  /// counted down, so a worker that has not run cannot make it look met.
+  nextUpdateDueAt DateTime? @map("next_update_due_at") @db.Timestamptz(6)
+
+  declaredAt     DateTime  @default(now()) @map("declared_at") @db.Timestamptz(6)
+  declaredBy     String?   @map("declared_by") @db.Uuid
+  identifiedAt   DateTime? @map("identified_at") @db.Timestamptz(6)
+  mitigatedAt    DateTime? @map("mitigated_at") @db.Timestamptz(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version        Int       @default(1)
+
+  updates        MajorIncidentUpdate[]
+  review         PostIncidentReview?
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, declaredAt(sort: Desc)])
+  @@index([tenantId, status, nextUpdateDueAt])
+  @@index([tenantId, ticketId])
+  @@map("major_incident")
+}
+
+/// One entry on the incident's timeline.
+///
+/// Append-only. The timeline is the evidence a post-incident review is written
+/// from, and a timeline somebody can tidy afterwards is not evidence — the
+/// question a review has to answer is "what did we know, and when?", and an
+/// edited entry cannot answer it.
+model MajorIncidentUpdate {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  incidentId String   @map("incident_id") @db.Uuid
+  /// status | comms | action | observation
+  kind       String   @default("comms")
+  /// internal | stakeholders | public. Audience is access control, not
+  /// presentation: an internal note naming a supplier must not reach a status
+  /// page because somebody picked the wrong tab.
+  audience   String   @default("internal")
+  body       String
+  /// Set when this entry accompanied a status change, so the timeline shows the
+  /// move and the words about it as one thing.
+  statusFrom String?  @map("status_from")
+  statusTo   String?  @map("status_to")
+  authorId   String?  @map("author_id") @db.Uuid
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  incident   MajorIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, incidentId, occurredAt])
+  @@index([tenantId, audience, occurredAt(sort: Desc)])
+  @@map("major_incident_update")
+}
+
+/// What was learned.
+///
+/// One per incident, and the thing that decides whether the organisation gets
+/// anything back for the hour it lost. Closing an incident without one is the
+/// failure this table exists to prevent, which is why closure checks for it
+/// rather than trusting anybody to remember.
+model PostIncidentReview {
+  id                 String    @id @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  incidentId         String    @unique @map("incident_id") @db.Uuid
+  /// draft | in_review | published
+  status             String    @default("draft")
+  summary            String?
+  /// Deliberately singular and deliberately optional. A review that names one
+  /// cause and stops there has usually found the last thing to go wrong rather
+  /// than the reason it could.
+  rootCause          String?   @map("root_cause")
+  contributingFactors String?  @map("contributing_factors")
+  whatWentWell       String?   @map("what_went_well")
+  whatDidNot         String?   @map("what_did_not")
+  /// Minutes from declaration to resolution, frozen at publication so a later
+  /// edit to the incident cannot rewrite the record.
+  durationMinutes    Int?      @map("duration_minutes")
+  dueOn              DateTime? @map("due_on") @db.Date
+  publishedAt        DateTime? @map("published_at") @db.Timestamptz(6)
+  publishedBy        String?   @map("published_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  incident           MajorIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  actions            ActionItem[]
+
+  @@index([tenantId, status, dueOn])
+  @@map("post_incident_review")
+}
+
+/// Something somebody agreed to do about it.
+///
+/// Owned by a person with a date, because "we should improve monitoring" owned
+/// by nobody is how the same incident happens twice. Converting one into a
+/// ticket is a link rather than a copy, so the work is tracked where all other
+/// work is tracked.
+model ActionItem {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  reviewId    String    @map("review_id") @db.Uuid
+  description String
+  ownerId     String?   @map("owner_id") @db.Uuid
+  dueOn       DateTime? @map("due_on") @db.Date
+  /// open | in_progress | done | cancelled
+  status      String    @default("open")
+  /// The ticket it became, if it became one.
+  ticketId    String?   @map("ticket_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  review      PostIncidentReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, dueOn])
+  @@index([tenantId, ownerId, status])
+  @@map("action_item")
+}
+
+// ===========================================================================
 // modules/integrations/prisma/schema.prisma
 // ===========================================================================
 

@@ -128,13 +128,62 @@ assignment has its own ticket event, audit action and published event.
 `ACTIONS_NOT_YET_AVAILABLE` is now empty. Every action the rule schema accepts
 is one the platform carries out.
 
+### 2.3 Major incident management (MOD-08-E1)
+
+An ordinary ticket is one person's problem. A major incident is everybody's, and
+what makes it different is not severity but **coordination**: somebody has to be
+in charge, somebody has to keep the organisation informed on a promise it can
+rely on, and afterwards somebody has to be able to say what happened.
+
+**A commander is required at declaration.** The commonest way an hour is lost is
+that everybody assumed somebody else was in charge. The role can be handed over,
+and the hand-over goes on the timeline rather than only on the row, because "who
+was running it at 04:10?" is a question a review asks and a current-value column
+cannot answer.
+
+**One open major incident per ticket, enforced by a partial unique index.** Two
+people declaring the same outage within the same second is the normal case, not
+a rare one, and the symptom is two bridges with half the responders on each.
+Closed and stood-down incidents are excluded from the constraint, so a ticket
+that breaks again can be declared again.
+
+**The promise of an update is the product.** An organisation told "every thirty
+minutes" reorganises its morning around that, and the damage of missing it is
+not the missing information — it is that every future promise is discounted, so
+people ring the service desk instead and take the responders off the incident.
+The cadence comes from the severity so that nobody is choosing one at 3am; only
+a `comms` entry resets it, because an internal observation is not an update to
+the organisation; and when it is missed the sweep **reports** rather than posting
+something on somebody's behalf, which would keep the cadence and destroy the
+thing the cadence is for. The due time steps on by one interval rather than to
+now, so a long silence keeps ringing instead of being reported once.
+
+**Audience is access control, not presentation** — the lesson MOD-09 taught with
+article audiences, one module along. A public update on an incident nobody
+outside can see is refused rather than quietly downgraded, because downgrading
+would leave the person who wrote it believing customers had been told.
+
+**The timeline is append-only in the database.** A review answers "what did we
+know, and when?", and a timeline somebody can revise afterwards cannot answer
+it. UPDATE only: blocking DELETE would also block the tenant purge and leave a
+purged customer's timelines behind.
+
+**Resolved is not closed** (ADR-0025). Publishing the review is what closes the
+incident, in one transaction, so the middle state — a published review on an
+incident nobody closed — is not reachable. A review opens by itself when the
+incident resolves, because a review that has to be remembered is not written.
+Every action needs an owner and nothing else is demanded: a required root cause
+buys "human error" typed into a box, where an owner is the one field that cannot
+be fudged past the check.
+
 ---
 
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-08 ITIL practices** | Major incident, problem and change. Large, and self-contained: it touches no new infrastructure. The natural next module. |
+| **MOD-08-E2 Problem management** | Problems, known errors, and the link from a major incident's review to the problem it raises. The natural next module: it has somewhere to attach now. |
+| **MOD-08-E3 Change management** | Change records, CAB approval through MOD-17, change and blackout windows, standard change templates. |
 | **MOD-10 Assets and CMDB** | Needs the gateway's pull-connector half, which is not built yet. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
@@ -151,6 +200,7 @@ is one the platform carries out.
 | The first allowlist entry for it was too broad | Written without the closing quote, it would have exempted the fixture *and anything beginning with it* — an unanchored literal is a prefix anybody can append a real key to. Caught by re-running the Phase 2 verification: assert the exemptions hold, then assert that real credentials wearing the same clothes are still reported. The lesson repeats because the mistake is easy. |
 | Writing the fixture down again failed the same scan | This document's first draft quoted the offending string while explaining it, and stage 1 flagged the explanation. A scanner reads prose and code alike, and it is right to: a credential in a sentence is still a credential in the repository. Two lessons, and the second is the expensive one. **Describe the shape rather than reproduce it** — done here and in `.gitleaks.toml`'s own commentary, which had the same trap latent in it. And **a scan runs over a branch's whole range**, so removing the string in a later commit does not clear it: the two sentences needed their own exemptions, each bounded by fixed text on both sides so nothing can be appended to make one match a real key. Verified the way the row above was: assert the exemptions hold, then assert that real credentials wearing the same clothes are still reported. |
 | Delivering a feature leaves its refusal tests behind | The graph validator's unit test was updated when the `action` node became available; the integration test asserting the same refusal was missed, and stage 3 caught it. The pair exists because they check different layers, so they have to be found together — and a test that asserts a *message* naming a future phase has a shorter life than one that asserts behaviour. The replacement checks that the workflow publishes, which stays true for as long as the node exists. MOD-20 hit the same trap in the same week with the rules engine's `assignStrategy`, so it is worth looking for rather than waiting for. |
+| A module can be built, registered and unreachable from its own tests | MOD-08-E1's integration suite failed on `Cannot find package '@itsm/module-incident'`, in two tests out of twenty-four — the two that import the module directly. The module existed, built, typechecked and was registered in the runtime; pnpm resolves only *declared* dependencies, and the integration suites live at the repository root, where it was not one. MOD-20 had the same gap and had simply not reached for its own package yet, which is the argument for a rule over a fix: the failure arrives on whichever suite first needs it, long after the module was written. Now checked mechanically as module-contract rule 7, and the rule was proved to fail before it was trusted to pass. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -159,12 +209,13 @@ is one the platform carries out.
 
 | Check | Result |
 |---|---|
-| Unit tests | 428 passing, 105 of them over the two modules |
+| Unit tests | 445 passing, 122 of them over the three modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
 | — rotas and shifts | 26, including both daylight-saving transitions with real dates |
 | — routing strategies | 17, every tie-break and every refusal |
+| — the incident lifecycle | 17, each naming the way an incident goes wrong without the rule |
 | Integration, isolation and permissions | extended by 22 workload tests and four permission-matrix entries, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 

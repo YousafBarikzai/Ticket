@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 /**
@@ -11,6 +11,9 @@ import { join, relative, resolve } from 'node:path';
  *   2. Only `repo/` folders, and the platform package, may touch Prisma.
  *   3. Nothing may reach into another package's internals by relative path.
  *   4. A module may not import an application.
+ *   5. Prisma writes stay with the module that owns the table.
+ *   6. Outbound calls go through the integration gateway (ADR-0023).
+ *   7. Every module package is declared at the root, so tests can import it.
  *
  * Written as a script rather than an ESLint rule because it needs no plugin
  * resolution, runs in under a second, and gives an error a reviewer can act on.
@@ -189,6 +192,40 @@ for (const file of [...walk(join(root, 'modules')), ...walk(join(root, 'packages
       rule: 'egress-through-gateway-only',
       detail: 'calls fetch directly; outbound calls go through modules/integrations gateway (ADR-0023)',
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 7. Every module is reachable from the test workspace.
+//
+// The integration suites live at the repository root, so a module package they
+// import has to be declared there. It is not enough for the module to exist and
+// to build: pnpm resolves only declared dependencies, and the failure arrives as
+// "Cannot find package" from a test that was passing in every other respect —
+// long after the module was written, on whichever suite first reaches for it.
+//
+// MOD-08-E1 hit this; MOD-20 had the same gap and had simply not reached for its
+// own package yet, which is exactly why a rule is worth more than a fix.
+// ---------------------------------------------------------------------------
+const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+};
+const declared = new Set([
+  ...Object.keys(rootManifest.dependencies ?? {}),
+  ...Object.keys(rootManifest.devDependencies ?? {}),
+]);
+
+for (const entry of readdirSync(join(root, 'modules'))) {
+  const manifestPath = join(root, 'modules', entry, 'package.json');
+  if (!existsSync(manifestPath)) continue;
+  const { name } = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name: string };
+  if (declared.has(name)) continue;
+  violations.push({
+    file: 'package.json',
+    line: 1,
+    rule: 'module-reachable-from-tests',
+    detail: `${name} is not a root dependency, so an integration test importing it fails to resolve`,
   });
 }
 

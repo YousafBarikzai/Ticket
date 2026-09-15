@@ -311,6 +311,28 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403 },
   },
   {
+    what: 'see the major incidents',
+    path: () => '/api/v1/major-incidents',
+    // Anybody who takes tickets needs to know what is on fire. A requester
+    // hears about it from the portal and the status page, not from here.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'declare a major incident',
+    method: 'POST',
+    path: () => '/api/v1/major-incidents',
+    body: (t) => ({
+      title: 'Declared during the permission matrix run',
+      severity: 'SEV3',
+      commanderId: t.people.lead!.id,
+    }),
+    // Declaring pages people, so it is a lead's. An agent runs one once it is
+    // declared, which is `incident.major.command`, not this.
+    allowed: ['lead', 'admin'],
+    deniedStatus: { requester: 403, agent: 403, otherAgent: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.

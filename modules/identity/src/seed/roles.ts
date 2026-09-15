@@ -84,6 +84,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // they know who to hand a P1 to at six in the evening.
       { key: 'workload.read', scope: 'team' },
       { key: 'workload.availability.set', scope: 'own' },
+      // Reads the incident room and writes to its timeline: the scribe is
+      // usually whoever has their hands free. Declaring one is a lead's, because
+      // it pages people.
+      { key: 'incident.major.read', scope: 'any' },
+      { key: 'incident.major.command', scope: 'any' },
     ],
   },
   {
@@ -143,6 +148,14 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'workload.read', scope: 'any' },
       { key: 'workload.availability.set', scope: 'any' },
       { key: 'workload.oncall.override', scope: 'team' },
+      // Declares one, runs it, and publishes the review that closes it. A lead
+      // is who is available at 3am; making this an administrator's would mean
+      // nobody could declare an incident until somebody senior woke up.
+      { key: 'incident.major.read', scope: 'any' },
+      { key: 'incident.major.declare', scope: 'any' },
+      { key: 'incident.major.command', scope: 'any' },
+      { key: 'incident.review.write', scope: 'any' },
+      { key: 'incident.review.publish', scope: 'any' },
     ],
   },
   {
@@ -162,6 +175,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.read', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
       { key: 'workload.read', scope: 'any' },
+      // Owns the service that broke, so writes the review; publishing it stays
+      // with whoever ran the incident.
+      { key: 'incident.major.read', scope: 'any' },
+      { key: 'incident.review.write', scope: 'any' },
     ],
   },
   {
@@ -246,6 +263,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'workload.manage', scope: 'any' },
       { key: 'workload.availability.set', scope: 'any' },
       { key: 'workload.oncall.override', scope: 'any' },
+      { key: 'incident.major.read', scope: 'any' },
+      { key: 'incident.major.declare', scope: 'any' },
+      { key: 'incident.major.command', scope: 'any' },
+      { key: 'incident.review.write', scope: 'any' },
+      { key: 'incident.review.publish', scope: 'any' },
     ],
   },
 ];
