@@ -660,6 +660,64 @@ export const incidentMajorReviewPublished = defineEvent({
   payload: z.object({ ...incidentRef, reviewId: id, actionCount: z.number().int() }),
 });
 
+// ---- MOD-08-E2 Problem management (PH-4) -----------------------------------
+const problemRef = { problemId: id, number: z.string() };
+
+export const problemCreated = defineEvent({
+  type: 'problem.created',
+  version: 1,
+  aggregateType: 'problem',
+  webhook: true,
+  description: 'A problem was raised, from a major incident, a ticket trend or by hand.',
+  payload: z.object({
+    ...problemRef,
+    title: z.string(),
+    priority: z.string(),
+    raisedFrom: z.string(),
+    majorIncidentId: id.nullable(),
+    serviceId: id.nullable(),
+  }),
+});
+
+export const knownErrorPublished = defineEvent({
+  type: 'knownerror.published',
+  version: 1,
+  aggregateType: 'problem',
+  webhook: true,
+  description: 'A workaround was published, so the next person to hit this does not lose an hour.',
+  payload: z.object({
+    ...problemRef,
+    symptom: z.string(),
+    workaround: z.string(),
+    articleKey: z.string().nullable(),
+    /** How many tickets are already linked, which is what makes it worth reading. */
+    linkedTickets: z.number().int(),
+  }),
+});
+
+export const knownErrorRetired = defineEvent({
+  type: 'knownerror.retired',
+  version: 1,
+  aggregateType: 'problem',
+  webhook: true,
+  description: 'A workaround was withdrawn, because following an obsolete one costs the time twice.',
+  payload: z.object({ ...problemRef, reason: z.string(), articleKey: z.string().nullable() }),
+});
+
+export const problemResolved = defineEvent({
+  type: 'problem.resolved',
+  version: 1,
+  aggregateType: 'problem',
+  webhook: true,
+  description: 'A problem was permanently fixed.',
+  payload: z.object({
+    ...problemRef,
+    rootCause: z.string().nullable(),
+    linkedTickets: z.number().int(),
+    openDays: z.number().int(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -680,6 +738,7 @@ export const eventCatalogue = [
   workloadAssignmentDeclined, workloadOnCallOverridden,
   incidentMajorDeclared, incidentMajorUpdated, incidentMajorResolved, incidentMajorClosed,
   incidentMajorUpdateOverdue, incidentMajorReviewPublished,
+  problemCreated, knownErrorPublished, knownErrorRetired, problemResolved,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

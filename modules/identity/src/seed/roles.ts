@@ -89,6 +89,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // it pages people.
       { key: 'incident.major.read', scope: 'any' },
       { key: 'incident.major.command', scope: 'any' },
+      // Reads known errors before spending an hour on something already
+      // solved, and links the ticket in front of them to the problem — which
+      // is the number that eventually gets the problem fixed.
+      { key: 'problem.read', scope: 'any' },
+      { key: 'problem.manage', scope: 'any' },
     ],
   },
   {
@@ -156,6 +161,12 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'incident.major.command', scope: 'any' },
       { key: 'incident.review.write', scope: 'any' },
       { key: 'incident.review.publish', scope: 'any' },
+      // Publishing a workaround puts words in front of every agent, so it is a
+      // lead's — and withdrawing one matters more, because an obsolete
+      // workaround costs the reader their time twice.
+      { key: 'problem.read', scope: 'any' },
+      { key: 'problem.manage', scope: 'any' },
+      { key: 'problem.publish', scope: 'any' },
     ],
   },
   {
@@ -179,6 +190,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // with whoever ran the incident.
       { key: 'incident.major.read', scope: 'any' },
       { key: 'incident.review.write', scope: 'any' },
+      { key: 'problem.read', scope: 'any' },
     ],
   },
   {
@@ -268,6 +280,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'incident.major.command', scope: 'any' },
       { key: 'incident.review.write', scope: 'any' },
       { key: 'incident.review.publish', scope: 'any' },
+      { key: 'problem.read', scope: 'any' },
+      { key: 'problem.manage', scope: 'any' },
+      { key: 'problem.publish', scope: 'any' },
     ],
   },
 ];

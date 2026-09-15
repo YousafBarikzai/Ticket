@@ -114,6 +114,9 @@ importers:
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:modules/notifications
+      '@itsm/module-problem':
+        specifier: workspace:*
+        version: link:modules/problem
       '@itsm/module-rules':
         specifier: workspace:*
         version: link:modules/rules
@@ -195,6 +198,9 @@ importers:
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../../modules/notifications
+      '@itsm/module-problem':
+        specifier: workspace:*
+        version: link:../../modules/problem
       '@itsm/module-rules':
         specifier: workspace:*
         version: link:../../modules/rules
@@ -430,6 +436,18 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  modules/problem:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
   modules/rules:
     dependencies:
       '@itsm/contracts':
@@ -655,6 +673,9 @@ importers:
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../../modules/notifications
+      '@itsm/module-problem':
+        specifier: workspace:*
+        version: link:../../modules/problem
       '@itsm/module-rules':
         specifier: workspace:*
         version: link:../../modules/rules

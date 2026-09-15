@@ -1,0 +1,112 @@
+/// MOD-08-E2 Problem management (PH-4).
+///
+/// A problem is the cause behind incidents. The practice has a reputation for
+/// being the one nobody does, and the reason is that it is usually built around
+/// its least useful moment: finding the root cause, weeks later, when everybody
+/// has moved on.
+///
+/// This module is built around a different moment. The most valuable thing
+/// problem management produces is the **workaround** — the thing that stops the
+/// next person losing an hour — and it is available long before anybody knows
+/// why. So a problem may become a known error without a root cause, and the
+/// root cause is something it acquires later, if at all.
+
+/// The cause behind one or more incidents.
+model Problem {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  number        String
+  title         String
+  description   String?
+  /// investigating | known_error | resolved | closed
+  status        String    @default("investigating")
+  priority      String    @default("P3")
+  categoryId    String?   @map("category_id") @db.Uuid
+  serviceId     String?   @map("service_id") @db.Uuid
+  /// Who is accountable for getting to the bottom of it. A problem with no
+  /// owner is a list entry, and problem backlogs are mostly list entries.
+  ownerId       String?   @map("owner_id") @db.Uuid
+
+  /// major_incident | ticket_trend | manual — where it came from, which is the
+  /// only honest way to answer "is our problem management working?".
+  raisedFrom    String    @default("manual") @map("raised_from")
+  /// The major incident whose review raised it, when that is where it came from.
+  majorIncidentId String? @map("major_incident_id") @db.Uuid
+
+  /// Filled in if and when it is understood. Deliberately not required to
+  /// publish a workaround, and deliberately not required to close: a problem
+  /// closed as "not reproducible after six months" is an honest outcome, and a
+  /// forced field would turn it into a fictional one.
+  rootCause     String?   @map("root_cause")
+
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy     String?   @map("created_by") @db.Uuid
+  resolvedAt    DateTime? @map("resolved_at") @db.Timestamptz(6)
+  closedAt      DateTime? @map("closed_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+
+  knownError    KnownError?
+  tickets       ProblemTicket[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, priority])
+  @@index([tenantId, serviceId, status])
+  @@index([tenantId, majorIncidentId])
+  @@map("problem")
+}
+
+/// A published workaround.
+///
+/// Separate from the problem because it has its own life: it is published at one
+/// moment, read by people for weeks, and **retired** at another. A workaround
+/// that outlives its problem is worse than none — an agent follows it, it does
+/// not work because the bug is fixed, and they lose the time twice.
+model KnownError {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  problemId   String    @unique @map("problem_id") @db.Uuid
+  /// What somebody sees when they hit it. Written from the reporter's side, not
+  /// the engineer's, because it is matched against what a person describes.
+  symptom     String
+  workaround  String
+  /// The knowledge article carrying the same words (MOD-09). A link rather than
+  /// a copy: a workaround written in two places diverges, and the one that is
+  /// wrong is the one somebody reads.
+  articleKey  String?   @map("article_key")
+  /// published | retired
+  status      String    @default("published")
+  publishedAt DateTime  @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy String?   @map("published_by") @db.Uuid
+  retiredAt   DateTime? @map("retired_at") @db.Timestamptz(6)
+  retiredReason String? @map("retired_reason")
+
+  problem     Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("known_error")
+}
+
+/// A ticket this problem caused.
+///
+/// The link is what makes a problem arguable. "This should be fixed" is an
+/// opinion; "this has hit forty-one people since March, eleven of them twice"
+/// is a case, and it is the only thing that gets a problem prioritised against
+/// feature work.
+model ProblemTicket {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  problemId String   @map("problem_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  /// Whether the workaround was applied to this one, so its value is countable
+  /// rather than assumed.
+  workaroundApplied Boolean @default(false) @map("workaround_applied")
+  linkedAt  DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+  linkedBy  String?  @map("linked_by") @db.Uuid
+
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, problemId, ticketId])
+  @@index([tenantId, ticketId])
+  @@map("problem_ticket")
+}
