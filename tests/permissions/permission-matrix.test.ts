@@ -252,6 +252,29 @@ const MATRIX: MatrixEntry[] = [
   },
   {
     what: 'reach the platform console',
+  {
+    what: 'read the knowledge base',
+    path: () => '/api/v1/knowledge',
+    // Everyone reads; what differs is what comes back, which the scope tests
+    // below cover rather than this allow/deny matrix.
+    allowed: ['requester', 'agent', 'lead', 'otherAgent', 'admin'],
+  },
+  {
+    what: 'write an article',
+    method: 'POST',
+    path: () => '/api/v1/knowledge',
+    body: () => ({
+      key: `matrix-${Math.random().toString(36).slice(2, 10)}`,
+      title: 'Written during the permission matrix run',
+      body: [{ kind: 'paragraph', runs: [{ text: 'Placeholder.' }] }],
+      audience: 'internal',
+    }),
+    // An article is usually written by whoever just worked out the answer, so
+    // an agent writes. A requester does not.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.
     allowed: [],
@@ -295,6 +318,63 @@ describe('permission matrix', () => {
       });
     }
   }
+});
+
+describe('publishing knowledge is a separate permission from writing it', () => {
+  // Not in the matrix above, because publishing is not idempotent: once one
+  // persona publishes the draft, the next finds nothing to publish and fails
+  // for the wrong reason. Each persona gets its own article instead, which is
+  // also closer to what actually happens.
+  for (const persona of ALL_PERSONAS) {
+    const mayPublish = persona === 'lead' || persona === 'admin';
+
+    it(`${persona} ${mayPublish ? 'may' : 'may not'} publish an article`, async () => {
+      const key = `matrix-publish-${persona.toLowerCase()}`;
+      const created = await request('/api/v1/knowledge', {
+        method: 'POST',
+        token: tenant.people.admin!.token,
+        body: {
+          key,
+          title: `An article for ${persona} to try to publish`,
+          body: [{ kind: 'paragraph', runs: [{ text: 'Placeholder.' }] }],
+          audience: 'tenant',
+        },
+      });
+      // A 404 from a missing article would pass a deny assertion for the wrong
+      // reason, which is how a permission test quietly stops testing anything.
+      expect(created.status).toBe(201);
+
+      const response = await request(`/api/v1/knowledge/${key}/publish`, {
+        method: 'POST',
+        token: tenant.people[persona]!.token,
+      });
+
+      if (mayPublish) {
+        expect(response.status).toBeLessThan(400);
+      } else {
+        expect(response.status).toBe(403);
+      }
+    });
+  }
+
+  it('lets an agent write a draft but not make it live', async () => {
+    // The distinction the two permissions exist for: anyone who works out an
+    // answer should write it down; somebody accountable decides it is right.
+    const key = 'matrix-agent-draft';
+    const created = await request('/api/v1/knowledge', {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: {
+        key,
+        title: 'Written by an agent',
+        body: [{ kind: 'paragraph', runs: [{ text: 'What I just worked out.' }] }],
+        audience: 'internal',
+      },
+    });
+    expect(created.status).toBe(201);
+    expect((await request(`/api/v1/knowledge/${key}/publish`, { method: 'POST', token: tenant.people.agent!.token })).status).toBe(403);
+    expect((await request(`/api/v1/knowledge/${key}/publish`, { method: 'POST', token: tenant.people.lead!.token })).status).toBeLessThan(400);
+  });
 });
 
 describe('scope narrows what a permitted call returns', () => {

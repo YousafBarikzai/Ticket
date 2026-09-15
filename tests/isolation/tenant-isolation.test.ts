@@ -289,6 +289,68 @@ describe('the catalogue stays inside its tenant', () => {
   });
 });
 
+describe('knowledge stays inside its tenant', () => {
+  it("never shows one tenant the other's articles", async () => {
+    // Both tenants write an article under the same key and with the same title,
+    // because a leak between tenants whose data differs is easy to spot and one
+    // between tenants whose data matches is not.
+    for (const tenant of [alpha, beta]) {
+      await request('/api/v1/knowledge', {
+        method: 'POST',
+        token: tenant.people.admin!.token,
+        body: {
+          key: 'starter-guide',
+          title: 'Getting started',
+          body: [{ kind: 'paragraph', runs: [{ text: `Secret belonging to ${tenant.slug}` }] }],
+          audience: 'tenant',
+        },
+      });
+      await request('/api/v1/knowledge/starter-guide/publish', {
+        method: 'POST',
+        token: tenant.people.admin!.token,
+      });
+    }
+
+    const read = await request<{ body: { runs: { text: string }[] }[] }>('/api/v1/knowledge/starter-guide', {
+      token: beta.people.admin!.token,
+    });
+    expect(read.status).toBe(200);
+    expect(JSON.stringify(read.body.body)).toContain(beta.slug);
+    expect(JSON.stringify(read.body.body)).not.toContain(alpha.slug);
+  });
+
+  it("never lets one tenant's search reach the other's articles", async () => {
+    const { transaction, withContext } = await import('@itsm/platform');
+    const ctx = contextFor(beta.id);
+    const documents = await withContext(ctx, () =>
+      transaction(ctx, (tx) => tx.searchDocument.findMany({ where: { entityType: 'knowledge' } })),
+    );
+    expect(documents.length).toBeGreaterThan(0);
+    expect(documents.every((document) => document.tenantId === beta.id)).toBe(true);
+  });
+
+  it("never lets one tenant publish into the other's article", async () => {
+    const { transaction, withContext } = await import('@itsm/platform');
+    const alphaCtx = contextFor(alpha.id);
+    const before = await withContext(alphaCtx, () =>
+      transaction(alphaCtx, (tx) => tx.knowledgeArticle.findFirst({ where: { key: 'starter-guide' } })),
+    );
+
+    // Resolves by key, and both tenants have the same key.
+    await request('/api/v1/knowledge/starter-guide/retire', {
+      method: 'POST',
+      token: beta.people.admin!.token,
+      body: { reason: 'testing isolation' },
+    });
+
+    const after = await withContext(alphaCtx, () =>
+      transaction(alphaCtx, (tx) => tx.knowledgeArticle.findFirst({ where: { key: 'starter-guide' } })),
+    );
+    expect(before?.status).toBe('published');
+    expect(after?.status).toBe('published');
+  });
+});
+
 describe('caches and keys', () => {
   it('prefixes every tenant-specific Redis key with its tenant', async () => {
     // A cache key without a tenant prefix is a cross-tenant read waiting to

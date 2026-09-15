@@ -786,6 +786,142 @@ model WebhookDelivery {
 }
 
 // ===========================================================================
+// modules/knowledge/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-09 Knowledge (PH-3).
+///
+/// An article follows the versioned-definition lifecycle the platform uses for
+/// every governed document (docs/architecture/05 §8): edited as a draft,
+/// reviewed, published as an immutable version, and rolled back by publishing
+/// an earlier version's content forward. What a reader saw last week is
+/// therefore still readable, which is the whole point of writing things down.
+
+model KnowledgeArticle {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  title       String
+  /// The published version a reader gets. Null until first publication, which
+  /// is what makes "published" a property of the article rather than a guess
+  /// from the newest version row.
+  currentVersionId String? @map("current_version_id") @db.Uuid
+  /// draft | in_review | published | retired
+  status      String   @default("draft")
+  /// Who may read it: internal (agents), tenant (everyone signed in),
+  /// organisation (one org's people). Never a presentation choice — the search
+  /// ACL is derived from this, and an internal article must not reach a
+  /// requester's portal.
+  audience    String   @default("internal")
+  /// Set when audience is `organisation`.
+  orgId       String?  @map("org_id") @db.Uuid
+  categoryId  String?  @map("category_id") @db.Uuid
+  /// Accountable for the content being correct and current.
+  ownerId     String?  @map("owner_id") @db.Uuid
+  authorId    String?  @map("author_id") @db.Uuid
+  /// Articles go stale silently; a review date is how that becomes visible.
+  reviewDueAt DateTime? @map("review_due_at") @db.Timestamptz(6)
+  keywords    String[] @default([])
+  viewCount    Int     @default(0) @map("view_count")
+  helpfulCount Int     @default(0) @map("helpful_count")
+  unhelpfulCount Int   @default(0) @map("unhelpful_count")
+  /// How many tickets this article is recorded as having prevented.
+  deflectionCount Int  @default(0) @map("deflection_count")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  retiredAt   DateTime? @map("retired_at") @db.Timestamptz(6)
+
+  versions    KnowledgeArticleVersion[]
+  feedback    KnowledgeFeedback[]
+  links       KnowledgeTicketLink[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status, updatedAt(sort: Desc)])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, reviewDueAt])
+  @@map("knowledge_article")
+}
+
+/// One immutable published version, plus the working draft.
+model KnowledgeArticleVersion {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  articleId  String   @map("article_id") @db.Uuid
+  version    Int
+  title      String
+  /// One-paragraph answer, shown in search results and on the portal tile.
+  summary    String?
+  /// The article itself, as rich blocks (packages/contracts RichBlock[]).
+  body       Json     @default("[]")
+  /// Why this version differs from the last: the thing a reviewer reads first.
+  changeNote String?  @map("change_note")
+  status     String   @default("draft")
+  authorId   String?  @map("author_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  publishedBy String? @map("published_by") @db.Uuid
+
+  article    KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, articleId, version])
+  @@index([tenantId, articleId, version(sort: Desc)])
+  @@map("knowledge_article_version")
+}
+
+/// Did this answer the question? One vote per person per article.
+model KnowledgeFeedback {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  articleId String   @map("article_id") @db.Uuid
+  versionId String?  @map("version_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  helpful   Boolean
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  article   KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, articleId, userId])
+  @@index([tenantId, articleId, createdAt(sort: Desc)])
+  @@map("knowledge_feedback")
+}
+
+/// An article cited on a ticket: the honest measure of whether knowledge works.
+model KnowledgeTicketLink {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  articleId String   @map("article_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  /// `resolved` — this article closed the ticket; `referenced` — it was used.
+  relation  String   @default("referenced")
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  article   KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, articleId, ticketId])
+  @@index([tenantId, ticketId])
+  @@map("knowledge_ticket_link")
+}
+
+model KnowledgeCategory {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String
+  name      String
+  parentId  String?  @map("parent_id") @db.Uuid
+  /// Materialised path, so a subtree is a prefix match rather than a recursion.
+  path      String
+  sortOrder Int      @default(100) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, path])
+  @@map("knowledge_category")
+}
+
+// ===========================================================================
 // modules/notifications/prisma/schema.prisma
 // ===========================================================================
 

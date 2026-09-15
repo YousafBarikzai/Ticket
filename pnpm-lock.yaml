@@ -105,6 +105,9 @@ importers:
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:modules/integrations
+      '@itsm/module-knowledge':
+        specifier: workspace:*
+        version: link:modules/knowledge
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:modules/notifications
@@ -174,6 +177,9 @@ importers:
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:../../modules/integrations
+      '@itsm/module-knowledge':
+        specifier: workspace:*
+        version: link:../../modules/knowledge
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../../modules/notifications
@@ -354,6 +360,21 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/knowledge:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-search':
+        specifier: workspace:*
+        version: link:../search
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -544,6 +565,9 @@ importers:
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:../../modules/integrations
+      '@itsm/module-knowledge':
+        specifier: workspace:*
+        version: link:../../modules/knowledge
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../../modules/notifications

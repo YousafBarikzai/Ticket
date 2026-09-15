@@ -28,6 +28,7 @@ import { adminManifest, syncInstalledModules } from '@itsm/module-admin';
 import { rulesManifest, seedDefaultRules } from '@itsm/module-rules';
 import { approvalsManifest, seedApprovalDefaults } from '@itsm/module-approvals';
 import { catalogueManifest, seedCatalogueDefaults } from '@itsm/module-catalogue';
+import { knowledgeManifest, seedKnowledgeDefaults } from '@itsm/module-knowledge';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -49,6 +50,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   approvalsManifest,
   channelsManifest,
   catalogueManifest,
+  knowledgeManifest,
   adminManifest,
 ];
 
@@ -103,6 +105,9 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('catalogue.defaults', async (ctx: TenantContext) => {
     await seedCatalogueDefaults(ctx);
+  });
+  registerSeedStep('knowledge.defaults', async (ctx: TenantContext) => {
+    await seedKnowledgeDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

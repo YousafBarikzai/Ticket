@@ -38,6 +38,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.delegate', scope: 'own' },
       { key: 'catalogue.read', scope: 'own' },
       { key: 'catalogue.request', scope: 'own' },
+      // Self-service means reading the answer before raising the ticket.
+      { key: 'knowledge.read', scope: 'own' },
+      { key: 'knowledge.feedback', scope: 'own' },
     ],
   },
   {
@@ -67,6 +70,13 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.delegate', scope: 'own' },
       { key: 'catalogue.read', scope: 'own' },
       { key: 'catalogue.request', scope: 'own' },
+      // `any` rather than `own`: internal runbooks exist for agents, and an
+      // agent who cannot read them has the knowledge base of a requester.
+      // Writing too — an article is usually written by whoever just worked out
+      // the answer. Publishing is a lead's.
+      { key: 'knowledge.read', scope: 'any' },
+      { key: 'knowledge.write', scope: 'any' },
+      { key: 'knowledge.feedback', scope: 'own' },
     ],
   },
   {
@@ -103,6 +113,12 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'catalogue.read', scope: 'any' },
       { key: 'catalogue.request', scope: 'own' },
       { key: 'catalogue.form.read', scope: 'any' },
+      // A lead publishes: somebody close to the work should be able to correct
+      // an article without waiting for an administrator.
+      { key: 'knowledge.read', scope: 'any' },
+      { key: 'knowledge.write', scope: 'any' },
+      { key: 'knowledge.publish', scope: 'any' },
+      { key: 'knowledge.feedback', scope: 'own' },
     ],
   },
   {
@@ -119,6 +135,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'identity.session.manage', scope: 'own' },
       { key: 'admin.setting.read', scope: 'any' },
       { key: 'tenant.read', scope: 'any' },
+      { key: 'knowledge.read', scope: 'any' },
+      { key: 'knowledge.feedback', scope: 'own' },
     ],
   },
   {
@@ -183,6 +201,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'catalogue.read', scope: 'any' },
       { key: 'catalogue.request', scope: 'own' },
       { key: 'catalogue.manage', scope: 'any' },
+      { key: 'knowledge.read', scope: 'any' },
+      { key: 'knowledge.write', scope: 'any' },
+      { key: 'knowledge.publish', scope: 'any' },
+      { key: 'knowledge.feedback', scope: 'own' },
       { key: 'catalogue.form.read', scope: 'any' },
       { key: 'catalogue.form.manage', scope: 'any' },
     ],

@@ -476,6 +476,50 @@ export const requestSubmitted = defineEvent({
   }),
 });
 
+// ---- MOD-09 Knowledge (PH-3) ----------------------------------------------
+export const knowledgeArticleSubmitted = defineEvent({
+  type: 'knowledge.article.submitted',
+  version: 1,
+  aggregateType: 'knowledge_article',
+  webhook: true,
+  description: 'An article was sent for review, which may start an approval.',
+  payload: z.object({ articleId: id, key: z.string(), version: z.number().int(), authorId: id.nullable() }),
+});
+
+export const knowledgeArticlePublished = defineEvent({
+  type: 'knowledge.article.published',
+  version: 1,
+  aggregateType: 'knowledge_article',
+  webhook: true,
+  description: 'A version of an article became the one readers get.',
+  payload: z.object({
+    articleId: id,
+    key: z.string(),
+    version: z.number().int(),
+    audience: z.string(),
+    /** Set when this publication restored an earlier version's content. */
+    rolledBackFrom: z.number().int().nullable(),
+  }),
+});
+
+export const knowledgeArticleRetired = defineEvent({
+  type: 'knowledge.article.retired',
+  version: 1,
+  aggregateType: 'knowledge_article',
+  webhook: true,
+  description: 'An article was withdrawn and is no longer served to readers.',
+  payload: z.object({ articleId: id, key: z.string(), reason: z.string().nullable() }),
+});
+
+export const knowledgeArticleFeedback = defineEvent({
+  type: 'knowledge.article.feedback',
+  version: 1,
+  aggregateType: 'knowledge_article',
+  webhook: false,
+  description: 'A reader said whether an article answered their question.',
+  payload: z.object({ articleId: id, userId: id, helpful: z.boolean(), comment: z.string().nullable() }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -491,6 +535,7 @@ export const eventCatalogue = [
   approvalRequested, approvalDecided,
   channelMessageReceived, channelHealthDegraded,
   catalogueItemPublished, requestSubmitted,
+  knowledgeArticleSubmitted, knowledgeArticlePublished, knowledgeArticleRetired, knowledgeArticleFeedback,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);
