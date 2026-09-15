@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupDocument, click, render } from '../../web/__tests__/support/render.js';
+import { expectNoViolations } from '../../web/__tests__/support/audit.js';
 import { AiSuggestionCard, type SuggestionEvidence } from '../AiSuggestionCard.js';
 
 afterEach(() => cleanupDocument());
@@ -37,7 +38,7 @@ function card(overrides: Partial<Parameters<typeof AiSuggestionCard>[0]> = {}) {
 describe('showing a suggestion', () => {
   it('names itself as the AI, so nobody mistakes it for a colleague', () => {
     const { container } = render(card());
-    const section = container.querySelector('section')!;
+    const section = container.querySelector('article')!;
     expect(section.getAttribute('aria-label')).toBe('Draft a reply — suggested by AI');
   });
 
@@ -99,12 +100,30 @@ describe('deciding what to do with it', () => {
     // promise something the API refuses.
     expect(container.querySelector('.itsm-AiSuggestion__actions')).toBeNull();
     expect(container.querySelector('.itsm-AiSuggestion__outcome')?.textContent).toBe('Edited before sending');
-    expect(container.querySelector('section')?.getAttribute('data-outcome')).toBe('edited');
+    expect(container.querySelector('article')?.getAttribute('data-outcome')).toBe('edited');
   });
 
   it('stops a second click while the first is in flight', () => {
     const { container } = render(card({ busy: true }));
     const buttons = [...container.querySelectorAll('.itsm-AiSuggestion__actions button')] as HTMLButtonElement[];
     expect(buttons.every((button) => button.disabled)).toBe(true);
+  });
+
+  /**
+   * ADR-0006's governance properties are only real if a person can perceive
+   * them. The tests above check the reason, the confidence and the evidence
+   * are rendered; this checks they are rendered in a way that reaches somebody
+   * not looking at the screen — which is the same claim, made about a different
+   * reader.
+   */
+  it('passes an axe audit, offered and decided', async () => {
+    const { container } = render(
+      <div>
+        {card()}
+        {card({ outcome: 'edited' })}
+        {card({ busy: true })}
+      </div>,
+    );
+    await expectNoViolations(container);
   });
 });

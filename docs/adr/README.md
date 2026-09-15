@@ -58,6 +58,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0043](0043-only-additive-work-may-wait.md) | Only additive work may wait | Accepted | MOD-16, doc 14 §5 |
 | [0044](0044-a-revocation-that-is-not-written-is-not-a-revocation.md) | A revocation that is not written is not a revocation | Accepted | MOD-01, doc 08 §9, doc 09 §2 |
 | [0045](0045-a-notice-is-a-nudge-and-a-topic-is-a-permission.md) | A notice is a nudge, and a topic is a permission | Accepted | MOD-16, MOD-04, doc 08 §6, ADR-0015 |
+| [0046](0046-a-second-reader-that-has-memorised-wcag.md) | A second reader that has memorised WCAG | Accepted | MOD-16-E1, doc 14 §4, doc 18 |
 
 ## Template
 

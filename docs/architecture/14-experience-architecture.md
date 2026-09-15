@@ -62,7 +62,7 @@ packages/ui/
 ## 7. Localisation and accessibility
 
 - All strings externalised (ICU) in `packages/i18n`; pseudo-localisation build and missing-key check in CI; tenant default locale with user override; RTL mirrored via logical properties and verified by Storybook visual tests.
-- WCAG 2.2 AA: axe-core in component and e2e tests; keyboard completion of every core journey; focus management for dialogs and toasts; reduced-motion respect; 200 % zoom and 400 px width layouts.
+- WCAG 2.2 AA: axe-core in component tests (ADR-0046 — built; e2e is not, see §10.3); keyboard completion of every core journey; focus management for dialogs and toasts; reduced-motion respect; 200 % zoom and 400 px width layouts.
 - Content localisation (knowledge, catalogue, templates) is data with per-locale versions, resolved by the same settings order.
 
 ## 8. Performance budgets
@@ -120,12 +120,23 @@ reverse later:
 - **No Storybook, no `packages/i18n`, no `packages/ui/native`, no
   `packages/ui/icons`** (§2, §6, §7). None of these has been built. The
   accessibility tests §2 promises exist as keyboard and ARIA tests in
-  `packages/ui/src/**/__tests__`; there is no axe-core run.
+  `packages/ui/src/**/__tests__`, and **axe-core now runs over every exported
+  component** in the same jsdom suite (ADR-0046). Two families of rule are
+  disabled by name because jsdom cannot answer them — anything needing layout,
+  and anything asking about a whole page — and colour contrast is covered
+  better elsewhere, computed from the token values in
+  `tokens/__tests__/contrast.test.ts`. What is still missing is a **full-page
+  audit**: heading order across a real screen, landmark structure and the skip
+  link only exist once components are composed, and that belongs to the
+  applications and to a browser.
 - **No push** (§5). The Push API is not wired; notifications are the in-app
   inbox only. A service worker and an offline queue *are* built — see §10.3.
-- **Polling, not SSE, for an AI job** (§4). `GET /events/stream` exists in the
-  API (ADR-0015) and the proxy does not carry it. A job the person just started
-  is polled with a ceiling; a queue that updates by itself needs the stream.
+- **SSE is connected** (§4, ADR-0045). `GET /events/stream` had existed since
+  Phase 1 with nothing opening it. The queue now watches its teams' topics and
+  refreshes, and the AI panel settles on a notice rather than a 1.5-second
+  poll — the poll stays at 5 s as the guarantee, because a stream that never
+  opens is indistinguishable, to the person waiting, from a job that never
+  finished. `Last-Event-ID` resume is still not built: a reconnection refetches.
 - **`apps/admin`, `apps/status` and `apps/mobile` do not exist.** MOD-23's
   status page is served by the API, not by a Next app. Without an admin
   console, every builder in §1 — fields, forms, rules, workflows, SLA

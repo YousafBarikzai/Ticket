@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanupDocument, render } from '../../web/__tests__/support/render.js';
+import { expectNoViolations } from '../../web/__tests__/support/audit.js';
 import { SlaClock, describeRemaining } from '../SlaClock.js';
 
 afterEach(() => cleanupDocument());
@@ -54,5 +55,24 @@ describe('showing the clock', () => {
     const { container } = render(<SlaClock targetType="fulfilment" state="met" remainingMinutes={null} />);
     expect(container.textContent).toContain('Fulfilment');
     expect(container.textContent).toContain('Met');
+  });
+
+  /**
+   * The assertions above are the ones somebody thought of. This one is the
+   * rule engine reading the same markup for the ones nobody did — and it runs
+   * over every state at once, because a breach renders a live region the other
+   * four do not.
+   */
+  it('passes an axe audit in every state it can be in', async () => {
+    const { container } = render(
+      <div>
+        <SlaClock targetType="response" state="running" remainingMinutes={45} />
+        <SlaClock targetType="response" state="running" remainingMinutes={5} />
+        <SlaClock targetType="resolution" state="paused" remainingMinutes={null} />
+        <SlaClock targetType="resolution" state="breached" remainingMinutes={null} />
+        <SlaClock targetType="fulfilment" state="met" remainingMinutes={null} />
+      </div>,
+    );
+    await expectNoViolations(container);
   });
 });

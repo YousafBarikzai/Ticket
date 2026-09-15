@@ -104,8 +104,15 @@ export function AiSuggestionCard({
 }: AiSuggestionCardProps): ReactNode {
   const decided = outcome !== 'pending';
 
+  // `article`, not `section`. A named `section` is a `region` landmark, and a
+  // ticket with three suggestions on it then has three landmarks carrying the
+  // same name — ambiguous to anybody navigating by landmark, and clutter in a
+  // list where landmark navigation is meant to find the significant parts of a
+  // page. `article` is what a self-contained composition is, it keeps the
+  // accessible name, and it is not a landmark. Found by the axe audit rather
+  // than by review, which is the point of having one.
   return (
-    <section
+    <article
       className={cx('itsm-AiSuggestion', className)}
       aria-label={`${title} — suggested by AI`}
       data-capability={capability}
@@ -171,6 +178,6 @@ export function AiSuggestionCard({
           </Button>
         </div>
       )}
-    </section>
+    </article>
   );
 }
