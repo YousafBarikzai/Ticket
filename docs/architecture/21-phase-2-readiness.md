@@ -1,12 +1,12 @@
 # 21 · Phase 2 readiness and delivery record
 
-**Status: partially delivered.** Three of Phase 2's six workstreams are built and
-verified against a live PostgreSQL and Redis; three remain. This document records
-what was built, what it cost, what it found, and what is left — in the same shape
-as [20](20-phase-1-readiness.md), so the two read as one delivery history.
+**Status: five of six workstreams delivered.** Built and verified against a live
+PostgreSQL and Redis; the catalogue, forms and portal remain. This document
+records what was built, what it found, and what is left — in the same shape as
+[20](20-phase-1-readiness.md), so the two read as one delivery history.
 
-At the time of writing: **11 modules, 66 tables, 78 endpoints, 38 event types**,
-and **381 tests** (177 unit, 204 integration).
+At the time of writing: **12 modules, 70 tables, 86 endpoints, 40 event types**,
+and **437 tests** (215 unit, 222 integration).
 
 ---
 
@@ -94,33 +94,60 @@ engine could not compute against, and a priority matrix missing a combination.
 
 ---
 
-## 3. Not yet delivered
+## 3. Also delivered
+
+### 3.1 Notification quiet hours, digests and preferences (MOD-11-E1)
+
+Quiet hours mean "not now, but later"; digest mode means "not separately".
+Conflating them gives a message that is neither prompt nor batched, so each
+defers with its own reason and its own instant. The awkward cases are all in the
+clock — a window crossing midnight, the recipient's time zone rather than the
+server's, and daylight saving, where adding a fixed offset gets the release an
+hour wrong in the direction that wakes somebody up. An urgent message goes
+through both: whoever set quiet hours did not mean "do not tell me the building
+is on fire".
+
+### 3.2 Channel framework and email adapter (MOD-03)
+
+Email is the reference channel the PH-4 adapters copy, so the split matters more
+than the feature: the inbound path, the command set, the loop guard and the
+identity check are the framework, and only parsing differs between an email and
+a Slack event.
+
+Two closed sets carry the safety. The **command set** is closed because a
+channel message comes from outside and an envelope is trivially forged — an
+adapter that could express anything would be an unauthenticated API.
+**Unverified senders may only ask to be linked**, because "what is the status of
+REQ-000123" from a forged address is a data leak.
+
+The threading order — a header we stamp, then References, then a bracketed
+subject token, then a new ticket — runs from hardest to get wrong to easiest,
+because the weaker sources are the ones a mail client or an attacker can
+influence.
+
+## 4. Not yet delivered
 
 | Workstream | Module | State |
 |---|---|---|
-| Channel framework and email adapter | MOD-03 | Not started. The reference channel the PH-4 adapters copy ([07 §5](07-eventing-and-integration.md)). Needs OD-03 closed first — see §5. |
-| Notification templates, rules and preferences | MOD-11-E1 | Partly present from PH-1: templates, rules and in-app delivery work. Preferences, digests and per-channel routing remain. |
 | Catalogue, forms and portal server | MOD-05, MOD-02 | Not started. Blocks `serviceOwner` approvers, which currently refuse at publish. |
 | Mobile foundation (iOS) | MOD-16 | Not started; depends on assumption AA-07 (Apple Developer account). |
-| Rules and approvals admin UI | MOD-13 | Server side complete and reachable through the API; no console screens yet. |
+| Admin console screens | MOD-13 | Server side complete for rules, approvals, SLA policies and channels; no console screens yet. |
+| A real email provider | OD-03 | Only the development transport is registered, and only outside production. Postmark and Microsoft Graph are adapters behind the same interface; the decision is the blocker, not the code. |
 
-Nothing above is blocked by a design problem. The first three are sequencing.
+Nothing above is blocked by a design problem.
 
----
-
-## 4. Verification
+## 5. Verification
 
 | Check | Result |
 |---|---|
-| Unit tests | 177 passing |
-| Integration tests | 204 passing |
+| Unit tests | 215 passing |
+| Integration tests | 222 passing |
 | — tenant isolation (Appendix D, release-blocking) | extended to rules and approvals |
 | — permission matrix (Appendix B, release-blocking) | 127 cases |
+| CI stages 1, 2 and 3 | green |
 | Module contract | no violations |
 | Typecheck (TypeScript strict) | clean |
 | Secret scan, full history | clean |
-| CI stages 1 and 3 | green |
-| CI stage 2 (image build and scan) | see §5 |
 
 The test harness gained `drainEvents()`, which runs the event handlers in
 process the way the worker would. From Phase 2 on, rules, approvals and the
@@ -129,7 +156,7 @@ drive one; Phase 1 could rely on the walking skeleton and a real worker.
 
 ---
 
-## 5. Defects and traps this phase found
+## 6. Defects and traps this phase found
 
 Recorded because each cost time and would cost it again.
 
@@ -141,8 +168,16 @@ Recorded because each cost time and would cost it again.
 | `(?i)` in an allowlist regex exempts more than intended | Applied to the value as well as the field name, it would have exempted an upper-case credential assigned to `key:`. |
 | `aquasecurity/trivy-action@0.28.0` does not exist | The tags carry a `v`. The job fails at set-up with only "unable to find version", which says nothing about the prefix. |
 | The expression language compares mismatched types lexically | `ticket.title > 5` is **true**, because `"V"` sorts after `"5"`. A rule written that way matches everything and reports no error. Pinned by a test; **open for decision** — see below. |
+| Two tenants could claim the same inbound email address | `channel_account` is the one table read *across* tenants — a provider webhook arrives with no tenant context — so duplicates meant mail routed to whichever row came back first. Now a partial unique index on the active rows. |
+| Deleting a tenant left all its data behind | Only the directory row went. Every tenant-scoped table kept its rows, and an orphaned mailbox from a deleted tenant went on receiving mail. `purgeTenant` now deletes for real. |
+| A data migration on a tenant-scoped table silently does nothing | Migrations run as a role that forced row-level security applies to, so an `UPDATE` with no `app.tenant_id` matches zero rows — and then fails on the index it was meant to clear the way for. |
+| A failed statement aborts the whole PostgreSQL transaction | The first purge ran every table in one transaction, so one foreign-key violation made everything after it fail. It looked as though nothing could be deleted. |
+| The production image shipped a transpiler, then a package manager | Found by the image scan, twice: esbuild's Go binary came in with `tsx`, and `tar` came in with pnpm. Neither is ever loaded by the application. Each deployable is now a bundle, and the runtime image carries Node and OpenSSL only. |
+| Two major versions of BullMQ in one repo | Which behaviour you got depended on which file did the importing; a scheduled job id containing a colon started the worker under one and crashed it under the other. |
+| A ticket raised by email had no organisation | Which put it outside every agent's scope — the same shape as the Phase 1 triage-pool finding, arriving by a different route. |
+| `onBehalfOf` is a UUID column, not a note | Putting the channel name there failed the insert deep inside the audit writer, where the cause is hard to see. |
 
-### 5.1 Open for decision
+### 6.1 Open for decision
 
 **Mixed-type comparison.** `compare()` in `packages/expr` falls back to comparing
 operands as strings when they are not both numbers. That is defensible as a
@@ -160,7 +195,7 @@ running. Not done here because it changes Phase 1 behaviour that is in use.
 
 ---
 
-## 6. What Phase 3 inherits
+## 7. What Phase 3 inherits
 
 - The workflow engine (MOD-06-E1) has its sibling package, its expression
   language, its versioned-definition lifecycle and its automation write path
