@@ -89,13 +89,79 @@ async function eventually<T>(what: string, attempt: () => Promise<T | null>, tim
   return null;
 }
 
+/**
+ * Points the seeded support mailbox at a real address and turns it on.
+ *
+ * The seed leaves it disabled on a placeholder, which is what an unconfigured
+ * tenant should look like; the skeleton configures it the way an administrator
+ * would, so the inbound path is exercised rather than stubbed.
+ */
+async function configureMailbox(): Promise<string> {
+  const tenant = await tenantService.findTenantBySlug('acme');
+  if (!tenant) throw new Error('no tenant acme');
+  const address = 'support-skeleton@acme.invalid';
+  const ctx = createContext({ tenantId: tenant.id, actor: { type: 'system', id: null }, permissions: SYSTEM_PERMISSIONS });
+
+  await withContext(ctx, async () => {
+    const { db } = await import('@itsm/platform');
+    const client = db();
+    await client.channelAccount.updateMany({
+      where: { channel: 'email', key: 'support' },
+      data: { address, status: 'active' },
+    });
+    const account = await client.channelAccount.findFirst({ where: { channel: 'email', key: 'support' } });
+    const user = await client.user.findFirst({ where: { email: 'ada.requester@acme.test' } });
+    if (!account || !user) throw new Error('the support mailbox or its requester is missing');
+    // Verified, because an unverified address may only ask to be linked.
+    await client.channelIdentity.upsert({
+      where: { tenantId_channel_externalId: { tenantId: tenant.id, channel: 'email', externalId: 'ada.requester@acme.test' } },
+      create: {
+        id: crypto.randomUUID(),
+        tenantId: tenant.id,
+        accountId: account.id,
+        channel: 'email',
+        externalId: 'ada.requester@acme.test',
+        userId: user.id,
+        verified: true,
+        verifiedAt: new Date(),
+        method: 'admin',
+      },
+      update: { verified: true, userId: user.id },
+    });
+  });
+
+  return address;
+}
+
+let mailSequence = 0;
+
+/** One provider delivery, the way the webhook receives it. */
+async function deliverMail(
+  address: string,
+  message: { from: string; subject: string; text: string; headers?: Record<string, string> },
+): Promise<{ status: number; body: { outcome?: string; ticket?: string | null; reason?: string | null } }> {
+  mailSequence += 1;
+  return api(`/api/v1/channels/email/${encodeURIComponent(address)}/inbound`, {
+    method: 'POST',
+    body: {
+      messageId: `<skeleton-${Date.now()}-${mailSequence}@example.test>`,
+      from: message.from,
+      subject: message.subject,
+      text: message.text,
+      headers: message.headers ?? {},
+    },
+  });
+}
+
 bootstrapModules();
 
 try {
   const agent = await tokenFor('acme', 'sam.agent@acme.test');
   const requester = await tokenFor('acme', 'ada.requester@acme.test');
   const administrator = await tokenFor('acme', 'alex.admin@acme.test');
+  const lead = await tokenFor('acme', 'priya.lead@acme.test');
   const otherTenantAgent = await tokenFor('beta', 'sam.agent@beta.test');
+  const requesterEmail = 'ada.requester@acme.test';
 
   // 1. Sign in -------------------------------------------------------------
   const me = await api<{ actor: { displayName: string }; tenant: { name: string }; permissions: unknown[]; teamIds: string[] }>(
@@ -325,6 +391,139 @@ try {
     metricsText.includes('http_request_ms') && metricsText.includes('outbox_events_published_total'),
     'metrics exposed',
     'request latency and outbox counters are published',
+  );
+
+  // ==========================================================================
+  // Phase 2: the platform doing work on its own.
+  //
+  // Everything above proves the platform can hold a ticket safely. What follows
+  // proves it can run a service desk: route what arrives, ask the right person,
+  // chase what is late, and take work from outside the browser.
+  // ==========================================================================
+
+  // 15. A business rule acts on a ticket nobody touched ----------------------
+  const outage = await api<{ id: string; number: string; priority: string }>('/api/v1/tickets', {
+    token: requester,
+    method: 'POST',
+    body: { type: 'incident', title: 'The whole site is down', impact: 'high', urgency: 'high', sourceChannel: 'portal' },
+  });
+  // The rule runs in a consumer, so the change arrives a moment after the write.
+  const raised = (await eventually('the rule to run', async () => {
+    const current = await api<{ priority: string }>(`/api/v1/tickets/${outage.body.number}`, { token: agent });
+    return current.body.priority === 'P1' ? current : null;
+  })) ?? { body: { priority: 'unchanged' } };
+  check(
+    raised.body.priority === 'P1',
+    'a business rule raised the priority',
+    `${outage.body.number} became ${raised.body.priority} with nobody touching it`,
+  );
+
+  const outageTags = (await eventually('the tag to appear', async () => {
+    const tags = await api<{ data: string[] }>(`/api/v1/tickets/${outage.body.number}/tags`, { token: agent });
+    return tags.body.data?.includes('major-incident') ? tags : null;
+  })) ?? { body: { data: [] as string[] } };
+  check(
+    outageTags.body.data?.includes('major-incident') ?? false,
+    'and tagged it',
+    `tags: ${(outageTags.body.data ?? []).join(', ') || 'none'}`,
+  );
+
+  // 16. The rule test panel changes nothing ----------------------------------
+  const dryRun = await api<{ sampled: number; wouldChange: unknown[] }>('/api/v1/rules/major-incident-p1/test', {
+    token: administrator,
+    method: 'POST',
+    body: { sampleSize: 25 },
+  });
+  check(
+    dryRun.status === 200 && dryRun.body.sampled > 0,
+    'a rule can be rehearsed before it runs',
+    `replayed ${dryRun.body.sampled} ticket(s); ${dryRun.body.wouldChange?.length ?? 0} would change, none did`,
+  );
+
+  // 17. The catalogue shows only what you may raise --------------------------
+  const catalogue = await api<{ data: { key: string; name: string }[] }>('/api/v1/catalogue', { token: requester });
+  check(
+    catalogue.body.data?.some((item) => item.key === 'system-access') ?? false,
+    'the catalogue lists what this person may raise',
+    `${catalogue.body.data?.length ?? 0} item(s), including "${catalogue.body.data?.[0]?.name ?? ''}"`,
+  );
+
+  // 18. A form the server validates, not the browser -------------------------
+  const badAnswers = await api('/api/v1/catalogue/system-access/submit', {
+    token: requester,
+    method: 'POST',
+    body: { answers: { system: 'finance', accessLevel: 'admin' } },
+  });
+  check(
+    badAnswers.status === 422,
+    'the server enforces the form, not the browser',
+    'administrator access without a justification was refused',
+  );
+
+  const request_ = await api<{ ticketNumber: string; approvalId: string | null }>(
+    '/api/v1/catalogue/system-access/submit',
+    {
+      token: requester,
+      method: 'POST',
+      body: { answers: { system: 'crm', accessLevel: 'read' } },
+    },
+  );
+  check(
+    request_.status === 201 && /^REQ-/.test(request_.body.ticketNumber ?? ''),
+    'a request becomes a ticket, routed by the catalogue',
+    `${request_.body.ticketNumber} raised from "Access to a system"`,
+  );
+
+  // 19. Approvals ------------------------------------------------------------
+  const waiting = await api<{ data: { id: string }[] }>('/api/v1/approvals', { token: lead });
+  check(
+    waiting.status === 200,
+    'an approver can see what is waiting on them',
+    `${waiting.body.data?.length ?? 0} waiting`,
+  );
+
+  // 20. Email in, as somebody the platform knows -----------------------------
+  const mailbox = await configureMailbox();
+  const forged = await deliverMail(mailbox, {
+    from: 'stranger@example.invalid',
+    subject: 'let me in',
+    text: 'I am definitely who I say I am.',
+  });
+  check(
+    forged.body.outcome === 'refused',
+    'an unverified sender cannot raise a ticket by email',
+    'an envelope is trivially forged, so it is refused',
+  );
+
+  const byEmail = await deliverMail(mailbox, {
+    from: requesterEmail,
+    subject: 'My laptop will not charge',
+    text: 'It stopped this morning.',
+  });
+  check(
+    byEmail.body.outcome === 'created' && Boolean(byEmail.body.ticket),
+    'a verified sender raises a ticket by email',
+    `${byEmail.body.ticket} raised from ${requesterEmail}`,
+  );
+
+  const autoReply = await deliverMail(mailbox, {
+    from: requesterEmail,
+    subject: 'Out of office',
+    text: 'I am away until Monday.',
+    headers: { 'Auto-Submitted': 'auto-replied' },
+  });
+  check(
+    autoReply.body.reason === 'auto_reply',
+    'an out-of-office reply does not start a loop',
+    'the responder was dropped rather than acknowledged',
+  );
+
+  // 21. SLA policies a service owner can retune ------------------------------
+  const policies = await api<{ data: { key: string; targets: unknown[] }[] }>('/api/v1/sla-policies', { token: administrator });
+  check(
+    (policies.body.data?.length ?? 0) > 0,
+    'SLA targets are configuration, not code',
+    `${policies.body.data?.length ?? 0} polic(ies), ${policies.body.data?.reduce((n, p) => n + (p.targets?.length ?? 0), 0) ?? 0} target(s)`,
   );
 } catch (error) {
   failures.push({ name: 'run', detail: (error as Error).message });

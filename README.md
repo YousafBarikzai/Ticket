@@ -9,15 +9,17 @@ end: create a tenant, sign in, raise a ticket, work it, resolve it, and see the
 audit trail, SLA timers, notifications and search index all follow from the
 events.
 
-**Phase 2 (Service desk MVP) is five of six workstreams in** — the business
-rules engine, approvals, SLA policies with calendars and escalations,
-notification quiet hours and digests, and the channel framework with its email
-adapter. The catalogue, forms and portal server remain. See
+**Phase 2 (Service desk MVP) built and verified** — the business rules engine,
+approvals, SLA policies with calendars and escalations, notification quiet hours
+and digests, the channel framework with its email adapter, and the service
+catalogue with its forms. See
 [docs/architecture/21](docs/architecture/21-phase-2-readiness.md) for what was
 built, what it found, and the one decision it leaves open.
 
-437 tests pass, including the release-blocking tenant-isolation and
-permission-matrix suites against a real PostgreSQL and Redis.
+`pnpm skeleton` runs 35 assertions end to end against the bundled production
+artefacts — a demo that needs no code reading. 484 tests pass, including the
+release-blocking tenant-isolation and permission-matrix suites against a real
+PostgreSQL and Redis.
 
 The source requirements are the *Modular IT Ticketing Platform — Build
 Specification v2.0* (September 2026).

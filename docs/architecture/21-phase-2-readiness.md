@@ -1,12 +1,13 @@
 # 21 · Phase 2 readiness and delivery record
 
-**Status: five of six workstreams delivered.** Built and verified against a live
-PostgreSQL and Redis; the catalogue, forms and portal remain. This document
-records what was built, what it found, and what is left — in the same shape as
+**Status: delivered.** All six workstreams are built and verified against a live
+PostgreSQL and Redis, and the walking skeleton runs 35 of 35 assertions against
+the bundled production artefacts. This document records what was built, what it
+found, and what remains — in the same shape as
 [20](20-phase-1-readiness.md), so the two read as one delivery history.
 
-At the time of writing: **12 modules, 70 tables, 86 endpoints, 40 event types**,
-and **437 tests** (215 unit, 222 integration).
+At the time of writing: **13 modules, 74 tables, 93 endpoints, 42 event types**,
+and **484 tests** (221 unit, 263 integration).
 
 ---
 
@@ -125,23 +126,43 @@ subject token, then a new ticket — runs from hardest to get wrong to easiest,
 because the weaker sources are the ones a mail client or an attacker can
 influence.
 
-## 4. Not yet delivered
+### 3.3 Service catalogue and forms (MOD-05, MOD-02)
 
-| Workstream | Module | State |
+The form contract moved from the design system into `@itsm/contracts`, which
+makes a claim the design system was already making literally true: the server
+validates a submission by calling the same `validateForm` the browser called. A
+second implementation would be a second set of rules, and the two would disagree
+the first time either changed. The browser's validation is a convenience; the
+server's is the control.
+
+Submitting a request is the one place where an unprivileged person's input
+becomes a ticket with a service, a group and a priority attached, so all three
+come from the published catalogue item and none from the request body.
+`createRequestFromCatalogue` has no parameter that could express a caller-chosen
+group or priority.
+
+**Entitlement is access control, not presentation.** The same predicate filters
+the catalogue and is checked again on submission — filtering alone would be a
+client-side control anyone guessing a key could walk past. An item you are not
+entitled to returns 404, because its name alone can disclose that the thing
+exists and who is likely to have one.
+
+## 4. What remains
+
+| Item | Module | State |
 |---|---|---|
-| Catalogue, forms and portal server | MOD-05, MOD-02 | Not started. Blocks `serviceOwner` approvers, which currently refuse at publish. |
 | Mobile foundation (iOS) | MOD-16 | Not started; depends on assumption AA-07 (Apple Developer account). |
-| Admin console screens | MOD-13 | Server side complete for rules, approvals, SLA policies and channels; no console screens yet. |
+| Admin console screens | MOD-13 | Every Phase 2 module's server side is complete and reachable through the API; no console screens yet. |
 | A real email provider | OD-03 | Only the development transport is registered, and only outside production. Postmark and Microsoft Graph are adapters behind the same interface; the decision is the blocker, not the code. |
-
-Nothing above is blocked by a design problem.
+| Fulfilment plans and task templates | MOD-05 | Deferred to PH-3 with the workflow engine, which is what executes them. |
 
 ## 5. Verification
 
 | Check | Result |
 |---|---|
-| Unit tests | 215 passing |
-| Integration tests | 222 passing |
+| Unit tests | 221 passing |
+| Integration tests | 263 passing |
+| Walking skeleton, against `node dist/api.js` and `node dist/worker.js` | 35 of 35 |
 | — tenant isolation (Appendix D, release-blocking) | extended to rules and approvals |
 | — permission matrix (Appendix B, release-blocking) | 127 cases |
 | CI stages 1, 2 and 3 | green |
@@ -167,6 +188,8 @@ Recorded because each cost time and would cost it again.
 | gitleaks silently ignores the plural `[[allowlists]]` block | A config written that way looks correct, changes nothing, and leaves the build red with no explanation. The singular `[allowlist]` form works. |
 | `(?i)` in an allowlist regex exempts more than intended | Applied to the value as well as the field name, it would have exempted an upper-case credential assigned to `key:`. |
 | `aquasecurity/trivy-action@0.28.0` does not exist | The tags carry a `v`. The job fails at set-up with only "unable to find version", which says nothing about the prefix. |
+| A form condition reading `values.x` instead of `form.x` never holds | The obvious guess is always undefined, so the field never appears and nothing says why. Found by this module's own seed; now refused at save, like the rules engine's unknown-fact check. |
+| npm ships inside the Node base image and bundles a critical CVE | The third time the same principle applied: the runtime image executes `node dist/…` and needs neither a transpiler, a package manager, nor npm. |
 | The expression language compares mismatched types lexically | `ticket.title > 5` is **true**, because `"V"` sorts after `"5"`. A rule written that way matches everything and reports no error. Pinned by a test; **open for decision** — see below. |
 | Two tenants could claim the same inbound email address | `channel_account` is the one table read *across* tenants — a provider webhook arrives with no tenant context — so duplicates meant mail routed to whichever row came back first. Now a partial unique index on the active rows. |
 | Deleting a tenant left all its data behind | Only the directory row went. Every tenant-scoped table kept its rows, and an orphaned mailbox from a deleted tenant went on receiving mail. `purgeTenant` now deletes for real. |
