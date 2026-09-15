@@ -19,6 +19,7 @@ export const NOTIFYING_EVENTS = [
   'survey.invited',
   'budget.threshold.reached',
   'import.job.finished',
+  'usage.limit.reached',
 ] as const;
 
 const notifiable: ReadonlySet<string> = new Set(NOTIFYING_EVENTS);

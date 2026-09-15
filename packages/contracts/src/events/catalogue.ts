@@ -1093,6 +1093,36 @@ export const budgetThresholdReached = defineEvent({
   }),
 });
 
+// ---- MOD-21 Plans, limits and metering (PH-4) ------------------------------
+export const usageLimitReached = defineEvent({
+  type: 'usage.limit.reached',
+  version: 1,
+  aggregateType: 'usage_meter',
+  webhook: true,
+  description: 'A tenant crossed the warning or the hard line on one of its plan limits.',
+  payload: z.object({
+    meter: z.string(),
+    /** warned | blocked */
+    threshold: z.string(),
+    planKey: z.string(),
+    value: z.number(),
+    limit: z.number(),
+    /** The period it counts over, or null for a live figure like agents. */
+    periodStart: z.string().nullable(),
+    /** Whoever the tenant's administrators are, so MOD-11 can tell them. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+export const planChanged = defineEvent({
+  type: 'plan.changed',
+  version: 1,
+  aggregateType: 'tenant',
+  webhook: true,
+  description: 'A tenant was moved onto a different plan.',
+  payload: z.object({ tenantId: id, fromPlanKey: z.string().nullable(), toPlanKey: z.string() }),
+});
+
 // ---- MOD-24 Migration (PH-4) ----------------------------------------------
 export const importJobFinished = defineEvent({
   type: 'import.job.finished',
@@ -1193,6 +1223,7 @@ export const eventCatalogue = [
   timeEntryLogged, timeEntryDeleted, budgetThresholdReached,
   statusIncidentUpdated, statusMaintenanceScheduled,
   importJobFinished,
+  usageLimitReached, planChanged,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

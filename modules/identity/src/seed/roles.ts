@@ -388,6 +388,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'migration.manage', scope: 'any' },
       // Hands the user list to an identity provider: an administrator's act.
       { key: 'identity.scim.manage', scope: 'any' },
+      // Sees what the tenant is using, and may bring its own warnings
+      // forward. The hard limits are the plan's.
+      { key: 'tenant.usage.read', scope: 'any' },
+      { key: 'tenant.limit.manage', scope: 'any' },
     ],
   },
 ];

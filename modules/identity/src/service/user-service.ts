@@ -5,6 +5,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  assertWithinLimit,
   authz,
   newId,
   publish,
@@ -306,6 +307,10 @@ export async function assignRole(
   input: { userId: string; roleKey: string; scopeType?: 'organisation' | 'team' | 'service'; scopeId?: string; validTo?: Date },
 ) {
   authz.require(ctx, 'identity.role.manage');
+  // The agent meter counts people holding a role that works the desk, so
+  // the act that grows it is this one — not creating a user, because a
+  // requester is not an agent and a tenant must always be able to add one.
+  if (input.roleKey !== 'requester') await assertWithinLimit(ctx, 'agents');
   return transaction(ctx, async (tx) => {
     const [user, role] = await Promise.all([
       tx.user.findFirst({ where: { id: input.userId, deletedAt: null } }),

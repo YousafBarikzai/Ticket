@@ -105,3 +105,87 @@ model Organisation {
   @@index([tenantId, parentId])
   @@map("organisation")
 }
+
+/// MOD-21 Plans, limits and metering (PH-4).
+///
+/// A plan is ours, not a tenant's: it has no `tenant_id`, so row-level
+/// security has nothing to attach to and every tenant reads the same row.
+/// What a tenant may see of it is decided by the service, and what a tenant
+/// may change is its own soft thresholds and nothing else (ADR-0038).
+model Plan {
+  key         String   @id
+  name        String
+  description String?
+  /// Feature flag keys this plan turns on, over the platform defaults.
+  features    String[] @default([])
+  /// A plan nobody may be moved onto any more, kept for the tenants on it.
+  isRetired   Boolean  @default(false) @map("is_retired")
+  sortOrder   Int      @default(100) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  limits      PlanLimit[]
+
+  @@map("plan")
+}
+
+/// What a plan allows of one meter. `soft` is the line that warns and `hard`
+/// the line that refuses; null means no line of that kind.
+model PlanLimit {
+  id       String  @id @db.Uuid
+  planKey  String  @map("plan_key")
+  /// agents | tickets | storage | api_calls
+  meter    String
+  soft     BigInt?
+  hard     BigInt?
+
+  plan     Plan    @relation(fields: [planKey], references: [key], onDelete: Cascade)
+
+  @@unique([planKey, meter])
+  @@map("plan_limit")
+}
+
+/// A tenant's own figure for one meter, and the verdict the request path
+/// reads. Recomputed from the source rows nightly, moved by events in
+/// between: the same "rollup as a cache of facts" shape MOD-12 uses, for the
+/// same reason — an accumulated number nobody can rebuild is a number
+/// nobody can defend.
+model UsageMeter {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  meter       String
+  /// The first day of the period for a counted meter; null for a live one.
+  periodStart DateTime? @map("period_start") @db.Date
+  periodEnd   DateTime? @map("period_end") @db.Date
+  value       BigInt    @default(0)
+  /// ok | warned | blocked, as of the last time it moved.
+  state       String    @default("ok")
+  /// Set once per period per line, so a recompute cannot re-announce one.
+  warnedAt    DateTime? @map("warned_at") @db.Timestamptz(6)
+  blockedAt   DateTime? @map("blocked_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// PostgreSQL treats NULLs in a unique index as distinct, so a live meter
+  /// would never conflict with itself: the period is spelled out instead
+  /// (`live`, or `2026-09`), the way MOD-12's grouping key is.
+  periodKey   String    @map("period_key")
+
+  @@unique([tenantId, meter, periodKey])
+  @@index([tenantId, state])
+  @@map("usage_meter")
+}
+
+/// A tenant administrator's own warning threshold for one meter. Never a
+/// hard one: the hard line is the plan's, and a tenant that could move it
+/// would not have a plan.
+model TenantLimitOverride {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  meter     String
+  soft      BigInt
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, meter])
+  @@map("tenant_limit_override")
+}

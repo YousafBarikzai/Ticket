@@ -526,6 +526,13 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'see what this tenant is using against its plan',
+    path: () => '/api/v1/usage',
+    // What the desk costs is the administrator's business, not an agent's.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.

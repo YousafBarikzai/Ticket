@@ -22,6 +22,7 @@ import { invitationService } from '@itsm/module-feedback';
 import { budgetService } from '@itsm/module-time';
 import { incidentService as statusIncidentService } from '@itsm/module-statuspage';
 import { sweepFiles } from '@itsm/module-migration';
+import { flushApiCalls, tenantsAwaitingFlush } from '@itsm/module-tenancy';
 import type { EventEnvelope } from '@itsm/contracts';
 
 /**
@@ -182,6 +183,31 @@ defineJob('analytics', 'budget.sweep', async () => {
       if (result.corrected > 0) logger.info('budget totals corrected', { tenantId: tenant.id, ...result });
     });
   }
+});
+
+defineJob('retention', 'usage.recompute', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      await enqueue(ctx, 'retention', 'usage.recompute.tenant', {}, { idempotencyKey: `usage-${tenant.id}-${new Date().toISOString().slice(0, 10)}` });
+    });
+  }
+});
+
+/**
+ * Empties the API-call buffer into the meters. Every minute, and only for
+ * tenants with something waiting: a sweep over every tenant to find a
+ * handful with traffic is the wrong shape at any size.
+ */
+defineJob('retention', 'usage.flush', async () => {
+  const waiting = new Set(await tenantsAwaitingFlush());
+  if (waiting.size === 0) return;
+  const contexts = new Map<string, ReturnType<typeof systemContext>>();
+  for (const tenant of await activeTenants()) {
+    if (waiting.has(tenant.id)) contexts.set(tenant.id, systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() }));
+  }
+  const flushed = await flushApiCalls((tenantId) => contexts.get(tenantId) ?? null);
+  if (flushed > 0) logger.debug('api calls metered', { flushed, tenants: contexts.size });
 });
 
 defineJob('retention', 'import.file.sweep', async () => {

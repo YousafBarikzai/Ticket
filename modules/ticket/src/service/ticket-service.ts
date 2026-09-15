@@ -7,6 +7,7 @@ import {
   NotFoundError,
   PreconditionRequiredError,
   ValidationError,
+  assertWithinLimit,
   authz,
   jsonEquals,
   newId,
@@ -124,6 +125,11 @@ export async function derivePriority(tx: Tx, ctx: TenantContext, impact?: string
 export async function createTicket(ctx: TenantContext, input: CreateTicketInput): Promise<repo.TicketRow> {
   const parsed = createTicketSchema.parse(input);
   authz.require(ctx, 'ticket.create');
+  // A tenant over its plan's ticket limit cannot raise another one. Reading,
+  // resolving and closing what is already here are never refused: a limit
+  // that stopped a desk finishing its work would be a limit nobody could
+  // sell. One cache read, never a count (ADR-0038).
+  await assertWithinLimit(ctx, 'tickets');
 
   // A requester with only "own" scope may raise a ticket for themselves.
   const requesterId = parsed.requesterId ?? ctx.actor.id;
