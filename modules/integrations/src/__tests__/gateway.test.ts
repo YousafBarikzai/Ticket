@@ -204,3 +204,88 @@ describe('what counts as the endpoint being broken', () => {
     expect(logged[0]!.status).toBe(0);
   });
 });
+
+describe('an AWS-signed call', () => {
+  // AWS's published example key id, and a secret deliberately not shaped like
+  // one: nothing here asserts a signature, only that the secret is used and
+  // does not appear in what was written down.
+  const awsCredential = {
+    accessKeyId: 'AKIDEXAMPLE',
+    secretAccessKey: 'not-a-real-secret-for-signing-tests',
+  };
+
+  function capturing(into: Record<string, string>[]): typeof fetch {
+    return (async (_url: string, init: { headers: Record<string, string> }) => {
+      into.push(init.headers);
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+  }
+
+  it('signs the request and puts nothing secret in the log', async () => {
+    // The same assertion the bearer-credential test makes, for the path where
+    // the credential is used to compute a signature rather than sent as-is.
+    const sent: Record<string, string>[] = [];
+    const response = await call(
+      ctx,
+      {
+        connector: 'aws-config',
+        method: 'GET',
+        url: 'https://config.eu-west-2.amazonaws.com/',
+        credential: { header: 'authorization', value: JSON.stringify(awsCredential) },
+        signing: { kind: 'aws_sigv4', region: 'eu-west-2', service: 'config' },
+      },
+      { fetchImpl: capturing(sent), resolver: publicResolver, sink },
+    );
+
+    expect(response.status).toBe(200);
+    expect(sent[0]!.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/\d{8}\/eu-west-2\/config\/aws4_request,/);
+    expect(sent[0]!['x-amz-date']).toMatch(/^\d{8}T\d{6}Z$/);
+
+    const written = JSON.stringify(logged);
+    expect(written).not.toContain(awsCredential.secretAccessKey);
+    expect(written).not.toContain('AKIDEXAMPLE');
+  });
+
+  it('signs the bytes it sends, not a second serialisation of them', async () => {
+    // Signing one serialisation and sending another produces a signature AWS
+    // rejects with no useful explanation, and only against a live endpoint.
+    const sent: Record<string, string>[] = [];
+    let bodyOnWire: string | undefined;
+    const fetchImpl = (async (_url: string, init: { headers: Record<string, string>; body?: string }) => {
+      sent.push(init.headers);
+      bodyOnWire = init.body;
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+
+    await call(
+      ctx,
+      {
+        connector: 'aws-config',
+        method: 'POST',
+        url: 'https://config.eu-west-2.amazonaws.com/',
+        body: { filter: 'all' },
+        credential: { header: 'authorization', value: JSON.stringify(awsCredential) },
+        signing: { kind: 'aws_sigv4', region: 'eu-west-2', service: 'config' },
+      },
+      { fetchImpl, resolver: publicResolver, sink },
+    );
+
+    const { createHash } = await import('node:crypto');
+    expect(sent[0]!['x-amz-content-sha256']).toBe(createHash('sha256').update(bodyOnWire!, 'utf8').digest('hex'));
+  });
+
+  it('refuses to sign when the connector names no credential', async () => {
+    await expect(
+      call(
+        ctx,
+        {
+          connector: 'aws-config',
+          method: 'GET',
+          url: 'https://config.eu-west-2.amazonaws.com/',
+          signing: { kind: 'aws_sigv4', region: 'eu-west-2', service: 'config' },
+        },
+        { fetchImpl: respond(200, {}), resolver: publicResolver, sink },
+      ),
+    ).rejects.toThrow(/needs a credential/);
+  });
+});

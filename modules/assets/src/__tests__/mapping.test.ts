@@ -139,7 +139,7 @@ describe('recordsFrom', () => {
 
 describe('the built-in presets', () => {
   it('give every preset a usable mapping', () => {
-    for (const kind of ['intune', 'azure', 'aws'] as const) {
+    for (const kind of ['intune', 'azure', 'aws', 'aws_api'] as const) {
       const preset = presetFor(kind);
       expect(mappingSchema.safeParse(preset.mapping).success).toBe(true);
     }
@@ -155,5 +155,23 @@ describe('the built-in presets', () => {
   it('leaves the generic kinds without a mapping, so one must be configured', () => {
     expect(presetFor('http_json').mapping).toBeUndefined();
     expect(presetFor('csv').mapping).toBeUndefined();
+  });
+
+  it('signs the live AWS kind and does not sign the export kind', () => {
+    // The export is a file on an HTTPS endpoint; the API needs a signature over
+    // the whole request, which only the gateway can produce.
+    expect(presetFor('aws_api').signing?.kind).toBe('aws_sigv4');
+    expect(presetFor('aws').signing).toBeUndefined();
+  });
+
+  it('gives the live AWS kind no default URL, because the region is in it', () => {
+    // A placeholder URL would be a source that passes validation and fails at
+    // two in the morning; `resolveSource` refuses one with no URL at creation.
+    expect(presetFor('aws_api').url).toBeUndefined();
+  });
+
+  it('identifies an AWS resource by its ARN rather than by a tag', () => {
+    // Tags are renamed and retagged; the ARN is what AWS itself uses.
+    expect(presetFor('aws_api').mapping?.externalKeyFrom).toBe('ResourceARN');
   });
 });

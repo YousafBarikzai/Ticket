@@ -28,6 +28,14 @@ export const sourceConfigSchema = z.object({
   nextPath: z.string().max(200).optional(),
   maxPages: z.number().int().min(1).max(50).optional(),
   credentialHeader: z.string().max(60).optional(),
+  /** Sign the request rather than attaching a bearer token. */
+  signing: z
+    .object({
+      kind: z.literal('aws_sigv4'),
+      region: z.string().min(1).max(40),
+      service: z.string().min(1).max(40),
+    })
+    .optional(),
   /** CSV only. */
   delimiter: z.string().length(1).optional(),
   skipLines: z.number().int().min(0).max(20).optional(),
@@ -148,6 +156,7 @@ export async function fetchRecords(
       ...(credential && source.config.credentialHeader
         ? { credential: { header: source.config.credentialHeader, value: credential } }
         : {}),
+      ...(source.config.signing ? { signing: source.config.signing } : {}),
       cause: { kind: 'discovery', id: source.key },
     });
 

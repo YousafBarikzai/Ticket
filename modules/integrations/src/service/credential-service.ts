@@ -18,6 +18,7 @@ import {
   transaction,
   type SealedValue,
 } from '@itsm/platform';
+import { parseAwsCredential } from '../gateway/sigv4.js';
 
 /**
  * The credential store (docs/architecture/09 §4).
@@ -65,6 +66,12 @@ export async function storeCredential(ctx: TenantContext, input: unknown): Promi
       'this environment has no CREDENTIAL_KEK, so credentials cannot be stored safely and will not be stored at all',
     );
   }
+
+  // Checked while somebody is still looking at the form. A malformed AWS
+  // credential is otherwise stored happily and fails at the first signed
+  // request, as `InvalidClientTokenId` — which reads like an IAM problem and
+  // sends whoever is on call to look in entirely the wrong place.
+  if (parsed.kind === 'aws_sigv4') parseAwsCredential(parsed.value);
 
   const sealed = seal(parsed.value);
 

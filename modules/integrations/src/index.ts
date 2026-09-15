@@ -29,6 +29,19 @@ export {
   type GatewayResponse,
   type GatewayDeps,
 } from './gateway/gateway.js';
+export {
+  AWS_ALGORITHM,
+  EMPTY_PAYLOAD_SHA256,
+  amzDate,
+  awsCredentialSchema,
+  parseAwsCredential,
+  signAwsRequest,
+  signingKey,
+  uriEncode,
+  type AwsCredential,
+  type SignedParts,
+  type SigningSpec,
+} from './gateway/sigv4.js';
 export * as actionService from './service/action-service.js';
 export {
   createAction,
