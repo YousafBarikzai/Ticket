@@ -8,6 +8,7 @@ import {
   PreconditionRequiredError,
   ValidationError,
   authz,
+  jsonEquals,
   newId,
   nextNumber,
   publish,
@@ -324,7 +325,12 @@ export async function updateTicket(
       if (!(field in parsed)) continue;
       const after = (parsed as Record<string, unknown>)[field];
       const before = (ticket as unknown as Record<string, unknown>)[field];
-      if (JSON.stringify(before) === JSON.stringify(after)) continue;
+      // `custom` is a JSONB column, so `before` has been through the database
+      // and may come back with its keys in another order. Compared with
+      // `JSON.stringify` this reads as a change on every update that touches
+      // custom fields at all: an audit row, a version bump, a `ticket.updated`
+      // event, and every rule and notification waiting on one.
+      if (jsonEquals(before, after)) continue;
       changed[field] = { before, after };
       data[field] = after;
     }
@@ -896,7 +902,7 @@ export async function applyAutomatedChange(
       continue;
     }
     const before = (ticket as unknown as Record<string, unknown>)[field];
-    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    if (jsonEquals(before, after)) continue;
     outcome.changed[field] = { before, after };
     data[field] = after;
   }

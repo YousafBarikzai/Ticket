@@ -23,6 +23,18 @@ export interface AuditInput {
   reason?: string | null;
 }
 
+/**
+ * Deliberately *not* `canonicalJson` from `./json.js`, though it does the same
+ * job. This one sorts keys with `localeCompare` and the shared helper sorts by
+ * code point, and the two disagree whenever a key starts with an upper-case
+ * letter. Every hash in the chain was computed with this ordering, so adopting
+ * the other would change the canonical string for those payloads, change their
+ * hash, and make every historical row fail the nightly verifier — tamper
+ * evidence reporting tampering that never happened.
+ *
+ * Changing it needs a hash version on the row and a verifier that knows both,
+ * which is a change to tamper evidence and not a tidy-up. Left alone until then.
+ */
 function canonical(value: unknown): string {
   if (value === undefined) return 'null';
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';

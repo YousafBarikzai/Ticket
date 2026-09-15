@@ -229,6 +229,46 @@ for (const entry of readdirSync(join(root, 'modules'))) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// 8. JSON values are not compared by stringifying them.
+//
+// `JSON.stringify(a) === JSON.stringify(b)` compares writing order, not value,
+// and writing order does not survive `jsonb`: PostgreSQL stores an object's
+// keys in its own order, so a value read back can differ as a string while
+// being identical as a value.
+//
+// It never crashes. It answers "different" for ever, and what that costs
+// depends on the question: MOD-10-E2 stopped recognising proposals a person had
+// already rejected, and MOD-04 recorded a change — audit row, version bump,
+// `ticket.updated`, every rule waiting on it — each time a ticket's custom
+// fields were re-sent unchanged. Neither was visible to a unit test, because in
+// JavaScript the object never round-trips.
+//
+// `canonicalJson`/`jsonEquals` in `@itsm/platform` are the comparison. The one
+// deliberate exception is the audit hash chain, which predates them and whose
+// ordering cannot change without invalidating every hash already written.
+// ---------------------------------------------------------------------------
+const STRINGIFY_COMPARISON = /JSON\.stringify\([^)]*\)\s*(===|!==|==|!=)\s*JSON\.stringify\(/;
+const CANONICAL_EXEMPT = ['packages/platform/src/audit.ts', 'packages/platform/src/json.ts'];
+
+for (const file of [...walk(join(root, 'modules')), ...walk(join(root, 'packages')), ...walk(join(root, 'apps'))]) {
+  const relativePath = relative(root, file);
+  if (CANONICAL_EXEMPT.includes(relativePath)) continue;
+  if (relativePath.includes('__tests__') || relativePath.startsWith('tests/')) continue;
+
+  readFileSync(file, 'utf8')
+    .split('\n')
+    .forEach((text, index) => {
+      if (!STRINGIFY_COMPARISON.test(text)) return;
+      violations.push({
+        file: relativePath,
+        line: index + 1,
+        rule: 'json-compared-by-value',
+        detail: 'compares JSON by stringifying it; use jsonEquals from @itsm/platform, which survives a jsonb round trip',
+      });
+    });
+}
+
 if (violations.length > 0) {
   console.error(`\nModule contract violations (${violations.length}):\n`);
   for (const violation of violations) {
