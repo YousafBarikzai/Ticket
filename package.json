@@ -51,7 +51,9 @@
     "@itsm/module-sla": "workspace:*",
     "@itsm/module-tenancy": "workspace:*",
     "@itsm/module-ticket": "workspace:*",
-    "@itsm/api": "workspace:*"
+    "@itsm/api": "workspace:*",
+    "@itsm/module-rules": "workspace:*",
+    "@itsm/module-approvals": "workspace:*"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",

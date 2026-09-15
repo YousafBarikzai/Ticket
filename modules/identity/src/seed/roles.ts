@@ -33,6 +33,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'notification.read', scope: 'own' },
       { key: 'identity.user.read', scope: 'own' },
       { key: 'identity.session.manage', scope: 'own' },
+      { key: 'approval.read', scope: 'own' },
+      { key: 'approval.decide', scope: 'own' },
+      { key: 'approval.delegate', scope: 'own' },
     ],
   },
   {
@@ -57,6 +60,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'identity.user.read', scope: 'team' },
       { key: 'identity.session.manage', scope: 'own' },
       { key: 'tenant.read', scope: 'any' },
+      { key: 'approval.read', scope: 'own' },
+      { key: 'approval.decide', scope: 'own' },
+      { key: 'approval.delegate', scope: 'own' },
     ],
   },
   {
@@ -83,6 +89,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'identity.session.manage', scope: 'own' },
       { key: 'tenant.read', scope: 'any' },
       { key: 'rules.rule.read', scope: 'any' },
+      { key: 'approval.read', scope: 'own' },
+      { key: 'approval.decide', scope: 'own' },
+      { key: 'approval.delegate', scope: 'own' },
+      { key: 'approval.policy.read', scope: 'any' },
     ],
   },
   {
@@ -150,6 +160,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'rules.rule.read', scope: 'any' },
       { key: 'rules.rule.manage', scope: 'any' },
       { key: 'rules.rule.publish', scope: 'any' },
+      { key: 'approval.read', scope: 'any' },
+      { key: 'approval.decide', scope: 'own' },
+      { key: 'approval.delegate', scope: 'own' },
+      { key: 'approval.policy.read', scope: 'any' },
+      { key: 'approval.policy.manage', scope: 'any' },
     ],
   },
 ];

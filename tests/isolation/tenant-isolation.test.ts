@@ -225,6 +225,34 @@ describe('configuration is per tenant too', () => {
   });
 });
 
+describe('approvals stay inside their tenant', () => {
+  it('never lets one tenant decide another\'s approval', async () => {
+    const { transaction, withContext } = await import('@itsm/platform');
+    const { approvalService } = await import('@itsm/module-approvals');
+
+    const alphaCtx = contextFor(alpha.id);
+    const created = await withContext(alphaCtx, () =>
+      transaction(alphaCtx, (tx) =>
+        approvalService.requestApproval(alphaCtx, tx, {
+          subjectType: 'request',
+          subjectId: crypto.randomUUID(),
+          subjectUserId: alpha.people.requester!.id,
+          facts: {},
+        }),
+      ),
+    );
+    expect(created).not.toBeNull();
+
+    // Beta's administrator holds approval.read at `any` — inside beta.
+    const response = await request(`/api/v1/approvals/${created!.id}/decide`, {
+      method: 'POST',
+      token: beta.people.admin!.token,
+      body: { decision: 'approved' },
+    });
+    expect(response.status).toBe(404);
+  });
+});
+
 describe('caches and keys', () => {
   it('prefixes every tenant-specific Redis key with its tenant', async () => {
     // A cache key without a tenant prefix is a cross-tenant read waiting to

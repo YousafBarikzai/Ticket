@@ -395,6 +395,37 @@ export const ruleApplied = defineEvent({
   }),
 });
 
+// ---- MOD-17 Approvals (PH-2) ----------------------------------------------
+export const approvalRequested = defineEvent({
+  type: 'approval.requested',
+  version: 1,
+  aggregateType: 'approval_request',
+  webhook: true,
+  description: 'An approval was opened and is waiting on its first step.',
+  payload: z.object({
+    requestId: id,
+    subjectType: z.string(),
+    subjectId: id,
+    ticketId: id.nullable(),
+    policyKey: z.string(),
+  }),
+});
+
+export const approvalDecided = defineEvent({
+  type: 'approval.decided',
+  version: 1,
+  aggregateType: 'approval_request',
+  webhook: true,
+  description: 'An approval reached a final outcome.',
+  payload: z.object({
+    requestId: id,
+    subjectType: z.string(),
+    subjectId: id,
+    ticketId: id.nullable(),
+    outcome: z.enum(['approved', 'rejected']),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -407,6 +438,7 @@ export const eventCatalogue = [
   configPublished, configRolledBack, moduleEnabled, moduleDisabled,
   securityAlertRaised, webhookDeliveryFailed, searchDocumentIndexed,
   ruleApplied,
+  approvalRequested, approvalDecided,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

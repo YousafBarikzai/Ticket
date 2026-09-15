@@ -20,6 +20,7 @@ import { tenantService } from '@itsm/module-tenancy';
 import { contextOf } from '../plugins/context.js';
 import { ticketRoutes } from './tickets.js';
 import { ruleRoutes } from './rules.js';
+import { approvalRoutes } from './approvals.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -29,6 +30,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await ticketRoutes(v1);
       await identityRoutes(v1);
       await ruleRoutes(v1);
+      await approvalRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },

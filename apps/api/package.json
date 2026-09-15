@@ -11,6 +11,7 @@
   "dependencies": {
     "@itsm/contracts": "workspace:*",
     "@itsm/module-admin": "workspace:*",
+    "@itsm/module-approvals": "workspace:*",
     "@itsm/module-identity": "workspace:*",
     "@itsm/module-integrations": "workspace:*",
     "@itsm/module-notifications": "workspace:*",

@@ -190,6 +190,31 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'see the approvals waiting on them',
+    path: () => '/api/v1/approvals',
+    // Anyone can be named an approver, so everyone may open their own queue.
+    allowed: ALL_PERSONAS,
+  },
+  {
+    what: 'read the approval policies',
+    path: () => '/api/v1/approval-policies',
+    allowed: ['admin', 'lead'],
+    deniedStatus: { requester: 403, agent: 403, otherAgent: 403 },
+  },
+  {
+    what: 'write an approval policy',
+    method: 'POST',
+    path: () => '/api/v1/approval-policies',
+    body: () => ({
+      key: `matrix-approval-${Date.now()}`,
+      name: 'Matrix policy',
+      subjectType: 'request',
+      steps: [{ name: 'Manager', approvers: [{ kind: 'manager', levels: 1 }] }],
+    }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.

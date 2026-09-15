@@ -87,6 +87,9 @@ importers:
       '@itsm/module-admin':
         specifier: workspace:*
         version: link:modules/admin
+      '@itsm/module-approvals':
+        specifier: workspace:*
+        version: link:modules/approvals
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:modules/identity
@@ -96,6 +99,9 @@ importers:
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:modules/notifications
+      '@itsm/module-rules':
+        specifier: workspace:*
+        version: link:modules/rules
       '@itsm/module-search':
         specifier: workspace:*
         version: link:modules/search
@@ -141,6 +147,9 @@ importers:
       '@itsm/module-admin':
         specifier: workspace:*
         version: link:../../modules/admin
+      '@itsm/module-approvals':
+        specifier: workspace:*
+        version: link:../../modules/approvals
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity
@@ -192,6 +201,9 @@ importers:
       '@itsm/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@itsm/module-approvals':
+        specifier: workspace:*
+        version: link:../../modules/approvals
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:../../modules/integrations
@@ -231,6 +243,24 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/approvals:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/expr':
+        specifier: workspace:*
+        version: link:../../packages/expr
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -433,6 +463,9 @@ importers:
       '@itsm/module-admin':
         specifier: workspace:*
         version: link:../../modules/admin
+      '@itsm/module-approvals':
+        specifier: workspace:*
+        version: link:../../modules/approvals
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity
