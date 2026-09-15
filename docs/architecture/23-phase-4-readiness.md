@@ -15,8 +15,9 @@ event, and carries a multi-day process without losing its place. Everything it
 does, it does to itself.
 
 **MOD-08 is complete**: major incident, problem and change, delivered one epic
-per pull request, and **MOD-10 is complete**: E1 gave them something to point
-at, E2 gave the register somewhere to come from. Phase 4 is where the platform reaches outside: calls to other systems, assets discovered
+per pull request. **MOD-10 is complete**: E1 gave them something to point at, E2
+gave the register somewhere to come from. **MOD-03 is complete**: email from
+PH-2, and Slack, Teams, WhatsApp and voice on the same framework in PH-4. Phase 4 is where the platform reaches outside: calls to other systems, assets discovered
 from them, incidents correlated from their monitoring, work routed by who is
 actually on shift, and an AI service that reads the knowledge base built in
 Phase 3. All of it needs one thing first, which is why that thing is module one.
@@ -491,12 +492,56 @@ ends with somebody turning verification off.
 
 ---
 
+### 2.10 WhatsApp and voice (MOD-03-E3)
+
+**WhatsApp brings one rule neither Slack nor Teams has: the 24-hour session
+window.** Meta permits a free-form message only for 24 hours after the person
+last wrote; outside it, nothing but a pre-approved template may be sent. That is
+not a quota to retry past. Repeatedly attempting free-form sends outside the
+window is how a business number's quality rating is cut and eventually blocked —
+losing the channel for every requester, not only the one being replied to. So
+the window is checked before sending, and a reply that falls outside it is
+reported and dropped while the other channels still carry it.
+
+Delivery and read receipts arrive on the same webhook as messages and are not
+messages; a message type the adapter cannot represent is dropped as unsupported
+rather than raised as an empty ticket. A phone number is not an email and Meta
+vouches for neither, so a WhatsApp identity is always linked by code — the
+middle state from ADR-0030 does not apply.
+
+**Voice is a call that has already happened, and the gap is stated first.** It
+is not call control: no IVR, no menu, no transfer. Those need a live media
+session driven by a provider's markup while somebody is on the line, and none of
+it can be exercised against anything in this repository — the same reasoning
+that kept an unverifiable AWS signer out of MOD-10-E2 until it could be built
+where it was verifiable (ADR-0029).
+
+What it is: the call-completed webhook every telephony provider sends
+afterwards, carrying the caller's number, a recording and a transcript. That is
+enough for what a service desk wants from voice — the call becomes a ticket with
+what was said in it — and it is fully verifiable, because a signature over a
+form body is a signature over a form body whether or not a phone was involved.
+
+Two details worth the words. The transcript is recorded **as a transcript**
+rather than quoted as the caller's words: it is somebody else's speech
+recognition, it will sometimes be wrong, and an agent acting on a misheard
+account number has been misled by the platform — so the recording URL travels
+with it. And the signature is checked against the **configured** webhook URL,
+not the one the request claims: a host header is attacker-controlled, and
+signing against it would let somebody choose the string being verified.
+
+Voice takes no automated replies. Calling somebody back is a person's decision,
+and an automated outbound call is a different product with different regulations
+attached.
+
+---
+
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
-| **MOD-03-E3 WhatsApp and voice** | E2 landed Slack and Teams on the shared framework. WhatsApp adds the Meta Business API and its 24-hour session window; voice is a provider-agnostic call-completed webhook carrying a transcript, with real-time call control explicitly out of scope. |
+| **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
 | MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
 
@@ -523,7 +568,7 @@ ends with somebody turning verification off.
 
 | Check | Result |
 |---|---|
-| Unit tests | 684 passing, 361 of them over the eight modules |
+| Unit tests | 703 passing, 380 of them over the eight modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -531,6 +576,7 @@ ends with somebody turning verification off.
 | — chat webhook signatures | 18, one per way each of the four schemes is got wrong |
 | — the chat guard and identity policy | 32, including that an unrecognised verification method is treated as none |
 | — the Slack and Teams adapters | 21, over parsing rather than sending |
+| — WhatsApp and voice | 19, including the session window as a pure function and the refusal to sign against a claimed host |
 | — rotas and shifts | 26, including both daylight-saving transitions with real dates |
 | — routing strategies | 17, every tie-break and every refusal |
 | — the incident lifecycle | 17, each naming the way an incident goes wrong without the rule |

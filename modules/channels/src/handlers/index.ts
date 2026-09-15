@@ -1,7 +1,8 @@
-import { defineHandler, logger } from '@itsm/platform';
+import { defineHandler, logger, metrics } from '@itsm/platform';
 import { outboundSubject, outboundMessageId, TICKET_HEADER } from '../domain/threading.js';
 import { transportForAccount } from '../service/transport-registry.js';
 import { replyToChat } from '../service/chat-inbound.js';
+import { withinSessionWindow } from '../service/whatsapp.js';
 
 /**
  * The outbound half of the adapter pattern (docs/architecture/07 §5).
@@ -60,6 +61,21 @@ defineHandler({
           });
           continue;
         }
+        // WhatsApp only permits a free-form message for 24 hours after the
+        // person last wrote. Outside that, Meta refuses the send, and
+        // repeatedly attempting it is how a business number's quality rating
+        // gets cut and the channel is lost for every requester. Reported and
+        // dropped rather than thrown at the API to see what happens — the other
+        // channels still carry the reply.
+        if (conversation.channel === 'whatsapp' && !withinSessionWindow(conversation.lastInboundAt)) {
+          logger.info('a whatsapp reply fell outside the 24-hour session window and was not sent', {
+            ticket: payload.number,
+            lastInboundAt: conversation.lastInboundAt,
+          });
+          metrics.increment('channel_outbound_skipped_total', { channel: 'whatsapp', reason: 'session_window' });
+          continue;
+        }
+
         await replyToChat(config.transport ?? conversation.channel, {
           roomId: state.roomId,
           threadId: conversation.externalThreadId,
