@@ -151,6 +151,41 @@ export async function saveDraft(ctx: TenantContext, key: string, graph: unknown,
 }
 
 /**
+ * Renames a workflow, or changes what it says it is for.
+ *
+ * Deliberately not a way to change the graph: that is `saveDraft`, and it is
+ * versioned. The definition row carries only the label, so editing it is not a
+ * new version and does not disturb a run already in flight.
+ */
+export const workflowUpdateSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    description: z.string().max(2000).nullable().optional(),
+  })
+  .strict();
+
+export async function updateWorkflow(ctx: TenantContext, key: string, patch: unknown) {
+  authz.require(ctx, 'workflow.manage');
+  const parsed = workflowUpdateSchema.parse(patch);
+
+  return transaction(ctx, async (tx) => {
+    const definition = await load(tx, key);
+    const updated = await tx.workflowDefinition.update({
+      where: { id: definition.id },
+      data: { name: parsed.name, description: parsed.description },
+    });
+    await recordAudit(tx, ctx, {
+      action: 'workflow.updated',
+      targetType: 'workflow',
+      targetId: definition.id,
+      before: { name: definition.name, description: definition.description },
+      after: { name: updated.name, description: updated.description },
+    });
+    return updated;
+  });
+}
+
+/**
  * Everything wrong with a graph, in one list.
  *
  * Exposed as its own call as well as run at publish, because an administrator

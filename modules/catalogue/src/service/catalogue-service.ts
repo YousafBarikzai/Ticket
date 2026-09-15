@@ -169,6 +169,127 @@ export async function publishRequestType(ctx: TenantContext, key: string) {
   });
 }
 
+/**
+ * Edits a service in place.
+ *
+ * Absent from PH-2, which could create a service and never change one — an
+ * omission nobody noticed until MOD-22 needed to bring a newer version of a
+ * pack's service across. A rename is not a new service: the key is what
+ * everything else points at, so it is the one thing this will not touch.
+ */
+export const serviceUpdateSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    description: z.string().max(1000).nullable().optional(),
+    ownerId: z.string().uuid().nullable().optional(),
+    groupId: z.string().uuid().nullable().optional(),
+    orgId: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+
+export async function updateService(ctx: TenantContext, key: string, patch: unknown) {
+  authz.require(ctx, 'catalogue.manage');
+  const parsed = serviceUpdateSchema.parse(patch);
+
+  return transaction(ctx, async (tx) => {
+    const service = await tx.service.findFirst({ where: { key } });
+    if (!service) throw new NotFoundError('service', key);
+
+    const updated = await tx.service.update({
+      where: { id: service.id },
+      data: {
+        name: parsed.name,
+        description: parsed.description,
+        ownerId: parsed.ownerId,
+        groupId: parsed.groupId,
+        orgId: parsed.orgId,
+      },
+    });
+    await recordAudit(tx, ctx, {
+      action: 'catalogue.service.updated',
+      targetType: 'service',
+      targetId: service.id,
+      before: { name: service.name, description: service.description },
+      after: { name: updated.name, description: updated.description },
+    });
+    return updated;
+  });
+}
+
+/**
+ * Edits a catalogue item in place.
+ *
+ * A published item stays published while it is edited, which is the same
+ * bargain the rest of the platform makes with versioned configuration: the
+ * form behind it is versioned and a submission is pinned to the version the
+ * person was shown, so changing the tile does not rewrite anybody's history.
+ * Pointing it at a form nobody has published is refused here for the same
+ * reason it is refused at creation.
+ */
+export const requestTypeUpdateSchema = z
+  .object({
+    serviceKey: z.string().min(1).optional(),
+    name: z.string().min(1).max(120).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    shortSummary: z.string().max(200).nullable().optional(),
+    formKey: z.string().min(1).nullable().optional(),
+    entitlement: exprSchema.nullable().optional(),
+    groupId: z.string().uuid().nullable().optional(),
+    priority: z.enum(['P1', 'P2', 'P3', 'P4']).optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+
+export async function updateRequestType(ctx: TenantContext, key: string, patch: unknown) {
+  authz.require(ctx, 'catalogue.manage');
+  const parsed = requestTypeUpdateSchema.parse(patch);
+
+  return transaction(ctx, async (tx) => {
+    const item = await tx.requestType.findFirst({ where: { key } });
+    if (!item) throw new NotFoundError('request type', key);
+
+    let serviceId: string | undefined;
+    if (parsed.serviceKey) {
+      const service = await tx.service.findFirst({ where: { key: parsed.serviceKey } });
+      if (!service) throw new NotFoundError('that service does not exist');
+      serviceId = service.id;
+    }
+
+    if (parsed.formKey) {
+      const form = await currentVersion(tx, parsed.formKey);
+      if (!form) {
+        throw new ValidationError(
+          `the form ${parsed.formKey} is not published, so this request could not be filled in`,
+          [{ field: 'formKey', code: 'not_published', message: parsed.formKey }],
+        );
+      }
+    }
+
+    const updated = await tx.requestType.update({
+      where: { id: item.id },
+      data: {
+        serviceId,
+        name: parsed.name,
+        description: parsed.description,
+        shortSummary: parsed.shortSummary,
+        formKey: parsed.formKey,
+        entitlement: (parsed.entitlement === undefined ? undefined : parsed.entitlement) as never,
+        groupId: parsed.groupId,
+        priority: parsed.priority,
+        sortOrder: parsed.sortOrder,
+      },
+    });
+    await recordAudit(tx, ctx, {
+      action: 'catalogue.item.updated',
+      targetType: 'request_type',
+      targetId: item.id,
+      before: { name: item.name, formKey: item.formKey, priority: item.priority },
+      after: { name: updated.name, formKey: updated.formKey, priority: updated.priority },
+    });
+    return updated;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // The requester's view
 // ---------------------------------------------------------------------------

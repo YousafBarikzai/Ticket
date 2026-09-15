@@ -386,6 +386,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // tickets in bulk: an administrator's act, and nobody else's.
       { key: 'migration.read', scope: 'any' },
       { key: 'migration.manage', scope: 'any' },
+      // Installing a pack writes services, forms, workflows and policies in
+      // one act, which is an administrator's and nobody else's.
+      { key: 'pack.read', scope: 'any' },
+      { key: 'pack.install', scope: 'any' },
       // Hands the user list to an identity provider: an administrator's act.
       { key: 'identity.scim.manage', scope: 'any' },
       // Sees what the tenant is using, and may bring its own warnings

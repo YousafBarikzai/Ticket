@@ -83,7 +83,7 @@ flowchart LR
 
 ## 6. Data protection
 
-- **Classification registry:** `data_classification (entity, field, level, masking_rule)` seeded per module (`restricted` for HR ticket types under MOD-22, personal for names/emails/phones, confidential for internal notes). Used by serialisers, loggers, audit redaction, AI context assembly and search ACLs.
+- **Classification registry:** `data_classification (entity, field, level, masking_rule)` seeded per module (personal for names/emails/phones, confidential for internal notes). Used by serialisers, loggers, audit redaction, AI context assembly and search ACLs. **Gap:** the registry classifies a *field of an entity*, so it cannot express "an HR request type is restricted" — the classification this document originally claimed for MOD-22. MOD-22's HR pack therefore names the decision as a next step for the desk rather than pretending the registry has made it; expressing it properly needs either a per-request-type classification or a `ticket.custom` field the registry can name.
 - **Retention and erasure:** MOD-15 jobs (see [06 §13](06-data-architecture.md#13-retention-erasure-and-legal-hold)).
 - **Privacy requests:** workflow with identity verification, scope preview, legal-hold check, execution, evidence report; erasure pseudonymises rather than deletes where statistics or audit references must survive.
 - **Residency:** region on the tenant; buckets per region; AI provider selection per region policy; decision D-01 covers where the primary stores live.

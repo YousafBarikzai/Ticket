@@ -52,8 +52,14 @@ export async function matchPolicy(tx: Tx, ctx: TenantContext, ticket: TicketForS
     include: { targets: true },
   });
 
+  // The service is read by key as well as by id, because a policy written by
+  // a person — or shipped in an ESM pack, which cannot know a tenant's
+  // identifiers — says `ticket.serviceKey eq 'hr'` rather than pasting a UUID
+  // that means nothing to whoever reads the policy next.
+  const service = ticket.serviceId ? await tx.service.findFirst({ where: { id: ticket.serviceId } }) : null;
+
   const context = {
-    ticket,
+    ticket: { ...ticket, serviceKey: service?.key ?? null },
     channel: ticket.sourceChannel,
     now: new Date().toISOString(),
   };

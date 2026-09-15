@@ -108,6 +108,9 @@ importers:
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:modules/channels
+      '@itsm/module-esm':
+        specifier: workspace:*
+        version: link:modules/esm
       '@itsm/module-feedback':
         specifier: workspace:*
         version: link:modules/feedback
@@ -210,6 +213,9 @@ importers:
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels
+      '@itsm/module-esm':
+        specifier: workspace:*
+        version: link:../../modules/esm
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity
@@ -450,6 +456,30 @@ importers:
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/esm:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-catalogue':
+        specifier: workspace:*
+        version: link:../catalogue
+      '@itsm/module-knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      '@itsm/module-sla':
+        specifier: workspace:*
+        version: link:../sla
+      '@itsm/module-workflow':
+        specifier: workspace:*
+        version: link:../workflow
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -856,6 +886,9 @@ importers:
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels
+      '@itsm/module-esm':
+        specifier: workspace:*
+        version: link:../../modules/esm
       '@itsm/module-feedback':
         specifier: workspace:*
         version: link:../../modules/feedback

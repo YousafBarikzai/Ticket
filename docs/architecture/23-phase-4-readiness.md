@@ -880,6 +880,51 @@ by every tenant. An administrator may move its own warning threshold
 anywhere below the hard line, and is refused above it. No route anywhere
 takes a hard limit from a tenant.
 
+### 2.19 Enterprise service management packs (MOD-22)
+
+**A pack is a copy, not a connection** (ADR-0039). Installing writes the
+tenant's own service, forms, request types, workflow, SLA policy and article
+through the modules that own each of them, so what a desk ends up with is
+ordinary configuration: the same validation, the same audit rows, the same
+`catalogue.item.published` event. Nothing about MOD-22 is consulted when a
+request is raised.
+
+**Four desks ship**: HR, facilities, finance and legal. Each carries the
+services it offers, the forms behind them, a fulfilment checklist as a
+workflow, an SLA policy and a starter article — and each lists what it
+deliberately leaves for the desk to do, because a pack cannot know a
+tenant's teams, calendars or authority matrix.
+
+**An edit is a hash that no longer matches.** Every installed item records
+the SHA-256 of the shipped definition it came from, over a shape both sides
+are normalised into by one function. A newer version of a pack is therefore
+a diff with eight states, and the one that matters is the difference between
+*update* (the pack moved, this copy is untouched, safe to take) and
+*conflict* (both moved, so taking it destroys somebody's work). Nothing
+moves that was not named; a refused item is not offered again until the pack
+moves past the version that was refused; an item the pack stops shipping is
+reported and never withdrawn.
+
+**Packs are written with the deployment, never uploaded.** They live in
+`modules/esm/src/packs`, and the unit suite puts every one through the
+checks the modules apply at install — form documents, workflow graphs, and
+the references between items. An uploaded workflow would be a code path
+wearing a configuration surface.
+
+**An install is resumable rather than atomic**, because each owning module
+opens its own transaction. Items are recorded as they land, the run stops at
+the first failure, and running it again continues from where it stopped. A
+key that already belongs to somebody else is refused before anything is
+written.
+
+**MOD-05, MOD-06 and MOD-07 gained the update paths they never had.** A
+service, a catalogue item, a form document, a workflow's label and an SLA
+policy's own fields could all be created and never changed. The SLA matcher
+also reads the service by key, so a policy says `ticket.serviceKey eq 'hr'`
+rather than pasting a UUID.
+
+---
+
 ---
 
 ## 3. What remains in Phase 4
@@ -890,7 +935,6 @@ takes a hard limit from a tenant.
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
 | **MOD-23 static export** | The page is served by the API (ADR-0035). The edge-hosted export that survives an API outage is a job that renders the same JSON to a file, and waits on a hosting account (OD-06). |
-| **MOD-22 ESM packs** | Not started. Installable packs of services, forms and workflows for HR, facilities and finance desks. |
 
 ---
 
@@ -926,6 +970,10 @@ takes a hard limit from a tenant.
 | An accumulating handler, again, one ADR later | MOD-21's ticket meter moved by a delta on each `ticket.created`, which is the shape ADR-0031 was written about: delivery is at least once, so a redelivery counts the same ticket again, and the integration suite found a figure five higher than the tickets that existed. The same trap MOD-12's comment count fell into, reintroduced by somebody who had read the ADR — because "add one when it happens" is what counting *sounds* like. Every meter now re-measures from the rows that define it, and the only accumulator left is the API-call buffer, which is a counter rather than an event and is drained exactly once. Worth its own row rather than a footnote on ADR-0031: the rule needs to be applied at the moment a handler is written, and a second occurrence means the first telling was not enough. |
 | The isolation suite caught a cache key the design had not thought about | The API-call buffer was one global Redis hash with a field per tenant, which reads as tidy and is the one key shape the platform refuses: it cannot be dropped when a tenant is purged, and it is one careless `hgetall` away from crossing a boundary. Nothing in MOD-21's own tests would ever have looked; the isolation suite scans the whole keyspace for anything not prefixed with a tenant, and named it on the first live run. Now one key per tenant, found by a scan over the prefix. The suite paid for itself again, and this is the argument for a test that asserts a *property of the system* rather than a behaviour of a feature. |
 | A test whose measurement changed what it measured | The API-call assertion read the meter through `/api/v1/usage` — itself an API call, and therefore counted. "Flush twice, expect nothing the second time" could never be true, and the failure looked like a bug in the flush. It is now read from the database, and the assertion is the invariant that can actually be proved: the meter grows by exactly what the flush took out of the buffer. A test that perturbs its own subject is worse than no test, because it fails for a reason that is not the code's. |
+| A classification this document promised and the registry cannot express | Doc 09 has said since Phase 1 that the classification registry seeds `restricted` for HR ticket types under MOD-22. The registry classifies a *field of an entity*; "an HR request type is restricted" is neither, so there was never anything MOD-22 could seed. Nobody noticed because the module did not exist to disagree with it. The claim is now removed and the gap recorded in its place, and the HR pack names the decision as a next step for the desk rather than implying the platform has made it. Third time this phase that a document has promised behaviour on the code's behalf — after the JIT provisioner nothing called and the hourly job nothing scheduled — and the pattern is the same: the promise is only tested when something finally tries to rely on it. |
+| A module that could create and never change | MOD-22 needed to bring a newer version of a pack's service across, and found that MOD-05 has no way to edit a service at all: `createService`, `createRequestType`, `createForm` and `createPolicy` have been there since Phase 2, and not one update between them. Nothing was broken, because nothing had asked — an administrator who wanted to rename a service had no route either. Four small functions and one workflow rename later, the gap is closed. The lesson is not about packs: a module whose tests only ever create is a module whose update path nobody has read, and the omission survives every review because there is nothing to look at. |
+| An identifier a pack cannot know, in a column it has to match on | A pack's SLA policy has to say "this applies to the HR desk", and the SLA matcher's context carried only `ticket.serviceId`. A pack ships no identifiers, so the choices were to substitute the id at install — which makes the installed policy differ from the shipped one, so the diff reports it as edited for ever — or to add the key. Adding the key is one indexed read in the matcher and it is what a hand-written policy wanted in the first place: nobody reading a policy a year later can tell what `9f2c…` was. The general shape is worth naming, because it recurs wherever content is written somewhere that does not know the tenant: **match on the thing a person would write down**. |
+| A sort that decides whether a comparison is true | The pack diff compares an SLA policy by hashing its targets, and the database hands targets back sorted by priority and then type while a pack is written P1, P2, P3, P4. The two orders differ the moment a policy has more than one target type, so every shipped policy would have read as edited and the pack could never have improved one. Caught reading the reader and the shaper side by side rather than by a test, and pinned by one afterwards. The fix sorts inside the shared normalisation, bytewise rather than by `localeCompare` — the audit chain's locale-dependent ordering is already a recorded finding on this page, and repeating it in a second place would have been the same mistake twice. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -934,7 +982,7 @@ takes a hard limit from a tenant.
 
 | Check | Result |
 |---|---|
-| Unit tests | 896 passing, 564 of them over the modules |
+| Unit tests | 921 passing, 589 of them over the modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -958,6 +1006,8 @@ takes a hard limit from a tenant.
 | — the rollup arithmetic | 19, written so that a create-then-withdraw cycle must sum to zero and a team change must leave the headline total alone |
 | — durations and ISO weeks | 10, including the year boundary where 1 January belongs to the previous ISO year |
 | — the metric catalogue and query builder | 21, reading the generated SQL as text: catalogue columns quoted, user values as parameters, and every way a filter or a rollup plan is refused |
+| — the shipped ESM packs | 15, putting every pack through the checks the modules apply at install: form documents, workflow graphs, and the references between items |
+| — the pack diff | 10, one per state, including that a refused version is not offered again and a withdrawn item is never deleted |
 | — ranges, schedules, the trend line and CSV | 21, including the same 08:00 on both sides of daylight saving and the formula guard that leaves numbers alone |
 | — survey documents, scoring and throttling | 19, including the scale that would have reported a 7 as 150 % and the button row that refuses to be a keyboard |
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
