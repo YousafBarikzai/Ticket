@@ -77,6 +77,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.read', scope: 'any' },
       { key: 'knowledge.write', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      // Suggestions are advisory and agent-facing (ADR-0006): an agent asks
+      // for one, reads the evidence beside it, and decides. Nothing they are
+      // shown is anything they could not already read.
+      { key: 'ai.suggest', scope: 'any' },
+      { key: 'ai.read', scope: 'any' },
       // Reading runs answers "why did this ticket go on hold?" without asking
       // an administrator. Operating them is somebody else's.
       { key: 'workflow.read', scope: 'any' },
@@ -155,6 +160,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.write', scope: 'any' },
       { key: 'knowledge.publish', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      { key: 'ai.suggest', scope: 'any' },
+      { key: 'ai.read', scope: 'any' },
       // A lead sees and unblocks runs without being able to change what they
       // do: rescuing a stuck run at 3am is operations, editing the automation
       // is a change.
@@ -396,6 +403,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // forward. The hard limits are the plan's.
       { key: 'tenant.usage.read', scope: 'any' },
       { key: 'tenant.limit.manage', scope: 'any' },
+      // Sets what this tenant will spend on AI, and can switch it off. The
+      // prompts themselves are the deployment's and are not on this list.
+      { key: 'ai.suggest', scope: 'any' },
+      { key: 'ai.read', scope: 'any' },
+      { key: 'ai.manage', scope: 'any' },
     ],
   },
 ];

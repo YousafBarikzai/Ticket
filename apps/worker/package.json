@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@itsm/contracts": "workspace:*",
+    "@itsm/module-ai": "workspace:*",
     "@itsm/module-approvals": "workspace:*",
     "@itsm/module-catalogue": "workspace:*",
     "@itsm/module-channels": "workspace:*",

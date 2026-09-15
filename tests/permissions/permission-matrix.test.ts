@@ -533,6 +533,44 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'ask the AI service for a suggestion',
+    method: 'POST',
+    path: () => '/api/v1/ai/suggest',
+    body: (t) => ({ capability: 'similar-work', ticketId: t.ticketIds[0] }),
+    // Agent-facing by design (ADR-0006): a person reads the evidence and
+    // decides, so a requester never asks and never sees one. The agent in the
+    // other team gets 404 rather than 403 — they may not know this ticket
+    // exists, and a suggestion must not be the thing that tells them.
+    allowed: ['agent', 'lead', 'admin'],
+    deniedStatus: { requester: 403, otherAgent: 404 },
+  },
+  {
+    what: 'see what this tenant is spending on AI',
+    path: () => '/api/v1/ai/budget',
+    // What the desk costs is the administrator's business; an agent sees the
+    // suggestions, not the bill.
+    allowed: ['agent', 'lead', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'set this tenant\u2019s AI budget',
+    method: 'PUT',
+    path: () => '/api/v1/ai/budget',
+    body: () => ({ limitPence: 5000, warnPence: 4000 }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'write a prompt version',
+    method: 'POST',
+    path: () => '/api/platform/v1/ai/prompts/reply-draft/versions',
+    body: () => ({ systemPrompt: 'You draft replies. Answer only from what you are given.', template: 'Title: {{ticket.title}}' }),
+    // Prompts are the deployment's. No tenant role holds the permission, and
+    // the platform prefix refuses everybody here before the service does.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 403 },
+  },
+  {
     what: 'see the packs this deployment ships',
     path: () => '/api/v1/packs',
     // Which desks could be stood up is a configuration question, and the

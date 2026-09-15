@@ -2,6 +2,29 @@
 
 AI is a capability service (ADR-0006), not a feature sprinkled through modules. It is defined now so that PH-1 puts the hooks in place (classification registry, audit actor type `ai`, feature flags, budgets table) and PH-4 builds the service without touching other modules' code.
 
+> **Built in PH-4, against a stub provider (ADR-0040).** The gateway, the
+> prompt registry with immutable versions, the evaluation runner and its
+> promotion thresholds, per-tenant monthly budgets with a warning line and a
+> hard stop at 402, tenant and per-capability kill switches, the context
+> assembler under the asker's own permissions, the evidence list, the
+> suggestion lifecycle with outcomes, and the retention sweep. Four
+> capabilities: `reply-draft`, `ticket-summary`, `article-draft` and
+> `similar-work` (retrieval only, no model, no cost).
+>
+> **Still waiting on OD-04:** the provider itself. Nothing is registered in
+> production, so every capability that calls a model is refused rather than
+> answered; the stub is registered only outside production. Also waiting: the
+> pgvector half of hybrid retrieval in §4, because embeddings from a stub
+> would be noise, and the virtual agent, because ADR-0006's line — a person
+> reviews before anything reaches a requester — is the line PH-4 keeps.
+>
+> **Two deviations from what follows.** Prompts live in
+> `modules/ai/src/seed/prompts.ts` and are mirrored to the database at boot
+> rather than in `modules/ai/prompts/*.md`; a tenant may override tone and
+> language, which are MOD-13 settings rather than prompt fields. And the AI
+> budget is MOD-09's own table rather than a MOD-21 meter — the reasoning is
+> in ADR-0040.
+
 ## 1. Principles that shape the design
 
 1. **No module calls a model provider.** Everything goes through `AiGateway` in `modules/ai`.

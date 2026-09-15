@@ -86,6 +86,239 @@ model InstalledModule {
 }
 
 // ===========================================================================
+// modules/ai/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-09 AI, the governed capability service (PH-4).
+///
+/// Two halves, split by who owns them.
+///
+/// Prompts and evaluations are the **deployment's**: they carry no
+/// `tenant_id`, every tenant reads the same rows, and a prompt version is
+/// promoted once for everybody after it has been evaluated. The same shape as
+/// MOD-21's plans, for the same reason — a tenant that could edit its own
+/// prompt could edit its way past every evaluation threshold the release gate
+/// depends on. What a tenant *may* change is tone and language, which are
+/// settings (MOD-13), not prompts.
+///
+/// Budgets, jobs and suggestions are the **tenant's**, isolated like
+/// everything else. A prompt and a completion are classified confidential and
+/// swept after their retention window (doc 13 §5).
+
+model AiPrompt {
+  key            String   @id
+  /// reply-draft | ticket-summary | article-draft | similar-work
+  capability     String
+  name           String
+  description    String
+  /// The version a call renders. Null until one has been promoted, which is
+  /// what makes "no evaluated prompt" a refusal rather than a silent default.
+  currentVersion Int?     @map("current_version")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  versions       AiPromptVersion[]
+
+  @@index([capability])
+  @@map("ai_prompt")
+}
+
+/// One immutable prompt text, with the score that let it be promoted.
+model AiPromptVersion {
+  id           String   @id @db.Uuid
+  promptKey    String   @map("prompt_key")
+  version      Int
+  /// What the model is told it is. Separate from the task so a change of
+  /// posture is visible as a change of posture.
+  systemPrompt String   @map("system_prompt")
+  /// The task, with `{{path}}` placeholders over the assembled context.
+  template     String
+  /// draft | evaluated | published | retired
+  status       String   @default("draft")
+  /// 0 to 1, from the last evaluation run. Null until one has been run.
+  score        Float?
+  evaluatedAt  DateTime? @map("evaluated_at") @db.Timestamptz(6)
+  publishedAt  DateTime? @map("published_at") @db.Timestamptz(6)
+  changeNote   String?  @map("change_note")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  prompt       AiPrompt @relation(fields: [promptKey], references: [key], onDelete: Cascade)
+  runs         AiEvalRun[]
+
+  @@unique([promptKey, version])
+  @@index([promptKey, status])
+  @@map("ai_prompt_version")
+}
+
+/// A set of cases a capability's prompt is judged against.
+model AiEvalDataset {
+  key        String   @id
+  capability String
+  name       String
+  /// The score a version must reach before it can be promoted.
+  threshold  Float    @default(0.8)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  cases      AiEvalCase[]
+  runs       AiEvalRun[]
+
+  @@index([capability])
+  @@map("ai_eval_dataset")
+}
+
+/// One case: a context to render the prompt against, and what a good answer
+/// has to contain or avoid. Deliberately not a golden string — two good
+/// answers to the same question differ, and pinning one of them scores
+/// fluency rather than usefulness.
+model AiEvalCase {
+  id         String   @id @db.Uuid
+  datasetKey String   @map("dataset_key")
+  key        String
+  /// The assembled context, as a job would have built it.
+  context    Json
+  /// { mustMention: string[], mustNotMention: string[], maxWords?: number }
+  expect     Json
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  dataset    AiEvalDataset @relation(fields: [datasetKey], references: [key], onDelete: Cascade)
+
+  @@unique([datasetKey, key])
+  @@map("ai_eval_case")
+}
+
+/// One evaluation of one prompt version against one dataset.
+model AiEvalRun {
+  id               String   @id @db.Uuid
+  promptVersionId  String   @map("prompt_version_id") @db.Uuid
+  datasetKey       String   @map("dataset_key")
+  model            String
+  score            Float
+  threshold        Float
+  passed           Boolean
+  /// What the run itself cost, in micro-pence. The deployment's, not a
+  /// tenant's: an evaluation has no tenant to charge, and hiding its cost
+  /// would make the cheapest thing to do with a prompt the thing nobody
+  /// measures.
+  costMicros       BigInt   @default(0) @map("cost_micros")
+  /// Per case: { key, score, failures[] }. Kept so a fall in the score can be
+  /// read as "which cases", not just "it went down".
+  cases            Json     @default("[]")
+  ranBy            String?  @map("ran_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  promptVersion    AiPromptVersion @relation(fields: [promptVersionId], references: [id], onDelete: Cascade)
+  dataset          AiEvalDataset   @relation(fields: [datasetKey], references: [key], onDelete: Cascade)
+
+  @@index([promptVersionId, createdAt(sort: Desc)])
+  @@map("ai_eval_run")
+}
+
+/// What a tenant has chosen to spend on AI this month, and what it has spent.
+///
+/// `spent` is a cached sum of the completed jobs in the period, not an
+/// accumulator: it is recomputed from `ai_job` every time a job finishes, so a
+/// retried or redelivered job cannot inflate it and the figure can always be
+/// rebuilt from the rows beneath it (ADR-0031).
+model AiBudget {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  /// `2026-09`. Spelled out rather than left as nullable dates, for the reason
+  /// MOD-12's rollup and MOD-21's meters both paid for.
+  periodKey   String   @map("period_key")
+  /// The tenant's own monthly cap, in whole pence. Null means no cap.
+  limitPence  Int?     @map("limit_pence")
+  /// Where the warning goes out, in whole pence. Refused above the cap.
+  warnPence   Int?     @map("warn_pence")
+  /// Micro-pence: a millionth of a penny, because one call costs a fraction
+  /// of one and a month of them has to add up without rounding at each step.
+  spentMicros BigInt   @default(0) @map("spent_micros")
+  /// ok | warned | blocked. Each line is announced once per period.
+  state       String   @default("ok")
+  warnedAt    DateTime? @map("warned_at") @db.Timestamptz(6)
+  blockedAt   DateTime? @map("blocked_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, periodKey])
+  @@map("ai_budget")
+}
+
+/// One request to the model gateway: what was asked, what it cost, what
+/// happened. The durable record every other figure is rebuilt from.
+model AiJob {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  capability      String
+  /// ticket | article — what the suggestion is about.
+  subjectType     String   @map("subject_type")
+  subjectId       String   @map("subject_id") @db.Uuid
+  /// queued | running | completed | failed | refused
+  status          String   @default("queued")
+  /// The person who asked. An AI job always has one: nothing here runs on its
+  /// own behalf (ADR-0006), and the audit rows name them as `on_behalf_of`.
+  requestedBy     String   @map("requested_by") @db.Uuid
+  promptKey       String   @map("prompt_key")
+  promptVersion   Int      @map("prompt_version")
+  provider        String
+  model           String
+  inputTokens     Int      @default(0) @map("input_tokens")
+  outputTokens    Int      @default(0) @map("output_tokens")
+  costMicros      BigInt   @default(0) @map("cost_micros")
+  /// The period the cost counts against, fixed when the job is created so a
+  /// job that runs across midnight on the first cannot land in two months.
+  periodKey       String   @map("period_key")
+  error           String?
+  /// The rendered prompt and the raw completion, kept for audit and
+  /// evaluation and swept after the retention window.
+  promptText      String?  @map("prompt_text")
+  completionText  String?  @map("completion_text")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt       DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  suggestion      AiSuggestion?
+
+  @@index([tenantId, status])
+  @@index([tenantId, periodKey, status])
+  @@index([tenantId, subjectType, subjectId, createdAt(sort: Desc)])
+  @@index([tenantId, createdAt])
+  @@map("ai_job")
+}
+
+/// What the model produced, what it was based on, and what a person did with
+/// it. Advisory: nothing here is applied without somebody accepting it.
+model AiSuggestion {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  jobId        String   @unique @map("job_id") @db.Uuid
+  capability   String
+  subjectType  String   @map("subject_type")
+  subjectId    String   @map("subject_id") @db.Uuid
+  /// The suggestion itself, in the capability's own shape.
+  content      Json
+  /// Why the model says it answered this way. Shown beside the answer.
+  reason       String
+  /// low | medium | high, from the model's own figure banded here so that a
+  /// number nobody calibrated is never shown as one.
+  confidence   String
+  /// What it was built from: [{ kind, id, title, ref }]. An answer with no
+  /// evidence is refused before it reaches anybody.
+  evidence     Json     @default("[]")
+  /// pending | accepted | edited | rejected
+  outcome      String   @default("pending")
+  outcomeBy    String?  @map("outcome_by") @db.Uuid
+  outcomeAt    DateTime? @map("outcome_at") @db.Timestamptz(6)
+  outcomeNote  String?  @map("outcome_note")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job          AiJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, subjectType, subjectId, createdAt(sort: Desc)])
+  @@index([tenantId, capability, outcome])
+  @@map("ai_suggestion")
+}
+
+// ===========================================================================
 // modules/analytics/prisma/schema.prisma
 // ===========================================================================
 

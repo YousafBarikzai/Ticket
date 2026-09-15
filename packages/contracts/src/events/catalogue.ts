@@ -1233,6 +1233,44 @@ export const packUpgraded = defineEvent({
   }),
 });
 
+// ---- MOD-09 AI capability service (PH-4) ------------------------------------
+export const aiSuggestionCreated = defineEvent({
+  type: 'ai.suggestion.created',
+  version: 1,
+  aggregateType: 'ai_suggestion',
+  webhook: true,
+  description: 'The AI service produced a suggestion for a person to accept, edit or reject. Advisory: nothing has been applied.',
+  payload: z.object({
+    suggestionId: id,
+    jobId: id,
+    /** reply-draft | ticket-summary | article-draft | similar-work */
+    capability: z.string(),
+    subjectType: z.string(),
+    subjectId: id,
+    /** low | medium | high, banded rather than a figure nobody calibrated. */
+    confidence: z.string(),
+    evidenceCount: z.number().int(),
+    /** Whoever asked for it: the person the suggestion is shown to. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+export const aiBudgetThreshold = defineEvent({
+  type: 'ai.budget.threshold',
+  version: 1,
+  aggregateType: 'ai_budget',
+  webhook: true,
+  description: 'A tenant crossed the warning or the hard line on its own monthly AI budget.',
+  payload: z.object({
+    /** warned | blocked */
+    threshold: z.string(),
+    periodKey: z.string(),
+    spentPence: z.number().int(),
+    limitPence: z.number().int(),
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -1264,6 +1302,7 @@ export const eventCatalogue = [
   importJobFinished,
   usageLimitReached, planChanged,
   packInstalled, packUpgraded,
+  aiSuggestionCreated, aiBudgetThreshold,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

@@ -925,13 +925,63 @@ rather than pasting a UUID.
 
 ---
 
+### 2.20 The governed AI service (MOD-09 AI)
+
+**The provider is a socket, and the governance is the product** (ADR-0040).
+Everything except the model call is built: the prompt registry, the
+evaluation runner and its thresholds, per-tenant budgets, tenant and
+per-capability kill switches, the context assembler, the evidence list, the
+suggestion lifecycle and every refusal. Behind the socket is a stub that
+answers deterministically and is priced like a mid-sized model. **Closing
+OD-04 is one adapter and one `registerAiProvider` call.**
+
+**Nothing is registered in production.** A deployment with no provider
+refuses every capability that calls a model, naming OD-04. The stub is
+registered only outside production — the same bargain the email module
+struck with its development transport, because in production a stub turns
+"no provider has been chosen yet" into answers somebody believes.
+
+**Four capabilities.** Draft a reply, summarise a ticket for a handover,
+draft an article from a resolved ticket, and find similar tickets and known
+errors. The last calls no model, so it costs nothing, answers immediately
+and stays available when the budget has run out — which will probably make
+it the one most desks actually use.
+
+**Everything that reads runs as the person who asked.** A job reaches the
+worker with the asker's id and the worker's system permissions; retrieval on
+that context would search the whole tenant for somebody entitled to a
+fraction of it, and every permission check would have passed. The worker
+rebuilds the asker's context from their roles first, and a job whose asker
+has been deactivated is refused. Everything that writes runs as the AI, on
+that person's behalf, so the audit row names both.
+
+**An answer with nothing behind it is refused.** `reply-draft` declines when
+retrieval found nothing rather than inventing something that reads exactly
+like a good answer. The refusal says what is missing: the knowledge base.
+
+**A version is promoted by its evaluation, except the one that ships.** A
+new version needs a run at or above its dataset's threshold, and the refusal
+names both figures. The shipped version is promoted by release, and the unit
+suite gives that teeth by running every shipped prompt against its own
+dataset. Be precise about what that proves: against a stub it proves the
+machinery, not the quality of a prompt, and no score from it should be
+quoted as though it did.
+
+**The AI budget is deliberately not one of MOD-21's meters.** A plan limit
+is what the tenant bought; this is what the tenant chose to spend, and the
+check happens before a call whose cost is not known until afterwards. What
+is shared is the 402. The spend is a **sum of the jobs**, recomputed
+whenever one finishes, so a retry cannot inflate it.
+
+---
+
 ---
 
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
+| **MOD-09 AI: the model itself** | The service is built (§2.20); what is missing is a provider, which is **OD-04**. Also waiting behind it: the pgvector half of hybrid retrieval, because embeddings from a stub would be noise, and the requester-facing virtual agent, which stays unbuilt because ADR-0006's line — a person reviews before anything reaches a requester — is the line this phase keeps. |
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
 | **MOD-23 static export** | The page is served by the API (ADR-0035). The edge-hosted export that survives an API outage is a job that renders the same JSON to a file, and waits on a hosting account (OD-06). |
@@ -971,6 +1021,9 @@ rather than pasting a UUID.
 | The isolation suite caught a cache key the design had not thought about | The API-call buffer was one global Redis hash with a field per tenant, which reads as tidy and is the one key shape the platform refuses: it cannot be dropped when a tenant is purged, and it is one careless `hgetall` away from crossing a boundary. Nothing in MOD-21's own tests would ever have looked; the isolation suite scans the whole keyspace for anything not prefixed with a tenant, and named it on the first live run. Now one key per tenant, found by a scan over the prefix. The suite paid for itself again, and this is the argument for a test that asserts a *property of the system* rather than a behaviour of a feature. |
 | A test whose measurement changed what it measured | The API-call assertion read the meter through `/api/v1/usage` — itself an API call, and therefore counted. "Flush twice, expect nothing the second time" could never be true, and the failure looked like a bug in the flush. It is now read from the database, and the assertion is the invariant that can actually be proved: the meter grows by exactly what the flush took out of the buffer. A test that perturbs its own subject is worse than no test, because it fails for a reason that is not the code's. |
 | A classification this document promised and the registry cannot express | Doc 09 has said since Phase 1 that the classification registry seeds `restricted` for HR ticket types under MOD-22. The registry classifies a *field of an entity*; "an HR request type is restricted" is neither, so there was never anything MOD-22 could seed. Nobody noticed because the module did not exist to disagree with it. The claim is now removed and the gap recorded in its place, and the HR pack names the decision as a next step for the desk rather than implying the platform has made it. Third time this phase that a document has promised behaviour on the code's behalf — after the JIT provisioner nothing called and the hourly job nothing scheduled — and the pattern is the same: the promise is only tested when something finally tries to rely on it. |
+| A background job inherits the worker's permissions, not the asker's | The AI worker rebuilds a job's context from the actor id in the envelope — and the platform's job runner supplies the *system* permission set alongside it. Retrieval running on that context would have searched everything in the tenant and put it in front of whoever asked, and every permission check in the assembler would have passed, because the checks are real and the actor was not. "The AI never sees more than the actor" is only true if the actor is the actor. Found reading the job runner while wiring the queue, not by a test; the fix is five lines that resolve the asker's roles before anything is assembled, and the integration suite pins it by deactivating the asker between the request and the run. Worth stating generally, because every module that queues work on a person's behalf has the same shape available to it: **a job carries an identity, and identity is not authority.** |
+| A budget that looks like a meter and is not | MOD-21's meters were the obvious home for AI spend, and folding it in would have been wrong in three ways: a plan limit is what a tenant *bought* and this is what it *chose to spend*; a meter is checked against a figure that is already true and this is checked before a call whose cost is unknown until afterwards; and the meters are the platform's commercial control where this is the tenant's own. One number with two owners is an argument waiting to happen. What is reused is the refusal — `LimitReachedError` and its 402 — which is the part that actually wanted sharing. |
+| Building the stub first made the honest limits visible | Two things were going to be written the day OD-04 closed and would have been written badly: what happens with no provider at all, and what an evaluation score means. With a stub in place both had to be answered immediately. The first became a loud refusal naming the decision rather than a silent default. The second became a sentence in the ADR, in the delivery record and in the test file itself: against a stub an evaluation proves the machinery, not the prompt, and nobody should quote the figure. Neither answer is clever; both would have been skipped under demo pressure. |
 | A module that could create and never change | MOD-22 needed to bring a newer version of a pack's service across, and found that MOD-05 has no way to edit a service at all: `createService`, `createRequestType`, `createForm` and `createPolicy` have been there since Phase 2, and not one update between them. Nothing was broken, because nothing had asked — an administrator who wanted to rename a service had no route either. Four small functions and one workflow rename later, the gap is closed. The lesson is not about packs: a module whose tests only ever create is a module whose update path nobody has read, and the omission survives every review because there is nothing to look at. |
 | An identifier a pack cannot know, in a column it has to match on | A pack's SLA policy has to say "this applies to the HR desk", and the SLA matcher's context carried only `ticket.serviceId`. A pack ships no identifiers, so the choices were to substitute the id at install — which makes the installed policy differ from the shipped one, so the diff reports it as edited for ever — or to add the key. Adding the key is one indexed read in the matcher and it is what a hand-written policy wanted in the first place: nobody reading a policy a year later can tell what `9f2c…` was. The general shape is worth naming, because it recurs wherever content is written somewhere that does not know the tenant: **match on the thing a person would write down**. |
 | A sort that decides whether a comparison is true | The pack diff compares an SLA policy by hashing its targets, and the database hands targets back sorted by priority and then type while a pack is written P1, P2, P3, P4. The two orders differ the moment a policy has more than one target type, so every shipped policy would have read as edited and the pack could never have improved one. Caught reading the reader and the shaper side by side rather than by a test, and pinned by one afterwards. The fix sorts inside the shared normalisation, bytewise rather than by `localeCompare` — the audit chain's locale-dependent ordering is already a recorded finding on this page, and repeating it in a second place would have been the same mistake twice. |
@@ -982,7 +1035,7 @@ rather than pasting a UUID.
 
 | Check | Result |
 |---|---|
-| Unit tests | 921 passing, 589 of them over the modules |
+| Unit tests | 961 passing, 629 of them over the modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -1008,6 +1061,10 @@ rather than pasting a UUID.
 | — the metric catalogue and query builder | 21, reading the generated SQL as text: catalogue columns quoted, user values as parameters, and every way a filter or a rollup plan is refused |
 | — the shipped ESM packs | 15, putting every pack through the checks the modules apply at install: form documents, workflow graphs, and the references between items |
 | — the pack diff | 10, one per state, including that a refused version is not offered again and a withdrawn item is never deleted |
+| — the AI budget arithmetic | 16, including that a fraction of a penny rounds up, that a line is announced once, and that a warning above the cap is refused |
+| — parsing a completion | 9, most of them refusals: a parser that salvages what it can produces a suggestion that looks complete and is not |
+| — scoring an evaluation case | 7, including that an unparseable answer scores zero rather than being skipped |
+| — the shipped prompts | 8, putting every one through the checks a promotion makes: the paths it reads, the grounding instruction, and its own dataset's threshold |
 | — ranges, schedules, the trend line and CSV | 21, including the same 08:00 on both sides of daylight saving and the formula guard that leaves numbers alone |
 | — survey documents, scoring and throttling | 19, including the scale that would have reported a 7 as 150 % and the button row that refuses to be a keyboard |
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
