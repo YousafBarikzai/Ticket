@@ -180,7 +180,7 @@ describe('elapsed time', () => {
       body: { assigneeId: tenant.people.agent!.id },
     });
     expect(assigned.status).toBe(200);
-    for (const to of ['in_progress', 'pending', 'in_progress', 'resolved']) {
+    for (const to of ['in_progress', 'pending_requester', 'in_progress', 'resolved']) {
       const moved = await request(`/api/v1/tickets/${ticketId}/transitions`, {
         method: 'POST',
         token: tenant.people.admin!.token,
@@ -231,7 +231,8 @@ describe('budgets', () => {
     expect(after.body.reachedAt).not.toBeNull();
 
     const events = await read((tx) => tx.outboxEvent.findMany({ where: { type: 'budget.threshold.reached' } }));
-    expect(events.map((event) => (event.envelope as { payload: { threshold: number } }).payload.threshold).sort()).toEqual([80, 100]);
+    // Numerically: the default sort puts 100 before 80.
+    expect(events.map((event) => (event.envelope as { payload: { threshold: number } }).payload.threshold).sort((a, b) => a - b)).toEqual([80, 100]);
 
     const notification = await read((tx) => tx.notification.findFirst({ where: { recipientId: tenant.people.lead!.id, templateKey: 'budget.threshold.reached' } }));
     expect(notification).not.toBeNull();
