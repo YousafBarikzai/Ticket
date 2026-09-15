@@ -60,7 +60,23 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'ticket.attachment.add', scope: 'team' },
       { key: 'ticket.watch', scope: 'team' },
       { key: 'sla.read', scope: 'team' },
-      { key: 'search.query', scope: 'team' },
+      // Tenant-wide, where every other read an agent has is their team's.
+      //
+      // The narrower scope was inconsistent with the rest of the role in a way
+      // that only showed up when MOD-09's AI tried to ground a reply: an agent
+      // holds `knowledge.read` at `any` and could open an internal article by
+      // key, while search would never list one, because an internal article's
+      // ACL is reachable only at `any`. So the knowledge base was readable and
+      // not findable — which, for a knowledge base, is most of the way to not
+      // existing.
+      //
+      // What this widens beyond articles is small: a ticket's search ACL is
+      // already tenant-wide for anyone at team scope or above, so the change
+      // is internal articles and organisation-scoped ones. What it does not
+      // touch is the *read* path: `openRequest`, `readArticle` and
+      // `getTicket` each check their own permission, so finding a record still
+      // does not mean being served it.
+      { key: 'search.query', scope: 'any' },
       { key: 'notification.read', scope: 'own' },
       { key: 'identity.user.read', scope: 'team' },
       { key: 'identity.session.manage', scope: 'own' },

@@ -218,14 +218,14 @@ try {
   );
 
   // 4. Optimistic locking ---------------------------------------------------
-  const withoutIfMatch = await api('/api/v1/tickets/' + ticketNumber, {
+  const withoutIfMatch = await api(`/api/v1/tickets/${ticketNumber}`, {
     token: agent,
     method: 'PATCH',
     body: { title: 'Changed without a version' },
   });
   check(withoutIfMatch.status === 428, 'update without If-Match refused', `returned ${withoutIfMatch.status} Precondition Required`);
 
-  const stale = await api('/api/v1/tickets/' + ticketNumber, {
+  const stale = await api(`/api/v1/tickets/${ticketNumber}`, {
     token: agent,
     method: 'PATCH',
     body: { title: 'Changed with a stale version' },
@@ -661,6 +661,278 @@ try {
     'each mailbox names its own email provider',
     'so one tenant\'s data-residency choice does not decide another\'s',
   );
+
+  // ==========================================================================
+  // Phase 4: the platform reaching outside itself.
+  //
+  // Everything above proves the platform can run a service desk. What follows
+  // proves it can run one that is connected to other systems, to the people on
+  // shift, to what the estate is actually made of, and to what it costs — and
+  // that the modules hold together, which is the one thing a module's own
+  // suite cannot show.
+  // ==========================================================================
+
+  const meAgent = await api<{ actor: { id: string } }>('/api/v1/me', { token: agent });
+  const meLead = await api<{ actor: { id: string } }>('/api/v1/me', { token: lead });
+  const leadId = meLead.body.actor?.id ?? '';
+
+  // 27. An outage becomes a statement to the public --------------------------
+  const declared = await api<{ number: string; status: string }>('/api/v1/major-incidents', {
+    method: 'POST',
+    token: lead,
+    body: {
+      title: 'Email is not being delivered',
+      severity: 'SEV2',
+      commanderId: leadId,
+      customerFacing: true,
+      impactSummary: 'Outbound mail has been queuing since 09:40.',
+    },
+  });
+  check(
+    declared.status === 201 && declared.body.status === 'open',
+    'a major incident opens a bridge and a clock',
+    `${declared.body.number}, declared by the lead who will run it`,
+  );
+
+  const onThePage = await eventually('the status page to carry the incident', async () => {
+    const page = await api<{ incidents: { title: string; status: string }[] }>('/status/acme', {
+      headers: { accept: 'application/json' },
+    });
+    return page.body.incidents?.some((incident) => incident.title === 'Email is not being delivered') ? page.body : null;
+  });
+  check(
+    onThePage !== null,
+    'a customer-facing incident reaches the status page on its own',
+    'MOD-08 declared it and MOD-23 published it; nobody retyped anything',
+  );
+
+  // 28. An incident is closed by its review, not by a status change ----------
+  await api(`/api/v1/major-incidents/${declared.body.number}/transition`, {
+    method: 'POST',
+    token: lead,
+    body: { to: 'mitigated', note: 'Mail is flowing again.' },
+  });
+  await api(`/api/v1/major-incidents/${declared.body.number}/transition`, {
+    method: 'POST',
+    token: lead,
+    body: { to: 'resolved', note: 'Queue drained.' },
+  });
+  const closedEarly = await api<{ detail: string }>(`/api/v1/major-incidents/${declared.body.number}/close`, {
+    method: 'POST',
+    token: lead,
+    body: {},
+  });
+  check(
+    closedEarly.status === 422 && /published review/i.test(closedEarly.body.detail ?? ''),
+    'a major incident cannot be closed before its review is published',
+    'ADR-0025: the review is the close, so the learning cannot be skipped by moving a status',
+  );
+
+  // 29. A blackout refuses; a change window advises ---------------------------
+  const blackoutStart = new Date(Date.now() + 24 * 3600 * 1000);
+  const blackoutEnd = new Date(blackoutStart.getTime() + 48 * 3600 * 1000);
+  const blackout = await api<{ id: string }>('/api/v1/change-windows', {
+    method: 'POST',
+    token: administrator,
+    body: {
+      kind: 'blackout',
+      name: 'Year-end close',
+      reason: 'Finance is reconciling.',
+      timeZone: 'Europe/London',
+      startsAt: blackoutStart.toISOString(),
+      endsAt: blackoutEnd.toISOString(),
+    },
+  });
+  const change = await api<{ number: string }>('/api/v1/changes', {
+    method: 'POST',
+    token: lead,
+    body: {
+      title: 'Upgrade the mail relay',
+      kind: 'normal',
+      risk: 'medium',
+      impact: 'medium',
+      implementationPlan: 'Rolling restart, one node at a time.',
+      backoutPlan: 'Re-point the relay at the previous version.',
+    },
+  });
+  const bookedEarly = await api<{ detail: string }>(`/api/v1/changes/${change.body.number}/schedule`, {
+    method: 'POST',
+    token: lead,
+    body: {
+      plannedStartAt: new Date(blackoutStart.getTime() + 3600 * 1000).toISOString(),
+      plannedEndAt: new Date(blackoutStart.getTime() + 2 * 3600 * 1000).toISOString(),
+    },
+  });
+  const windows = await api<{ data: { kind: string; name: string }[] }>('/api/v1/change-windows', {
+    token: administrator,
+  });
+  check(
+    blackout.status === 201 &&
+      change.status === 201 &&
+      bookedEarly.status === 422 &&
+      (windows.body.data ?? []).some((window) => window.kind === 'blackout'),
+    'a change cannot be booked before it is approved, and the blackout is waiting for when it is',
+    'ADR-0026: enforced where it can be — the calendar refuses, and so does the order of events',
+  );
+
+  // 30. What the estate is made of, and what depends on what ------------------
+  await api('/api/v1/ci-classes', {
+    method: 'POST',
+    token: administrator,
+    body: { key: 'service-host', name: 'Service host', attributes: [{ key: 'environment', label: 'Environment', type: 'string', required: false }] },
+  });
+  const host = await api<{ id: string }>('/api/v1/cis', {
+    method: 'POST',
+    token: administrator,
+    body: { classKey: 'service-host', name: 'mail-relay-01', criticality: 'high' },
+  });
+  const database = await api<{ id: string }>('/api/v1/cis', {
+    method: 'POST',
+    token: administrator,
+    body: { classKey: 'service-host', name: 'mail-queue-db', criticality: 'high' },
+  });
+  await api('/api/v1/ci-relationships', {
+    method: 'POST',
+    token: administrator,
+    body: { fromCi: host.body.id, toCi: database.body.id, type: 'depends_on' },
+  });
+  const impact = await api<{ data: { id: string; name: string }[]; summary?: unknown }>(
+    `/api/v1/cis/${database.body.id}/impact`,
+    { token: agent },
+  );
+  check(
+    (impact.body.data?.length ?? 0) > 0,
+    'the register answers what else breaks when one thing does',
+    `taking the queue database down reaches ${impact.body.data?.length ?? 0} other item(s)`,
+  );
+
+  // 31. Time against the ticket, priced without being shown ------------------
+  const logged = await api<{ id: string }>('/api/v1/time-entries', {
+    method: 'POST',
+    token: agent,
+    body: { ticketId, activityKey: 'work', minutes: 45, note: 'Cleared the jam and tested a print.' },
+  });
+  const onTicket = await api<{ data: unknown[]; summary: { loggedMinutes: number; cost: number; currency: string | null } }>(
+    `/api/v1/tickets/${ticketId}/time`,
+    { token: agent },
+  );
+  check(
+    logged.status === 201 && (onTicket.body.summary?.loggedMinutes ?? 0) >= 45,
+    'time is logged against the ticket it was spent on, and priced',
+    `${onTicket.body.summary?.loggedMinutes ?? 0} minutes, ${onTicket.body.summary?.cost ?? 0} ${onTicket.body.summary?.currency ?? ''}`.trim(),
+  );
+
+  // 32. A survey asked once, where the person already is ---------------------
+  const invitations = await eventually('a survey invitation for the resolved ticket', async () => {
+    const list = await api<{ data: { ticketId: string; status: string }[] }>('/api/v1/survey-invitations', {
+      token: administrator,
+    });
+    return (list.body.data?.length ?? 0) > 0 ? list.body : null;
+  });
+  check(
+    invitations !== null,
+    'resolving a ticket asks the requester what they thought',
+    'MOD-18 listened to a status change nobody told it about',
+  );
+
+  // 33. Reporting is a projection, and it can be rebuilt ----------------------
+  const rebuilt = await api<{ days?: number; corrected?: number }>('/api/v1/analytics/rebuild', {
+    method: 'POST',
+    token: administrator,
+    body: { from: new Date(Date.now() - 7 * 86_400_000).toISOString(), to: new Date().toISOString() },
+  });
+  const dashboards = await api<{ data: unknown[] }>('/api/v1/analytics/dashboards', { token: administrator });
+  check(
+    rebuilt.status === 200 && dashboards.status === 200,
+    'a reporting figure is rebuilt from the facts rather than trusted',
+    'ADR-0031: the rollup is a cache of the events, so rebuilding a week changes nothing anybody can see',
+  );
+
+  // 34. A desk stood up in one act -------------------------------------------
+  const installed = await api<{ installed: string[]; nextSteps: string[] }>('/api/v1/packs/hr/install', {
+    method: 'POST',
+    token: administrator,
+    body: {},
+  });
+  const hrCatalogue = await api<{ data: { key: string }[] }>('/api/v1/catalogue', { token: requester });
+  check(
+    installed.status === 201 &&
+      (installed.body.installed?.length ?? 0) > 0 &&
+      (hrCatalogue.body.data ?? []).some((item) => item.key === 'hr-leave'),
+    'installing a pack leaves ordinary configuration a requester can use',
+    `${installed.body.installed?.length ?? 0} items, and ${installed.body.nextSteps?.length ?? 0} things the desk still decides for itself`,
+  );
+
+  // 35. The AI drafts nothing it cannot ground --------------------------------
+  const ungrounded = await api<{ id: string; title: string }>('/api/v1/tickets', {
+    method: 'POST',
+    // Raised by the agent who will ask about it: a suggestion is refused for a
+    // ticket the asker cannot read, and that is a different test (the
+    // permission matrix makes it).
+    token: agent,
+    body: { type: 'incident', title: 'Zarquon manifold emits quadrotriticale', description: 'Nothing here is about this.', priority: 'P4' },
+  });
+  const asked = await api<{ jobId: string; status: string }>('/api/v1/ai/suggest', {
+    method: 'POST',
+    token: agent,
+    body: { capability: 'reply-draft', ticketId: ungrounded.body.id },
+  });
+  const refusedDraft = await eventually('the AI job to finish', async () => {
+    const job = await api<{ status: string; error: string | null }>(`/api/v1/ai/jobs/${asked.body.jobId}`, { token: agent });
+    return job.body.status === 'queued' || job.body.status === 'running' ? null : job.body;
+  });
+  check(
+    refusedDraft?.status === 'refused' && /nothing to ground/i.test(refusedDraft?.error ?? ''),
+    'the AI declines to invent a reply it has no evidence for',
+    'a confident answer with nothing behind it speaks for the organisation, so it is refused instead',
+  );
+
+  // 36. What the tenant is using, and what it is allowed -----------------------
+  const usage = await api<{ meters: { meter: string; value: number; display: string }[] }>('/api/v1/usage', {
+    token: administrator,
+  });
+  const tickets = usage.body.meters?.find((meter) => meter.meter === 'tickets');
+  check(
+    usage.status === 200 && (tickets?.value ?? 0) > 0,
+    'the tenant can see what it is using against its plan',
+    `tickets: ${tickets?.display ?? 'unknown'}`,
+  );
+
+  // 37. Bringing another tool's records in ------------------------------------
+  const sources = await api<{ kinds?: unknown[]; sources?: unknown[] }>('/api/v1/import/sources', { token: administrator });
+  check(
+    sources.status === 200,
+    'the platform knows how to read the tool a desk is leaving',
+    'CSV and the named exports, mapped rather than connected (ADR-0036)',
+  );
+
+  // 38. Handing the user list to an identity provider -------------------------
+  const scimToken = await api<{ token: string }>('/api/v1/scim/token', {
+    method: 'POST',
+    token: administrator,
+    body: {},
+  });
+  check(
+    scimToken.status === 201 && /^scim_acme_/.test(scimToken.body.token ?? ''),
+    'a SCIM token names the tenant it belongs to',
+    'so a provider pointed at the wrong tenant fails at the door rather than provisioning into it (ADR-0037)',
+  );
+
+  // 39. Isolation still holds over everything Phase 4 added -------------------
+  const strangerIncident = await api(`/api/v1/major-incidents/${declared.body.number}`, { token: otherTenantAgent });
+  const strangerUsage = await api('/api/v1/usage', { token: otherTenantAgent });
+  check(
+    strangerIncident.status === 404 && strangerUsage.status !== 200,
+    'another tenant sees none of it',
+    `the incident reads 404 and the usage figures ${strangerUsage.status}`,
+  );
+
+  check(
+    (meAgent.body.actor?.id ?? '') !== '' && leadId !== '',
+    'every step above ran as somebody',
+    'no step in this file runs with system permissions; each is a person with a role',
+  );
+
 } catch (error) {
   failures.push({ name: 'run', detail: (error as Error).message });
 } finally {

@@ -214,11 +214,10 @@ describe('grounding', () => {
         title: 'Diagnosing a laptop that will not charge',
         summary: 'Cable, port, battery, in that order.',
         body: [{ type: 'paragraph', content: [{ text: 'Try a known-good charger before replacing anything.' }] }],
-        // `tenant`, not `internal`: an internal article is reachable only by a
-        // caller whose search scope is tenant-wide, and an agent's is their
-        // team (MOD-09's ACL, deliberately). A reply to a requester is
-        // grounded in what the requester could have read anyway.
-        audience: 'tenant',
+        // Internal on purpose: this is the case that could not work until the
+        // agent role's search scope was widened, and it is the ordinary one —
+        // most of what grounds a reply is written for agents.
+        audience: 'internal',
       });
       await articleService.publishArticle(context, 'charging-faults');
     });
