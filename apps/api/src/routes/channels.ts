@@ -3,8 +3,11 @@ import { z } from 'zod';
 import {
   acceptInbound,
   transportForAccount,
+  chatTransport,
   execute,
+  handleChat,
   normalise,
+  replyToChat,
   resolveAccountTenant,
 } from '@itsm/module-channels';
 import { systemContext, transaction, withContext, logger, metrics } from '@itsm/platform';
@@ -152,5 +155,92 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
     reply.code(201);
     return created;
+  });
+
+  /**
+   * The chat webhook.
+   *
+   * Same fixed order as the email one, and the same 202 for everything that
+   * does not proceed: a provider that gets an error retries, and a retry of a
+   * message deliberately rejected is not a message we want again.
+   *
+   * The one difference is the reply. A person who typed a slash command is
+   * watching a spinner, so the answer goes back in the response rather than as
+   * a second call — which also means a failure to post is a failure they can
+   * see rather than silence.
+   */
+  app.post('/channels/:channel/:accountKey/inbound', async (request, reply) => {
+    const params = z
+      .object({
+        channel: z.enum(['slack', 'teams', 'whatsapp', 'voice']),
+        accountKey: z.string().min(1).max(200),
+      })
+      .parse(request.params);
+    const headers = request.headers as Record<string, string | undefined>;
+
+    // Slack asks for this once, when the endpoint is first configured, and it
+    // is unsigned by definition. Answered before anything else and without
+    // touching a tenant.
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    if (body.type === 'url_verification' && typeof body.challenge === 'string') {
+      return { challenge: body.challenge };
+    }
+
+    const account = await resolveAccountTenant(params.channel, params.accountKey);
+    if (!account) {
+      reply.code(202);
+      return { status: 'ignored' };
+    }
+
+    const config = (account.config ?? {}) as { transport?: string };
+    const transport = chatTransport(config.transport ?? params.channel);
+    if (!transport) {
+      logger.error('inbound chat received for an account with no usable transport', {
+        channel: params.channel,
+        accountKey: params.accountKey,
+      });
+      reply.code(202);
+      return { status: 'ignored' };
+    }
+
+    // The bytes that arrived. Reconstructing them is how a correct signature
+    // check starts failing and gets turned off.
+    const rawBody = request.rawBody ?? '';
+    const url = `${request.protocol}://${request.hostname}${request.url}`;
+    const verified = transport.verify({ rawBody, headers, url });
+    if (!verified.ok) {
+      metrics.increment('channel_inbound_rejected_total', {
+        channel: params.channel,
+        reason: verified.failure ?? 'bad_signature',
+      });
+      // 202, and no detail: an unsigned request is either a misconfiguration or
+      // a probe, and neither is improved by telling the sender which.
+      reply.code(202);
+      return { status: 'ignored' };
+    }
+
+    const parsed = transport.parseInbound(request.body, headers);
+    if (!parsed) {
+      reply.code(202);
+      return { status: 'ignored' };
+    }
+
+    const outcome = await handleChat(parsed, params.accountKey);
+
+    if (outcome.reply) {
+      // Posted rather than returned for an event; Slack shows nothing for an
+      // Events API response body, and the person is looking at the thread.
+      if (parsed.slashText !== undefined) {
+        return { response_type: 'ephemeral', text: outcome.reply };
+      }
+      await replyToChat(config.transport ?? params.channel, {
+        roomId: parsed.roomId,
+        threadId: parsed.threadId,
+        text: outcome.reply,
+      });
+    }
+
+    reply.code(outcome.status === 'accepted' ? 200 : 202);
+    return { status: outcome.status, ticketNumber: outcome.ticketNumber ?? null };
   });
 }

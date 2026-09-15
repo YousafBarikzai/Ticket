@@ -101,3 +101,10 @@ export {
 export { slackTransport, type SlackOptions } from './service/slack.js';
 export { teamsTransport, type TeamsOptions } from './service/teams.js';
 export { clientCredentialsToken, type TokenRequest } from './service/aad-token.js';
+export {
+  autoLinkIfAllowed,
+  commandFor,
+  handleChat,
+  replyToChat,
+  type ChatOutcome,
+} from './service/chat-inbound.js';

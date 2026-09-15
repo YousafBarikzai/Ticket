@@ -1,6 +1,7 @@
 import { defineHandler, logger } from '@itsm/platform';
 import { outboundSubject, outboundMessageId, TICKET_HEADER } from '../domain/threading.js';
 import { transportForAccount } from '../service/transport-registry.js';
+import { replyToChat } from '../service/chat-inbound.js';
 
 /**
  * The outbound half of the adapter pattern (docs/architecture/07 §5).
@@ -42,10 +43,34 @@ defineHandler({
     if (!ticket) return;
 
     for (const conversation of conversations) {
-      if (conversation.channel !== 'email') continue;
-
       const account = await tx.channelAccount.findFirst({ where: { id: conversation.accountId } });
       if (!account) continue;
+
+      // A chat conversation is answered in the thread the person is already
+      // looking at. Somebody who raised a ticket in Slack and got the reply by
+      // email has been handed off to a different tool mid-sentence, which is
+      // the handover this whole module exists to avoid.
+      if (conversation.channel !== 'email') {
+        const config = (account.config ?? {}) as { transport?: string };
+        const state = (conversation.state ?? {}) as { roomId?: string };
+        if (!state.roomId) {
+          logger.warn('a chat conversation has no room recorded; the reply was not sent', {
+            channel: conversation.channel,
+            ticket: payload.number,
+          });
+          continue;
+        }
+        await replyToChat(config.transport ?? conversation.channel, {
+          roomId: state.roomId,
+          threadId: conversation.externalThreadId,
+          text: `*${ticket.number}* — ${comment.body}`,
+        });
+        await tx.conversation.update({
+          where: { id: conversation.id },
+          data: { lastOutboundAt: new Date() },
+        });
+        continue;
+      }
 
       const transport = await transportForAccount(account.config ?? { transport: 'development' }, ctx);
       if (!transport) {
