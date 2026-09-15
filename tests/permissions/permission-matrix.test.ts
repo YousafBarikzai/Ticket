@@ -349,6 +349,28 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403 },
   },
   {
+    what: 'see the change calendar',
+    path: () => '/api/v1/changes',
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'declare a blackout window',
+    method: 'POST',
+    path: () => '/api/v1/change-windows',
+    body: () => ({
+      kind: 'blackout',
+      name: `Matrix blackout ${Math.random().toString(36).slice(2, 10)}`,
+      timeZone: 'Europe/London',
+      startsAt: '2027-01-01T00:00:00Z',
+      endsAt: '2027-01-02T00:00:00Z',
+    }),
+    // A blackout stops everybody's changes, so writing one is an
+    // administrator's.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.

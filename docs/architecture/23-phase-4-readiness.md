@@ -14,7 +14,8 @@ Phases 1 to 3 built a platform that holds a ticket safely, acts on it inside one
 event, and carries a multi-day process without losing its place. Everything it
 does, it does to itself.
 
-Phase 4 is where it reaches outside: calls to other systems, assets discovered
+**MOD-08 is complete**: major incident, problem and change, delivered one epic
+per pull request. Phase 4 is where the platform reaches outside: calls to other systems, assets discovered
 from them, incidents correlated from their monitoring, work routed by who is
 actually on shift, and an AI service that reads the knowledge base built in
 Phase 3. All of it needs one thing first, which is why that thing is module one.
@@ -216,14 +217,61 @@ one problem**, idempotent on the incident and held by a partial unique index. Th
 objection to automatic creation does not apply to a handful of records a year
 that everybody already agrees need looking into.
 
+### 2.5 Change management (MOD-08-E3)
+
+Change control's characteristic failure is not changes going wrong. It is
+changes going **unrecorded** — and the changes that escape are not a random
+sample. They are the routine ones (too small to be worth the paperwork) and the
+urgent ones (no time for the paperwork), which are respectively the changes most
+often made and the changes most likely to have caused the outage somebody is
+investigating next week. A change record with holes in it is worse than none,
+because "there were no changes that night" is a sentence people act on.
+
+So the controls are arranged to be **enforced where they can be and honest where
+they cannot** (ADR-0026).
+
+**Three kinds, approved three ways.** A *standard* change is pre-approved as a
+class by a published template and pinned to the template version that was signed
+off. A *normal* change goes to MOD-17 — and where no policy matches it is
+approved with the reason recorded, because a tenant without a CAB policy is not
+asking for every change to be blocked, and "approved because no policy applied"
+must stay distinguishable from a change that slipped past one. An *emergency*
+change is recorded first and approved afterwards.
+
+**A blackout refuses; a change window advises.** The asymmetry is the same
+argument twice. A blackout is a small number of declared periods with a named
+owner and a reason, and the point of declaring one is that it holds — so an
+overlapping change is refused, *overlapping* rather than *contained*. Change
+windows have a large set of legitimate exceptions, and refusing there would push
+people to raise ordinary changes as emergencies: a small governance win for a
+large hole in the record.
+
+**The emergency debt is a column, an index and an endpoint**, not a good
+intention. `GET /changes/owed-retrospectives` lists the approvals nobody has
+given, with an overdue count, and the retrospective approval is refused from the
+person who requested the change — the person who made it at 3am is exactly the
+person who should not sign it off at 9am. **A rising count of unapproved
+emergency changes is this module's health metric**: it says the emergency path
+is being used as a shortcut, which is what a permissive design has to be watched
+for.
+
+**Two fields are worth refusing over and no others**: a back-out plan on
+everything but an emergency change, because a change nobody can undo at 2am
+turns a bad deploy into an outage; and a close code, because the only reason to
+keep the record is to be able to ask later whether it worked. No free-text
+justification is demanded anywhere — a demanded justification is a filled box.
+
+Weekly windows are local wall-clock times against a zone, for the reason
+ADR-0024 gives, and the tests cover both UK daylight-saving transitions: the
+Saturday 22:00–02:00 window is three hours long in March and five in October.
+
 ---
 
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-08-E3 Change management** | Change records, CAB approval through MOD-17, change and blackout windows, standard change templates. The natural next module. |
-| **MOD-10 Assets and CMDB** | Needs the gateway's pull-connector half, which is not built yet. |
+| **MOD-10 Assets and CMDB** | Needs the gateway's pull-connector half, which is not built yet. The natural next module: MOD-08 is complete, and a change record that cannot name what it changed is the gap it closes. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
 | MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
@@ -248,7 +296,7 @@ that everybody already agrees need looking into.
 
 | Check | Result |
 |---|---|
-| Unit tests | 457 passing, 134 of them over the four modules |
+| Unit tests | 492 passing, 169 of them over the five modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
@@ -256,6 +304,8 @@ that everybody already agrees need looking into.
 | — routing strategies | 17, every tie-break and every refusal |
 | — the incident lifecycle | 17, each naming the way an incident goes wrong without the rule |
 | — the problem lifecycle | 12, written so that reversing the workaround-first ordering fails |
+| — change windows | 19, including both daylight-saving transitions and every overlap shape |
+| — the change lifecycle | 16, pinning the three trades between control and coverage |
 | Integration, isolation and permissions | extended by 22 workload tests and four permission-matrix entries, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 

@@ -94,6 +94,12 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // is the number that eventually gets the problem fixed.
       { key: 'problem.read', scope: 'any' },
       { key: 'problem.manage', scope: 'any' },
+      // Raises and implements changes. Approving an emergency one after the
+      // fact is deliberately not here: the person who made the change at 3am
+      // is exactly the person who should not sign it off at 9am.
+      { key: 'change.read', scope: 'any' },
+      { key: 'change.raise', scope: 'any' },
+      { key: 'change.implement', scope: 'any' },
     ],
   },
   {
@@ -167,6 +173,12 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'problem.read', scope: 'any' },
       { key: 'problem.manage', scope: 'any' },
       { key: 'problem.publish', scope: 'any' },
+      { key: 'change.read', scope: 'any' },
+      { key: 'change.raise', scope: 'any' },
+      { key: 'change.implement', scope: 'any' },
+      // A lead signs off an emergency change somebody else made, which is the
+      // whole value of the retrospective approval.
+      { key: 'change.approve.retrospective', scope: 'any' },
     ],
   },
   {
@@ -191,6 +203,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'incident.major.read', scope: 'any' },
       { key: 'incident.review.write', scope: 'any' },
       { key: 'problem.read', scope: 'any' },
+      { key: 'change.read', scope: 'any' },
+      // Owns the service being changed, so signs off an emergency change to it.
+      { key: 'change.approve.retrospective', scope: 'any' },
     ],
   },
   {
@@ -283,6 +298,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'problem.read', scope: 'any' },
       { key: 'problem.manage', scope: 'any' },
       { key: 'problem.publish', scope: 'any' },
+      { key: 'change.read', scope: 'any' },
+      { key: 'change.raise', scope: 'any' },
+      { key: 'change.implement', scope: 'any' },
+      { key: 'change.manage', scope: 'any' },
+      { key: 'change.approve.retrospective', scope: 'any' },
     ],
   },
 ];
