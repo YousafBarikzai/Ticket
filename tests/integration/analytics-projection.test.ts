@@ -126,8 +126,10 @@ describe('a ticket that moves', () => {
     );
     expect(before!.created).toBeGreaterThanOrEqual(1);
 
-    const moved = await request(`/api/v1/tickets/${ticketId}`, {
-      method: 'PATCH',
+    // Routing is an assignment, not an edit: the group moves through the
+    // assign endpoint, which is also what a rule or a strategy calls.
+    const moved = await request(`/api/v1/tickets/${ticketId}/assign`, {
+      method: 'POST',
       token: tenant.people.admin!.token,
       body: { groupId: tenant.otherTeamId },
     });
@@ -254,9 +256,14 @@ describe('the nightly rebuild', () => {
 });
 
 describe('drift detection', () => {
+  // The check's window deliberately ends an hour ago, so that an event
+  // published a second ago is not counted as drift. The tickets in this suite
+  // are seconds old, so the check is asked as if it were running in two hours.
+  const later = () => new Date(Date.now() + 2 * 60 * 60 * 1000);
+
   it('finds no drift when every event has been projected', async () => {
     const context = ctx();
-    const result = await withContext(context, () => checkTicketDrift(context));
+    const result = await withContext(context, () => checkTicketDrift(context, { now: later() }));
 
     expect(result.expected).toBe(result.actual);
     expect(result.driftRatio).toBe(0);
@@ -265,14 +272,14 @@ describe('drift detection', () => {
 
   it('notices when facts go missing, and writes down what it found', async () => {
     const context = ctx();
-    const before = await withContext(context, () => checkTicketDrift(context));
+    const before = await withContext(context, () => checkTicketDrift(context, { now: later() }));
     expect(before.expected).toBeGreaterThan(0);
 
     // Deleting facts is exactly what a half-applied replay looks like from the
     // outside: the tickets are there, the projection is not.
     await read((tx) => tx.factTicket.deleteMany({}));
 
-    const after = await withContext(context, () => checkTicketDrift(context));
+    const after = await withContext(context, () => checkTicketDrift(context, { now: later() }));
     expect(after.actual).toBe(0);
     expect(after.driftRatio).toBe(1);
     expect(after.breached).toBe(true);
