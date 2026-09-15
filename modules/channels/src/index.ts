@@ -108,3 +108,10 @@ export {
   replyToChat,
   type ChatOutcome,
 } from './service/chat-inbound.js';
+export {
+  SESSION_WINDOW_MS,
+  whatsappTransport,
+  withinSessionWindow,
+  type WhatsAppOptions,
+} from './service/whatsapp.js';
+export { transcriptBody, voiceTransport, type VoiceOptions } from './service/voice.js';
