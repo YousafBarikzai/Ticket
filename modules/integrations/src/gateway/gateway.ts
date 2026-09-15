@@ -2,6 +2,7 @@ import { type TenantContext, ValidationError, logger, metrics, newId, transactio
 import { checkDestination } from './address-guard.js';
 import { CircuitOpenError, breakers } from './circuit-breaker.js';
 import { redactBody, redactHeaders, redactUrl } from './redact.js';
+import { parseAwsCredential, signAwsRequest } from './sigv4.js';
 
 /**
  * The only way out of the platform (docs/architecture/07 §4).
@@ -29,6 +30,15 @@ export interface GatewayRequest {
   timeoutMs?: number;
   /** Resolved from the credential store by the caller; never logged. */
   credential?: { header: string; value: string };
+  /**
+   * Sign the request instead of attaching the credential as a header.
+   *
+   * AWS does not accept a bearer token: it wants a signature over the method,
+   * the path, the query, the headers and the body. That has to happen where the
+   * request is finally assembled — here — because signing anything the caller
+   * has not yet finished building signs the wrong request.
+   */
+  signing?: { kind: 'aws_sigv4'; region: string; service: string };
   /** What caused this, for the log: a workflow run, a rule, a sync job. */
   cause?: { kind: string; id: string };
 }
@@ -113,9 +123,28 @@ export async function call(
     ...(request.body !== undefined ? { 'content-type': 'application/json' } : {}),
   };
 
+  // Serialised once, then both signed and sent. Signing one serialisation and
+  // sending another is the classic way to produce a signature AWS rejects with
+  // no useful explanation, and it only shows up against a live endpoint.
+  const serialisedBody = request.body !== undefined ? JSON.stringify(request.body) : undefined;
+
   // Attached last and never merged into anything that gets logged. The log
-  // below is built from `request.headers`, which has never seen this.
-  const sent = request.credential ? { ...headers, [request.credential.header]: request.credential.value } : headers;
+  // below is built from `request.headers`, which has never seen any of this.
+  let sent = headers;
+  if (request.signing?.kind === 'aws_sigv4') {
+    if (!request.credential) {
+      throw new ValidationError('a signed request needs a credential; this connector names none');
+    }
+    const signed = signAwsRequest(
+      { method: request.method, url: request.url, headers, ...(serialisedBody !== undefined ? { body: serialisedBody } : {}) },
+      parseAwsCredential(request.credential.value),
+      { region: request.signing.region, service: request.signing.service },
+      new Date(now()),
+    );
+    sent = { ...headers, ...signed.headers };
+  } else if (request.credential) {
+    sent = { ...headers, [request.credential.header]: request.credential.value };
+  }
 
   try {
     const response = await fetchImpl(request.url, {
@@ -126,7 +155,7 @@ export async function call(
       // straight past the destination check, which was performed on the URL
       // the administrator configured rather than on wherever it points today.
       redirect: 'manual',
-      ...(request.body !== undefined ? { body: JSON.stringify(request.body) } : {}),
+      ...(serialisedBody !== undefined ? { body: serialisedBody } : {}),
     });
 
     const durationMs = now() - started;

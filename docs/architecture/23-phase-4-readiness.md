@@ -388,13 +388,54 @@ a contract *ends* on one with ninety days' notice tells you sixty days too late.
 `notice_missed` is its own state and the sweep counts it separately: those are
 contracts that have committed money nobody chose to commit this year.
 
+### 2.8 Request signing in the gateway (MOD-14-E3)
+
+**The gap MOD-10-E2 named, closed.** AWS authenticates a *request* rather than a
+caller: the signature covers the method, path, query, chosen headers and a hash
+of the body, and is valid for one day, one region and one service. There is no
+header to attach, because the header does not exist until the request is
+finished — so signing happens in the gateway, where requests are finished
+(ADR-0029).
+
+Three things follow from doing it there. The body is **serialised once and both
+signed and sent**, which is the classic SigV4 defect and one that fails only
+against a live endpoint with no useful message. **`host` comes from the URL**,
+not from the caller, because a signature over a host the request does not reach
+is rejected and the caller is not the authority on the destination. And the
+signature **never reaches the log**, by the same mechanism the bearer path
+already used: the log is built from `request.headers`, which has never held a
+credential.
+
+**Both halves of the credential live in one stored value**, as JSON under the
+kind `aws_sigv4`, validated when it is stored. Two separately-stored halves can
+be half-rotated, and a half-rotated pair fails as `InvalidClientTokenId` — which
+reads like a permissions problem and sends whoever is on call to IAM policies
+rather than to the rotation an hour earlier.
+
+**What is verified is stated rather than implied.** The canonical request and the
+string to sign are asserted as plain text against AWS's published worked
+example, which a reviewer can check line by line, and which is where SigV4
+implementations actually go wrong: path and query encoding, header folding, the
+signed-header list, the payload hash. What is not verified here is a live call to
+AWS. **No test pins a signature hex from memory** — an assertion like that is
+worth nothing if the memory is wrong and worse than nothing because it looks
+like verification. The first real request is the acceptance test, and a wrong
+signature fails as a clean 403.
+
+A new discovery kind, `aws_api`, reads the Resource Groups Tagging API directly:
+broad and shallow, an ARN and tags for everything. The `aws` export kind stays,
+because an AWS Config snapshot is *richer* — resource types, regions, and the
+relationships AWS already knows about — and plenty of organisations will share an
+export bucket long before they issue signing keys. The larger win is not
+discovery at all: every AWS API is now reachable from a connector or a workflow
+action.
+
 ---
 
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **SigV4 signing in the gateway** | The one thing MOD-10-E2 could not do honestly. AWS request signing belongs where outbound calls are built, not in a module; until it exists the `aws` discovery kind reads an inventory export. Small, self-contained, and it unlocks every AWS API rather than only this one. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
 | MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
@@ -413,6 +454,7 @@ contracts that have committed money nobody chose to commit this year.
 | A module can be built, registered and unreachable from its own tests | MOD-08-E1's integration suite failed on `Cannot find package '@itsm/module-incident'`, in two tests out of twenty-four — the two that import the module directly. The module existed, built, typechecked and was registered in the runtime; pnpm resolves only *declared* dependencies, and the integration suites live at the repository root, where it was not one. MOD-20 had the same gap and had simply not reached for its own package yet, which is the argument for a rule over a fix: the failure arrives on whichever suite first needs it, long after the module was written. Now checked mechanically as module-contract rule 7, and the rule was proved to fail before it was trusted to pass. |
 | The same trap was already in MOD-04, and the platform had already solved it once | Auditing for the row below found `JSON.stringify(before) === JSON.stringify(after)` in `ticket-service.ts`, where `MUTABLE_FIELDS` includes `custom` — a JSONB column. Re-sending identical custom fields recorded a change: an audit row, a version bump, a `ticket.updated` event and every rule and notification waiting on one. Nothing failed; the ticket simply acquired a history of edits nobody made. The same audit found `packages/platform/src/audit.ts` already carrying a correct private `canonical()` for the hash chain — so the idea existed three times, once right and twice missing. It is now one helper in the platform, with a module-contract rule (8) failing the build on a hand-rolled comparison, proved to fail before it was trusted to pass. **The audit copy was deliberately left alone**: it sorts with `localeCompare` where the shared helper sorts by code point, and the two disagree on any key starting with a capital, so adopting the shared one would change historical hashes and make the nightly verifier report tampering that never happened. That `localeCompare` is itself locale-dependent, and therefore a reproducibility risk across Node builds with different ICU data, is recorded as a separate finding: fixing it needs a hash version on the row and a verifier that understands both. |
 | `JSON.stringify` is not a value comparison once a value has been through JSONB | MOD-10-E2 fingerprints a discovery proposal so that one a person already rejected is not raised again. The fingerprint was `JSON.stringify(proposed)` on both sides — but PostgreSQL JSONB does not preserve key order, so the stored copy came back with its keys rearranged and never matched. The effect was not a crash: rejecting a proposal simply stopped working, and the same suggestion returned every run for ever, which is the behaviour the feature exists to prevent. Unit tests could not see it, because in JavaScript the object never round-trips; the integration suite found it on the first run against a real database. The same flaw was latent in the reconciler's object comparison, where it would have reported an unchanged attribute as changed on every run. Both now use a canonical fingerprint with sorted keys, and the unit tests assert that reordering keys does not change it while reordering a *list* does — order is information in one and not the other. |
+| The fixture lesson held, and cost nothing to apply | MOD-14-E3's SigV4 tests began with AWS's published example credentials, both halves. The secret half is forty characters of mixed-case base64 assigned to a field called `secretAccessKey`, which reads to a scanner as exactly what it looks like — the same shape as the Stripe fixture two rows down. The reflex was to write an allowlist entry. The better question was what the fixture buys: **nothing**. The canonical request and the string to sign do not contain the secret, the signing-key tests use their own values, and no test pins a signature. So the key *id* stayed, because assertions quote it, and the secret became `not-a-real-secret-for-signing-tests`. No exemption, no scan to argue with, and not one assertion weaker. Worth recording because the reflex was wrong in a way that would have looked reasonable in review: an allowlist is where a scanner stops protecting you, and the first question is always whether the credential-shaped thing needs to be there at all. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -421,10 +463,11 @@ contracts that have committed money nobody chose to commit this year.
 
 | Check | Result |
 |---|---|
-| Unit tests | 573 passing, 250 of them over the six modules |
+| Unit tests | 613 passing, 290 of them over the seven modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
-| — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
+| — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
+| — AWS SigV4 | 22, asserting the canonical request and string to sign as plain text a reviewer can check against AWS's published example |
 | — rotas and shifts | 26, including both daylight-saving transitions with real dates |
 | — routing strategies | 17, every tie-break and every refusal |
 | — the incident lifecycle | 17, each naming the way an incident goes wrong without the rule |

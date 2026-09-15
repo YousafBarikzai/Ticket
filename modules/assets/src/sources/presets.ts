@@ -11,7 +11,7 @@ import type { Mapping } from '../domain/mapping.js';
  * drifts is a mapping to correct rather than a connector to rewrite.
  */
 
-export const SOURCE_KINDS = ['http_json', 'csv', 'intune', 'azure', 'aws'] as const;
+export const SOURCE_KINDS = ['http_json', 'csv', 'intune', 'azure', 'aws', 'aws_api'] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
 export interface Preset {
@@ -23,6 +23,8 @@ export interface Preset {
   nextPath?: string;
   /** The header the credential goes in. */
   credentialHeader?: string;
+  /** Sign the request instead, for a service that will not take a bearer token. */
+  signing?: { kind: 'aws_sigv4'; region: string; service: string };
   mapping?: Mapping;
   /** Classes the preset expects to exist, so a source can say so before it runs. */
   expectsClasses?: string[];
@@ -110,7 +112,12 @@ const azure: Preset = {
  * So this consumes what AWS is already good at producing: an AWS Config
  * snapshot or a Resource Groups Tagging export, delivered to an HTTPS endpoint
  * the gateway may reach. The mapping matches Config's `configurationItems`
- * shape. Tracked as the follow-up it is.
+ * shape.
+ *
+ * Kept now that `aws_api` exists, and not as a legacy: a Config snapshot is
+ * *richer* than the live tagging API — it carries resource types, regions and
+ * the relationships AWS already knows about — and plenty of accounts will hand
+ * over an export bucket long before they hand over signing keys.
  */
 const aws: Preset = {
   method: 'GET',
@@ -139,7 +146,39 @@ const aws: Preset = {
   },
 };
 
-const PRESETS: Partial<Record<SourceKind, Preset>> = { intune, azure, aws };
+/**
+ * AWS resources from the live API, signed.
+ *
+ * The Resource Groups Tagging API's `GetResources` returns every resource in
+ * the account with its tags, in plain JSON — no nested string payloads to
+ * unpick, which is what makes it the right first live endpoint. It is broad and
+ * shallow: an ARN and tags for everything. The `aws` export kind above is
+ * narrow and deep, and a tenant that wants both runs both.
+ *
+ * The URL carries the region, so there is no default: a source is refused at
+ * creation time if it does not supply one, which is better than a placeholder
+ * that fails at two in the morning. The credential is one stored value holding
+ * `{"accessKeyId":…,"secretAccessKey":…}`, so both halves rotate together.
+ */
+const awsApi: Preset = {
+  method: 'POST',
+  body: {},
+  recordsPath: 'ResourceTagMappingList',
+  credentialHeader: 'authorization',
+  signing: { kind: 'aws_sigv4', region: 'eu-west-2', service: 'tagging' },
+  expectsClasses: ['cloud_resource'],
+  note: 'Set url to https://tagging.<region>.amazonaws.com/ and signing.region to match; the credential is JSON holding accessKeyId and secretAccessKey.',
+  mapping: {
+    classKey: 'cloud_resource',
+    // The ARN is the identifier AWS itself uses, and it is stable across
+    // renames and re-tagging in a way no tag is.
+    externalKeyFrom: 'ResourceARN',
+    nameFrom: 'ResourceARN',
+    attributes: { arn: 'ResourceARN' },
+  },
+};
+
+const PRESETS: Partial<Record<SourceKind, Preset>> = { intune, azure, aws, aws_api: awsApi };
 
 export function presetFor(kind: SourceKind): Preset {
   return PRESETS[kind] ?? {};
