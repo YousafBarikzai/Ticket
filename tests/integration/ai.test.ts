@@ -301,10 +301,13 @@ describe('the controls that stop it', () => {
       expect(refused.status).toBe(403);
       expect(JSON.stringify(refused.body)).toMatch(/us-east/);
 
-      // The same tenant, with the region permitted, gets its suggestion.
+      // The same tenant, with the region permitted, gets its job. 202 and not
+      // 201: `ticket-summary` calls a model, so the door's answer is a queued
+      // job id, the same as the end-to-end test above.
       await setRegions(['eu-west', 'us-east']);
       const allowed = await suggest('ticket-summary', ticketId);
-      expect(allowed.status).toBe(201);
+      expect(allowed.status).toBe(202);
+      expect(allowed.body.status).toBe('queued');
     } finally {
       // Restored either way. Leaving a us-east stub registered because there
       // was nothing to put back would quietly fail every AI test after this

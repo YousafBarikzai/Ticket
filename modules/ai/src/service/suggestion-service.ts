@@ -31,7 +31,7 @@ import { UnparseableCompletion, parseCompletion } from '../domain/output.js';
 import { activeProvider } from '../providers/registry.js';
 import { assemble, renderable } from './context-service.js';
 import { assertWithinBudget, recordSpend } from './budget-service.js';
-import { NoProviderConfigured, callModel } from './gateway.js';
+import { NoProviderConfigured, ProviderOutsideResidency, callModel, residencyPermits } from './gateway.js';
 import { currentVersionOf } from './prompt-service.js';
 
 /**
@@ -49,8 +49,9 @@ import { currentVersionOf } from './prompt-service.js';
  *   1. permission  — may this person ask at all
  *   2. kill switch — is the capability switched on for this tenant
  *   3. provider    — is there anything to ask (OD-04)
- *   4. budget      — has this tenant any money left this month
- *   5. visibility  — may this person see the ticket they named
+ *   4. residency   — may this tenant's prompts be processed where it runs
+ *   5. budget      — has this tenant any money left this month
+ *   6. visibility  — may this person see the ticket they named
  *
  * Every one of them happens before a job is queued, so a refusal is immediate
  * and costs nothing. A job that reached the worker and failed there would be a
@@ -104,7 +105,19 @@ export async function requestSuggestion(ctx: TenantContext, input: SuggestionReq
 
   const needsAModel = callsAModel(capability);
   if (needsAModel) {
-    if (!activeProvider()) throw new NoProviderConfigured();
+    const provider = activeProvider();
+    if (!provider) throw new NoProviderConfigured();
+    // The gateway makes the same decision immediately before it sends, and
+    // that is the enforcement point — a worker can run long after the regions
+    // were changed, and `runEvaluation` reaches the gateway without coming
+    // through here at all. This is the *door*: both inputs are known now (the
+    // provider is registered in this process, the regions are on the context),
+    // so a tenant whose policy forbids the only provider is told so instead of
+    // being handed a job id that will fail in a worker it cannot see.
+    if (!residencyPermits(provider.processingRegion, aiRegions(ctx))) {
+      metrics.increment('ai_calls_refused_total', { reason: 'residency', provider: provider.name });
+      throw new ProviderOutsideResidency(provider.name, provider.processingRegion ?? 'unknown', aiRegions(ctx));
+    }
     await assertWithinBudget(ctx);
   }
 
