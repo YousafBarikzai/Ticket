@@ -204,54 +204,6 @@ describe('who may see what', () => {
   });
 });
 
-describe('designing a survey', () => {
-  it('publishes a new version without touching answers already given', async () => {
-    const patched = await request(`/api/v1/surveys/csat`, {
-      method: 'PATCH',
-      token: tenant.people.admin!.token,
-      body: {
-        document: {
-          title: 'How did we do?',
-          thanks: 'Thanks!',
-          schema: {
-            type: 'object',
-            properties: { rating: { type: 'integer', title: 'Rate us', minimum: 0, maximum: 10 } },
-            required: ['rating'],
-          },
-          ui: { elements: [{ kind: 'field', field: 'rating', label: 'Rate us', control: 'number' }] },
-          scoring: { field: 'rating', min: 0, max: 10 },
-        },
-      },
-    });
-    expect(patched.status).toBe(200);
-
-    const published = await request<{ version: number }>(`/api/v1/surveys/csat/publish`, { method: 'POST', token: tenant.people.admin!.token });
-    expect(published.status).toBe(200);
-    expect(published.body.version).toBe(2);
-
-    // The earlier response still says 1–5, because that is what was asked.
-    const responses = await request<{ data: { scale: string }[] }>('/api/v1/survey-responses?survey=csat', { token: tenant.people.admin!.token });
-    expect(responses.body.data.every((row) => row.scale === '1-5')).toBe(true);
-  });
-
-  it('refuses to publish a document that does not hang together', async () => {
-    await request(`/api/v1/surveys/csat`, {
-      method: 'PATCH',
-      token: tenant.people.admin!.token,
-      body: {
-        document: {
-          title: 'Broken',
-          schema: { type: 'object', properties: { rating: { type: 'string', title: 'Rate us' } }, required: ['rating'] },
-          ui: { elements: [{ kind: 'field', field: 'rating', label: 'Rate us', control: 'text' }] },
-          scoring: { field: 'rating', min: 1, max: 5 },
-        },
-      },
-    });
-    const published = await request(`/api/v1/surveys/csat/publish`, { method: 'POST', token: tenant.people.admin!.token });
-    expect(published.status).toBe(422);
-  });
-});
-
 describe('in the thread', () => {
   const sent: OutboundChat[] = [];
   let ticketId: string;
@@ -346,5 +298,56 @@ describe('in the thread', () => {
     expect(response).not.toBeNull();
     expect(response!.score).toBe(75);
     expect(response!.via).toBe('slack');
+  });
+});
+
+// Last, because publishing a new version changes what every later ask looks
+// like: a 0–10 scale has no buttons (eleven is a keyboard, not a question) and
+// a "4" typed against it scores 40, which the thread tests above must not see.
+describe('designing a survey', () => {
+  it('publishes a new version without touching answers already given', async () => {
+    const patched = await request(`/api/v1/surveys/csat`, {
+      method: 'PATCH',
+      token: tenant.people.admin!.token,
+      body: {
+        document: {
+          title: 'How did we do?',
+          thanks: 'Thanks!',
+          schema: {
+            type: 'object',
+            properties: { rating: { type: 'integer', title: 'Rate us', minimum: 0, maximum: 10 } },
+            required: ['rating'],
+          },
+          ui: { elements: [{ kind: 'field', field: 'rating', label: 'Rate us', control: 'number' }] },
+          scoring: { field: 'rating', min: 0, max: 10 },
+        },
+      },
+    });
+    expect(patched.status).toBe(200);
+
+    const published = await request<{ version: number }>(`/api/v1/surveys/csat/publish`, { method: 'POST', token: tenant.people.admin!.token });
+    expect(published.status).toBe(200);
+    expect(published.body.version).toBe(2);
+
+    // The earlier response still says 1–5, because that is what was asked.
+    const responses = await request<{ data: { scale: string }[] }>('/api/v1/survey-responses?survey=csat', { token: tenant.people.admin!.token });
+    expect(responses.body.data.every((row) => row.scale === '1-5')).toBe(true);
+  });
+
+  it('refuses to publish a document that does not hang together', async () => {
+    await request(`/api/v1/surveys/csat`, {
+      method: 'PATCH',
+      token: tenant.people.admin!.token,
+      body: {
+        document: {
+          title: 'Broken',
+          schema: { type: 'object', properties: { rating: { type: 'string', title: 'Rate us' } }, required: ['rating'] },
+          ui: { elements: [{ kind: 'field', field: 'rating', label: 'Rate us', control: 'text' }] },
+          scoring: { field: 'rating', min: 1, max: 5 },
+        },
+      },
+    });
+    const published = await request(`/api/v1/surveys/csat/publish`, { method: 'POST', token: tenant.people.admin!.token });
+    expect(published.status).toBe(422);
   });
 });
