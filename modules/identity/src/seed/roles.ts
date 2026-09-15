@@ -107,6 +107,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'cmdb.read', scope: 'any' },
       { key: 'cmdb.link', scope: 'any' },
       { key: 'asset.read', scope: 'any' },
+      // The support number for the thing that just broke is on the contract,
+      // and the person who needs it at that moment is the agent.
+      { key: 'contract.read', scope: 'any' },
     ],
   },
   {
@@ -193,6 +196,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // most organisations and nobody else's.
       { key: 'asset.read', scope: 'any' },
       { key: 'asset.manage', scope: 'any' },
+      // Works the discovery queue: accepting a proposal writes the register, so
+      // it takes `cmdb.manage`, which a lead already has.
+      { key: 'discovery.read', scope: 'any' },
+      { key: 'contract.read', scope: 'any' },
     ],
   },
   {
@@ -223,6 +230,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Reads what their service is made of, and what would take it down.
       { key: 'cmdb.read', scope: 'any' },
       { key: 'asset.read', scope: 'any' },
+      // Owns the budget the contract sits in, so sees what it costs and when
+      // notice is due.
+      { key: 'contract.read', scope: 'any' },
     ],
   },
   {
@@ -325,6 +335,12 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'cmdb.link', scope: 'any' },
       { key: 'asset.read', scope: 'any' },
       { key: 'asset.manage', scope: 'any' },
+      // Configuring a source decides what may write the register without being
+      // asked, which is an administrator's decision and nobody else's.
+      { key: 'discovery.read', scope: 'any' },
+      { key: 'discovery.manage', scope: 'any' },
+      { key: 'contract.read', scope: 'any' },
+      { key: 'contract.manage', scope: 'any' },
     ],
   },
 ];

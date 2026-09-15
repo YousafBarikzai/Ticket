@@ -8,6 +8,7 @@
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json", "test": "vitest run" },
   "dependencies": {
     "@itsm/contracts": "workspace:*",
+    "@itsm/module-integrations": "workspace:*",
     "@itsm/platform": "workspace:*",
     "zod": "^3.24.1"
   }

@@ -464,6 +464,228 @@ model AffectedCi {
   @@map("affected_ci")
 }
 
+// ---- MOD-10-E2 Discovery, reconciliation and the money -----------------------
+
+/// Somewhere configuration items come from other than a person typing.
+///
+/// A source is a *credentialed pull*, not a push endpoint: the platform decides
+/// when to ask and what to do with the answer. A push endpoint would mean any
+/// system that ever held a token could rewrite the register, and the register's
+/// worth is that its contents were decided.
+model DiscoverySource {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  key          String
+  name         String
+  /// http_json | csv | intune | aws | azure. The last three are the first two
+  /// with a mapping already filled in — see `src/sources/`.
+  kind         String
+  /// The MOD-14 connector credential to attach, by name. Never the credential.
+  credentialRef String?  @map("credential_ref")
+  /// Where to ask, how to read the answer, and which fields map to what.
+  config       Json      @default("{}")
+  /// Minutes between runs. Null means it runs only when somebody asks.
+  intervalMinutes Int?   @map("interval_minutes")
+  status       String    @default("active")
+  lastRunAt    DateTime? @map("last_run_at") @db.Timestamptz(6)
+  lastRunStatus String?  @map("last_run_status")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy    String?   @map("created_by") @db.Uuid
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  runs         DiscoveryRun[]
+  rules        ReconciliationRule[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status, lastRunAt])
+  @@map("discovery_source")
+}
+
+/// One pull, and what it found.
+///
+/// Kept even when nothing changed, because "the source has been returning zero
+/// devices for a fortnight" is a fact nobody notices without a run history —
+/// and a source that quietly stops is indistinguishable from an estate that
+/// quietly stopped changing.
+model DiscoveryRun {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  sourceId    String    @map("source_id") @db.Uuid
+  /// running | completed | failed
+  status      String    @default("running")
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  /// Records read from the source.
+  seen        Int       @default(0)
+  /// Records that matched an item and agreed with it.
+  unchanged   Int       @default(0)
+  /// Proposals raised: new items, changed fields, suggested relationships.
+  proposed    Int       @default(0)
+  /// Fields written without asking, because a reconciliation rule says the
+  /// source owns them. The audit question this table exists to answer: what did
+  /// discovery change on its own authority?
+  applied     Int       @default(0)
+  /// Records the mapping refused, with the reason. Refusing one row must not
+  /// lose the other three hundred.
+  rejected    Int       @default(0)
+  problems    Json      @default("[]")
+  error       String?
+  triggeredBy String?   @map("triggered_by") @db.Uuid
+
+  source      DiscoverySource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  proposals   DiscoveryProposal[]
+
+  @@index([tenantId, sourceId, startedAt])
+  @@index([tenantId, status])
+  @@map("discovery_run")
+}
+
+/// What discovery would like to do, waiting for somebody to say yes.
+///
+/// The whole design of E2 in one table. Discovery proposes; a person confirms.
+/// A feed that could write straight through is a feed that can rewrite four
+/// hundred rows at three in the morning because somebody changed a column name
+/// upstream, and the first anybody knows of it is an impact answer that is
+/// quietly wrong.
+model DiscoveryProposal {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  runId       String    @map("run_id") @db.Uuid
+  sourceId    String    @map("source_id") @db.Uuid
+  /// create_ci | update_ci | create_relationship
+  kind        String
+  /// What the source calls it, so a superseded proposal can be found again.
+  externalKey String    @map("external_key")
+  /// The item this is about, once matched. Null for a creation.
+  ciId        String?   @map("ci_id") @db.Uuid
+  /// The fields discovery would set, and what they are now. Both, because a
+  /// proposal a person cannot see the *current* value of is one they cannot
+  /// judge.
+  proposed    Json      @default("{}")
+  current     Json      @default("{}")
+  /// pending | accepted | rejected | superseded
+  status      String    @default("pending")
+  /// Why a person said no, so the same proposal arriving next week is
+  /// recognisable rather than re-litigated.
+  reason      String?
+  decidedAt   DateTime? @map("decided_at") @db.Timestamptz(6)
+  decidedBy   String?   @map("decided_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run         DiscoveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, sourceId, externalKey, status])
+  @@index([tenantId, ciId])
+  @@map("discovery_proposal")
+}
+
+/// Which fields a source may set without asking.
+///
+/// The default is `propose` for everything, and a tenant loosens it field by
+/// field once it trusts a source. Loosening is the interesting direction: a
+/// serial number from Intune is more reliable than a serial number typed by a
+/// person, and criticality is the exact opposite.
+model ReconciliationRule {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// Null applies the rule to every source.
+  sourceId  String?  @map("source_id") @db.Uuid
+  /// A configuration item field, or `attributes.<key>`.
+  field     String
+  /// propose | source_wins | ignore
+  policy    String   @default("propose")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  source    DiscoverySource? @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceId, field])
+  @@index([tenantId, field])
+  @@map("reconciliation_rule")
+}
+
+/// Who you buy from.
+model Supplier {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  name         String
+  accountRef   String?  @map("account_ref")
+  contactName  String?  @map("contact_name")
+  contactEmail String?  @map("contact_email")
+  contactPhone String?  @map("contact_phone")
+  /// Who to call when the thing you bought stops working, which is the only
+  /// reason anybody opens this record.
+  supportUrl   String?  @map("support_url")
+  supportPhone String?  @map("support_phone")
+  status       String   @default("active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  contracts    Contract[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("supplier")
+}
+
+/// What you agreed to pay, until when, and by when you must say otherwise.
+model Contract {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  supplierId  String    @map("supplier_id") @db.Uuid
+  reference   String
+  name        String
+  /// support | maintenance | lease | licence | subscription
+  kind        String    @default("support")
+  startsOn    DateTime  @map("starts_on") @db.Date
+  endsOn      DateTime  @map("ends_on") @db.Date
+  /// Days before `ends_on` by which notice must be given to stop it renewing.
+  /// The date that actually matters: after it, renewal is no longer a choice.
+  noticeDays  Int?      @map("notice_days")
+  autoRenews  Boolean   @default(false) @map("auto_renews")
+  cost        Decimal?  @db.Decimal(14, 2)
+  currency    String?   @db.Char(3)
+  /// annual | monthly | one_off — a cost without a period is not comparable.
+  costPeriod  String?   @map("cost_period")
+  costCentre  String?   @map("cost_centre")
+  ownerId     String?   @map("owner_id") @db.Uuid
+  documentUrl String?   @map("document_url")
+  status      String    @default("active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  supplier    Supplier  @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  coverage    ContractCoverage[]
+
+  @@unique([tenantId, supplierId, reference])
+  @@index([tenantId, status, endsOn])
+  @@index([tenantId, supplierId])
+  @@map("contract")
+}
+
+/// What a contract covers.
+///
+/// A join rather than a column on the asset, because one laptop can be under a
+/// lease and a support contract at once, and a column would make somebody
+/// choose which of the two to record.
+model ContractCoverage {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  contractId String   @map("contract_id") @db.Uuid
+  assetId    String?  @map("asset_id") @db.Uuid
+  ciId       String?  @map("ci_id") @db.Uuid
+  note       String?
+  addedAt    DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, contractId, assetId, ciId])
+  @@index([tenantId, assetId])
+  @@index([tenantId, ciId])
+  @@map("contract_coverage")
+}
+
 // ===========================================================================
 // modules/catalogue/prisma/schema.prisma
 // ===========================================================================

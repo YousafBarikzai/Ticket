@@ -871,6 +871,65 @@ export const assetRetired = defineEvent({
   }),
 });
 
+// ---- MOD-10-E2 Discovery, reconciliation and contracts (PH-4) ---------------
+
+export const discoveryRunCompleted = defineEvent({
+  type: 'discovery.run.completed',
+  version: 1,
+  aggregateType: 'discovery_run',
+  webhook: true,
+  description: 'A discovery source was pulled; what it found is waiting to be confirmed.',
+  payload: z.object({
+    runId: id,
+    sourceId: id,
+    status: z.string(),
+    seen: z.number().int(),
+    proposed: z.number().int(),
+    /** Fields a reconciliation rule says the source owns, written without asking. */
+    applied: z.number().int(),
+    /** Records the mapping could not read. Rising is the signal worth watching:
+     *  a feed whose shape changed rejects everything and reports it here. */
+    rejected: z.number().int(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const discoveryProposalDecided = defineEvent({
+  type: 'discovery.proposal.decided',
+  version: 1,
+  aggregateType: 'discovery_proposal',
+  webhook: true,
+  description: 'Somebody accepted or rejected what discovery suggested.',
+  payload: z.object({
+    proposalId: id,
+    sourceId: id,
+    kind: z.string(),
+    outcome: z.string(),
+    ciId: id.nullable(),
+    reason: z.string().nullable(),
+  }),
+});
+
+export const contractExpiring = defineEvent({
+  type: 'contract.expiring',
+  version: 1,
+  aggregateType: 'contract',
+  webhook: true,
+  description: 'A contract is inside its notice period, or about to end.',
+  payload: z.object({
+    contractId: id,
+    reference: z.string(),
+    name: z.string(),
+    supplier: z.string(),
+    endsOn: z.string(),
+    /** Days until notice must be given. Negative means the window has closed
+     *  and renewal is no longer a choice — the number people act on. */
+    daysToNotice: z.number().int().nullable(),
+    daysToEnd: z.number().int(),
+    autoRenews: z.boolean(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -894,6 +953,7 @@ export const eventCatalogue = [
   problemCreated, knownErrorPublished, knownErrorRetired, problemResolved,
   changeSubmitted, changeApproved, changeRejected, changeScheduled, changeClosed,
   ciRegistered, ciStatusChanged, ciRetired, assetAssigned, assetRetired,
+  discoveryRunCompleted, discoveryProposalDecided, contractExpiring,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

@@ -15,7 +15,8 @@ event, and carries a multi-day process without losing its place. Everything it
 does, it does to itself.
 
 **MOD-08 is complete**: major incident, problem and change, delivered one epic
-per pull request, and **MOD-10-E1** now gives them something to point at. Phase 4 is where the platform reaches outside: calls to other systems, assets discovered
+per pull request, and **MOD-10 is complete**: E1 gave them something to point
+at, E2 gave the register somewhere to come from. Phase 4 is where the platform reaches outside: calls to other systems, assets discovered
 from them, incidents correlated from their monitoring, work routed by who is
 actually on shift, and an AI service that reads the knowledge base built in
 Phase 3. All of it needs one thing first, which is why that thing is module one.
@@ -331,11 +332,69 @@ decided.
 
 ---
 
+### 2.7 Discovery, reconciliation and contracts (MOD-10-E2)
+
+**The register stops depending on people typing, without starting to depend on a
+feed being right.** Every disagreement between a source and the register is a
+proposal by default, and a tenant loosens that field by field once it has a
+reason to (ADR-0028). The failure this avoids is the one that ends most CMDBs: a
+feed writes straight through, somebody upstream renames a column, four hundred
+rows change overnight, the run reports success, and the first anybody hears of it
+is an impact answer during an incident that is quietly wrong.
+
+**A field the feed does not send is silence, not an instruction.** The single
+most important line in the reconciler, and the one with a test named after it. A
+source that stops sending a column — a permission lost, an API version bumped, a
+filter somebody added — looks exactly like every device losing that value at
+once, and under `source_wins` a naive implementation blanks them all.
+
+**Rejection is remembered and pending proposals are superseded.** A proposal
+somebody has already refused, with the same values, is not raised again;
+otherwise saying no costs a click a day for ever and the queue trains people to
+accept everything to make it stop. A pending proposal for the same thing is
+superseded rather than duplicated, so a daily run does not leave seven copies of
+every disagreement by Sunday.
+
+**Accepting takes `cmdb.manage`.** Not a permission of its own: accepting writes
+the register, and a separate "may accept discovery" permission would be a way to
+write the register without the permission to write the register. Everything a
+source writes is validated against its class exactly as a person's entry would
+be, because a way round a rule is where the bad rows come from.
+
+**The presets are mappings, not connectors.** Intune, Azure and AWS are the
+generic HTTP source with the boxes filled in — there is no per-source code path,
+so an estate that lives somewhere none of them cover configures the generic kind
+and behaves identically. Intune matches on its own device id rather than the
+serial: a machine re-imaged and re-enrolled keeps the serial and gets a new id,
+and manufacturers do reuse serials.
+
+**AWS reads an inventory export rather than the API, and says so.** AWS
+authenticates with SigV4 request signing; the gateway attaches a credential as
+one header, so signing belongs where outbound calls are built — inside the
+gateway — and a signer written in this module could not be verified against
+anything in this repository. An unverifiable signer that fails only against live
+AWS is worse than an honest gap. **SigV4 in the gateway is tracked as the
+follow-up**; Azure needs none of this and works natively through Resource Graph.
+
+**CSV is parsed, not inferred.** No type coercion, so a serial of `0012345` stays
+`0012345`; a quoted field containing a comma or a newline stays one field; a
+duplicate column header is refused rather than resolved. Fifteen tests, because
+the failure mode is silent — every column after a mis-read quote shifts by one
+and the import succeeds.
+
+**Contracts are keyed to the notice date, not the end date.** After the notice
+date, renewal is no longer a decision, so a report that warns thirty days before
+a contract *ends* on one with ninety days' notice tells you sixty days too late.
+`notice_missed` is its own state and the sweep counts it separately: those are
+contracts that have committed money nobody chose to commit this year.
+
+---
+
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-10-E2 Discovery and finance** | DiscoverySource, ReconciliationRule, ReconciliationRun and the contract, warranty and supplier records, pulling through the gateway's connector half. E1 built the register and the graph; E2 is where they get fed from somewhere other than a person. |
+| **SigV4 signing in the gateway** | The one thing MOD-10-E2 could not do honestly. AWS request signing belongs where outbound calls are built, not in a module; until it exists the `aws` discovery kind reads an inventory export. Small, self-contained, and it unlocks every AWS API rather than only this one. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
 | MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
@@ -352,6 +411,7 @@ decided.
 | Writing the fixture down again failed the same scan | This document's first draft quoted the offending string while explaining it, and stage 1 flagged the explanation. A scanner reads prose and code alike, and it is right to: a credential in a sentence is still a credential in the repository. Two lessons, and the second is the expensive one. **Describe the shape rather than reproduce it** — done here and in `.gitleaks.toml`'s own commentary, which had the same trap latent in it. And **a scan runs over a branch's whole range**, so removing the string in a later commit does not clear it: the two sentences needed their own exemptions, each bounded by fixed text on both sides so nothing can be appended to make one match a real key. Verified the way the row above was: assert the exemptions hold, then assert that real credentials wearing the same clothes are still reported. |
 | Delivering a feature leaves its refusal tests behind | The graph validator's unit test was updated when the `action` node became available; the integration test asserting the same refusal was missed, and stage 3 caught it. The pair exists because they check different layers, so they have to be found together — and a test that asserts a *message* naming a future phase has a shorter life than one that asserts behaviour. The replacement checks that the workflow publishes, which stays true for as long as the node exists. MOD-20 hit the same trap in the same week with the rules engine's `assignStrategy`, so it is worth looking for rather than waiting for. |
 | A module can be built, registered and unreachable from its own tests | MOD-08-E1's integration suite failed on `Cannot find package '@itsm/module-incident'`, in two tests out of twenty-four — the two that import the module directly. The module existed, built, typechecked and was registered in the runtime; pnpm resolves only *declared* dependencies, and the integration suites live at the repository root, where it was not one. MOD-20 had the same gap and had simply not reached for its own package yet, which is the argument for a rule over a fix: the failure arrives on whichever suite first needs it, long after the module was written. Now checked mechanically as module-contract rule 7, and the rule was proved to fail before it was trusted to pass. |
+| `JSON.stringify` is not a value comparison once a value has been through JSONB | MOD-10-E2 fingerprints a discovery proposal so that one a person already rejected is not raised again. The fingerprint was `JSON.stringify(proposed)` on both sides — but PostgreSQL JSONB does not preserve key order, so the stored copy came back with its keys rearranged and never matched. The effect was not a crash: rejecting a proposal simply stopped working, and the same suggestion returned every run for ever, which is the behaviour the feature exists to prevent. Unit tests could not see it, because in JavaScript the object never round-trips; the integration suite found it on the first run against a real database. The same flaw was latent in the reconciler's object comparison, where it would have reported an unchanged attribute as changed on every run. Both now use a canonical fingerprint with sorted keys, and the unit tests assert that reordering keys does not change it while reordering a *list* does — order is information in one and not the other. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -360,7 +420,7 @@ decided.
 
 | Check | Result |
 |---|---|
-| Unit tests | 511 passing, 188 of them over the six modules |
+| Unit tests | 573 passing, 250 of them over the six modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
@@ -371,7 +431,11 @@ decided.
 | — change windows | 19, including both daylight-saving transitions and every overlap shape |
 | — the change lifecycle | 16, pinning the three trades between control and coverage |
 | — CMDB attributes and edges | 19, including the assertion that the traversal's default edge set and the domain's view of what carries impact cannot drift apart |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, two permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| — CSV reading | 15, every one a way a split-on-comma reader fails silently |
+| — field mapping | 18, including each built-in preset's mapping |
+| — reconciliation | 17, written so that removing the absence-is-silence rule fails, and so that a key-order difference from JSONB is not read as a change |
+| — contract dates | 12, over notice, expiry and both sides of auto-renewal |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift
