@@ -1,6 +1,7 @@
 import { logger, metrics } from '@itsm/platform';
 import { constantTimeEquals, type EmailTransport, type OutboundEmail, type ProviderRef } from './email-transport.js';
 import type { ParsedInbound } from './inbound-service.js';
+import { clientCredentialsToken } from './aad-token.js';
 
 /**
  * Microsoft Graph (OD-03, closed as "both, per tenant").
@@ -60,39 +61,15 @@ export function microsoftGraphTransport(options: GraphOptions): EmailTransport {
   const api = (options.apiBase ?? 'https://graph.microsoft.com/v1.0').replace(/\/+$/, '');
   const login = (options.loginBase ?? 'https://login.microsoftonline.com').replace(/\/+$/, '');
   const call = options.fetchImpl ?? fetch;
-  let cached: CachedToken | null = null;
 
-  async function token(): Promise<string> {
-    // A minute of headroom: a token that expires between the check and the call
-    // fails the call, and the retry would be indistinguishable from an outage.
-    if (cached && cached.expiresAt > Date.now() + 60_000) return cached.value;
-
-    if (!options.clientSecret) {
-      throw new Error('Microsoft Graph is selected for this mailbox but its client secret is not configured');
-    }
-
-    const response = await call(`${login}/${options.tenantId}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: options.clientId,
-        client_secret: options.clientSecret,
-        scope: 'https://graph.microsoft.com/.default',
-        grant_type: 'client_credentials',
-      }).toString(),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      // The detail is deliberately truncated: a token endpoint's error body can
-      // echo parts of the request.
-      throw new Error(`Microsoft would not issue a token (${response.status}): ${detail.slice(0, 120)}`);
-    }
-
-    const body = (await response.json()) as { access_token: string; expires_in: number };
-    cached = { value: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 };
-    return cached.value;
-  }
+  const token = clientCredentialsToken({
+    loginBase: login,
+    directory: options.tenantId,
+    clientId: options.clientId,
+    clientSecret: options.clientSecret,
+    scope: 'https://graph.microsoft.com/.default',
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+  });
 
   return {
     name: 'microsoft-graph',
