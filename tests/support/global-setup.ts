@@ -19,9 +19,39 @@ export default async function setup(): Promise<void> {
   process.env.NODE_ENV = 'test';
   process.env.LOG_SILENT = '1';
 
+  await waitForSearchEngine();
+
   execFileSync('npx', ['tsx', 'infra/scripts/assemble-schema.ts'], { stdio: 'pipe' });
   execFileSync('npx', ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'], {
     stdio: 'pipe',
     env: { ...process.env, DATABASE_URL: url },
   });
+}
+
+/**
+ * Waits for Meilisearch, when the run has one.
+ *
+ * The container image carries neither curl nor wget, so a Docker health check
+ * would fail for the wrong reason and the suite would look broken. Polling from
+ * here also keeps the suites honest about the unconfigured case: with no
+ * MEILISEARCH_URL the search tests exercise the PostgreSQL projection, which is
+ * a supported way to run the platform and therefore worth running green.
+ */
+async function waitForSearchEngine(): Promise<void> {
+  const url = process.env.MEILISEARCH_URL;
+  if (!url) return;
+
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try {
+      const response = await fetch(`${url.replace(/\/+$/, '')}/health`);
+      if (response.ok) return;
+    } catch {
+      // Not up yet.
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`MEILISEARCH_URL is set to ${url} but nothing answered /health within 60s`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 }

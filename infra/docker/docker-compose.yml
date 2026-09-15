@@ -53,6 +53,19 @@ services:
     volumes:
       - minio-data:/data
 
+  # Search (ADR-0017). Optional locally: with MEILISEARCH_URL unset the platform
+  # serves search from the PostgreSQL projection, which is how a small
+  # deployment runs in production too — so both paths get exercised by someone.
+  meilisearch:
+    image: getmeili/meilisearch:v1.11
+    environment:
+      MEILI_MASTER_KEY: devsearchkey
+      MEILI_NO_ANALYTICS: 'true'
+      MEILI_ENV: development
+    ports: ['7700:7700']
+    volumes:
+      - meilisearch-data:/meili_data
+
   # Catches outbound mail so a developer can read what the platform sent.
   mailpit:
     image: axllent/mailpit:latest
@@ -66,3 +79,4 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  meilisearch-data:

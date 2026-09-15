@@ -13,6 +13,7 @@ import {
   publish,
   recordAudit,
   systemContext,
+  tenantPurgeHooks,
   transaction,
   withContext,
 } from '@itsm/platform';
@@ -337,7 +338,26 @@ export async function purgeTenant(tenantId: string): Promise<{ rows: number; pas
     remaining = failed;
   }
 
-  const result = { rows, passes, retained: remaining };
+  // State this tenant left outside the database — a per-tenant search index on
+  // another server, for instance. Each hook is tried and its failure recorded
+  // rather than thrown: a search index that cannot be reached must not leave
+  // the tenant's rows in place, and a purge that half-succeeded and said so is
+  // more useful than one that stopped.
+  const external: string[] = [];
+  for (const { name, hook } of tenantPurgeHooks()) {
+    try {
+      await hook(tenantId);
+    } catch (error) {
+      external.push(name);
+      logger.warn('a tenant purge hook failed; its state was left behind', {
+        tenantId,
+        hook: name,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const result = { rows, passes, retained: [...remaining, ...external.map((name) => `external:${name}`)] };
 
   await platformDb().tenant.deleteMany({ where: { id: tenantId } });
   logger.info('tenant purged', { tenantId, ...result });

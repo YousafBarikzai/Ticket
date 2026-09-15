@@ -90,12 +90,24 @@ jobs:
           --health-timeout 5s
           --health-retries 10
         ports: ['6379:6379']
+      # The search engine PH-3 added (ADR-0017). No container health check: the
+      # image carries neither curl nor wget, so a health-cmd would fail for the
+      # wrong reason. The test setup polls /health from the runner instead.
+      meilisearch:
+        image: getmeili/meilisearch:v1.11
+        env:
+          MEILI_MASTER_KEY: devsearchkey
+          MEILI_NO_ANALYTICS: 'true'
+          MEILI_ENV: development
+        ports: ['7700:7700']
     env:
       TEST_DATABASE_URL: postgresql://app_owner:devpass@127.0.0.1:5432/itsm_test?schema=public
       TEST_DATABASE_URL_APP: postgresql://app_user:devpass@127.0.0.1:5432/itsm_test?schema=public
       TEST_DATABASE_URL_PLATFORM: postgresql://app_platform:devpass@127.0.0.1:5432/itsm_test?schema=public
       DATABASE_URL_APP: postgresql://app_user:devpass@127.0.0.1:5432/itsm_test?schema=public
       REDIS_URL: redis://127.0.0.1:6379
+      MEILISEARCH_URL: http://127.0.0.1:7700
+      MEILISEARCH_API_KEY: devsearchkey
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

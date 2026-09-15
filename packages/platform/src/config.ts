@@ -31,6 +31,14 @@ const schema = z.object({
   SMTP_URL: z.string().optional(),
   EMAIL_FROM: z.string().default('Service Desk <servicedesk@example.test>'),
 
+  /**
+   * Meilisearch (ADR-0017). Unset means search is served from the PostgreSQL
+   * projection, which is a supported way to run the platform rather than a
+   * fallback: a small tenant does not need a search server.
+   */
+  MEILISEARCH_URL: z.string().url().optional(),
+  MEILISEARCH_API_KEY: z.string().optional(),
+
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
   OTEL_SERVICE_NAME: z.string().default('itsm-api'),
 

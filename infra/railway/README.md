@@ -14,6 +14,7 @@ open (`docs/architecture/19`).
 | `worker-comms` | `worker` | no | 2 | `WORKER_QUEUES=comms`, `EMAIL_TRANSPORT`, `SMTP_URL` |
 | `worker-data` | `worker` | no | 1+ | `WORKER_QUEUES=data` |
 | `keycloak` | upstream image | yes | 2 | own PostgreSQL |
+| `meilisearch` | upstream image | no | 1 | `MEILI_MASTER_KEY`, persistent volume |
 | `postgres`, `postgres-keycloak`, `redis` | managed | no | — | — |
 
 The queue families are split across services on purpose: a burst of indexing or
@@ -35,3 +36,16 @@ routing change rather than a redesign.
 3. Run migrations as `app_owner` (`pnpm db:migrate`) before traffic switches.
 4. Deploy workers first, then the API: new consumers should exist before new
    events do.
+
+## Search
+
+`meilisearch` is optional. Leave `MEILISEARCH_URL` unset and search is served
+from the `search_document` projection, which is written in the same transaction
+as the change it describes and is therefore never stale — a small deployment
+does not need a search server.
+
+Set it and the platform gains typo tolerance and true facet counts, and falls
+back to the projection whenever the engine is unreachable. Every response says
+which engine answered. Turning it on for a platform that has been running
+without it needs one `search.reindex` job per tenant; the same job applies a
+change to the index settings, because Meilisearch applies those at write time.

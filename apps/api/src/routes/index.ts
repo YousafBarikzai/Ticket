@@ -313,14 +313,37 @@ async function supportingRoutes(app: FastifyInstance): Promise<void> {
   app.get('/search', async (request) => {
     const ctx = contextOf(request);
     const query = z
-      .object({ q: z.string().min(1).max(200), types: z.string().optional(), limit: z.coerce.number().int().min(1).max(100).default(20) })
+      .object({
+        q: z.string().min(1).max(200),
+        types: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+        /** `status:open,priority:P1` — repeated fields are "any of", different fields "all of". */
+        filter: z.string().max(500).optional(),
+        facets: z.string().max(200).optional(),
+      })
       .parse(request.query);
-    const hits = await searchService.search(ctx, {
+
+    const filters: Record<string, string[]> = {};
+    for (const pair of query.filter?.split(',').filter(Boolean) ?? []) {
+      const separator = pair.indexOf(':');
+      if (separator < 1) continue;
+      const field = pair.slice(0, separator);
+      (filters[field] ??= []).push(pair.slice(separator + 1));
+    }
+
+    const result = await searchService.searchWithFacets(ctx, {
       query: query.q,
       limit: query.limit,
       ...(query.types ? { types: query.types.split(',').filter(Boolean) } : {}),
+      ...(Object.keys(filters).length > 0 ? { filters } : {}),
+      ...(query.facets ? { facetsToCount: query.facets.split(',').filter(Boolean) } : {}),
     });
-    return { data: hits };
+
+    // `engine` is reported rather than hidden: when the search server is down
+    // the answer comes from the PostgreSQL projection, which is correct but has
+    // no typo tolerance and counts facets over the page only. A caller that
+    // cannot tell the difference cannot explain it to a user.
+    return { data: result.hits, meta: { facets: result.facetCounts, engine: result.engine } };
   });
 
   app.get('/notifications', async (request) => {

@@ -120,3 +120,33 @@ export function validateRegistry(): string[] {
 
   return problems;
 }
+
+/**
+ * Work a module must do when a tenant is purged, beyond deleting its rows.
+ *
+ * Phase 2 found that deleting a tenant left all its data behind; the fix was to
+ * delete every tenant-scoped table. Phase 3 adds state that is not in a table
+ * at all — a per-tenant search index on another server — and the same defect
+ * would recur silently, because nothing in the database would look wrong.
+ *
+ * A registry rather than a call from the tenancy module: tenancy must not
+ * depend on search, storage or any other module in order to clean up after
+ * them. Each module declares what it leaves outside the database, and the purge
+ * asks.
+ */
+export type TenantPurgeHook = (tenantId: string) => Promise<void>;
+
+const purgeHooks = new Map<string, TenantPurgeHook>();
+
+export function registerTenantPurgeHook(name: string, hook: TenantPurgeHook): void {
+  purgeHooks.set(name, hook);
+}
+
+export function tenantPurgeHooks(): { name: string; hook: TenantPurgeHook }[] {
+  return [...purgeHooks].map(([name, hook]) => ({ name, hook }));
+}
+
+/** Test helper: forget registered hooks. */
+export function resetTenantPurgeHooks(): void {
+  purgeHooks.clear();
+}
