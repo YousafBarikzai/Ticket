@@ -2,7 +2,9 @@
 
 ## Order, and why
 
-1. **Migrations** (`pnpm db:migrate`, as `app_owner`) — before any new code.
+1. **Migrations** (`pnpm db:migrate`, as `app_owner`) — before any new code. Run from the `migrate` image target, not
+   the application's: the runtime image ships no package manager and no TypeScript runner, so it cannot run the
+   migration script, and that is deliberate (`infra/docker/Dockerfile`).
 2. **Workers** — new consumers must exist before new events do.
 3. **API** — its readiness check verifies the migration version.
 4. **Web apps.**

@@ -11,12 +11,22 @@
 # deployable is now bundled to one JavaScript file at build time and the runtime
 # stage installs production dependencies only.
 
-FROM node:22-bookworm-slim AS base
-ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
-RUN corepack enable && apt-get update \
+# What the application needs to run: Node, OpenSSL for Prisma, and nothing else.
+FROM node:22-bookworm-slim AS runtime-base
+RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+
+# What the build needs on top of that: a package manager.
+#
+# Kept out of the runtime image deliberately. pnpm bundles its own dependencies,
+# and the image scan reported a critical CVE in one of them — in a package the
+# application never loads, shipped only because the package manager came along
+# for the ride. The runtime image runs `node dist/…`; it has no use for pnpm.
+FROM runtime-base AS base
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
+RUN corepack enable
 
 # The workspace, as the build needs to see it.
 FROM base AS source
@@ -45,7 +55,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 # image always matches the @prisma/client next to it.
 RUN pnpm exec prisma generate --schema prisma/schema.prisma
 
-FROM base AS runtime
+FROM runtime-base AS runtime
 ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/package.json ./package.json
@@ -60,6 +70,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 FROM runtime AS api
 EXPOSE 3000
 CMD ["node", "dist/api.js"]
+
+# Migrations run from their own image, not from the application's.
+#
+# `db:migrate` needs the package manager and the TypeScript runner, which is
+# exactly what the runtime image is built without. Running them from the build
+# stage keeps the deploy step honest — it runs the same migration script a
+# developer does — without putting that toolchain next to the running service.
+FROM build AS migrate
+CMD ["pnpm", "db:migrate"]
 
 FROM runtime AS worker
 # The worker has no HTTP surface, so it carries no health check of its own; the
