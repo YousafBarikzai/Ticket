@@ -46,10 +46,31 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 1_000_000;
 
+/** One row as it would be written to `integration_log`, after redaction. */
+export interface GatewayLogEntry {
+  connector: string;
+  direction: 'outbound';
+  method: string;
+  url: string;
+  requestHeaders: Record<string, string>;
+  requestBody: unknown;
+  status: number;
+  responseBody: unknown;
+  durationMs: number;
+  error: string | null;
+}
+
 export interface GatewayDeps {
   fetchImpl?: typeof fetch;
   resolver?: Parameters<typeof checkDestination>[1];
   now?: () => number;
+  /**
+   * Where the log goes. Injectable so a test can assert what was written —
+   * which is the single most valuable assertion about this file, because the
+   * credential reaching the log is the failure that would be invisible in
+   * production until somebody read a support export.
+   */
+  sink?: (entry: GatewayLogEntry) => Promise<void>;
 }
 
 /**
@@ -72,7 +93,7 @@ export async function call(
   if (!verdict.allowed) {
     // Logged and recorded, because a refused destination is usually somebody
     // mis-typing an internal hostname — and occasionally somebody probing.
-    await record(ctx, request, { status: 0, error: `refused: ${verdict.reason}`, durationMs: 0 });
+    await record(ctx, request, { status: 0, error: `refused: ${verdict.reason}`, durationMs: 0 }, deps);
     metrics.increment('gateway_refused_total', { connector: request.connector });
     throw new GatewayRefusedError(`this connector cannot call that address: ${verdict.reason}`);
   }
@@ -124,7 +145,7 @@ export async function call(
 
     if (response.status >= 300 && response.status < 400) {
       breakers.recordFailure(ctx.tenantId, request.connector, now());
-      await record(ctx, request, { status: response.status, durationMs, error: 'redirect refused', body });
+      await record(ctx, request, { status: response.status, durationMs, error: 'redirect refused', body }, deps);
       throw new GatewayRefusedError(
         `that endpoint redirected to ${responseHeaders.location ?? 'somewhere else'}; connectors must point at their final address`,
       );
@@ -137,7 +158,7 @@ export async function call(
     if (isServerFailure) breakers.recordFailure(ctx.tenantId, request.connector, now());
     else breakers.recordSuccess(ctx.tenantId, request.connector);
 
-    await record(ctx, request, { status: response.status, durationMs, body });
+    await record(ctx, request, { status: response.status, durationMs, body }, deps);
     metrics.observe('gateway_duration_ms', durationMs, { connector: request.connector });
     metrics.increment('gateway_calls_total', {
       connector: request.connector,
@@ -153,7 +174,7 @@ export async function call(
     const message = aborted ? `no response within ${timeoutMs}ms` : error instanceof Error ? error.message : String(error);
 
     breakers.recordFailure(ctx.tenantId, request.connector, now());
-    await record(ctx, request, { status: 0, durationMs, error: message });
+    await record(ctx, request, { status: 0, durationMs, error: message }, deps);
     metrics.increment('gateway_calls_total', { connector: request.connector, outcome: aborted ? 'timeout' : 'error' });
 
     throw new Error(`the call to ${request.connector} failed: ${message}`);
@@ -201,23 +222,38 @@ async function record(
   ctx: TenantContext,
   request: GatewayRequest,
   outcome: { status: number; durationMs: number; body?: unknown; error?: string },
+  deps: GatewayDeps,
 ): Promise<void> {
+  // Built from `request.headers`, which has never held the credential: it is
+  // merged in only at the point of sending. There is no redaction step to
+  // forget, because the secret is not in the object being redacted.
+  const entry: GatewayLogEntry = {
+    connector: request.connector,
+    direction: 'outbound' as const,
+    method: request.method,
+    url: redactUrl(request.url),
+    requestHeaders: redactHeaders(request.headers ?? {}),
+    requestBody: redactBody(request.body),
+    status: outcome.status,
+    responseBody: redactBody(outcome.body),
+    durationMs: outcome.durationMs,
+    error: outcome.error ?? null,
+  };
+
   try {
+    if (deps.sink) {
+      await deps.sink(entry);
+      return;
+    }
     await transaction(ctx, (tx) =>
       tx.integrationLog.create({
         data: {
           id: newId(),
           tenantId: ctx.tenantId,
-          connector: request.connector,
-          direction: 'outbound',
-          method: request.method,
-          url: redactUrl(request.url),
-          requestHeaders: redactHeaders(request.headers ?? {}) as never,
-          requestBody: redactBody(request.body) as never,
-          status: outcome.status,
-          responseBody: redactBody(outcome.body) as never,
-          durationMs: outcome.durationMs,
-          error: outcome.error ?? null,
+          ...entry,
+          requestHeaders: entry.requestHeaders as never,
+          requestBody: entry.requestBody as never,
+          responseBody: entry.responseBody as never,
           correlationId: ctx.correlationId ?? null,
           causeKind: request.cause?.kind ?? null,
           causeId: request.cause?.id ?? null,
