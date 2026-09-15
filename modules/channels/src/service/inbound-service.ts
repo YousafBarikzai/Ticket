@@ -13,6 +13,7 @@ import {
 } from '@itsm/platform';
 import { ticketService } from '@itsm/module-ticket';
 import { guardInbound, type InboundCandidate } from '../domain/loop-guard.js';
+import { guardChat, type ChatEvent } from '../domain/chat-guard.js';
 import { resolveThread, stripQuotedReply, subjectToken } from '../domain/threading.js';
 import { requiresVerifiedIdentity, type ChannelCommand, type RejectionReason } from '../domain/commands.js';
 
@@ -38,6 +39,11 @@ export interface ParsedInbound {
   headers: Record<string, string | undefined>;
   sizeBytes: number;
   raw: unknown;
+  /**
+   * Present for a chat channel, which has none of the headers the email guard
+   * reads and an entirely different set of ways to go wrong.
+   */
+  chat?: ChatEvent;
 }
 
 export interface AcceptResult {
@@ -104,20 +110,41 @@ export async function acceptInbound(parsed: ParsedInbound, address: string): Pro
         where: { fromAddress: parsed.fromAddress.toLowerCase(), receivedAt: { gte: since }, status: 'processed' },
       });
 
-      const config = (accountRow.config ?? {}) as { maxBytes?: number; maxPerSenderPerHour?: number };
-      const candidate: InboundCandidate = {
-        headers: parsed.headers,
-        subject: parsed.subject,
-        body: parsed.body,
-        fromAddress: parsed.fromAddress,
-        sizeBytes: parsed.sizeBytes,
+      const config = (accountRow.config ?? {}) as {
+        maxBytes?: number;
+        maxPerSenderPerHour?: number;
+        botUserId?: string;
+        allowedBotIds?: string[];
       };
-      const verdict = guardInbound(candidate, {
-        maxBytes: config.maxBytes ?? 25 * 1024 * 1024,
-        ownAddresses: [accountRow.address],
-        recentFromSender: recent,
-        maxPerSenderPerHour: config.maxPerSenderPerHour ?? 30,
-      });
+
+      // Two guards, one decision. A chat channel has no RFC 3834 headers and a
+      // different set of ways to go wrong, so it gets the guard written for it
+      // rather than the email one applied loosely.
+      const verdict = parsed.chat
+        ? guardChat(parsed.chat, {
+            ownBotUserId: config.botUserId ?? null,
+            ...(config.allowedBotIds ? { allowedBotIds: config.allowedBotIds } : {}),
+            // Chat messages are small; the email default would let somebody
+            // paste a novel into a channel and have it become a ticket.
+            maxBytes: config.maxBytes ?? 64 * 1024,
+            recentFromSender: recent,
+            maxPerSenderPerHour: config.maxPerSenderPerHour ?? 30,
+          })
+        : guardInbound(
+            {
+              headers: parsed.headers,
+              subject: parsed.subject,
+              body: parsed.body,
+              fromAddress: parsed.fromAddress,
+              sizeBytes: parsed.sizeBytes,
+            } satisfies InboundCandidate,
+            {
+              maxBytes: config.maxBytes ?? 25 * 1024 * 1024,
+              ownAddresses: [accountRow.address],
+              recentFromSender: recent,
+              maxPerSenderPerHour: config.maxPerSenderPerHour ?? 30,
+            },
+          );
 
       const messageId = newId();
       await tx.inboundMessage.create({

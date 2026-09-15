@@ -47,7 +47,9 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       return { status: 'ignored' };
     }
 
-    const rawBody = typeof request.body === 'string' ? request.body : JSON.stringify(request.body ?? {});
+    // The bytes that arrived, not a reconstruction of them: re-serialising
+    // loses whitespace and can reorder keys, so an HMAC over it never matches.
+    const rawBody = request.rawBody ?? (typeof request.body === 'string' ? request.body : JSON.stringify(request.body ?? {}));
     if (!transport.verify(rawBody, headers)) {
       metrics.increment('channel_inbound_rejected_total', { channel: 'email', reason: 'bad_signature' });
       // 202 rather than 401: an unsigned request is either a misconfiguration
