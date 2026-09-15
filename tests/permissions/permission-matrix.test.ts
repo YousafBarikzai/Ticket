@@ -512,7 +512,7 @@ describe('writing the register is separate from reading it', () => {
     const created = await request('/api/v1/ci-classes', {
       method: 'POST',
       token: tenant.people.admin!.token,
-      body: { key: 'matrix-server', name: 'Server' },
+      body: { key: 'matrix_server', name: 'Server' },
     });
     // A 409 means a previous run left it behind, which is fine; anything else
     // would make the deny assertions below pass for the wrong reason.
@@ -526,7 +526,7 @@ describe('writing the register is separate from reading it', () => {
       const response = await request('/api/v1/cis', {
         method: 'POST',
         token: tenant.people[persona]!.token,
-        body: { classKey: 'matrix-server', name: `Matrix item for ${persona}` },
+        body: { classKey: 'matrix_server', name: `Matrix item for ${persona}` },
       });
 
       if (mayWrite) {
