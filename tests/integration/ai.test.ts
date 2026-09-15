@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { systemContext, transaction, withContext } from '@itsm/platform';
 import { settingsService } from '@itsm/module-admin';
+import { tenantService } from '@itsm/module-tenancy';
 import { userService } from '@itsm/module-identity';
 import { articleService } from '@itsm/module-knowledge';
-import { activeProvider, registerAiProvider, runSuggestionJob, stubProvider, sweepPrompts } from '@itsm/module-ai';
+import { activeProvider, clearAiProvider, registerAiProvider, runSuggestionJob, stubProvider, sweepPrompts } from '@itsm/module-ai';
 import { closeHarness, contextFor, createTestTenant, deleteTestTenant, drainEvents, request, type TestTenant } from '../support/harness.js';
 
 /**
@@ -282,14 +283,16 @@ describe('the controls that stop it', () => {
     const ticketId = await raiseTicket('Laptop will not wake from sleep', 'Since the update.');
     const original = activeProvider();
 
+    // Through the service, not the HTTP route. `PUT /tenants/:id/ai-regions`
+    // needs `platform.tenant.manage` at `any` scope, and no tenant role holds
+    // a `platform.*` permission — which is the route being a platform door
+    // working correctly, not a gap. Every other integration test reaches a
+    // platform-level operation the same way.
+    const setRegions = (regions: string[]) => tenantService.setAiRegions(tenant.id, { regions });
+
     // Everything the stub does, plus a jurisdiction.
     registerAiProvider({ ...stubProvider(), processingRegion: 'us-east' });
-    const setRegions = await request('/api/platform/v1/tenants/' + tenant.id + '/ai-regions', {
-      method: 'PUT',
-      token: asAdmin(),
-      body: { regions: ['eu-west'] },
-    });
-    expect(setRegions.status).toBe(200);
+    await setRegions(['eu-west']);
 
     try {
       const refused = await suggest('ticket-summary', ticketId);
@@ -298,21 +301,17 @@ describe('the controls that stop it', () => {
       expect(refused.status).toBe(403);
       expect(JSON.stringify(refused.body)).toMatch(/us-east/);
 
-      // And the same tenant with the region permitted gets its suggestion.
-      await request('/api/platform/v1/tenants/' + tenant.id + '/ai-regions', {
-        method: 'PUT',
-        token: asAdmin(),
-        body: { regions: ['eu-west', 'us-east'] },
-      });
+      // The same tenant, with the region permitted, gets its suggestion.
+      await setRegions(['eu-west', 'us-east']);
       const allowed = await suggest('ticket-summary', ticketId);
       expect(allowed.status).toBe(201);
     } finally {
+      // Restored either way. Leaving a us-east stub registered because there
+      // was nothing to put back would quietly fail every AI test after this
+      // one, in a suite where the provider is process-global.
       if (original) registerAiProvider(original);
-      await request('/api/platform/v1/tenants/' + tenant.id + '/ai-regions', {
-        method: 'PUT',
-        token: asAdmin(),
-        body: { regions: [] },
-      });
+      else clearAiProvider();
+      await setRegions([]);
     }
   });
 
