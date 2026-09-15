@@ -25,6 +25,7 @@
 /modules/incident/     @core-squad
 /modules/problem/      @core-squad
 /modules/change/       @core-squad
+/modules/assets/       @core-squad
 
 /apps/api/             @platform-squad
 /apps/worker/          @platform-squad

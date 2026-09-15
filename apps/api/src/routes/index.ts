@@ -32,6 +32,7 @@ import { workloadRoutes } from './workload.js';
 import { majorIncidentRoutes } from './major-incidents.js';
 import { problemRoutes } from './problems.js';
 import { changeRoutes } from './changes.js';
+import { cmdbRoutes } from './cmdb.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -53,6 +54,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await majorIncidentRoutes(v1);
       await problemRoutes(v1);
       await changeRoutes(v1);
+      await cmdbRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },
