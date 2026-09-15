@@ -13,6 +13,7 @@
     "@itsm/module-admin": "workspace:*",
     "@itsm/module-approvals": "workspace:*",
     "@itsm/module-catalogue": "workspace:*",
+    "@itsm/module-change": "workspace:*",
     "@itsm/module-channels": "workspace:*",
     "@itsm/module-identity": "workspace:*",
     "@itsm/module-incident": "workspace:*",

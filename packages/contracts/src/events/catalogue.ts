@@ -718,6 +718,77 @@ export const problemResolved = defineEvent({
   }),
 });
 
+// ---- MOD-08-E3 Change management (PH-4) ------------------------------------
+const changeRef = { changeId: id, number: z.string(), kind: z.string() };
+
+export const changeSubmitted = defineEvent({
+  type: 'change.submitted',
+  version: 1,
+  aggregateType: 'change',
+  webhook: true,
+  description: 'A change was submitted; how it is approved depends on its kind.',
+  payload: z.object({
+    ...changeRef,
+    title: z.string(),
+    risk: z.string(),
+    serviceId: id.nullable(),
+    /** False for a standard change, whose template carried the approval, and
+     *  for an emergency change, which owes one afterwards. */
+    needsApproval: z.boolean(),
+  }),
+});
+
+export const changeApproved = defineEvent({
+  type: 'change.approved',
+  version: 1,
+  aggregateType: 'change',
+  webhook: true,
+  description: 'A change was approved, by a policy, by a template, or after the fact.',
+  payload: z.object({ ...changeRef, via: z.string(), retrospective: z.boolean() }),
+});
+
+export const changeRejected = defineEvent({
+  type: 'change.rejected',
+  version: 1,
+  aggregateType: 'change',
+  webhook: true,
+  description: 'A change was refused.',
+  payload: z.object({ ...changeRef, reason: z.string().nullable() }),
+});
+
+export const changeScheduled = defineEvent({
+  type: 'change.scheduled',
+  version: 1,
+  aggregateType: 'change',
+  webhook: true,
+  description: 'A change was booked into a period outside every blackout.',
+  payload: z.object({
+    ...changeRef,
+    plannedStartAt: z.string(),
+    plannedEndAt: z.string(),
+    serviceId: id.nullable(),
+    inWindows: z.array(z.string()),
+    /** True when the tenant defines change windows and this falls outside them. */
+    outsideWindows: z.boolean(),
+  }),
+});
+
+export const changeClosed = defineEvent({
+  type: 'change.closed',
+  version: 1,
+  aggregateType: 'change',
+  webhook: true,
+  description: 'A change was closed with an outcome.',
+  payload: z.object({
+    ...changeRef,
+    closeCode: z.string(),
+    succeeded: z.boolean(),
+    /** Null for an emergency change nobody ever came back to approve, which is
+     *  the number worth watching. */
+    retrospectiveApprovedAt: z.string().nullable(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -739,6 +810,7 @@ export const eventCatalogue = [
   incidentMajorDeclared, incidentMajorUpdated, incidentMajorResolved, incidentMajorClosed,
   incidentMajorUpdateOverdue, incidentMajorReviewPublished,
   problemCreated, knownErrorPublished, knownErrorRetired, problemResolved,
+  changeSubmitted, changeApproved, changeRejected, changeScheduled, changeClosed,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

@@ -96,6 +96,9 @@ importers:
       '@itsm/module-catalogue':
         specifier: workspace:*
         version: link:modules/catalogue
+      '@itsm/module-change':
+        specifier: workspace:*
+        version: link:modules/change
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:modules/channels
@@ -180,6 +183,9 @@ importers:
       '@itsm/module-catalogue':
         specifier: workspace:*
         version: link:../../modules/catalogue
+      '@itsm/module-change':
+        specifier: workspace:*
+        version: link:../../modules/change
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels
@@ -336,6 +342,24 @@ importers:
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/change:
+    dependencies:
+      '@itsm/business-time':
+        specifier: workspace:*
+        version: link:../../packages/business-time
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-approvals':
+        specifier: workspace:*
+        version: link:../approvals
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -655,6 +679,9 @@ importers:
       '@itsm/module-catalogue':
         specifier: workspace:*
         version: link:../../modules/catalogue
+      '@itsm/module-change':
+        specifier: workspace:*
+        version: link:../../modules/change
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels

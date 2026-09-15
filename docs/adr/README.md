@@ -38,6 +38,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0023](0023-integration-gateway-single-egress.md) | The integration gateway is the only way out | Accepted | MOD-14-E3, MOD-06-E2 |
 | [0024](0024-rotas-computed-not-stored.md) | Rotas, turns and shifts are computed from a definition, never stored as a cursor | Accepted | MOD-20 |
 | [0025](0025-major-incident-closed-by-its-review.md) | A major incident is closed by its review, not by a status change | Accepted | MOD-08-E1 |
+| [0026](0026-change-control-enforced-or-honest.md) | Change control is enforced where it can be and honest where it cannot | Accepted | MOD-08-E3 |
 
 ## Template
 

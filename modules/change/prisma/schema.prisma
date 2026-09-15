@@ -1,0 +1,147 @@
+/// MOD-08-E3 Change management (PH-4).
+///
+/// Change control has one characteristic failure, and it is not changes going
+/// wrong — it is changes going *unrecorded*. Every control that makes recording
+/// a change more expensive than not recording one buys a little safety and
+/// spends a lot of coverage, and a change record with holes in it is worse than
+/// none, because it is trusted.
+///
+/// So the controls here are arranged to be cheap where they can be refused
+/// (a blackout window is enforced, not warned about) and honest where they
+/// cannot (an emergency change is recorded first and approved afterwards).
+
+model Change {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  number        String
+  title         String
+  description   String?
+  /// standard | normal | emergency — the three ITIL kinds, and the only thing
+  /// that decides how a change is approved.
+  kind          String    @default("normal")
+  /// draft | submitted | approved | rejected | scheduled | implementing | review | closed | cancelled
+  status        String    @default("draft")
+  risk          String    @default("medium")
+  impact        String    @default("medium")
+
+  serviceId     String?   @map("service_id") @db.Uuid
+  categoryId    String?   @map("category_id") @db.Uuid
+  /// The problem this change is the permanent fix for, when it is one.
+  problemId     String?   @map("problem_id") @db.Uuid
+  /// The major incident that forced it, for an emergency change.
+  majorIncidentId String? @map("major_incident_id") @db.Uuid
+
+  requestedBy   String?   @map("requested_by") @db.Uuid
+  /// Who is accountable for it going in and coming out again.
+  ownerId       String?   @map("owner_id") @db.Uuid
+
+  /// The pre-approved template this came from, for a standard change. Pinned
+  /// to the version that was approved, so editing the template later cannot
+  /// retroactively change what somebody signed off.
+  templateId      String? @map("template_id") @db.Uuid
+  templateVersion Int?    @map("template_version")
+
+  /// What the plan is, and what happens when it does not work. A change with
+  /// no back-out plan is a change nobody can undo at 2am.
+  implementationPlan String? @map("implementation_plan")
+  backoutPlan        String? @map("backout_plan")
+  testPlan           String? @map("test_plan")
+
+  plannedStartAt DateTime? @map("planned_start_at") @db.Timestamptz(6)
+  plannedEndAt   DateTime? @map("planned_end_at") @db.Timestamptz(6)
+  actualStartAt  DateTime? @map("actual_start_at") @db.Timestamptz(6)
+  actualEndAt    DateTime? @map("actual_end_at") @db.Timestamptz(6)
+
+  /// Why it needed no approval, when it needed none: the template it came
+  /// from, or that no policy matched. An unapproved change with no reason
+  /// recorded is indistinguishable from one that slipped through.
+  approvalNote  String?   @map("approval_note")
+  approvalRequestId String? @map("approval_request_id") @db.Uuid
+  /// An emergency change owes one *afterwards*. Null until it is given.
+  retrospectiveApprovedAt DateTime? @map("retrospective_approved_at") @db.Timestamptz(6)
+  retrospectiveApprovedBy String? @map("retrospective_approved_by") @db.Uuid
+
+  /// successful | successful_with_issues | backed_out | failed
+  closeCode     String?   @map("close_code")
+  closeNotes    String?   @map("close_notes")
+
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closedAt      DateTime? @map("closed_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status, plannedStartAt])
+  @@index([tenantId, kind, status])
+  @@index([tenantId, serviceId, plannedStartAt])
+  @@map("change")
+}
+
+/// When changes may happen, and when they may not.
+///
+/// One table with a `kind` because the two are the same shape and the
+/// interesting behaviour is in how they combine: a blackout beats a change
+/// window, always. Two tables would invite two subtly different overlap
+/// calculations, and the one that was wrong would be the one that let a change
+/// through on year-end close.
+model ChangeWindow {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  /// change | blackout
+  kind       String    @default("change")
+  name       String
+  /// Why this blackout exists, for the person it just refused.
+  reason     String?
+  timeZone   String    @map("time_zone")
+
+  /// An absolute range — a year-end freeze, a datacentre move.
+  startsAt   DateTime? @map("starts_at") @db.Timestamptz(6)
+  endsAt     DateTime? @map("ends_at") @db.Timestamptz(6)
+
+  /// Or a weekly one — "every Saturday 22:00 to 02:00". Local wall-clock
+  /// times against a zone, not instants, because "Saturday at ten" stays true
+  /// across a daylight-saving change and an instant does not (ADR-0024).
+  weekday    String?
+  startTime  String?   @map("start_time")
+  endTime    String?   @map("end_time")
+
+  /// Null means every service. A window scoped to a service does not restrain
+  /// a change to another one.
+  serviceIds String[]  @default([]) @map("service_ids")
+  status     String    @default("active")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Uuid
+
+  @@index([tenantId, kind, status])
+  @@map("change_window")
+}
+
+/// A change that has been approved in advance, as a class.
+///
+/// The template is what carries the approval, so a standard change raised from
+/// it needs none of its own. Versioned for the same reason every other
+/// definition in this platform is: a change approved under version 3 must not
+/// be answerable for what version 4 says.
+model StandardChangeTemplate {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  key           String
+  name          String
+  description   String?
+  version       Int      @default(1)
+  /// draft | published | retired. Only a published template pre-approves.
+  status        String   @default("draft")
+  risk          String   @default("low")
+  implementationPlan String? @map("implementation_plan")
+  backoutPlan        String? @map("backout_plan")
+  testPlan           String? @map("test_plan")
+  /// Who signed it off, and when — the approval every change from it inherits.
+  approvedBy    String?  @map("approved_by") @db.Uuid
+  approvedAt    DateTime? @map("approved_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("standard_change_template")
+}
