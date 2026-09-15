@@ -20,6 +20,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   bootstrapModules();
 
   const app = Fastify({
+    // A survey link carries a signed token in the path, around 300 characters;
+    // Fastify's default of 100 answered every one of them with 414 in the
+    // first live run. Two kilobytes is what browsers and mail clients carry
+    // without complaint, and nothing else here comes close.
+    maxParamLength: 2048,
     logger: false,
     // Cloudflare terminates TLS and adds the forwarding headers; trusting them
     // is what makes request.ip the real client for rate limiting and audit.
