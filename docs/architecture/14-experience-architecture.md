@@ -181,10 +181,15 @@ until something tried to use the API the way an application does:
   client sending anything else — `isInternal: true`, say — has its internal
   note delivered to the requester. This one is worth a schema that refuses
   unknown keys rather than a convention.
-- **There is still no JIT provisioning and no `POST /auth/session`.** Doc 09 §2
-  describes both; `userService.provisionFromToken` exists and has no caller. A
-  person who authenticates against Keycloak but has no row in `user` cannot use
-  either application.
+- **Nobody records a session, so `GET /me/sessions` is always empty.** Doc 09
+  §2 has the BFF call `POST /api/v1/auth/session` after a sign-in "so the
+  platform records the session and runs JIT". JIT is fine — the context plugin
+  provisions from the token on the first authenticated request, which is a
+  better place for it. Session recording is not: `userService.recordSession`
+  has no caller outside a test, so `GET /me/sessions` lists nothing, `DELETE
+  /me/sessions/:id` has nothing to revoke, and the `sess:deny:` denylist the
+  token verifier checks on every request never gets an entry. "Sign out
+  everywhere" is a promise doc 08 §9 makes and the platform cannot keep.
 - **The catalogue's entitlement filter is the only thing between a requester
   and a request type they may not have**, and it is applied twice — once when
   browsing and once on submit (MOD-05). That is right, and worth noticing:
