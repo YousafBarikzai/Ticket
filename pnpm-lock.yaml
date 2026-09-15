@@ -522,6 +522,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../approvals
+      '@itsm/module-integrations':
+        specifier: workspace:*
+        version: link:../integrations
       '@itsm/module-notifications':
         specifier: workspace:*
         version: link:../notifications

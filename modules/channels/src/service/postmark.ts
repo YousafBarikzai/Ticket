@@ -2,7 +2,6 @@ import { logger, metrics } from '@itsm/platform';
 import type { EmailTransport, OutboundEmail, ProviderRef } from './email-transport.js';
 import { constantTimeEquals, verifyHmac } from './email-transport.js';
 import type { ParsedInbound } from './inbound-service.js';
-import { resolveCredential } from './credentials.js';
 
 /**
  * Postmark (OD-03, closed as "both, per tenant").
@@ -20,10 +19,16 @@ import { resolveCredential } from './credentials.js';
  */
 
 export interface PostmarkOptions {
-  /** Server token, by reference (see credentials.ts). */
-  tokenRef: string;
-  /** The secret this tenant's webhook URL carries, by reference. */
-  webhookSecretRef?: string;
+  /**
+   * The resolved server token, not a reference.
+   *
+   * Resolution happens once in `transportForAccount`, so an adapter never
+   * reaches for a credential store, never has to be async where the interface
+   * is sync, and can be tested without one.
+   */
+  token: string;
+  /** The resolved secret this tenant's webhook URL carries. */
+  webhookSecret?: string;
   apiBase?: string;
   fetchImpl?: typeof fetch;
 }
@@ -47,15 +52,14 @@ export function postmarkTransport(options: PostmarkOptions): EmailTransport {
     name: 'postmark',
 
     async sendMessage(message: OutboundEmail): Promise<ProviderRef> {
-      const token = resolveCredential(options.tokenRef);
-      if (!token) throw new Error(`Postmark is selected but ${options.tokenRef} is not configured`);
+      if (!options.token) throw new Error('Postmark is selected for this mailbox but its server token is not configured');
 
       const response = await call(`${base}/email`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           accept: 'application/json',
-          'X-Postmark-Server-Token': token.value,
+          'X-Postmark-Server-Token': options.token,
         },
         body: JSON.stringify({
           To: message.to,
@@ -101,7 +105,7 @@ export function postmarkTransport(options: PostmarkOptions): EmailTransport {
     },
 
     verify(rawBody: string, headers: Record<string, string | undefined>): boolean {
-      const secret = resolveCredential(options.webhookSecretRef);
+      const secret = options.webhookSecret;
       if (!secret) {
         // No secret configured means nothing to check, and accepting anyway
         // would make this endpoint an open door into the ticket system.
@@ -111,12 +115,12 @@ export function postmarkTransport(options: PostmarkOptions): EmailTransport {
 
       // Either a signature a proxy added, or the secret the URL carries.
       const signature = headers['x-postmark-signature'] ?? headers['x-webhook-signature'];
-      if (signature) return verifyHmac(rawBody, signature, secret.value);
+      if (signature) return verifyHmac(rawBody, signature, secret);
 
       const presented = headers['x-webhook-secret'];
       if (!presented) return false;
       // Constant-time: `===` on a secret returns faster the sooner it differs.
-      return constantTimeEquals(presented, secret.value);
+      return constantTimeEquals(presented, secret);
     },
   };
 }

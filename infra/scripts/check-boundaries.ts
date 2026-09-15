@@ -140,6 +140,58 @@ for (const area of ['modules', 'packages', 'apps']) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 6. The integration gateway is the only way out (ADR-0023).
+//
+// Checked mechanically because the failure is silent: a module that calls an
+// external host directly gets no destination check, no credential handling, no
+// circuit breaker and no redacted log — and works perfectly until somebody
+// points it at an address it should not reach. A convention would drift; this
+// does not.
+//
+// Only outbound `fetch` to a host is a violation. Tests stub it, the gateway
+// itself must call it, and the adapters the gateway has not yet absorbed are
+// listed rather than exempted by pattern, so adding one is a deliberate edit.
+// ---------------------------------------------------------------------------
+const EGRESS_ALLOWED = [
+  'modules/integrations/src/gateway/',
+  // Talks to Meilisearch, which is infrastructure this deployment runs rather
+  // than a tenant-configured destination. Worth moving behind the gateway when
+  // the gateway grows a non-HTTP transport; not worth a special case in it now.
+  'modules/search/src/backend/meilisearch.ts',
+  // The email providers. Their destinations are fixed by the adapter rather
+  // than configured by a tenant, but they should move behind the gateway in
+  // PH-4 so their calls are logged and their breakers shared.
+  'modules/channels/src/service/postmark.ts',
+  'modules/channels/src/service/microsoft-graph.ts',
+  // OIDC discovery and the JWKS, from the issuer this deployment is configured
+  // with — an operator's URL, not a tenant's, fetched before any tenant context
+  // exists. The gateway needs one to log against, so this is a genuine
+  // exception rather than an unconverted caller.
+  'apps/api/src/auth/verify.ts',
+];
+
+const FETCH_PATTERN = /(?:^|[^.\w])fetch\s*\(/;
+
+for (const file of [...walk(join(root, 'modules')), ...walk(join(root, 'packages')), ...walk(join(root, 'apps'))]) {
+  const relativePath = relative(root, file);
+  if (EGRESS_ALLOWED.some((allowed) => relativePath.startsWith(allowed))) continue;
+  if (relativePath.includes('__tests__') || relativePath.includes('/web/') || relativePath.endsWith('.tsx')) continue;
+
+  const source = readFileSync(file, 'utf8');
+  source.split('\n').forEach((text, index) => {
+    if (!FETCH_PATTERN.test(text)) return;
+    // A type reference, not a call.
+    if (/typeof fetch|fetchImpl\??:/.test(text)) return;
+    violations.push({
+      file: relativePath,
+      line: index + 1,
+      rule: 'egress-through-gateway-only',
+      detail: 'calls fetch directly; outbound calls go through modules/integrations gateway (ADR-0023)',
+    });
+  });
+}
+
 if (violations.length > 0) {
   console.error(`\nModule contract violations (${violations.length}):\n`);
   for (const violation of violations) {

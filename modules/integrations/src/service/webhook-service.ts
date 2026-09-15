@@ -1,8 +1,10 @@
+import { call, GatewayRefusedError } from '../gateway/gateway.js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { EventEnvelope } from '@itsm/contracts';
 import {
   type TenantContext,
   authz,
+  currentContext,
   enqueue,
   logger,
   metrics,
@@ -154,9 +156,41 @@ export type HttpSender = (
   headers: Record<string, string>,
 ) => Promise<{ status: number; ok: boolean }>;
 
+/**
+ * Webhook delivery, through the gateway.
+ *
+ * A subscription's URL is tenant-configured, which makes outbound webhooks the
+ * same request-forgery surface as a connector — and this one predates the
+ * gateway: it called `fetch` directly from Phase 1, so a subscription pointed
+ * at `169.254.169.254` would have been delivered to faithfully, signed, on
+ * every event. Found by the module-contract check added with ADR-0023, which is
+ * the argument for checking the rule mechanically rather than trusting it.
+ */
 const defaultSender: HttpSender = async (url, body, headers) => {
-  const response = await fetch(url, { method: 'POST', body, headers, signal: AbortSignal.timeout(10_000) });
-  return { status: response.status, ok: response.ok };
+  const ctx = currentContext();
+  if (!ctx) throw new Error('a webhook cannot be delivered without a tenant context');
+
+  try {
+    const response = await call(ctx, {
+      connector: 'webhook',
+      method: 'POST',
+      url,
+      headers,
+      body: JSON.parse(body) as unknown,
+      timeoutMs: 10_000,
+      cause: { kind: 'webhook', id: headers['x-itsm-delivery'] ?? 'unknown' },
+    });
+    return { status: response.status, ok: response.status >= 200 && response.status < 300 };
+  } catch (error) {
+    if (error instanceof GatewayRefusedError) {
+      // Not retryable: the subscription's URL is wrong, and twelve attempts
+      // over a day will not make it right. Reported as a 400 so the delivery
+      // is marked dead rather than retried.
+      logger.warn('a webhook subscription points somewhere it may not', { reason: error.message });
+      return { status: 400, ok: false };
+    }
+    throw error;
+  }
 };
 
 let sender: HttpSender = defaultSender;
