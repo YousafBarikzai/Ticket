@@ -118,6 +118,9 @@ Rules enforced by lint (custom ESLint rules in `packages/config`):
 3. A module may not reference another module's Prisma model names. Cross-module reads go through the owning service or a read model the consumer maintains from events.
 4. No `any` in `events/` or in anything re-exported into `packages/contracts`.
 5. Every `service/` mutating method must call `audit.record(...)` and, where a catalogue event exists, `eventBus.publish(tx, ...)` within the same transaction (checked by an integration-test convention: "every mutating endpoint emits audit and outbox rows").
+6. Outbound HTTP goes through the MOD-14 gateway; nothing calls `fetch` directly (ADR-0023).
+7. Every module is a root dependency, so an integration suite that imports it resolves.
+8. JSON is never compared by stringifying it. `JSON.stringify(a) === JSON.stringify(b)` compares writing order, and `jsonb` does not preserve writing order, so the comparison answers "different" for ever once a value has been through the database — silently, and in whichever direction costs most. `jsonEquals` from `packages/platform` is the comparison. The audit hash chain is the one exemption: its ordering predates the helper and cannot change without invalidating every hash already written.
 
 ## 4. The manifest
 

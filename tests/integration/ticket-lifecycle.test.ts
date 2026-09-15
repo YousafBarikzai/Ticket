@@ -188,6 +188,55 @@ describe('optimistic locking', () => {
   });
 });
 
+describe('an update that changes nothing is not a change', () => {
+  it('does not record a change when custom fields are re-sent with their keys in another order', async () => {
+    // `custom` is a JSONB column, so what comes back from the database has been
+    // through PostgreSQL's key ordering. Compared by stringifying, an identical
+    // re-send reads as a change: an audit row, a version bump, a
+    // `ticket.updated` event, and every rule and notification waiting on one.
+    // Nothing fails; the ticket just acquires a history of edits nobody made.
+    const created = await request<{ number: string; version: number }>('/api/v1/tickets', {
+      method: 'POST',
+      token: agentToken(),
+      body: {
+        type: 'incident',
+        title: 'Custom field no-op',
+        sourceChannel: 'api',
+        custom: { alpha: 'one', bravo: 'two', nested: { x: 1, y: 2 } },
+      },
+    });
+    expect(created.status).toBe(201);
+
+    const resent = await request<{ version: number }>(`/api/v1/tickets/${created.body.number}`, {
+      method: 'PATCH',
+      token: agentToken(),
+      // The same value, written the other way round.
+      body: { custom: { nested: { y: 2, x: 1 }, bravo: 'two', alpha: 'one' } },
+      headers: { 'if-match': `"${created.body.version}"` },
+    });
+    expect(resent.status).toBe(200);
+    expect(resent.body.version).toBe(created.body.version);
+  });
+
+  it('still records a change when a custom field really differs', async () => {
+    // The guard against the fix going too far: a no-op must be quiet, and a
+    // real edit must not be.
+    const created = await request<{ number: string; version: number }>('/api/v1/tickets', {
+      method: 'POST',
+      token: agentToken(),
+      body: { type: 'incident', title: 'Custom field edit', sourceChannel: 'api', custom: { alpha: 'one' } },
+    });
+    const changed = await request<{ version: number }>(`/api/v1/tickets/${created.body.number}`, {
+      method: 'PATCH',
+      token: agentToken(),
+      body: { custom: { alpha: 'two' } },
+      headers: { 'if-match': `"${created.body.version}"` },
+    });
+    expect(changed.status).toBe(200);
+    expect(changed.body.version).toBe(created.body.version + 1);
+  });
+});
+
 describe('the state machine', () => {
   async function freshTicket(): Promise<string> {
     const response = await request<{ number: string }>('/api/v1/tickets', {
