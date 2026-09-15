@@ -19,6 +19,14 @@ export interface VerifiedToken {
   email?: string;
   scopes?: string[];
   acr?: string;
+  /**
+   * When the token stops being accepted, as epoch seconds.
+   *
+   * Carried out of verification because the session denylist needs it: an
+   * entry is only worth keeping for as long as a token bearing that `sid`
+   * could still be presented, and the issuer is the only thing that knows.
+   */
+  expiresAt?: number;
   impersonation?: { byUserId: string; reason: string };
 }
 
@@ -170,6 +178,7 @@ export async function verifyAccessToken(authorisation: string): Promise<Verified
     tenantId,
     userId: payload.itsm_user_id ?? payload.sub,
     subject: payload.sub,
+    ...(payload.exp !== undefined ? { expiresAt: payload.exp } : {}),
     ...(payload.sid ? { sessionId: payload.sid } : {}),
     ...(payload.name ?? payload.preferred_username ? { name: payload.name ?? payload.preferred_username } : {}),
     ...(payload.email ? { email: payload.email } : {}),

@@ -102,15 +102,18 @@ export function workbench(client: Client) {
       }),
 
     /**
-     * No `If-Match`, because `POST /tickets/:id/assign` does not read one.
-     * Sending it anyway would suggest a guarantee the API does not make: two
-     * agents taking the same ticket at the same moment is last-write-wins
-     * here, where a transition or an edit is refused. Recorded in doc 23's
-     * open list rather than papered over in the client.
+     * `If-Match` is optional here, and that asymmetry with `transition` is
+     * deliberate on both sides. A queue screen assigns from a list it read a
+     * minute ago; requiring a version would mean re-reading every row before
+     * every claim, and the API says so by not demanding one. But a caller that
+     * holds the version should send it: two agents claiming the same ticket in
+     * the same second then get a 409 rather than one of them silently losing
+     * the ticket they thought they had taken.
      */
-    assign: (idOrNumber: string, assigneeId: string | null, groupId?: string | null) =>
+    assign: (idOrNumber: string, assigneeId: string | null, groupId?: string | null, version?: number) =>
       client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/assign`, {
         method: 'POST',
+        ...(version !== undefined ? { ifMatch: version } : {}),
         body: { assigneeId, ...(groupId !== undefined ? { groupId } : {}), method: 'manual' },
       }),
 

@@ -84,13 +84,13 @@ export async function problemRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/problems', async (request, reply) => {
     const ctx = contextOf(request);
-    const problem = await problemService.createProblem(ctx, createProblemSchema.parse(request.body));
+    const problem = await problemService.createProblem(ctx, createProblemSchema.strict().parse(request.body));
     return reply.code(201).send({ number: problem.number, title: problem.title, status: problem.status });
   });
 
   app.post('/problems/:number/tickets', async (request) => {
     const ctx = contextOf(request);
-    return problemService.linkTickets(ctx, byNumber.parse(request.params).number, linkSchema.parse(request.body));
+    return problemService.linkTickets(ctx, byNumber.parse(request.params).number, linkSchema.strict().parse(request.body));
   });
 
   app.delete('/problems/:number/tickets/:ticketId', async (request, reply) => {
@@ -105,7 +105,7 @@ export async function problemRoutes(app: FastifyInstance): Promise<void> {
     const problem = await problemService.transition(
       ctx,
       byNumber.parse(request.params).number,
-      transitionSchema.parse(request.body),
+      transitionSchema.strict().parse(request.body),
     );
     return { number: problem.number, status: problem.status, rootCause: problem.rootCause };
   });
@@ -136,7 +136,7 @@ export async function problemRoutes(app: FastifyInstance): Promise<void> {
     const knownError = await knownErrorService.publishKnownError(
       ctx,
       byNumber.parse(request.params).number,
-      publishSchema.parse(request.body),
+      publishSchema.strict().parse(request.body),
     );
     return { symptom: knownError.symptom, status: knownError.status, publishedAt: knownError.publishedAt.toISOString() };
   });

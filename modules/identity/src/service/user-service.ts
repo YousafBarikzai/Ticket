@@ -15,6 +15,7 @@ import {
   invalidatePermissions,
 } from '@itsm/platform';
 import { events } from '@itsm/contracts';
+import { denySession, denySessions } from './session-denylist.js';
 
 /** MOD-01 user, team and role administration, plus just-in-time provisioning. */
 
@@ -213,6 +214,12 @@ export async function deactivateUser(ctx: TenantContext, id: string, reason?: st
       data: { status: 'inactive', updatedBy: ctx.actor.id, version: { increment: 1 } },
     });
     // Access ends immediately: sessions, keys and assignments all go at once.
+    // The denylist first, for the same reason `revokeSession` does it first —
+    // and this is where it mattered most. Marking `revoked_at` on a row that
+    // nothing reads at request time left a deactivated person's token working
+    // until it expired.
+    const live = await tx.session.findMany({ where: { userId: id, revokedAt: null } });
+    await denySessions(live.map((session) => ({ sid: session.sid, expiresAt: session.expiresAt })));
     await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     await tx.apiKey.updateMany({ where: { serviceUserId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     await tx.roleAssignment.deleteMany({ where: { userId: id } });
@@ -423,6 +430,18 @@ export async function recordSession(
   ctx: TenantContext,
   input: { userId: string; sid: string; expiresAt: Date; ip?: string; userAgent?: string; device?: string },
 ) {
+  // The same check `revokeSession` makes, and deliberately the same expression.
+  // With the `own` scope every role carries, this passes for your own session
+  // and refuses somebody else's; only the `any` scope an administrator holds
+  // records a session on another person's behalf. `authz.require` would not do:
+  // every role has the key, so only the scope distinguishes the two.
+  authz.requireVisible(
+    ctx,
+    'identity.session.manage',
+    { aggregate: 'user', record: { id: input.userId, primaryOrgId: null, managerId: null } },
+    'session',
+  );
+
   return transaction(ctx, async (tx) => {
     const existing = await tx.session.findFirst({ where: { sid: input.sid } });
     if (existing) {
@@ -460,6 +479,13 @@ export async function revokeSession(ctx: TenantContext, sessionId: string) {
       'session',
     );
     if (session.revokedAt) return session;
+
+    // Before the update, deliberately. A rollback then leaves a deny entry for
+    // a session that was not revoked after all — somebody signed out who did
+    // not need to be, which is the safe direction. The other order commits a
+    // revocation that never takes effect, and the token carries on working
+    // until it expires.
+    await denySession(session.sid, session.expiresAt);
 
     const updated = await tx.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
     await recordAudit(tx, ctx, { action: 'session.revoked', targetType: 'session', targetId: sessionId, after: { revoked: true } });

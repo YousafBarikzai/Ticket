@@ -21,7 +21,7 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/approvals/:id/decide', async (request) => {
     const ctx = contextOf(request);
-    const body = approvalService.decisionSchema.parse(request.body);
+    const body = approvalService.decisionSchema.strict().parse(request.body);
     return approvalService.decide(ctx, byId.parse(request.params).id, body);
   });
 
@@ -44,7 +44,7 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/approval-policies', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await approvalService.createPolicy(ctx, policyDefinitionSchema.parse(request.body));
+    const created = await approvalService.createPolicy(ctx, policyDefinitionSchema.strict().parse(request.body));
     reply.code(201);
     return created;
   });

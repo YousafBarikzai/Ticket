@@ -62,7 +62,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/ai/suggest', async (request, reply) => {
     const ctx = contextOf(request);
-    const body = requestSchema.parse(request.body);
+    const body = requestSchema.strict().parse(request.body);
     const result = await requestSuggestion(ctx, body);
     // 201 when the answer is already there — retrieval needs no worker — and
     // 202 when something has been queued. The difference is what the client
@@ -130,7 +130,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post('/ai/suggestions/:id/outcome', async (request) => {
     const ctx = contextOf(request);
     const { id } = byId.parse(request.params);
-    const body = outcomeSchema.parse(request.body);
+    const body = outcomeSchema.strict().parse(request.body);
     const updated = await recordOutcome(ctx, id, body);
     return { id: updated.id, outcome: updated.outcome, outcomeAt: updated.outcomeAt?.toISOString() ?? null };
   });
@@ -143,7 +143,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/ai/budget', async (request) => {
     const ctx = contextOf(request);
-    const body = budgetSchema.parse(request.body);
+    const body = budgetSchema.strict().parse(request.body);
     const updated = await setBudget(ctx, body);
     return {
       periodKey: updated.periodKey,

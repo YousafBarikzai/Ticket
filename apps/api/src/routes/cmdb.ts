@@ -73,13 +73,13 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/ci-classes', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await ciService.createClass(ctx, classSchema.parse(request.body));
+    const created = await ciService.createClass(ctx, classSchema.strict().parse(request.body));
     return reply.code(201).send({ id: created.id, key: created.key, name: created.name });
   });
 
   app.patch('/ci-classes/:key', async (request) => {
     const ctx = contextOf(request);
-    const updated = await ciService.updateClass(ctx, byKey.parse(request.params).key, updateClassSchema.parse(request.body));
+    const updated = await ciService.updateClass(ctx, byKey.parse(request.params).key, updateClassSchema.strict().parse(request.body));
     return { id: updated.id, key: updated.key, name: updated.name, parentId: updated.parentId };
   });
 
@@ -97,7 +97,7 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/cis', async (request, reply) => {
     const ctx = contextOf(request);
-    return reply.code(201).send(ci(await ciService.createCi(ctx, createCiSchema.parse(request.body))));
+    return reply.code(201).send(ci(await ciService.createCi(ctx, createCiSchema.strict().parse(request.body))));
   });
 
   app.get('/cis/:id', async (request) => {
@@ -107,17 +107,17 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/cis/:id', async (request) => {
     const ctx = contextOf(request);
-    return ci(await ciService.updateCi(ctx, byId.parse(request.params).id, updateCiSchema.parse(request.body)));
+    return ci(await ciService.updateCi(ctx, byId.parse(request.params).id, updateCiSchema.strict().parse(request.body)));
   });
 
   app.post('/cis/:id/status', async (request) => {
     const ctx = contextOf(request);
-    return ci(await ciService.setStatus(ctx, byId.parse(request.params).id, statusSchema.parse(request.body)));
+    return ci(await ciService.setStatus(ctx, byId.parse(request.params).id, statusSchema.strict().parse(request.body)));
   });
 
   app.post('/cis/:id/retire', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ reason: z.string().min(1).max(2000) }).parse(request.body);
+    const body = z.object({ reason: z.string().min(1).max(2000) }).strict().parse(request.body);
     return ci(await ciService.retireCi(ctx, byId.parse(request.params).id, body.reason));
   });
 
@@ -133,7 +133,7 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/ci-relationships', async (request, reply) => {
     const ctx = contextOf(request);
-    const result = await ciService.relate(ctx, relationshipSchema.parse(request.body));
+    const result = await ciService.relate(ctx, relationshipSchema.strict().parse(request.body));
     // The sentence goes back so whoever wrote it can see the direction they
     // actually recorded, which is the mistake worth catching immediately.
     return reply.code(result.created ? 201 : 200).send({ id: result.relationship.id, reads: result.description });
@@ -141,7 +141,7 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/ci-relationships', async (request, reply) => {
     const ctx = contextOf(request);
-    await ciService.unrelate(ctx, relationshipSchema.parse(request.body));
+    await ciService.unrelate(ctx, relationshipSchema.strict().parse(request.body));
     reply.status(204);
   });
 
@@ -177,13 +177,13 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
   // ---- links to records --------------------------------------------------
   app.post('/ci-links', async (request, reply) => {
     const ctx = contextOf(request);
-    const result = await linkService.linkCi(ctx, linkSchema.parse(request.body));
+    const result = await linkService.linkCi(ctx, linkSchema.strict().parse(request.body));
     return reply.code(result.created ? 201 : 200).send(result);
   });
 
   app.delete('/ci-links', async (request, reply) => {
     const ctx = contextOf(request);
-    await linkService.unlinkCi(ctx, linkSchema.parse(request.body));
+    await linkService.unlinkCi(ctx, linkSchema.strict().parse(request.body));
     reply.status(204);
   });
 
@@ -213,7 +213,7 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/assets', async (request, reply) => {
     const ctx = contextOf(request);
-    return reply.code(201).send(asset(await assetService.createAsset(ctx, createAssetSchema.parse(request.body))));
+    return reply.code(201).send(asset(await assetService.createAsset(ctx, createAssetSchema.strict().parse(request.body))));
   });
 
   app.get('/assets/:tag', async (request) => {
@@ -233,12 +233,12 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/assets/:tag', async (request) => {
     const ctx = contextOf(request);
-    return asset(await assetService.updateAsset(ctx, byTag.parse(request.params).tag, updateAssetSchema.parse(request.body)));
+    return asset(await assetService.updateAsset(ctx, byTag.parse(request.params).tag, updateAssetSchema.strict().parse(request.body)));
   });
 
   app.post('/assets/:tag/assign', async (request) => {
     const ctx = contextOf(request);
-    const result = await assetService.assignAsset(ctx, byTag.parse(request.params).tag, assignSchema.parse(request.body));
+    const result = await assetService.assignAsset(ctx, byTag.parse(request.params).tag, assignSchema.strict().parse(request.body));
     return asset(result.asset);
   });
 
@@ -252,7 +252,7 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const body = z
       .object({ reason: z.string().min(1).max(2000), disposed: z.boolean().default(false) })
-      .parse(request.body);
+      .strict().parse(request.body);
     return asset(await assetService.retireAsset(ctx, byTag.parse(request.params).tag, body.reason, body.disposed));
   });
 
@@ -286,7 +286,7 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/asset-models', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await assetService.createModel(ctx, modelSchema.parse(request.body));
+    const created = await assetService.createModel(ctx, modelSchema.strict().parse(request.body));
     return reply.code(201).send({ id: created.id, manufacturer: created.manufacturer, model: created.model });
   });
 }

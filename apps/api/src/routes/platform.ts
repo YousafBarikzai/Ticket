@@ -36,7 +36,7 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/tenants', async (request, reply) => {
-    const input = tenantService.provisionTenantSchema.parse(request.body);
+    const input = tenantService.provisionTenantSchema.strict().parse(request.body);
     const result = await tenantService.provisionTenant(input);
     reply.status(201);
     return result;
@@ -99,7 +99,7 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
   app.put('/tenants/:id/plan', async (request) => {
     const ctx = contextOf(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const body = z.object({ planKey: z.string().min(1).max(40) }).parse(request.body);
+    const body = z.object({ planKey: z.string().min(1).max(40) }).strict().parse(request.body);
     const tenant = await planService.assignPlan(ctx, id, body.planKey);
     return { id, planKey: tenant?.planKey ?? null };
   });
@@ -161,7 +161,7 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
   app.post('/ai/prompts/:key/versions', async (request, reply) => {
     const ctx = contextOf(request);
     const { key } = promptKey.parse(request.params);
-    const created = await promptService.savePromptVersion(ctx, key, promptService.promptVersionSchema.parse(request.body));
+    const created = await promptService.savePromptVersion(ctx, key, promptService.promptVersionSchema.strict().parse(request.body));
     reply.code(201);
     return { key, version: created.version, status: created.status };
   });

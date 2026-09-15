@@ -49,14 +49,14 @@ export async function discoveryRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/discovery/sources', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await discoveryService.createSource(ctx, sourceSchema.parse(request.body));
+    const created = await discoveryService.createSource(ctx, sourceSchema.strict().parse(request.body));
     return reply.code(201).send(source(created));
   });
 
   app.patch('/discovery/sources/:key', async (request) => {
     const ctx = contextOf(request);
     return source(
-      await discoveryService.updateSource(ctx, byKey.parse(request.params).key, updateSourceSchema.parse(request.body)),
+      await discoveryService.updateSource(ctx, byKey.parse(request.params).key, updateSourceSchema.strict().parse(request.body)),
     );
   });
 
@@ -75,7 +75,7 @@ export async function discoveryRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/discovery/rules', async (request) => {
     const ctx = contextOf(request);
-    const rule = await discoveryService.setRule(ctx, ruleSchema.parse(request.body));
+    const rule = await discoveryService.setRule(ctx, ruleSchema.strict().parse(request.body));
     return { id: rule.id, field: rule.field, policy: rule.policy };
   });
 
@@ -107,7 +107,7 @@ export async function discoveryRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/discovery/proposals/:id/reject', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ reason: z.string().min(1).max(2000) }).parse(request.body);
+    const body = z.object({ reason: z.string().min(1).max(2000) }).strict().parse(request.body);
     const rejected = await proposalService.rejectProposal(ctx, byId.parse(request.params).id, body.reason);
     return { id: rejected.id, status: rejected.status, reason: rejected.reason };
   });
@@ -121,7 +121,7 @@ export async function discoveryRoutes(app: FastifyInstance): Promise<void> {
         kind: z.enum(['create_ci', 'update_ci', 'create_relationship']),
         limit: z.number().int().min(1).max(200).optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
     return proposalService.acceptAll(ctx, body);
   });
 
@@ -143,7 +143,7 @@ export async function discoveryRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/suppliers', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await contractService.createSupplier(ctx, supplierSchema.parse(request.body));
+    const created = await contractService.createSupplier(ctx, supplierSchema.strict().parse(request.body));
     return reply.code(201).send({ id: created.id, name: created.name });
   });
 
@@ -176,7 +176,7 @@ export async function discoveryRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/contracts', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await contractService.createContract(ctx, contractSchema.parse(request.body));
+    const created = await contractService.createContract(ctx, contractSchema.strict().parse(request.body));
     return reply.code(201).send(contract(created));
   });
 

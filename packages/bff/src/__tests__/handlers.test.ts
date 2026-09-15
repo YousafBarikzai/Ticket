@@ -55,6 +55,21 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
 
+/**
+ * What `POST /api/v1/auth/session` answers.
+ *
+ * Every sign-in now tells the API about the session it just minted, so every
+ * test that signs somebody in makes one more request than it used to. Named
+ * rather than inlined, so the extra call is visible where it happens instead
+ * of being an unexplained `mockResolvedValueOnce`.
+ */
+const RECORDED = { id: 'sess-1', expiresAt: new Date(Date.now() + 3_600_000).toISOString(), lastSeenAt: new Date().toISOString() };
+
+/** True when this fetch call was the session recording rather than real work. */
+function isSessionRecord(call: unknown[]): boolean {
+  return String(call[0]).endsWith('/api/v1/auth/session');
+}
+
 function bffWith(env: Record<string, string | undefined>) {
   return createBff(APP, { TEST_ORIGIN: ORIGIN, API_BASE_URL: API, ...env });
 }
@@ -83,6 +98,7 @@ describe('signing in with no identity provider', () => {
     upstream.mockResolvedValueOnce(
       json({ accessToken: ACCESS, expiresInSeconds: 3600, tenantId: 't-1', userId: 'u-1', displayName: 'A Person' }, 201),
     );
+    upstream.mockResolvedValueOnce(json(RECORDED, 201));
 
     const form = new FormData();
     form.set('tenantSlug', 'acme');
@@ -109,6 +125,14 @@ describe('signing in with no identity provider', () => {
 
     const id = readCookie(cookie.split(';')[0], SESSION_COOKIE);
     await expect(store.get(id!)).resolves.toMatchObject({ tenantId: 't-1', accessToken: ACCESS });
+
+    // The API was told, with the token as the only evidence. Without this the
+    // session exists in Redis and nowhere else, which is what made "sign out
+    // everywhere" a promise the platform could not keep.
+    const record = upstream.mock.calls.find(isSessionRecord);
+    expect(record?.[0]).toBe(`${API}/api/v1/auth/session`);
+    expect(record?.[1]?.method).toBe('POST');
+    expect(record?.[1]?.headers?.authorization).toBe(`Bearer ${ACCESS}`);
   });
 
   it('sends the person back to the form with a reason rather than a stack trace', async () => {
@@ -172,11 +196,13 @@ describe('signing in through an identity provider', () => {
     return response.headers.get('location') ?? '';
   }
 
-  /** Queues one token-endpoint response, leaving discovery answered from its own route. */
+  /** Routes each of the three URLs a callback touches: discovery, token, session record. */
   function answerToken(body: unknown): void {
-    upstream.mockImplementation(async (input: string) =>
-      String(input).includes('.well-known') ? json(DISCOVERY) : json(body),
-    );
+    upstream.mockImplementation(async (input: string) => {
+      if (String(input).includes('.well-known')) return json(DISCOVERY);
+      if (String(input).endsWith('/api/v1/auth/session')) return json(RECORDED, 201);
+      return json(body);
+    });
   }
 
   it('redirects to the provider with a challenge and a state', async () => {
@@ -198,8 +224,12 @@ describe('signing in through an identity provider', () => {
     expect(response.headers.get('location')).toBe(`${ORIGIN}/tickets/INC-9`);
     expect(response.headers.get('set-cookie')).toContain('__Host-session=');
 
-    // The exchange carried the verifier that never left the server.
-    const body = String(upstream.mock.calls.at(-1)?.[1]?.body ?? '');
+    // The exchange carried the verifier that never left the server. Found by
+    // URL, not by position: the callback's last request is now the session
+    // record, and a positional assertion would have silently started checking
+    // the wrong call.
+    const exchange = upstream.mock.calls.find((call) => String(call[0]) === DISCOVERY.token_endpoint);
+    const body = String(exchange?.[1]?.body ?? '');
     expect(body).toContain('code_verifier=');
     expect(body).toContain('grant_type=authorization_code');
   });
@@ -235,6 +265,7 @@ describe('signing out', () => {
 
   async function signedIn(): Promise<string> {
     upstream.mockResolvedValueOnce(json({ accessToken: ACCESS, expiresInSeconds: 3600, tenantId: 't-1' }, 201));
+    upstream.mockResolvedValueOnce(json(RECORDED, 201));
     const form = new FormData();
     form.set('tenantSlug', 'acme');
     form.set('email', 'agent@acme.test');
@@ -277,6 +308,7 @@ describe('the proxy', () => {
 
   async function signedIn(): Promise<string> {
     upstream.mockResolvedValueOnce(json({ accessToken: ACCESS, expiresInSeconds: 3600, tenantId: 't-1' }, 201));
+    upstream.mockResolvedValueOnce(json(RECORDED, 201));
     const form = new FormData();
     form.set('tenantSlug', 'acme');
     form.set('email', 'agent@acme.test');
@@ -340,7 +372,11 @@ describe('the proxy', () => {
       ['metrics'],
     );
     expect(response.status).toBe(404);
-    expect(upstream).toHaveBeenCalledTimes(1); // only the sign-in
+    // Counted by destination rather than by total, because signing in now also
+    // records the session: what matters is that the refused path produced no
+    // request of its own.
+    const proxied = upstream.mock.calls.filter((call) => !isSessionRecord(call) && String(call[0]).includes('/metrics'));
+    expect(proxied).toHaveLength(0);
   });
 
   it('reports an unreachable API as 502, not 500', async () => {

@@ -27,13 +27,13 @@ export async function workflowRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/workflows', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await workflowService.createWorkflow(ctx, definitionSchema.parse(request.body));
+    const created = await workflowService.createWorkflow(ctx, definitionSchema.strict().parse(request.body));
     return reply.code(201).send(created);
   });
 
   app.patch('/workflows/:key', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ graph: graphSchema, changeNote: z.string().max(500).optional() }).parse(request.body);
+    const body = z.object({ graph: graphSchema, changeNote: z.string().max(500).optional() }).strict().parse(request.body);
     return workflowService.saveDraft(ctx, byKey.parse(request.params).key, body.graph, body.changeNote);
   });
 
@@ -50,7 +50,7 @@ export async function workflowRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/workflows/:key/rollback', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ toVersion: z.number().int().min(1) }).parse(request.body);
+    const body = z.object({ toVersion: z.number().int().min(1) }).strict().parse(request.body);
     return workflowService.rollbackWorkflow(ctx, byKey.parse(request.params).key, body.toVersion);
   });
 
@@ -94,13 +94,13 @@ export async function workflowRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     // A reason is required rather than optional: somebody will ask why this
     // step did not run, and "an operator skipped it" is not an answer.
-    const body = z.object({ reason: z.string().min(1).max(500) }).parse(request.body);
+    const body = z.object({ reason: z.string().min(1).max(500) }).strict().parse(request.body);
     return workflowService.skipStep(ctx, byId.parse(request.params).id, body.reason);
   });
 
   app.post('/workflow-runs/:id/cancel', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ reason: z.string().min(1).max(500) }).parse(request.body);
+    const body = z.object({ reason: z.string().min(1).max(500) }).strict().parse(request.body);
     return workflowService.cancelRun(ctx, byId.parse(request.params).id, body.reason);
   });
 }

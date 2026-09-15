@@ -216,7 +216,7 @@ export async function scimAdminRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/scim/role-mappings', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ data: z.unknown() }).parse(request.body);
+    const body = z.object({ data: z.unknown() }).strict().parse(request.body);
     const rows = await scimService.setRoleMappings(ctx, body.data as never);
     return { data: rows.map((row) => ({ groupName: row.groupName, roleKey: row.roleKey })) };
   });
