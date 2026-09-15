@@ -21,6 +21,13 @@ export const channelCommandSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('decideApproval'), approvalId: z.string().uuid(), decision: z.enum(['approved', 'rejected']) }),
   z.object({ kind: z.literal('linkIdentity'), code: z.string().min(4).max(12).optional() }),
   z.object({ kind: z.literal('handoff'), reason: z.string().max(200).optional() }),
+  /**
+   * A button or a reply that belongs to another module — a survey rating, say.
+   * The name selects a handler that module registered; the data is whatever the
+   * platform put in the button, coming back as untrusted input. The handler
+   * decides who may answer, because only it knows what the answer means.
+   */
+  z.object({ kind: z.literal('custom'), name: z.string().min(1).max(40), data: z.record(z.unknown()) }),
 ]);
 export type ChannelCommand = z.infer<typeof channelCommandSchema>;
 
@@ -31,7 +38,7 @@ export type ChannelCommand = z.infer<typeof channelCommandSchema>;
  * "what is the status of REQ-000123" from a forged address is a data leak, and
  * "add a comment" from one is a way to put words in someone's mouth.
  */
-export const UNVERIFIED_COMMANDS: ReadonlySet<ChannelCommand['kind']> = new Set(['linkIdentity']);
+export const UNVERIFIED_COMMANDS: ReadonlySet<ChannelCommand['kind']> = new Set(['linkIdentity', 'custom']);
 
 export function requiresVerifiedIdentity(command: ChannelCommand): boolean {
   return !UNVERIFIED_COMMANDS.has(command.kind);

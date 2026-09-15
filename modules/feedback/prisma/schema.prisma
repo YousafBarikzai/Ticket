@@ -1,0 +1,143 @@
+/// MOD-18 Feedback (PH-4).
+///
+/// A survey is a form (MOD-02's document shape) plus a scoring rule saying
+/// which answer is the headline number and what scale it was asked on. It is
+/// versioned the way a catalogue form is — a published version is immutable —
+/// because a response is only meaningful against the questions that were
+/// actually asked, and a survey edited on Tuesday must not make Monday's
+/// answers look like they were given to Tuesday's questions.
+
+model SurveyDefinition {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// The working copy: a form document plus `scoring`. Publishing snapshots it.
+  document    Json      @default("{}")
+  /// draft | published | retired
+  status      String    @default("draft")
+  version     Int       @default(0)
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+
+  versions    SurveyVersion[]
+  triggers    SurveyTrigger[]
+
+  @@unique([tenantId, key])
+  @@map("survey_definition")
+}
+
+model SurveyVersion {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  definitionId String   @map("definition_id") @db.Uuid
+  version      Int
+  document     Json
+  publishedAt  DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy  String?  @map("published_by") @db.Uuid
+
+  definition   SurveyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  invitations  SurveyInvitation[]
+  responses    SurveyResponse[]
+
+  @@unique([definitionId, version])
+  @@index([tenantId])
+  @@map("survey_version")
+}
+
+/// When a survey goes out.
+///
+/// Three kinds, each an event the platform already publishes: a ticket
+/// resolved, a request fulfilled (a resolved ticket of type `request`), a
+/// major incident resolved. A condition narrows it — this service, that
+/// priority — using the same expression language the rules engine uses, so
+/// nothing here is a second way to say "priority is P1".
+model SurveyTrigger {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  surveyId     String   @map("survey_id") @db.Uuid
+  /// ticket.resolved | request.fulfilled | incident.major.resolved
+  kind         String
+  conditions   Json?
+  /// No second survey to the same person inside this many days, from any
+  /// trigger. The one number that decides whether people keep answering.
+  throttleDays Int      @default(7) @map("throttle_days")
+  /// How long the link lives.
+  expiryDays   Int      @default(14) @map("expiry_days")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  survey       SurveyDefinition @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kind, isActive])
+  @@index([tenantId, surveyId])
+  @@map("survey_trigger")
+}
+
+/// One ask, to one person, about one thing.
+///
+/// The token is stored hashed: the link in somebody's inbox is the only copy
+/// of the secret, and a database read must not be a way to answer for them.
+model SurveyInvitation {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  surveyId     String    @map("survey_id") @db.Uuid
+  versionId    String    @map("version_id") @db.Uuid
+  triggerId    String?   @map("trigger_id") @db.Uuid
+  /// What is being rated: a ticket, or an incident (through its ticket).
+  ticketId     String?   @map("ticket_id") @db.Uuid
+  incidentId   String?   @map("incident_id") @db.Uuid
+  recipientId  String    @map("recipient_id") @db.Uuid
+  /// The chat thread the ask was posted into, if one was.
+  conversationId String? @map("conversation_id") @db.Uuid
+  tokenHash    String    @map("token_hash")
+  /// pending | responded | expired | declined
+  status       String    @default("pending")
+  sentAt       DateTime  @default(now()) @map("sent_at") @db.Timestamptz(6)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  respondedAt  DateTime? @map("responded_at") @db.Timestamptz(6)
+  /// The last channel that showed it: email, portal, slack, teams, whatsapp.
+  channels     String[]  @default([])
+
+  version      SurveyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  response     SurveyResponse?
+
+  /// One ask per person per thing: a ticket reopened and resolved again does
+  /// not earn a second survey.
+  @@unique([tenantId, surveyId, ticketId, recipientId])
+  @@index([tenantId, recipientId, sentAt(sort: Desc)])
+  @@index([tenantId, status, expiresAt])
+  @@map("survey_invitation")
+}
+
+model SurveyResponse {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  invitationId String   @unique @map("invitation_id") @db.Uuid
+  surveyId     String   @map("survey_id") @db.Uuid
+  versionId    String   @map("version_id") @db.Uuid
+  ticketId     String?  @map("ticket_id") @db.Uuid
+  respondentId String?  @map("respondent_id") @db.Uuid
+  /// Every answer, keyed by field, as validated against the version shown.
+  answers      Json     @default("{}")
+  /// The headline answer normalised to 0-100, so two surveys on different
+  /// scales are comparable. Null when the survey has no scored question.
+  score        Int?
+  /// The scale the headline question used, e.g. `1-5`.
+  scale        String?
+  comment      String?
+  /// portal | email | slack | teams | whatsapp
+  via          String
+  respondedAt  DateTime @default(now()) @map("responded_at") @db.Timestamptz(6)
+
+  invitation   SurveyInvitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  version      SurveyVersion    @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, surveyId, respondedAt(sort: Desc)])
+  @@index([tenantId, ticketId])
+  @@map("survey_response")
+}

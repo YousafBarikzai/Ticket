@@ -44,6 +44,7 @@
     "@itsm/module-catalogue": "workspace:*",
     "@itsm/module-change": "workspace:*",
     "@itsm/module-channels": "workspace:*",
+    "@itsm/module-feedback": "workspace:*",
     "@itsm/module-identity": "workspace:*",
     "@itsm/module-incident": "workspace:*",
     "@itsm/module-integrations": "workspace:*",

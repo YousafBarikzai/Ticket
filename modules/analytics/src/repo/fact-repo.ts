@@ -127,6 +127,19 @@ export async function writeNotificationFact(
   });
 }
 
+export async function findSurveyFact(tx: Tx, responseId: string) {
+  return tx.factSurvey.findFirst({ where: { responseId } });
+}
+
+export async function writeSurveyFact(tx: Tx, tenantId: string, row: WriteRow<Prisma.FactSurveyUncheckedCreateInput>): Promise<void> {
+  const { id, tenantId: _tenant, ...data } = row;
+  await tx.factSurvey.upsert({
+    where: { tenantId_responseId: { tenantId, responseId: row.responseId } },
+    create: { id: id ?? newId(), tenantId, ...data },
+    update: data,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // The cursor: what each projector has already seen.
 // ---------------------------------------------------------------------------

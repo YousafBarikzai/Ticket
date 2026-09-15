@@ -22,6 +22,7 @@ const NOTIFYING_EVENTS = [
   'sla.timer.warning',
   'sla.timer.breached',
   'report.generated',
+  'survey.invited',
 ] as const;
 
 for (const eventType of NOTIFYING_EVENTS) {

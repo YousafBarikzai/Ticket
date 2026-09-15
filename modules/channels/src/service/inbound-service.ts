@@ -117,11 +117,20 @@ export async function acceptInbound(parsed: ParsedInbound, address: string): Pro
         allowedBotIds?: string[];
       };
 
+      // A reply in a thread the desk opened is addressed by being there. The
+      // thread is looked up here, where there is a transaction, and the guard
+      // stays a pure function of what it is told.
+      const threadId = parsed.chat ? ((parsed as { threadId?: string | null }).threadId ?? null) : null;
+      const inKnownThread = threadId
+        ? (await tx.conversation.findFirst({ where: { channel: parsed.channel, externalThreadId: threadId }, select: { id: true } })) !== null
+        : false;
+
       // Two guards, one decision. A chat channel has no RFC 3834 headers and a
       // different set of ways to go wrong, so it gets the guard written for it
       // rather than the email one applied loosely.
       const verdict = parsed.chat
         ? guardChat(parsed.chat, {
+            inKnownThread,
             ownBotUserId: config.botUserId ?? null,
             ...(config.allowedBotIds ? { allowedBotIds: config.allowedBotIds } : {}),
             // Chat messages are small; the email default would let somebody

@@ -189,3 +189,19 @@ describe('the adapters feed the guard the signals it needs', () => {
     expect(verdict.reason).toBe('loop_detected');
   });
 });
+
+describe('a reply in the desk\'s own thread', () => {
+  const base = { ownBotUserId: 'B-DESK', maxBytes: 64 * 1024, recentFromSender: 0, maxPerSenderPerHour: 30 };
+  const reply = { senderId: 'U1', text: '4', direct: false, mentioned: false, sizeBytes: 1 };
+
+  it('is addressed by being in the thread, without a mention', () => {
+    expect(guardChat(reply, { ...base, inKnownThread: true }).accept).toBe(true);
+  });
+
+  it('is still not addressed anywhere else', () => {
+    // The busy-channel rule is unchanged: a "4" in a channel the desk was
+    // merely invited to is somebody's conversation, not an answer.
+    expect(guardChat(reply, { ...base, inKnownThread: false })).toMatchObject({ accept: false, reason: 'not_addressed' });
+    expect(guardChat(reply, base)).toMatchObject({ accept: false, reason: 'not_addressed' });
+  });
+});

@@ -106,7 +106,13 @@ export {
   commandFor,
   handleChat,
   replyToChat,
+  registerChatAction,
+  chatAction,
+  postToTicketThread,
   type ChatOutcome,
+  type ChatActionContext,
+  type ChatActionHandler,
+  type Awaiting,
 } from './service/chat-inbound.js';
 export {
   SESSION_WINDOW_MS,

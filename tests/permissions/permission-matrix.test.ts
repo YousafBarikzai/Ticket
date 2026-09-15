@@ -447,6 +447,26 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'see survey responses',
+    path: () => '/api/v1/survey-responses',
+    // A lead sees their team's; nobody below a lead sees any. Satisfaction is
+    // about the team, and a single agent's view of it is a performance review.
+    allowed: ['lead', 'admin'],
+    deniedStatus: { requester: 403, agent: 403, otherAgent: 403 },
+  },
+  {
+    what: 'design a survey',
+    method: 'POST',
+    path: () => '/api/v1/surveys',
+    body: () => ({
+      key: 'matrix-survey',
+      name: 'Matrix survey',
+      document: { title: 'Matrix', schema: { type: 'object', properties: {} }, ui: { elements: [] } },
+    }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.

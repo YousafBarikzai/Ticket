@@ -24,6 +24,7 @@ export const notificationsManifest: ModuleManifest = registerModule({
       'sla.timer.warning',
       'sla.timer.breached',
       'report.generated',
+      'survey.invited',
     ],
   },
   featureFlags: [],

@@ -43,6 +43,12 @@ export interface ChatGuardOptions {
   maxBytes: number;
   recentFromSender: number;
   maxPerSenderPerHour: number;
+  /**
+   * The message is a reply in a thread the desk itself opened. Being in a
+   * channel is not being spoken to; being in the desk's own thread is, which
+   * is what lets "4" typed under a survey reach the survey without an @.
+   */
+  inKnownThread?: boolean;
 }
 
 export interface ChatGuardVerdict {
@@ -91,8 +97,8 @@ export function guardChat(event: ChatEvent, options: ChatGuardOptions): ChatGuar
 
   if (!event.text?.trim()) return { accept: false, reason: 'empty' };
 
-  // Being in a channel is not being spoken to.
-  if (!event.direct && !event.mentioned) {
+  // Being in a channel is not being spoken to. Being in the desk's own thread is.
+  if (!event.direct && !event.mentioned && !options.inKnownThread) {
     return { accept: false, reason: 'not_addressed' };
   }
 

@@ -204,6 +204,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // because a lead comparing their numbers with another team's is a
       // conversation that should start with the other lead, not a dashboard.
       { key: 'analytics.read', scope: 'team' },
+      // What their team's requesters said, and no more than that.
+      { key: 'feedback.read', scope: 'team' },
     ],
   },
   {
@@ -243,6 +245,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Builds the shared dashboards and the reports that go to the business:
       // the owner is who gets asked for the numbers.
       { key: 'analytics.manage', scope: 'any' },
+      // Designs the survey and decides when it goes out: the owner is who is
+      // judged by the answers, so the owner writes the questions.
+      { key: 'feedback.read', scope: 'any' },
+      { key: 'feedback.manage', scope: 'any' },
     ],
   },
   {
@@ -357,6 +363,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // operational act, not a reporting one: it changes what every other role
       // is looking at.
       { key: 'analytics.admin', scope: 'any' },
+      { key: 'feedback.read', scope: 'any' },
+      { key: 'feedback.manage', scope: 'any' },
     ],
   },
 ];

@@ -4,6 +4,7 @@ import { refreshTimerFact } from '../service/sla-projector.js';
 import { refreshApprovalFact } from '../service/approval-projector.js';
 import { refreshTaskFact } from '../service/task-projector.js';
 import { refreshNotificationFact } from '../service/notification-projector.js';
+import { refreshSurveyFact } from '../service/survey-projector.js';
 
 /**
  * MOD-12 consumes; it never publishes anything a person acts on directly, and
@@ -98,3 +99,14 @@ for (const eventType of ['notification.queued', 'notification.sent', 'notificati
     },
   });
 }
+
+defineHandler({
+  consumer,
+  moduleId,
+  eventType: 'survey.responded',
+  required: true,
+  async handle(ctx, event, tx) {
+    const { responseId } = event.payload as { responseId: string };
+    await refreshSurveyFact(ctx, tx, event, responseId);
+  },
+});

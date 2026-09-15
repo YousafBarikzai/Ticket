@@ -971,6 +971,53 @@ export const reportGenerated = defineEvent({
   }),
 });
 
+// ---- MOD-18 Feedback (PH-4) -----------------------------------------------
+export const surveyInvited = defineEvent({
+  type: 'survey.invited',
+  version: 1,
+  aggregateType: 'survey_invitation',
+  webhook: false,
+  description: 'Somebody was asked to rate an outcome; the notification carries the link.',
+  payload: z.object({
+    invitationId: id,
+    surveyId: id,
+    surveyKey: z.string(),
+    surveyName: z.string(),
+    version: z.number().int(),
+    ticketId: id.nullable(),
+    ticketNumber: z.string().nullable(),
+    recipientId: id,
+    /** The signed link, valid until `expiresAt`. */
+    surveyUrl: z.string(),
+    expiresAt: z.string(),
+    /** Audience descriptors for MOD-11: the recipient. */
+    audience: z.array(z.object({ kind: z.string() }).passthrough()),
+  }),
+});
+
+export const surveyResponded = defineEvent({
+  type: 'survey.responded',
+  version: 1,
+  aggregateType: 'survey_response',
+  webhook: true,
+  description: 'A survey was answered. The score is normalised to 0-100 whatever scale was asked.',
+  payload: z.object({
+    responseId: id,
+    invitationId: id,
+    surveyId: id,
+    surveyKey: z.string(),
+    version: z.number().int(),
+    ticketId: id.nullable(),
+    respondentId: id.nullable(),
+    score: z.number().int().min(0).max(100).nullable(),
+    /** The scale the headline question used, e.g. `1-5`, `0-10`. */
+    scale: z.string().nullable(),
+    comment: z.string().nullable(),
+    /** portal | email | slack | teams | whatsapp */
+    via: z.string(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -996,6 +1043,7 @@ export const eventCatalogue = [
   ciRegistered, ciStatusChanged, ciRetired, assetAssigned, assetRetired,
   discoveryRunCompleted, discoveryProposalDecided, contractExpiring,
   analyticsDriftDetected, reportGenerated,
+  surveyInvited, surveyResponded,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

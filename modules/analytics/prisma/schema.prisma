@@ -274,14 +274,10 @@ model FactNotification {
   @@map("fact_notification")
 }
 
-/// Satisfaction, waiting on its source.
-///
-/// The table exists now so MOD-18 needs no migration when it lands, and so a
-/// dashboard can declare a satisfaction widget that reads zero rows rather than
-/// failing. **There is no projector**: `survey.*` events are not in the
-/// catalogue because the module that publishes them does not exist yet, and a
-/// handler registered for an event type nobody emits is a handler nobody will
-/// remember to finish.
+/// Satisfaction: one row per survey response, projected from
+/// `survey.responded`. The table predates its source by one change — it was
+/// created with E1a so MOD-18 would need no migration — and the projector
+/// arrived with MOD-18, which is the order these things should happen in.
 model FactSurvey {
   id           String   @id @db.Uuid
   tenantId     String   @map("tenant_id") @db.Uuid
