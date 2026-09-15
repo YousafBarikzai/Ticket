@@ -9,6 +9,7 @@
   "scripts": {
     "postinstall": "pnpm db:generate",
     "build": "turbo run build",
+    "bundle": "tsx infra/scripts/bundle.ts",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:unit": "vitest run --project unit",
@@ -53,7 +54,8 @@
     "@itsm/module-ticket": "workspace:*",
     "@itsm/api": "workspace:*",
     "@itsm/module-rules": "workspace:*",
-    "@itsm/module-approvals": "workspace:*"
+    "@itsm/module-approvals": "workspace:*",
+    "esbuild": "^0.28.2"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -67,7 +69,7 @@
     "@prisma/client": "^6.19.3",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.23.1",
-    "bullmq": "^6.3.6",
+    "bullmq": "^5",
     "dotenv": "^17.4.2",
     "fastify": "^5.12.4",
     "fastify-plugin": "^6.0.0",

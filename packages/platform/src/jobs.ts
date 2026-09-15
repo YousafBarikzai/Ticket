@@ -100,7 +100,10 @@ export async function schedule(name: QueueName, jobName: string, pattern: string
   await queue(name).add(
     jobName,
     { tenantId: '00000000-0000-0000-0000-000000000000', correlationId: newCorrelationId(), actorType: 'scheduler', payload },
-    { repeat: { pattern }, jobId: `repeat:${jobName}` },
+    // Hyphen, not a colon: BullMQ reserves the colon for its own key structure
+    // and refuses a custom id containing one. Version 5 lets it through and
+    // version 6 does not, so this was a latent break waiting for an upgrade.
+    { repeat: { pattern }, jobId: `repeat-${jobName}` },
   );
 }
 
