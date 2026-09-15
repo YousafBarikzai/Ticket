@@ -401,6 +401,32 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403 },
   },
   {
+    what: 'see the discovery queue',
+    path: () => '/api/v1/discovery/proposals',
+    // A lead works the queue; an agent does not see it, because accepting from
+    // it writes the register.
+    allowed: ['lead', 'admin'],
+    deniedStatus: { requester: 403, agent: 403, otherAgent: 403 },
+  },
+  {
+    what: 'configure a discovery source',
+    method: 'POST',
+    path: () => '/api/v1/discovery/sources',
+    body: () => ({ key: 'matrix-source', name: 'Matrix', kind: 'http_json', config: {} }),
+    // Nobody outright: the config has no mapping, so a permitted caller gets
+    // 422 and a refused one 403 — which is the line being drawn. Configuring a
+    // source decides what may write the register without being asked.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 422 },
+  },
+  {
+    what: 'see which contracts need a decision',
+    path: () => '/api/v1/contracts-attention',
+    // An agent needs the supplier's support number when something breaks.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.

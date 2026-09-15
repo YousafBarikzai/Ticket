@@ -339,6 +339,9 @@ importers:
       '@itsm/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@itsm/module-integrations':
+        specifier: workspace:*
+        version: link:../integrations
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform

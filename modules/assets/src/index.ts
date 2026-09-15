@@ -93,3 +93,73 @@ export {
 export { type GraphNode } from './repo/graph-repo.js';
 export { warrantyReport } from './jobs/warranty-sweep.js';
 import './jobs/warranty-sweep.js';
+
+// ---- MOD-10-E2 Discovery, reconciliation and contracts ----------------------
+export * as discoveryService from './service/discovery-service.js';
+export * as proposalService from './service/proposal-service.js';
+export * as contractService from './service/contract-service.js';
+export {
+  createSource,
+  describeKind,
+  listKinds,
+  listRules,
+  listSources,
+  ruleSchema,
+  runSource,
+  setRule,
+  sourceSchema,
+  updateSource,
+  updateSourceSchema,
+  type RunResult,
+} from './service/discovery-service.js';
+export {
+  acceptAll,
+  acceptProposal,
+  listProposalSchema,
+  listProposals,
+  rejectProposal,
+} from './service/proposal-service.js';
+export {
+  addCoverage,
+  contractSchema,
+  contractsCovering,
+  coverageFor,
+  coverageSchema,
+  createContract,
+  createSupplier,
+  listContractSchema,
+  listContracts,
+  listSuppliers,
+  needingAttention,
+  supplierSchema,
+  type ContractAttention,
+} from './service/contract-service.js';
+export { CONTRACT_KINDS, COST_PERIODS, assess, daysBetween, needsAttention, noticeDate, type Assessment } from './domain/contracts.js';
+export { parseCsv, parseCsvRecords, type CsvOptions } from './domain/csv.js';
+export {
+  MAPPABLE_FIELDS,
+  isMapped,
+  mapRecord,
+  mappingSchema,
+  recordsFrom,
+  valueAt,
+  type Mapping,
+  type MappedRecord,
+} from './domain/mapping.js';
+export {
+  POLICIES,
+  agrees,
+  flatten,
+  policyFor,
+  reconcile,
+  unflatten,
+  type Policy,
+  type Reconciliation,
+  type Rule,
+} from './domain/reconcile.js';
+export { SOURCE_KINDS, isSourceKind, presetFor, type Preset, type SourceKind } from './sources/presets.js';
+export { fetchRecords, resolveSource, sourceConfigSchema, type FetchDeps, type ResolvedSource } from './sources/fetch.js';
+export { contractReport } from './jobs/contract-sweep.js';
+export { dueSources } from './jobs/discovery-sweep.js';
+import './jobs/discovery-sweep.js';
+import './jobs/contract-sweep.js';

@@ -40,6 +40,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0025](0025-major-incident-closed-by-its-review.md) | A major incident is closed by its review, not by a status change | Accepted | MOD-08-E1 |
 | [0026](0026-change-control-enforced-or-honest.md) | Change control is enforced where it can be and honest where it cannot | Accepted | MOD-08-E3 |
 | [0027](0027-two-registers-and-a-bounded-graph.md) | Two registers, and a graph that is bounded, typed and never guessed | Accepted | MOD-10-E1 |
+| [0028](0028-discovery-proposes-a-person-confirms.md) | Discovery proposes; a person confirms | Accepted | MOD-10-E2 |
 
 ## Template
 
