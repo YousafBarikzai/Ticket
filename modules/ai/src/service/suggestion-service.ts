@@ -13,7 +13,10 @@ import {
   newId,
   platformDb,
   publish,
+  publishNotice,
   recordAudit,
+  topicForEntity,
+  topicForUser,
   transaction,
   type TenantContext,
   type Tx,
@@ -334,6 +337,7 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
       await recordSpend(ctx, tx, job.periodKey);
     });
     metrics.increment('ai_jobs_completed_total', { capability });
+    await announce(ctx, job, 'completed');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const refused = error instanceof ValidationError || error instanceof UnparseableCompletion;
@@ -345,7 +349,34 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
     );
     metrics.increment('ai_jobs_failed_total', { capability, kind: refused ? 'refused' : 'failed' });
     logger.warn('an AI job did not produce a suggestion', { jobId, capability, refused, error: message });
+    // Announced too. A panel that is told only about success waits out its
+    // whole polling ceiling on a refusal and then says "this is taking a
+    // while", which is both slower and untrue.
+    await announce(ctx, job, refused ? 'refused' : 'failed');
   }
+}
+
+/**
+ * Tells an open workspace the job has finished, whichever way it finished.
+ *
+ * To the person who asked, so their panel updates wherever they are looking,
+ * and to the ticket, so a colleague with the same ticket open sees the
+ * suggestion appear. Both carry the job id and nothing else: the client
+ * refetches, so no model output travels over a channel whose subscribers were
+ * authorised for a topic rather than for a document.
+ */
+async function announce(
+  ctx: TenantContext,
+  job: { id: string; subjectType: string; subjectId: string; requestedBy: string | null },
+  status: 'completed' | 'failed' | 'refused',
+): Promise<void> {
+  const topics: string[] = [];
+  if (job.requestedBy) topics.push(topicForUser(ctx.tenantId, job.requestedBy));
+  // A job's subject is not always a ticket — an eval run names a prompt — so
+  // the entity topic is only added when there is a ticket to name.
+  if (job.subjectType === 'ticket') topics.push(topicForEntity(ctx.tenantId, 'ticket', job.subjectId));
+  if (topics.length === 0) return;
+  await publishNotice(ctx, topics, { entity: 'ai_job', id: job.id, action: status });
 }
 
 async function currentVersionOfExactly(promptKey: string, version: number) {

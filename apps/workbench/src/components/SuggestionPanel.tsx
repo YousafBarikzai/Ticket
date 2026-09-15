@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError, type AiCapability, type AiJob, type Suggestion } from '@itsm/sdk';
 import { AiSuggestionCard, Button, EmptyState, Skeleton } from '@itsm/ui';
 import { api } from '../client/api.js';
+import { useChangeStream } from '../client/useChangeStream.js';
 import { evidenceFor, hrefForEvidence, renderSuggestion } from '../ai/render.js';
 
 /**
@@ -20,14 +21,23 @@ import { evidenceFor, hrefForEvidence, renderSuggestion } from '../ai/render.js'
  * requester; a one-click send would be that line removed in a component, which
  * is precisely where such lines get removed.
  *
- * The job is polled rather than streamed. SSE exists (ADR-0015) and would be
- * the better answer for a queue that updates by itself; for a job the person
- * just started and is watching, a poll with a ceiling is less machinery for
- * the same result, and it stops on its own.
+ * The job finishes over the stream (ADR-0015): the AI service publishes a
+ * notice to the ticket's topic whichever way the job ended, so the panel
+ * settles the moment it happens rather than up to an interval later.
+ *
+ * The poll stays, and that is not belt-and-braces for its own sake. A stream
+ * is a thing that can fail to open — an old browser, a proxy that buffers, a
+ * corporate middlebox — and the person watching this panel has no way to tell
+ * a stream that never connected from a job that never finished. So the poll is
+ * the guarantee and the stream is the speed: with the notice arriving, the
+ * interval never matters; without it, the panel behaves exactly as it did
+ * before. The interval is longer than it was for the same reason it can be.
  */
 
-const POLL_INTERVAL_MS = 1500;
-const POLL_CEILING = 40;
+const POLL_INTERVAL_MS = 5_000;
+// Twelve attempts at five seconds is the same sixty-second ceiling the panel
+// had at forty attempts of 1.5s: the same patience, a third of the requests.
+const POLL_CEILING = 12;
 
 export interface SuggestionPanelProps {
   readonly ticketId: string;
@@ -78,6 +88,70 @@ export function SuggestionPanel({
     }
   }, [ticketId]);
 
+  /**
+   * Reads the job and settles the panel if it has finished.
+   *
+   * Shared by the poll and the stream so the two cannot disagree about what a
+   * finished job means — the notice carries only an id, so both paths end in
+   * the same refetch and the same four outcomes.
+   *
+   * Returns whether it settled, which is what lets the poll decide to stop.
+   */
+  const settle = useCallback(async (jobId: string): Promise<boolean> => {
+    let job: AiJob;
+    try {
+      job = await api.aiJob(jobId);
+    } catch {
+      setRunning(null);
+      setError('That job could not be read.');
+      return true;
+    }
+    if (cancelled.current) return true;
+
+    if (job.status === 'completed' && job.suggestion) {
+      const full: Suggestion = {
+        ...job.suggestion,
+        capability: job.capability,
+        subjectId: job.subjectId,
+        createdAt: job.finishedAt ?? job.createdAt,
+      };
+      // Guarded, because the stream and the poll can both arrive: whichever is
+      // second must not add the suggestion twice.
+      setSuggestions((current) => (current.some((row) => row.id === full.id) ? current : [full, ...current]));
+      setRunning(null);
+      return true;
+    }
+    if (job.status === 'refused') {
+      // A refusal is the system working. Saying so plainly — rather than
+      // "something went wrong" — is what stops an agent retrying it four
+      // times and then mistrusting the whole feature.
+      setRunning(null);
+      setError(job.error ?? 'There was nothing in the knowledge base to ground an answer in.');
+      return true;
+    }
+    if (job.status === 'failed') {
+      setRunning(null);
+      setError(job.error ?? 'That did not finish.');
+      return true;
+    }
+    return false;
+  }, []);
+
+  // The ticket's topic, because that is where the AI service announces a
+  // finished job — and it means a colleague with the same ticket open sees the
+  // suggestion appear too, not only the person who asked for it.
+  useChangeStream({
+    topics: [`ticket:${ticketId}`],
+    enabled: running !== null,
+    onNotice: (change) => {
+      if (change.entity === 'ai_job' && running && change.id === running.jobId) void settle(running.jobId);
+    },
+    // A reconnection means a gap, and the notice may have fallen in it.
+    onReconnect: () => {
+      if (running) void settle(running.jobId);
+    },
+  });
+
   useEffect(() => {
     if (!running) return;
     let attempts = 0;
@@ -85,43 +159,9 @@ export function SuggestionPanel({
 
     const poll = async (): Promise<void> => {
       attempts += 1;
-      let job: AiJob;
-      try {
-        job = await api.aiJob(running.jobId);
-      } catch {
-        setRunning(null);
-        setError('That job could not be read.');
-        return;
-      }
+      if (await settle(running.jobId)) return;
       if (cancelled.current) return;
 
-      if (job.status === 'completed' && job.suggestion) {
-        // The job's nested suggestion omits what the job already names, so
-        // the two are put back together here rather than typed as one
-        // half-optional shape.
-        const full: Suggestion = {
-          ...job.suggestion,
-          capability: job.capability,
-          subjectId: job.subjectId,
-          createdAt: job.finishedAt ?? job.createdAt,
-        };
-        setSuggestions((current) => [full, ...current]);
-        setRunning(null);
-        return;
-      }
-      if (job.status === 'refused') {
-        // A refusal is the system working. Saying so plainly — rather than
-        // "something went wrong" — is what stops an agent retrying it four
-        // times and then mistrusting the whole feature.
-        setRunning(null);
-        setError(job.error ?? 'There was nothing in the knowledge base to ground an answer in.');
-        return;
-      }
-      if (job.status === 'failed') {
-        setRunning(null);
-        setError(job.error ?? 'That did not finish.');
-        return;
-      }
       if (attempts >= POLL_CEILING) {
         setRunning(null);
         setError('That is taking longer than expected. It may still finish — reload in a minute.');
@@ -132,7 +172,7 @@ export function SuggestionPanel({
 
     timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
     return () => clearTimeout(timer);
-  }, [running]);
+  }, [running, settle]);
 
   const decide = useCallback(
     async (suggestion: Suggestion, outcome: 'accepted' | 'edited' | 'rejected'): Promise<void> => {

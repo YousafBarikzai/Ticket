@@ -87,9 +87,11 @@ The specification's Part 7 standards apply verbatim. Implementation notes:
 
 ## 6. Realtime: server-sent events (ADR-0015)
 
-- `GET /api/v1/events/stream?topics=ticket:{id},inbox,queue:{viewId}` opens an SSE stream (`text/event-stream`), authenticated by bearer token (query-string token exchange for browsers that cannot set headers on `EventSource`; the exchanged token is single-use and short-lived).
+- `GET /api/v1/events/stream?topics=ticket:{id},group:{teamId},user:{userId}` opens an SSE stream (`text/event-stream`), authenticated by bearer token — or, from a web application, by the session cookie the BFF exchanges for one, which is how both applications reach it.
+- **Every requested topic is authorised before it is subscribed (ADR-0045).** `ticket:` needs whatever `getTicket` needs; `group:` needs team membership or a `ticket.read` scope of `any`; `user:` is only ever your own. A topic that is refused refuses the stream, rather than being skipped — a stream carrying fewer topics than were asked for is a screen that looks live and is not. The notice carries no content, but the timing of a change and the existence of an id do, which is why "clients refetch" is not on its own a sufficient argument.
 - The API instance subscribes to Redis pub/sub channels for the requested topics scoped to the tenant; publishers (handlers, services after commit) publish small notices `{ type, entity, id, version }`. Clients refetch through the REST API, so SSE carries no payload that needs permission filtering beyond topic authorisation at subscription time.
-- Heartbeats every 25 s; `Last-Event-ID` resume for 5 minutes via a small Redis ring buffer per topic; mobile falls back to polling when backgrounded.
+- Heartbeats every 25 s. **`Last-Event-ID` resume is not built** — there is no ring buffer, so a reconnection cannot replay what it missed. Clients treat a reconnection as a gap and refetch instead, which is correct and more expensive than a resume; the BFF forwards the `last-event-id` header so the client half already works the day a buffer exists. Doc 23 carries it as outstanding.
+- Mobile falls back to polling when backgrounded.
 - WebSockets are not needed for the current requirements (one-directional server push); the abstraction (`realtime.publish(ctx, topic, notice)`) allows a swap.
 
 ## 7. Authentication mechanics per caller

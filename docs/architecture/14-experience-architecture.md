@@ -158,7 +158,8 @@ sends, so two drains racing raise one ticket. A 409 on a create is treated as
 success; a 409 on a *decision* is a conflict, because two people deciding one
 approval is news somebody has to see.
 
-What is not built: push, background sync on browsers without `SyncManager`
+What is not built: SSE resume (`Last-Event-ID`; a reconnection refetches
+instead — doc 08 §6), push, background sync on browsers without `SyncManager`
 (they drain on `online` instead, which loses the case where the tab has
 closed), and any Lighthouse threshold in CI (§5 asks for ≥ 90 from PH-3; there
 is no Lighthouse run at all).
@@ -205,6 +206,17 @@ until something tried to use the API the way an application does:
   `deactivateUser` write the denylist inside the transaction that revokes the
   row. `tests/integration/session-lifecycle.test.ts` walks the whole chain and
   asserts the revoked token is refused.
+- **The stream existed and nothing opened it.** `GET /events/stream` has been
+  mounted since Phase 1 and `ticket-service` has published a notice on every
+  change for just as long; no application had ever connected. So the queue
+  changed only when the person looking at it did something, and a ticket
+  somebody else moved sat on screen looking current. *Closed (ADR-0045):*
+  `useChangeStream` connects through the proxy, the queue watches its teams'
+  topics and refreshes (coalesced to one refresh per second, announced in an
+  `aria-live` region), and the AI panel settles on a notice instead of a
+  1.5-second poll. Connecting it also exposed two things the design had not
+  answered: there was no topic a queue could watch, and *any* topic could be
+  watched by anyone — both fixed in the same ADR.
 - **The catalogue's entitlement filter is the only thing between a requester
   and a request type they may not have**, and it is applied twice — once when
   browsing and once on submit (MOD-05). That is right, and worth noticing:
