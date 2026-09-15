@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { logger } from '@itsm/platform';
+import { logger, type TenantContext } from '@itsm/platform';
 import { emailTransport, type EmailTransport } from './email-transport.js';
 import { microsoftGraphTransport, type GraphOptions } from './microsoft-graph.js';
 import { postmarkTransport, type PostmarkOptions } from './postmark.js';
-import { missingCredentials } from './credentials.js';
+import { missingCredentials, resolveCredential } from './credentials.js';
 
 /**
  * Which provider a given mailbox uses (OD-03, closed as "both, per tenant").
@@ -54,7 +54,10 @@ export type TransportConfig = z.infer<typeof transportConfigSchema>;
  * a provider they specifically did not choose, which for the Graph case means
  * breaking the commitment that made them choose it.
  */
-export function transportForAccount(config: unknown): EmailTransport | null {
+export async function transportForAccount(
+  config: unknown,
+  ctx: TenantContext | null = null,
+): Promise<EmailTransport | null> {
   const parsed = transportConfigSchema.safeParse(config);
   if (!parsed.success) {
     logger.warn('a channel account has no usable transport configuration', {
@@ -71,21 +74,42 @@ export function transportForAccount(config: unknown): EmailTransport | null {
       return emailTransport('development') ?? null;
 
     case 'postmark': {
+      // Resolved here, once, so the adapter holds a value rather than a
+      // reference: it never reaches for a credential store, never has to be
+      // async where the transport interface is synchronous, and can be tested
+      // without either.
+      const token = await resolveCredential(parsed.data.tokenRef, ctx);
+      if (!token) {
+        logger.warn('this mailbox names a Postmark token that is not configured', { ref: parsed.data.tokenRef });
+        return null;
+      }
+      const webhookSecret = await resolveCredential(parsed.data.webhookSecretRef, ctx);
       const options: PostmarkOptions = {
-        tokenRef: parsed.data.tokenRef,
-        ...(parsed.data.webhookSecretRef ? { webhookSecretRef: parsed.data.webhookSecretRef } : {}),
+        token: token.value,
+        ...(webhookSecret ? { webhookSecret: webhookSecret.value } : {}),
         ...(parsed.data.apiBase ? { apiBase: parsed.data.apiBase } : {}),
       };
       return postmarkTransport(options);
     }
 
     case 'microsoft-graph': {
+      const clientSecret = await resolveCredential(parsed.data.clientSecretRef, ctx);
+      const clientState = await resolveCredential(parsed.data.clientStateRef, ctx);
+      if (!clientSecret || !clientState) {
+        logger.warn('this mailbox names Graph credentials that are not configured', {
+          missing: [
+            clientSecret ? null : parsed.data.clientSecretRef,
+            clientState ? null : parsed.data.clientStateRef,
+          ].filter(Boolean),
+        });
+        return null;
+      }
       const options: GraphOptions = {
         tenantId: parsed.data.graphTenantId,
         clientId: parsed.data.clientId,
-        clientSecretRef: parsed.data.clientSecretRef,
+        clientSecret: clientSecret.value,
         mailbox: parsed.data.mailbox,
-        clientStateRef: parsed.data.clientStateRef,
+        clientState: clientState.value,
         ...(parsed.data.apiBase ? { apiBase: parsed.data.apiBase } : {}),
         ...(parsed.data.loginBase ? { loginBase: parsed.data.loginBase } : {}),
       };
@@ -106,7 +130,10 @@ export interface ConfigurationProblem {
  * symptom of a missing credential is "mail stopped arriving", which nobody
  * notices for a day and nobody can diagnose from the outside.
  */
-export function checkTransportConfig(config: unknown, env: NodeJS.ProcessEnv = process.env): ConfigurationProblem[] {
+export async function checkTransportConfig(
+  config: unknown,
+  ctx: TenantContext | null = null,
+): Promise<ConfigurationProblem[]> {
   const parsed = transportConfigSchema.safeParse(config);
   if (!parsed.success) {
     return parsed.error.issues.map((issue) => ({
@@ -123,7 +150,7 @@ export function checkTransportConfig(config: unknown, env: NodeJS.ProcessEnv = p
         ? [parsed.data.clientSecretRef, parsed.data.clientStateRef]
         : [];
 
-  for (const name of missingCredentials(refs, env)) {
+  for (const name of await missingCredentials(refs, ctx)) {
     problems.push({ code: 'missing_credential', message: `${name} is not set in this environment` });
   }
 

@@ -125,3 +125,36 @@ model IntegrationLog {
   @@index([tenantId, causeKind, causeId])
   @@map("integration_log")
 }
+
+/// A credential the platform stores and later reads back (09 §4).
+///
+/// Write-only from the API's point of view: the value is never returned after
+/// creation, only used. What an operator sees is the fingerprint, which is
+/// enough to tell two credentials apart and useless to anybody who steals the
+/// table.
+model ConnectorCredential {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  /// The name a connector or channel account refers to it by.
+  ref         String
+  /// What it is for, so a rotation reminder can say which system breaks.
+  kind        String   @default("generic")
+  description String?
+  /// The sealed value: ciphertext, nonce, tag, and the wrapped data key.
+  sealed      Json
+  /// Which KEK wrapped it, so a rotation can find what still needs re-wrapping.
+  kekVersion  String   @map("kek_version")
+  /// The last eight hex characters of the secret's hash. Not reversible.
+  fingerprint String
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  rotatedAt   DateTime? @map("rotated_at") @db.Timestamptz(6)
+  /// Answers "is this still in use?" before somebody deletes it.
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, kind])
+  @@index([tenantId, kekVersion])
+  @@map("connector_credential")
+}

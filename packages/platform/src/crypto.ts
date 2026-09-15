@@ -173,6 +173,17 @@ export function open(sealed: SealedValue): string {
   throw new DecryptionFailedError('no configured key could read it');
 }
 
+/**
+ * Which key is current.
+ *
+ * Exposed so a listing can show "this needs re-wrapping" by comparing versions,
+ * without unsealing every stored value to find out — a badge in a table is not
+ * worth decrypting every credential in the tenant.
+ */
+export function currentKekVersion(): string {
+  return keks()[0]!.version;
+}
+
 /** Whether a stored value needs re-wrapping under the current KEK. */
 export function needsRewrap(sealed: SealedValue): boolean {
   return sealed.kekVersion !== keks()[0]!.version;

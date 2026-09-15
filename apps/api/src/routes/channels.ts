@@ -40,7 +40,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       return { status: 'ignored' };
     }
 
-    const transport = transportForAccount(account.config);
+    const transport = await transportForAccount(account.config);
     if (!transport) {
       logger.error('inbound email received for a mailbox with no usable transport', { address });
       reply.code(202);

@@ -1,7 +1,6 @@
 import { logger, metrics } from '@itsm/platform';
 import { constantTimeEquals, type EmailTransport, type OutboundEmail, type ProviderRef } from './email-transport.js';
 import type { ParsedInbound } from './inbound-service.js';
-import { resolveCredential } from './credentials.js';
 
 /**
  * Microsoft Graph (OD-03, closed as "both, per tenant").
@@ -28,16 +27,16 @@ import { resolveCredential } from './credentials.js';
 export interface GraphOptions {
   tenantId: string;
   clientId: string;
-  /** Client secret, by reference (see credentials.ts). */
-  clientSecretRef: string;
+  /** The resolved client secret. Resolution happens in `transportForAccount`. */
+  clientSecret: string;
   /** The mailbox this account receives on, as a Graph user id or UPN. */
   mailbox: string;
   /**
-   * The value Graph echoes back on every notification, by reference. It is the
+   * The value Graph echoes back on every notification. It is the
    * only thing that distinguishes a real notification from anyone who guesses
    * the URL, because Graph does not sign these.
    */
-  clientStateRef: string;
+  clientState: string;
   apiBase?: string;
   loginBase?: string;
   fetchImpl?: typeof fetch;
@@ -68,15 +67,16 @@ export function microsoftGraphTransport(options: GraphOptions): EmailTransport {
     // fails the call, and the retry would be indistinguishable from an outage.
     if (cached && cached.expiresAt > Date.now() + 60_000) return cached.value;
 
-    const secret = resolveCredential(options.clientSecretRef);
-    if (!secret) throw new Error(`Microsoft Graph is selected but ${options.clientSecretRef} is not configured`);
+    if (!options.clientSecret) {
+      throw new Error('Microsoft Graph is selected for this mailbox but its client secret is not configured');
+    }
 
     const response = await call(`${login}/${options.tenantId}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: options.clientId,
-        client_secret: secret.value,
+        client_secret: options.clientSecret,
         scope: 'https://graph.microsoft.com/.default',
         grant_type: 'client_credentials',
       }).toString(),
@@ -165,7 +165,7 @@ export function microsoftGraphTransport(options: GraphOptions): EmailTransport {
      * notification without it is refused rather than trusted.
      */
     verify(rawBody: string): boolean {
-      const expected = resolveCredential(options.clientStateRef);
+      const expected = options.clientState;
       if (!expected) {
         logger.warn('a Graph notification arrived but no clientState is configured; refusing it');
         return false;
@@ -182,7 +182,7 @@ export function microsoftGraphTransport(options: GraphOptions): EmailTransport {
       if (states.length === 0) return false;
       // Every notification in the batch must match: one that does not is
       // somebody else's, and accepting the batch would accept theirs too.
-      return states.every((state) => typeof state === 'string' && constantTimeEquals(state, expected.value));
+      return states.every((state) => typeof state === 'string' && constantTimeEquals(state, expected));
     },
   };
 }
