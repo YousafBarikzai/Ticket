@@ -13,7 +13,11 @@
 
 # What the application needs to run: Node, OpenSSL for Prisma, and nothing else.
 FROM node:22-bookworm-slim AS runtime-base
+# `upgrade` as well as `install`: the base image is rebuilt on its own schedule,
+# so between rebuilds it carries whatever security updates Debian has published
+# since. The scan found two in libpcre2 alone, both with fixes already released.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
