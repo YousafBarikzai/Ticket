@@ -397,3 +397,175 @@ model ProjectionDrift {
   @@index([tenantId, resolved, checkedAt])
   @@map("projection_drift")
 }
+
+// ---------------------------------------------------------------------------
+// E1b: what people build on top of the facts.
+// ---------------------------------------------------------------------------
+
+/// A tenant's own metric. Built-in metrics are code, not rows: they are
+/// versioned with the platform and cannot be edited into meaninglessness.
+///
+/// Structured on purpose. A metric is a fact table, an aggregate, an optional
+/// field and a list of `(field, operator, value)` filters, and nothing a person
+/// types ever becomes SQL: the identifiers come from a catalogue and the values
+/// travel as parameters.
+model MetricDefinition {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// ticket | sla_timer | approval | task | notification | survey
+  fact        String
+  /// count | sum | avg | p50 | p90 | rate
+  aggregate   String
+  field       String?
+  filters     Json     @default("[]")
+  /// For `rate`: the subset counted as the numerator, over `filters` as the whole.
+  numeratorFilters Json? @map("numerator_filters")
+  /// count | minutes | percent — how a widget should print it.
+  unit        String   @default("count")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int      @default(1)
+
+  @@unique([tenantId, key])
+  @@map("metric_definition")
+}
+
+/// A dashboard is a named list of widgets. Shared when it has no owner;
+/// personal when it does — the same table, because a personal dashboard that
+/// somebody wants to share should become shared by clearing one column, not
+/// by being rebuilt in a different place.
+model Dashboard {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// Null means shared with everyone who can read analytics.
+  ownerId     String?  @map("owner_id") @db.Uuid
+  /// Shipped with the platform; the seed leaves it alone once it exists so a
+  /// tenant's edits survive a redeploy.
+  seeded      Boolean  @default(false)
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int      @default(1)
+
+  widgets     DashboardWidget[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, ownerId])
+  @@map("dashboard")
+}
+
+model DashboardWidget {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  dashboardId String   @map("dashboard_id") @db.Uuid
+  position    Int
+  title       String
+  /// number | timeseries | bar | table | trend
+  type        String
+  metricKey   String   @map("metric_key")
+  filters     Json     @default("[]")
+  /// A dimension to break down by (team, service, priority…), or null.
+  groupBy     String?  @map("group_by")
+  /// 7d | 30d | 90d | 12m | ytd
+  range       String   @default("30d")
+  /// Columns out of twelve, so a layout survives a screen it was not built on.
+  width       Int      @default(4)
+  options     Json     @default("{}")
+
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dashboardId, position])
+  @@map("dashboard_widget")
+}
+
+/// What a report contains: an ordered list of sections, each one metric with
+/// its own filters, breakdown and range. The definition is separate from the
+/// schedule so one report can go to two audiences at two times.
+model ReportDefinition {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  sections    Json     @default("[]")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int      @default(1)
+
+  schedules   ReportSchedule[]
+  runs        ReportRun[]
+
+  @@unique([tenantId, key])
+  @@map("report_definition")
+}
+
+/// When a report runs and who gets it.
+///
+/// A structured schedule rather than a cron string: "every Monday at 08:00 in
+/// Europe/London" is what a person means, it survives daylight saving without
+/// an argument about which 08:00, and there is nothing to mis-parse.
+model ReportSchedule {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  reportId    String   @map("report_id") @db.Uuid
+  /// daily | weekly | monthly
+  frequency   String
+  hour        Int
+  minute      Int      @default(0)
+  /// 0 = Sunday … 6 = Saturday, for weekly.
+  dayOfWeek   Int?     @map("day_of_week")
+  /// 1–28, for monthly: a day every month has, so nothing is silently skipped
+  /// in February.
+  dayOfMonth  Int?     @map("day_of_month")
+  timeZone    String   @map("time_zone")
+  /// Audience descriptors (user, role), resolved by MOD-11 at delivery.
+  recipients  Json     @default("[]")
+  isActive    Boolean  @default(true) @map("is_active")
+  lastRunAt   DateTime? @map("last_run_at") @db.Timestamptz(6)
+  nextRunAt   DateTime @map("next_run_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  report      ReportDefinition @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, isActive, nextRunAt])
+  @@index([tenantId, reportId])
+  @@map("report_schedule")
+}
+
+/// One execution of a report, with its result kept.
+///
+/// The result lives here as JSON and the CSV is rendered from it on request.
+/// Nothing is written to object storage, because the platform has no
+/// server-side upload path and a report is small: a row limit keeps it so.
+model ReportRun {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  reportId    String   @map("report_id") @db.Uuid
+  scheduleId  String?  @map("schedule_id") @db.Uuid
+  /// running | done | failed
+  status      String   @default("running")
+  requestedBy String?  @map("requested_by") @db.Uuid
+  startedAt   DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  periodFrom  DateTime @map("period_from") @db.Timestamptz(6)
+  periodTo    DateTime @map("period_to") @db.Timestamptz(6)
+  result      Json     @default("[]")
+  rowCount    Int      @default(0) @map("row_count")
+  summary     String?
+  error       String?
+
+  report      ReportDefinition @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reportId, startedAt(sort: Desc)])
+  @@map("report_run")
+}

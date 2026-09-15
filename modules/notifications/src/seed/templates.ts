@@ -9,13 +9,13 @@ import type { AudienceDescriptor } from '../service/notification-service.js';
  * contract test asserts an internal note can never reach a requester.
  */
 
-interface TemplateSeed {
+export interface TemplateSeed {
   key: string;
   subject: string;
   body: string;
 }
 
-interface RuleSeed {
+export interface RuleSeed {
   key: string;
   eventType: string;
   templateKey: string;
@@ -120,12 +120,36 @@ export const DEFAULT_RULES: RuleSeed[] = [
   },
 ];
 
+/** A module's contribution to the default pack: its own templates and rules. */
+export interface NotificationPack {
+  templates: TemplateSeed[];
+  rules: RuleSeed[];
+}
+
+const packs: NotificationPack[] = [];
+
+/**
+ * Lets another module ship its templates and rules through this module's seed
+ * rather than writing `notification_template` rows itself. Registered at
+ * import time, before any tenant is provisioned, so the seed sees every pack
+ * on its first run; re-running the seed adds what a later deployment brought.
+ */
+export function registerNotificationPack(pack: NotificationPack): void {
+  packs.push(pack);
+}
+
+export function registeredPacks(): readonly NotificationPack[] {
+  return packs;
+}
+
 export async function seedNotificationDefaults(ctx: TenantContext): Promise<{ templates: number; rules: number }> {
   let templates = 0;
   let rules = 0;
+  const allTemplates = [...DEFAULT_TEMPLATES, ...packs.flatMap((pack) => pack.templates)];
+  const allRules = [...DEFAULT_RULES, ...packs.flatMap((pack) => pack.rules)];
 
   await transaction(ctx, async (tx) => {
-    for (const template of DEFAULT_TEMPLATES) {
+    for (const template of allTemplates) {
       for (const channel of ['inapp', 'email']) {
         const existing = await tx.notificationTemplate.findFirst({
           where: { key: template.key, channel, locale: 'en-GB' },
@@ -146,7 +170,7 @@ export async function seedNotificationDefaults(ctx: TenantContext): Promise<{ te
       }
     }
 
-    for (const rule of DEFAULT_RULES) {
+    for (const rule of allRules) {
       const existing = await tx.notificationRule.findFirst({ where: { key: rule.key } });
       if (existing) continue;
       await tx.notificationRule.create({

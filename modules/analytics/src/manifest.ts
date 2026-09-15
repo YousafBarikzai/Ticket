@@ -18,11 +18,12 @@ export const analyticsManifest: ModuleManifest = registerModule({
   phase: 'PH-4',
   dependsOn: ['MOD-04', 'MOD-07', 'MOD-11', 'MOD-17'],
   permissions: [
-    { key: 'analytics.read', scopes: ['team', 'any'], description: 'Read the reporting figures.' },
-    { key: 'analytics.admin', scopes: ['any'], description: 'Rebuild a projection and see where it has drifted.' },
+    { key: 'analytics.read', scopes: ['team', 'any'], description: 'Read the reporting figures, dashboards and reports; keep personal dashboards.' },
+    { key: 'analytics.manage', scopes: ['any'], description: 'Define metrics, shared dashboards, reports and their schedules.' },
+    { key: 'analytics.admin', scopes: ['any'], description: 'Rebuild or replay a projection and see where it has drifted.' },
   ],
   events: {
-    publishes: ['analytics.drift.detected'],
+    publishes: ['analytics.drift.detected', 'report.generated'],
     consumes: [
       'ticket.created',
       'ticket.updated',
@@ -61,6 +62,14 @@ export const analyticsManifest: ModuleManifest = registerModule({
       // drift the rebuild was about to remove.
       schedule: '50 1 * * *',
       description: 'Compare the ticket projection with MOD-04 and raise a drift event.',
+    },
+    {
+      name: 'analytics.report.sweep',
+      queue: 'analytics',
+      // Every five minutes, so a report due at 08:00 goes out by 08:05. The
+      // sweep is cheap when nothing is due: one indexed read per tenant.
+      schedule: '*/5 * * * *',
+      description: 'Run every scheduled report whose time has come.',
     },
   ],
   enabledByDefault: true,

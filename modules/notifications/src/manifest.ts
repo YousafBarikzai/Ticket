@@ -23,6 +23,7 @@ export const notificationsManifest: ModuleManifest = registerModule({
       'ticket.comment.added',
       'sla.timer.warning',
       'sla.timer.breached',
+      'report.generated',
     ],
   },
   featureFlags: [],

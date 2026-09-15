@@ -240,6 +240,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Across teams, because a service is delivered by more than one of them
       // and the owner is the person accountable for the whole of it.
       { key: 'analytics.read', scope: 'any' },
+      // Builds the shared dashboards and the reports that go to the business:
+      // the owner is who gets asked for the numbers.
+      { key: 'analytics.manage', scope: 'any' },
     ],
   },
   {
@@ -349,6 +352,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'contract.read', scope: 'any' },
       { key: 'contract.manage', scope: 'any' },
       { key: 'analytics.read', scope: 'any' },
+      { key: 'analytics.manage', scope: 'any' },
       // Rebuilding a projection and reading where it has drifted is an
       // operational act, not a reporting one: it changes what every other role
       // is looking at.

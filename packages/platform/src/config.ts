@@ -11,6 +11,13 @@ const schema = z.object({
 
   DATABASE_URL_APP: z.string().url(),
   DATABASE_URL_PLATFORM: z.string().url().optional(),
+  /**
+   * Where dashboard and report queries run. A replica, or the primary through
+   * the `app_readonly` role, or absent — in which case they share the
+   * application pool, which is fine for development and wrong for production
+   * (docs/architecture/06 §6).
+   */
+  DATABASE_URL_READONLY: z.string().url().optional(),
   REDIS_URL: z.string().url().default('redis://127.0.0.1:6379'),
 
   API_PORT: z.coerce.number().int().default(3000),

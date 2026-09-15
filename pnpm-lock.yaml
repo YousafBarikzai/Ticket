@@ -327,6 +327,9 @@ importers:
       '@itsm/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
       '@itsm/module-sla':
         specifier: workspace:*
         version: link:../sla
@@ -336,6 +339,9 @@ importers:
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
 
   modules/approvals:
     dependencies:

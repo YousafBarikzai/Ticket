@@ -51,9 +51,16 @@ again*; the row says *at what*. Delivery is at-least-once and unordered — two
 workers can process a status change and an assignment for the same ticket
 concurrently, in either order — so a projector that applied the payload would
 produce a different answer depending on which finished last. Reading the row
-makes every projection converge on the same state regardless of order. The two
-things that cannot be read back are handled explicitly: the first response takes
-the earlier of the two candidate times, and the comment count only ever rises.
+makes every projection converge on the same state regardless of order.
+
+*Amended in E1b.* The first draft carried two things from the payload — the
+comment count, accumulated by one per event, and the first response, taken as
+the earlier of two candidates. Both were wrong for the same reason: an
+accumulated count doubles on a replay, and a projection that cannot be replayed
+cannot be rebuilt from the outbox. Both are now read from `ticket_comment` like
+everything else. The projector is a pure function of the source rows, which is
+what lets `replayProjection` hand every event back to the handlers without
+first deleting anything.
 
 **The rollup is a cache of the facts, not a record.** Daily numbers are
 maintained incrementally, because a ticket resolving should touch six small rows

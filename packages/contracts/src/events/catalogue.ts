@@ -949,6 +949,28 @@ export const analyticsDriftDetected = defineEvent({
   }),
 });
 
+export const reportGenerated = defineEvent({
+  type: 'report.generated',
+  version: 1,
+  aggregateType: 'report',
+  webhook: true,
+  description: 'A scheduled or requested report finished and its result is ready.',
+  payload: z.object({
+    reportId: id,
+    runId: id,
+    key: z.string(),
+    name: z.string(),
+    periodFrom: z.string(),
+    periodTo: z.string(),
+    rowCount: z.number().int(),
+    /** One line per section: "Tickets created: 412", for the notification body. */
+    summary: z.string(),
+    downloadUrl: z.string(),
+    /** Who asked for it, as audience descriptors MOD-11 resolves (`payload` kind). */
+    audience: z.array(z.object({ kind: z.string() }).passthrough()),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -973,7 +995,7 @@ export const eventCatalogue = [
   changeSubmitted, changeApproved, changeRejected, changeScheduled, changeClosed,
   ciRegistered, ciStatusChanged, ciRetired, assetAssigned, assetRetired,
   discoveryRunCompleted, discoveryProposalDecided, contractExpiring,
-  analyticsDriftDetected,
+  analyticsDriftDetected, reportGenerated,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

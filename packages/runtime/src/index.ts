@@ -37,7 +37,7 @@ import { incidentManifest } from '@itsm/module-incident';
 import { problemManifest } from '@itsm/module-problem';
 import { changeManifest } from '@itsm/module-change';
 import { assetsManifest } from '@itsm/module-assets';
-import { analyticsManifest } from '@itsm/module-analytics';
+import { analyticsManifest, seedAnalyticsDefaults } from '@itsm/module-analytics';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -134,6 +134,9 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('workflow.defaults', async (ctx: TenantContext) => {
     await seedWorkflowDefaults(ctx);
+  });
+  registerSeedStep('analytics.defaults', async (ctx: TenantContext) => {
+    await seedAnalyticsDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

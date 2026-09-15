@@ -1,5 +1,5 @@
 import { defineHandler } from '@itsm/platform';
-import { isFirstResponse, markBreached, refreshTicketFact } from '../service/ticket-projector.js';
+import { markBreached, refreshTicketFact } from '../service/ticket-projector.js';
 import { refreshTimerFact } from '../service/sla-projector.js';
 import { refreshApprovalFact } from '../service/approval-projector.js';
 import { refreshTaskFact } from '../service/task-projector.js';
@@ -20,7 +20,7 @@ import { refreshNotificationFact } from '../service/notification-projector.js';
 const consumer = 'analytics';
 const moduleId = 'MOD-12';
 
-for (const eventType of ['ticket.created', 'ticket.updated', 'ticket.status.changed', 'ticket.assigned']) {
+for (const eventType of ['ticket.created', 'ticket.updated', 'ticket.status.changed', 'ticket.assigned', 'ticket.comment.added']) {
   defineHandler({
     consumer,
     moduleId,
@@ -32,21 +32,6 @@ for (const eventType of ['ticket.created', 'ticket.updated', 'ticket.status.chan
     },
   });
 }
-
-defineHandler({
-  consumer,
-  moduleId,
-  eventType: 'ticket.comment.added',
-  required: true,
-  async handle(ctx, event, tx) {
-    const payload = event.payload as { ticketId: string; visibility: string; authorId: string | null };
-    const firstResponse = await isFirstResponse(tx, payload.ticketId, payload);
-    await refreshTicketFact(ctx, tx, event, payload.ticketId, {
-      commentCount: 1,
-      ...(firstResponse ? { firstResponseAt: new Date(event.occurredAt) } : {}),
-    });
-  },
-});
 
 for (const eventType of ['ticket.task.created', 'ticket.task.completed']) {
   defineHandler({

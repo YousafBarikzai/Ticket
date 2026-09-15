@@ -16,6 +16,7 @@ import {
 import { bootstrapModules } from '@itsm/runtime';
 import { tenantService } from '@itsm/module-tenancy';
 import { auditService } from '@itsm/module-security';
+import { replayProjection } from '@itsm/module-analytics';
 import { signDevelopmentToken } from '../../apps/api/src/auth/verify.js';
 
 /**
@@ -43,6 +44,8 @@ Platform console
   pnpm platform reconcile                   Re-enqueue events no required consumer acknowledged
   pnpm platform replay --consumer <c> --type <t> [--tenant <slug>]
                                             Re-deliver historical events to one consumer
+  pnpm platform analytics-rebuild <slug> [--from <iso-date>] [--to <iso-date>]
+                                            Replay the reporting projection from the outbox, then rebuild the rollups
 `);
 }
 
@@ -226,6 +229,29 @@ try {
         }
       }
       console.log(`replayed ${replayed} event(s) to ${consumer}`);
+      break;
+    }
+
+    case 'analytics-rebuild': {
+      const [slug] = args;
+      if (!slug) {
+        console.error('usage: pnpm platform analytics-rebuild <slug> [--from <iso-date>] [--to <iso-date>]');
+        process.exit(1);
+      }
+      const tenant = await tenantBySlugOrFail(slug);
+      const fromArg = args[args.indexOf('--from') + 1];
+      const toArg = args[args.indexOf('--to') + 1];
+      const from = args.includes('--from') && fromArg ? new Date(fromArg) : undefined;
+      const to = args.includes('--to') && toArg ? new Date(toArg) : undefined;
+      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+        console.error('--from and --to take ISO dates, e.g. 2026-03-01');
+        process.exit(1);
+      }
+      const ctx = createContext({ tenantId: tenant.id, actor: { type: 'system', id: null }, permissions: SYSTEM_PERMISSIONS });
+      const result = await withContext(ctx, () =>
+        replayProjection(ctx, { ...(from ? { from } : {}), ...(to ? { to } : {}) }),
+      );
+      console.log(`replayed ${result.replayed} event(s), skipped ${result.skipped}, and rebuilt the rollups`);
       break;
     }
 

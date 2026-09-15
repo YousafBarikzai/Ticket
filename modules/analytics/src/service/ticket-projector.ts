@@ -24,9 +24,12 @@ import * as rollups from '../repo/rollup-repo.js';
  * what order the events arrive in — the event says *look again*, the row says
  * *at what*.
  *
- * Two things cannot be read back that way and are handled explicitly: the first
- * response, which is the earliest public reply and so takes the earlier of the
- * two values, and the comment count, which only ever goes up.
+ * Nothing is carried from one event to the next. The comment count and the
+ * first response are read from `ticket_comment` in the same way, rather than
+ * accumulated from `ticket.comment.added` as they were first written: an
+ * accumulated count doubles on a replay, and a projection that cannot be
+ * replayed cannot be rebuilt. Reading them back costs one indexed query and
+ * makes the projector a pure function of the source rows.
  */
 
 const PROJECTOR = 'ticket';
@@ -105,17 +108,36 @@ function shapeOf(row: TicketFactShape | null): TicketFactShape | null {
   };
 }
 
-/** Additions a specific event makes that cannot be read back off the ticket row. */
+/**
+ * The two comment-derived facts, read from the comments themselves.
+ *
+ * The first response is the earliest public reply from somebody other than
+ * the requester — the same rule MOD-07 uses to stop the response clock, so the
+ * two modules cannot disagree about when a ticket was answered.
+ */
+async function commentFacts(tx: Tx, ticket: TicketSource): Promise<{ commentCount: number; firstResponseAt: Date | null }> {
+  const commentCount = await tx.ticketComment.count({ where: { ticketId: ticket.id, deletedAt: null } });
+  const first = await tx.ticketComment.findFirst({
+    where: {
+      ticketId: ticket.id,
+      deletedAt: null,
+      visibility: 'public',
+      ...(ticket.requesterId ? { OR: [{ authorId: { not: ticket.requesterId } }, { authorId: null }] } : {}),
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { createdAt: true },
+  });
+  return { commentCount, firstResponseAt: first?.createdAt ?? null };
+}
+
+/** What an event can add that no source row records. */
 interface Increments {
-  firstResponseAt?: Date;
-  commentCount?: number;
   breached?: true;
 }
 
 /**
- * Rebuilds one ticket's fact from the ticket row plus whatever the event adds,
- * then moves the rollup by the difference. Every projector below is a call to
- * this with different increments.
+ * Rebuilds one ticket's fact from the source rows, then moves the rollup by
+ * the difference. Every projector below is a call to this.
  */
 export async function refreshTicketFact(
   ctx: TenantContext,
@@ -143,10 +165,7 @@ export async function refreshTicketFact(
   await dims.ensureUser(tx, ctx.tenantId, ticket.requesterId, occurredAt);
 
   const calendar = await calendarFor(tx, ticket.groupId);
-
-  // The earlier of the two: a first response is the first one, and a late
-  // delivery of the earlier comment must not push the number later.
-  const firstResponseAt = earliest(before?.firstResponseAt ?? null, increments.firstResponseAt ?? null);
+  const { commentCount, firstResponseAt } = await commentFacts(tx, ticket);
 
   const resolutions = ticket.resolvedAt ? durationsBetween(ticket.createdAt, ticket.resolvedAt, calendar) : null;
   const response = firstResponseAt ? durationsBetween(ticket.createdAt, firstResponseAt, calendar) : null;
@@ -173,7 +192,7 @@ export async function refreshTicketFact(
     timeToResolveMinutes: resolutions ? resolutions.businessMinutes : null,
     elapsedToResolveMinutes: resolutions ? resolutions.elapsedMinutes : null,
     reopenCount: ticket.reopenCount,
-    commentCount: (before?.commentCount ?? 0) + (increments.commentCount ?? 0),
+    commentCount,
     breached: (before?.breached ?? false) || increments.breached === true,
     lastEventId: event.id,
     lastEventAt: laterOf(before?.lastEventAt ?? null, occurredAt),
@@ -185,12 +204,6 @@ export async function refreshTicketFact(
   await facts.advanceCursor(tx, ctx.tenantId, PROJECTOR, event.id, occurredAt);
 
   metrics.increment('analytics_facts_projected_total', { projector: PROJECTOR });
-}
-
-function earliest(a: Date | null, b: Date | null): Date | null {
-  if (!a) return b;
-  if (!b) return a;
-  return a <= b ? a : b;
 }
 
 function laterOf(a: Date | null, b: Date): Date {
@@ -209,16 +222,4 @@ export async function markBreached(ctx: TenantContext, tx: Tx, event: EventEnvel
   const before = await facts.findTicketFact(tx, ticketId);
   if (before?.breached) return;
   await refreshTicketFact(ctx, tx, event, ticketId, { breached: true });
-}
-
-/** A public reply from somebody other than the requester: the response clock stops here. */
-export async function isFirstResponse(
-  tx: Tx,
-  ticketId: string,
-  payload: { visibility: string; authorId: string | null },
-): Promise<boolean> {
-  if (payload.visibility !== 'public') return false;
-  const ticket = await tx.ticket.findFirst({ where: { id: ticketId }, select: { requesterId: true } });
-  if (!ticket) return false;
-  return ticket.requesterId !== payload.authorId;
 }

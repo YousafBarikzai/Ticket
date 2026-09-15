@@ -17,7 +17,7 @@ import { outboxPublisher, webhookService } from '@itsm/module-integrations';
 import { notificationService } from '@itsm/module-notifications';
 import { auditService } from '@itsm/module-security';
 import { tickPartition, TIMER_PARTITIONS } from '@itsm/module-sla';
-import { checkTicketDrift, rebuildRecent } from '@itsm/module-analytics';
+import { checkTicketDrift, rebuildRecent, reportService } from '@itsm/module-analytics';
 import type { EventEnvelope } from '@itsm/contracts';
 
 /**
@@ -146,6 +146,16 @@ defineJob('analytics', 'analytics.rollup.rebuild', async () => {
     await withContext(ctx, async () => {
       const result = await rebuildRecent(ctx);
       logger.debug('rollup rebuilt', { tenantId: tenant.id, ...result });
+    });
+  }
+});
+
+defineJob('analytics', 'analytics.report.sweep', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const ran = await reportService.runDue(ctx);
+      if (ran > 0) logger.info('scheduled reports ran', { tenantId: tenant.id, ran });
     });
   }
 });

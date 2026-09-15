@@ -14,5 +14,5 @@ export {
   type DigestMode,
   type QuietHours,
 } from './domain/delivery-window.js';
-export { seedNotificationDefaults } from './seed/templates.js';
+export { seedNotificationDefaults, registerNotificationPack, registeredPacks, type NotificationPack } from './seed/templates.js';
 import './handlers/index.js';
