@@ -35,7 +35,7 @@ ALTER TABLE "plan" ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'GBP';
 -- entered under the old default, and rewriting history to match a new policy
 -- would change what somebody has already been billed — the decision applies
 -- from here, not backwards.
-ALTER TABLE "time_activity_type" ALTER COLUMN "billable" SET DEFAULT false;
+ALTER TABLE "activity_type" ALTER COLUMN "billable" SET DEFAULT false;
 ALTER TABLE "time_entry" ALTER COLUMN "billable" SET DEFAULT false;
 
 -- ---------------------------------------------------------------------------
