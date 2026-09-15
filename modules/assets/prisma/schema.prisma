@@ -1,0 +1,230 @@
+/// MOD-10-E1 Assets and the CMDB (PH-4).
+///
+/// Two registers, deliberately, and the distinction is the one most CMDBs get
+/// wrong by collapsing:
+///
+///   - An **asset** is a thing you own. Finance's question: what did it cost,
+///     who has it, when does the warranty run out?
+///   - A **configuration item** is a thing that can break. Operations'
+///     question: what depends on it, and what falls over if it does?
+///
+/// The same laptop is both. A spare monitor in a cupboard is an asset and not a
+/// CI — nothing depends on it. A SaaS platform you consume is a CI and not an
+/// asset — you own nothing. Conflating them produces a register that answers
+/// neither question well, because every field is optional for half the rows.
+
+/// What kind of thing a CI is, and what attributes that kind carries.
+///
+/// A class rather than a column per kind: a server has a CPU count and a
+/// database has an engine, and a schema that tried to hold both would be a
+/// hundred nullable columns nobody could query.
+model CiClass {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// Declared attributes: `[{ "key": "cpuCount", "type": "number", "required": true }]`.
+  /// Validated on write, so a typo becomes an error at the moment somebody can
+  /// still remember what they meant.
+  attributes  Json     @default("[]")
+  /// The class this one specialises, so "Database Server" inherits "Server".
+  parentId    String?  @map("parent_id") @db.Uuid
+  status      String   @default("active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items       ConfigurationItem[]
+  parent      CiClass?  @relation("subclass", fields: [parentId], references: [id], onDelete: SetNull)
+  children    CiClass[] @relation("subclass")
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("ci_class")
+}
+
+/// A thing that can break.
+model ConfigurationItem {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  classId     String    @map("class_id") @db.Uuid
+  name        String
+  /// Stable across renames and rediscovery — a serial, a FQDN, a cloud
+  /// resource id. What reconciliation matches on, so it is unique per tenant.
+  externalKey String?   @map("external_key")
+  description String?
+  /// operational | degraded | down | retired. A CI is retired, never deleted:
+  /// deleting it breaks every incident and change that named it, and the
+  /// history is the reason to have a CMDB at all.
+  status      String    @default("operational")
+  /// How important it is, which is what turns a traversal result into a
+  /// priority. low | medium | high | critical.
+  criticality String    @default("medium")
+  /// The service this CI serves (MOD-05), so impact reaches a name a person
+  /// recognises rather than stopping at a hostname.
+  serviceId   String?   @map("service_id") @db.Uuid
+  ownerId     String?   @map("owner_id") @db.Uuid
+  environment String?
+  /// Attributes declared by the class.
+  attributes  Json      @default("{}")
+  /// manual | import | discovery — where this record came from. Discovery
+  /// (E2) reads it before it overwrites anything.
+  source      String    @default("manual")
+  lastSeenAt  DateTime? @map("last_seen_at") @db.Timestamptz(6)
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  retiredAt   DateTime? @map("retired_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+
+  ciClass     CiClass   @relation(fields: [classId], references: [id], onDelete: Restrict)
+  asset       Asset?
+  outgoing    CiRelationship[] @relation("from")
+  incoming    CiRelationship[] @relation("to")
+  affected    AffectedCi[]
+
+  @@unique([tenantId, externalKey])
+  @@index([tenantId, status, criticality])
+  @@index([tenantId, classId, status])
+  @@index([tenantId, serviceId])
+  @@map("configuration_item")
+}
+
+/// What depends on what.
+///
+/// Typed and directed. `from depends_on to` means: if `to` falls over, `from`
+/// is in trouble. Getting that direction consistently right is most of what
+/// makes an impact answer trustworthy, so it is stated once here and every
+/// traversal reads it the same way.
+model CiRelationship {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  fromCi    String   @map("from_ci") @db.Uuid
+  toCi      String   @map("to_ci") @db.Uuid
+  /// depends_on | runs_on | connected_to | member_of | installed_on
+  type      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by") @db.Uuid
+
+  from      ConfigurationItem @relation("from", fields: [fromCi], references: [id], onDelete: Cascade)
+  to        ConfigurationItem @relation("to", fields: [toCi], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, fromCi, toCi, type])
+  @@index([tenantId, fromCi, type])
+  @@index([tenantId, toCi, type])
+  @@map("ci_relationship")
+}
+
+/// A make and model, so a hundred identical laptops carry the specification
+/// once rather than a hundred times with three spellings.
+model AssetModel {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  manufacturer String
+  model        String
+  category     String   @default("hardware")
+  /// Months of expected life, for the replacement forecast that is the main
+  /// reason finance asks for an asset register.
+  lifespanMonths Int?   @map("lifespan_months")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  assets       Asset[]
+
+  @@unique([tenantId, manufacturer, model])
+  @@map("asset_model")
+}
+
+/// A thing you own.
+model Asset {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  /// The tag on the sticker. What somebody reads out over the phone.
+  tag         String
+  serial      String?
+  modelId     String?   @map("model_id") @db.Uuid
+  /// in_stock | assigned | in_repair | retired | disposed
+  status      String    @default("in_stock")
+  /// The CI this asset is, when it is one. Optional in both directions: a
+  /// spare monitor is an asset and no CI; a SaaS platform is a CI and no asset.
+  ciId        String?   @unique @map("ci_id") @db.Uuid
+
+  purchasedOn DateTime? @map("purchased_on") @db.Date
+  purchaseCost Decimal? @map("purchase_cost") @db.Decimal(12, 2)
+  currency    String?   @db.Char(3)
+  warrantyEndsOn DateTime? @map("warranty_ends_on") @db.Date
+  supplier    String?
+  costCentre  String?   @map("cost_centre")
+  location    String?
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  retiredAt   DateTime? @map("retired_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+
+  model       AssetModel? @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  ci          ConfigurationItem? @relation(fields: [ciId], references: [id], onDelete: SetNull)
+  assignments AssetAssignment[]
+
+  @@unique([tenantId, tag])
+  @@index([tenantId, status])
+  @@index([tenantId, serial])
+  @@index([tenantId, warrantyEndsOn])
+  @@map("asset")
+}
+
+/// Who has it, and when they had it.
+///
+/// A history rather than a column, because "who had this laptop in March?" is
+/// the question asked after something is found on it, and a current-holder
+/// column cannot answer it.
+model AssetAssignment {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  assetId    String    @map("asset_id") @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  /// Where it is when nobody has it: a room, a rack, a drawer.
+  location   String?
+  assignedAt DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  returnedAt DateTime? @map("returned_at") @db.Timestamptz(6)
+  note       String?
+  createdBy  String?   @map("created_by") @db.Uuid
+
+  asset      Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, assetId, assignedAt])
+  @@index([tenantId, userId, returnedAt])
+  @@map("asset_assignment")
+}
+
+/// What a ticket, incident or change touched.
+///
+/// One table for every kind of record rather than a link table per module: the
+/// question "what did we change on this CI?" has to reach across all of them,
+/// and three tables would mean three queries and one of them forgotten.
+///
+/// This is the gap MOD-08 left. A change record that cannot name what it
+/// changed is a change record you cannot correlate with the outage that
+/// followed it.
+model AffectedCi {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  /// ticket | major_incident | problem | change
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  ciId       String   @map("ci_id") @db.Uuid
+  /// affected | caused_by | changed — what the record did to the CI, or the CI
+  /// to the record.
+  role       String   @default("affected")
+  linkedAt   DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+  linkedBy   String?  @map("linked_by") @db.Uuid
+
+  /// Cascading, which only ever fires on a tenant purge: configuration items
+  /// are retired, never deleted, precisely so this history survives.
+  ci         ConfigurationItem @relation(fields: [ciId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, entityType, entityId, ciId, role])
+  @@index([tenantId, ciId, linkedAt])
+  @@index([tenantId, entityType, entityId])
+  @@map("affected_ci")
+}

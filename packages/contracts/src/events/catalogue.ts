@@ -789,6 +789,88 @@ export const changeClosed = defineEvent({
   }),
 });
 
+// ---- MOD-10-E1 Assets and the CMDB (PH-4) ----------------------------------
+const ciRef = { ciId: id, name: z.string() };
+
+export const ciRegistered = defineEvent({
+  type: 'ci.registered',
+  version: 1,
+  aggregateType: 'configuration_item',
+  webhook: true,
+  description: 'A configuration item was added to the register.',
+  payload: z.object({
+    ...ciRef,
+    classKey: z.string(),
+    criticality: z.string(),
+    serviceId: id.nullable(),
+    /** manual | import | discovery — a subscriber may well care which. */
+    source: z.string(),
+  }),
+});
+
+export const ciStatusChanged = defineEvent({
+  type: 'ci.status.changed',
+  version: 1,
+  aggregateType: 'configuration_item',
+  webhook: true,
+  description: 'A configuration item went down, degraded, or came back.',
+  payload: z.object({
+    ...ciRef,
+    from: z.string(),
+    to: z.string(),
+    criticality: z.string(),
+    serviceId: id.nullable(),
+    note: z.string().nullable(),
+  }),
+});
+
+export const ciRetired = defineEvent({
+  type: 'ci.retired',
+  version: 1,
+  aggregateType: 'configuration_item',
+  webhook: true,
+  description: 'A configuration item was taken out of service; the record stays.',
+  payload: z.object({
+    ...ciRef,
+    reason: z.string(),
+    serviceId: id.nullable(),
+    /** How many things still pointed at it. Rarely zero, and worth a look when
+     *  it is not: either stale rows, or a machine that is still load-bearing. */
+    dependants: z.number().int(),
+  }),
+});
+
+export const assetAssigned = defineEvent({
+  type: 'asset.assigned',
+  version: 1,
+  aggregateType: 'asset',
+  webhook: true,
+  description: 'An asset was handed to somebody, or put somewhere.',
+  payload: z.object({
+    assetId: id,
+    tag: z.string(),
+    userId: id.nullable(),
+    location: z.string().nullable(),
+    ciId: id.nullable(),
+  }),
+});
+
+export const assetRetired = defineEvent({
+  type: 'asset.retired',
+  version: 1,
+  aggregateType: 'asset',
+  webhook: true,
+  description: 'An asset left the estate.',
+  payload: z.object({
+    assetId: id,
+    tag: z.string(),
+    reason: z.string(),
+    /** True where it was disposed of rather than shelved. */
+    disposed: z.boolean(),
+    ciId: id.nullable(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -811,6 +893,7 @@ export const eventCatalogue = [
   incidentMajorUpdateOverdue, incidentMajorReviewPublished,
   problemCreated, knownErrorPublished, knownErrorRetired, problemResolved,
   changeSubmitted, changeApproved, changeRejected, changeScheduled, changeClosed,
+  ciRegistered, ciStatusChanged, ciRetired, assetAssigned, assetRetired,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

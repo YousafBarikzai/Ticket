@@ -371,6 +371,36 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'read the configuration item register',
+    path: () => '/api/v1/cis',
+    // An agent reads the CMDB during triage; a requester has no business in it.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'say what a record touched',
+    method: 'POST',
+    path: () => '/api/v1/ci-links',
+    body: () => ({
+      entityType: 'ticket',
+      entityId: '00000000-0000-4000-8000-000000000000',
+      ciId: '00000000-0000-4000-8000-000000000001',
+    }),
+    // Nobody is allowed outright here because the configuration item does not
+    // exist, so a permitted caller gets 404 and a refused one 403 — which is
+    // the distinction worth asserting: an agent may link, a requester may not.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 404, lead: 404, otherAgent: 404, admin: 404 },
+  },
+  {
+    what: 'read the asset register',
+    path: () => '/api/v1/assets',
+    // An agent is asked "what laptop does this person have?" all day. Changing
+    // the answer is a lead's.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.
@@ -472,6 +502,42 @@ describe('publishing knowledge is a separate permission from writing it', () => 
     expect((await request(`/api/v1/knowledge/${key}/publish`, { method: 'POST', token: tenant.people.agent!.token })).status).toBe(403);
     expect((await request(`/api/v1/knowledge/${key}/publish`, { method: 'POST', token: tenant.people.lead!.token })).status).toBeLessThan(400);
   });
+});
+
+describe('writing the register is separate from reading it', () => {
+  // Not in the matrix above, because the call needs a class that exists, and
+  // creating one is itself a permitted write. Each persona is asserted against
+  // a register that is already set up, which is the real situation.
+  beforeAll(async () => {
+    const created = await request('/api/v1/ci-classes', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: { key: 'matrix-server', name: 'Server' },
+    });
+    // A 409 means a previous run left it behind, which is fine; anything else
+    // would make the deny assertions below pass for the wrong reason.
+    expect([201, 409]).toContain(created.status);
+  }, 60_000);
+
+  for (const persona of ALL_PERSONAS) {
+    const mayWrite = persona === 'lead' || persona === 'admin';
+
+    it(`${persona} ${mayWrite ? 'may' : 'may not'} add a configuration item`, async () => {
+      const response = await request('/api/v1/cis', {
+        method: 'POST',
+        token: tenant.people[persona]!.token,
+        body: { classKey: 'matrix-server', name: `Matrix item for ${persona}` },
+      });
+
+      if (mayWrite) {
+        expect(response.status).toBe(201);
+      } else {
+        // The value of a CMDB is that its contents were decided. A register
+        // anybody may edit mid-incident stops being one anybody trusts.
+        expect(response.status).toBe(403);
+      }
+    });
+  }
 });
 
 describe('scope narrows what a permitted call returns', () => {

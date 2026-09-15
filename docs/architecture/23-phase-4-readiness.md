@@ -15,7 +15,7 @@ event, and carries a multi-day process without losing its place. Everything it
 does, it does to itself.
 
 **MOD-08 is complete**: major incident, problem and change, delivered one epic
-per pull request. Phase 4 is where the platform reaches outside: calls to other systems, assets discovered
+per pull request, and **MOD-10-E1** now gives them something to point at. Phase 4 is where the platform reaches outside: calls to other systems, assets discovered
 from them, incidents correlated from their monitoring, work routed by who is
 actually on shift, and an AI service that reads the knowledge base built in
 Phase 3. All of it needs one thing first, which is why that thing is module one.
@@ -267,11 +267,75 @@ Saturday 22:00–02:00 window is three hours long in March and five in October.
 
 ---
 
+### 2.6 Assets and the CMDB (MOD-10-E1)
+
+**Two registers, not one.** An asset is a thing you own; a configuration item is
+a thing that can break. The same laptop is both, a spare monitor in a cupboard is
+only an asset, and a SaaS platform you consume is only a configuration item. One
+table for both is the shape that produces a register where every column is
+optional for half the rows — and a register like that gets filled in badly and
+then trusted. The link between them is a nullable key with a partial unique
+index, so at most one asset is any one item (ADR-0027).
+
+**Impact traversal is the only thing here with a performance target**, because
+it is the only thing asked during an incident by somebody who will wait about
+two seconds: under a second at 100 000 items and 500 000 relationships at depth
+3 (doc 18 §1). Three mechanisms meet it — a depth bound, the two typed-edge
+indexes doc 06 §2.4 names, and a 60-second per-item cache dropped on any
+relationship write. Beyond three hops an answer tends to reach everything, and an
+answer that reaches everything is not an answer.
+
+**Cycle detection is not optional decoration.** Real estates are full of cycles:
+a webserver runs on a VM, the VM is a member of a cluster, the cluster depends on
+the webserver for its health check. Without the path array the query does not
+return a wrong answer, it returns *no* answer, and the first anybody hears of it
+is a request timing out mid-incident. The integration suite builds a three-item
+cycle and asserts the traversal terminates with each item counted once at its
+shortest distance.
+
+**Retirement is filtered inside the traversal, not on the result.** A
+decommissioned server that still carries its old edges must not pass impact
+*through* itself to what sits behind it; filtering only the result would hide the
+dead server and keep everything it reached. Items are retired, never deleted —
+deleting one breaks every incident, problem and change that named it, and a CHECK
+constraint keeps `status = 'retired'` and `retired_at` in step because the
+traversal reads the timestamp.
+
+**Direction is stated once and read back as a sentence.** `from depends_on to`
+means: if **to** fails, **from** is in trouble. Writing a relationship returns
+"checkout depends on orders-db: if orders-db fails, checkout is in trouble",
+because a reversed edge is the mistake most often made and least often noticed,
+and a confident wrong answer sends people to look at the one thing that is fine.
+
+**Class-declared attributes are validated on write, refusing rather than
+coercing**, and every problem is reported in one pass. `cpuCount: "eight"` stored
+silently as a string is the row that breaks a report six months later; an
+importer told about one bad field at a time fixes a spreadsheet forty times.
+Classes inherit most-general-first so a subclass may tighten what it inherits,
+and a class loop is refused at write time because the attributes a loop reports
+depend on where the depth bound cuts it.
+
+**The link table closes the gap MOD-08 left.** One polymorphic table across
+ticket, major incident, problem and change, so "what has touched this item?"
+returns Tuesday's change and Wednesday's incident in one list, in order. A change
+record that cannot name what it changed cannot be correlated with the outage that
+followed it.
+
+**Nothing in this module infers anything.** Every edge and every link was written
+by somebody who decided to write it. An empty CMDB sends people to ask somebody
+who knows; a confidently wrong one sends them somewhere else entirely. Discovery
+(E2) will propose; a person will still confirm. Reading and writing are separate
+permissions for the same reason: an agent reads the register during triage and
+may say what a ticket touched, but the register's value is that its contents were
+decided.
+
+---
+
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-10 Assets and CMDB** | Needs the gateway's pull-connector half, which is not built yet. The natural next module: MOD-08 is complete, and a change record that cannot name what it changed is the gap it closes. |
+| **MOD-10-E2 Discovery and finance** | DiscoverySource, ReconciliationRule, ReconciliationRun and the contract, warranty and supplier records, pulling through the gateway's connector half. E1 built the register and the graph; E2 is where they get fed from somewhere other than a person. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
 | MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
@@ -296,7 +360,7 @@ Saturday 22:00–02:00 window is three hours long in March and five in October.
 
 | Check | Result |
 |---|---|
-| Unit tests | 492 passing, 169 of them over the five modules |
+| Unit tests | 511 passing, 188 of them over the six modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
@@ -306,7 +370,8 @@ Saturday 22:00–02:00 window is three hours long in March and five in October.
 | — the problem lifecycle | 12, written so that reversing the workaround-first ordering fails |
 | — change windows | 19, including both daylight-saving transitions and every overlap shape |
 | — the change lifecycle | 16, pinning the three trades between control and coverage |
-| Integration, isolation and permissions | extended by 22 workload tests and four permission-matrix entries, against live PostgreSQL, Redis and Meilisearch |
+| — CMDB attributes and edges | 19, including the assertion that the traversal's default edge set and the domain's view of what carries impact cannot drift apart |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, two permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift

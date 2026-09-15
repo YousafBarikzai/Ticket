@@ -39,6 +39,7 @@
     "@itsm/expr": "workspace:*",
     "@itsm/module-admin": "workspace:*",
     "@itsm/module-approvals": "workspace:*",
+    "@itsm/module-assets": "workspace:*",
     "@itsm/module-catalogue": "workspace:*",
     "@itsm/module-change": "workspace:*",
     "@itsm/module-channels": "workspace:*",

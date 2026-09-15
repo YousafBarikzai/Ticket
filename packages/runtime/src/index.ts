@@ -36,6 +36,7 @@ import { workloadManifest } from '@itsm/module-workload';
 import { incidentManifest } from '@itsm/module-incident';
 import { problemManifest } from '@itsm/module-problem';
 import { changeManifest } from '@itsm/module-change';
+import { assetsManifest } from '@itsm/module-assets';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -63,6 +64,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   incidentManifest,
   problemManifest,
   changeManifest,
+  assetsManifest,
   adminManifest,
 ];
 

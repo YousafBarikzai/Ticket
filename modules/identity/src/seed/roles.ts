@@ -100,6 +100,13 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'change.read', scope: 'any' },
       { key: 'change.raise', scope: 'any' },
       { key: 'change.implement', scope: 'any' },
+      // Reads the CMDB during triage and says what a ticket touched. Writing
+      // the register itself is not an agent's job: the value of a CMDB is that
+      // its contents were decided, and a register anybody may edit mid-incident
+      // stops being something anybody trusts.
+      { key: 'cmdb.read', scope: 'any' },
+      { key: 'cmdb.link', scope: 'any' },
+      { key: 'asset.read', scope: 'any' },
     ],
   },
   {
@@ -179,6 +186,13 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // A lead signs off an emergency change somebody else made, which is the
       // whole value of the retrospective approval.
       { key: 'change.approve.retrospective', scope: 'any' },
+      { key: 'cmdb.read', scope: 'any' },
+      { key: 'cmdb.manage', scope: 'any' },
+      { key: 'cmdb.link', scope: 'any' },
+      // Hands out laptops and takes them back, which is a lead's day job in
+      // most organisations and nobody else's.
+      { key: 'asset.read', scope: 'any' },
+      { key: 'asset.manage', scope: 'any' },
     ],
   },
   {
@@ -206,6 +220,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'change.read', scope: 'any' },
       // Owns the service being changed, so signs off an emergency change to it.
       { key: 'change.approve.retrospective', scope: 'any' },
+      // Reads what their service is made of, and what would take it down.
+      { key: 'cmdb.read', scope: 'any' },
+      { key: 'asset.read', scope: 'any' },
     ],
   },
   {
@@ -303,6 +320,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'change.implement', scope: 'any' },
       { key: 'change.manage', scope: 'any' },
       { key: 'change.approve.retrospective', scope: 'any' },
+      { key: 'cmdb.read', scope: 'any' },
+      { key: 'cmdb.manage', scope: 'any' },
+      { key: 'cmdb.link', scope: 'any' },
+      { key: 'asset.read', scope: 'any' },
+      { key: 'asset.manage', scope: 'any' },
     ],
   },
 ];
