@@ -75,14 +75,66 @@ not be able to create a duplicate account.
 **Workflow `action` nodes work**, having refused at publish for the whole of
 Phase 3 naming this module.
 
+### 2.2 Workload and routing (MOD-20)
+
+**Who should do this?** The question every other module had been asking and none
+could answer. A rule could put a ticket on a queue; it could not put it on a
+person, because nothing knew who was at work, what they could do, or how much
+they were already holding. `assignStrategy` had been in the rule schema since
+PH-2 and refused at publish ever since.
+
+**Rotas, shifts and turns are computed from a definition and the clock, never
+advanced by a job** (ADR-0024). A rotation could hold a `currentMemberIndex`
+and a Monday job; round robin could hold a `lastAssignedIndex`; a shift could
+write `off_shift` onto everybody at six. All three are cursors — state that is
+correct only if every advance happened exactly once, in a platform whose
+eventing is deliberately at-least-once. A cursor advanced twice skips somebody's
+turn and one that is missed repeats it, and neither fails loudly: the symptom is
+that nobody is paged on the night it matters, six weeks after the bug.
+
+Handovers are counted in whole **local days**, so a daylight-saving change
+cannot move one by an hour and eventually by a turn. A swap is an **override**
+that leaves the rotation untouched, because the rota is a fact about every week
+and a swap is a fact about one of them — arranging cover by reordering the
+member list moves everybody's turn for ever. Load is counted live against an
+index that already existed, so the number cannot drift.
+
+**A routing decision carries the candidates it rejected and why**, and
+`GET /workload/routing/:teamId/explain` rehearses one without assigning
+anything. "Nobody is available" is a complaint; "nobody on the team can take it;
+4 of 6 away" is something an administrator acts on before lunch. When routing
+finds nobody it publishes `workload.assignment.declined` with that reason and
+the ticket stays on the group queue: a queue that silently stops moving is
+indistinguishable from a broken router, and only one of those is worth waking
+somebody for. Filters are never relaxed to find *somebody*, because that turns a
+visible staffing problem into an invisible one.
+
+Somebody who has **left** never receives work and no date brings them back.
+Somebody **rostered off shift** does not; somebody on **no shift at all** is not
+off shift but simply unrostered — without that distinction a tenant who enables
+the module before describing their shifts finds that nothing routes to anybody,
+which looks exactly like a broken installation.
+
+**`assignStrategy` works.** The rules handler asks MOD-20 inside the same
+transaction as the rule's other effects, so a rule that fires exactly once
+assigns exactly once. It routes work that has nobody on it, and work it is
+moving to another team; it does not take a ticket off the person already
+working on it, because a rule on `ticket.updated` would otherwise reassign the
+same ticket every time anybody touched it. The assignment reaches MOD-04
+through an `assignee` channel on `applyAutomatedChange` rather than the field
+patch: `assigneeId` is deliberately not a field automation may set, and an
+assignment has its own ticket event, audit action and published event.
+
+`ACTIONS_NOT_YET_AVAILABLE` is now empty. Every action the rule schema accepts
+is one the platform carries out.
+
 ---
 
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-20 Workload and routing** | Unblocks `assignStrategy`, the last rule action still refusing at publish. The natural next module. |
-| **MOD-08 ITIL practices** | Major incident, problem and change. Large, and self-contained: it touches no new infrastructure. |
+| **MOD-08 ITIL practices** | Major incident, problem and change. Large, and self-contained: it touches no new infrastructure. The natural next module. |
 | **MOD-10 Assets and CMDB** | Needs the gateway's pull-connector half, which is not built yet. |
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
@@ -107,8 +159,17 @@ Phase 3 naming this module.
 
 | Check | Result |
 |---|---|
-| Unit tests | 370 passing, 59 of them over this module |
+| Unit tests | 428 passing, 105 of them over the two modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 11, with `fetch`, the resolver and the log sink injected |
+| — rotas and shifts | 26, including both daylight-saving transitions with real dates |
+| — routing strategies | 17, every tie-break and every refusal |
+| Integration, isolation and permissions | extended by 22 workload tests and four permission-matrix entries, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
+
+The rota tests are the highest-value read after the address guard. A night shift
+over 29–30 March is seven hours and the same shift over 25–26 October is nine;
+counted in milliseconds both would be eight, and everybody would go home an hour
+early once a year. Each test names the silence it prevents rather than the line
+it covers.

@@ -194,7 +194,17 @@ describe('publishing', () => {
     expect(response.status).toBe(201);
   });
 
-  it('refuses an action that this phase cannot carry out', async () => {
+  it('accepts and publishes every action the schema offers', async () => {
+    // This test used to name the action the phase could not carry out:
+    // `startWorkflow` until PH-3 delivered the engine, then `assignStrategy`
+    // until PH-4 delivered MOD-20. There is nothing left to name, so it now
+    // asserts the other side of the same guard — that an action the schema
+    // accepts is one the platform actually does.
+    //
+    // The refusal path itself has not gone: `unavailableActions` still runs at
+    // publish, and the unit test in `modules/rules` proves that no action type
+    // can be added to the schema and silently produce no effect, which is what
+    // the refusal exists to prevent.
     const response = await request<{ detail: string }>('/api/v1/rules', {
       method: 'POST',
       token: tenant.people.admin!.token,
@@ -203,15 +213,22 @@ describe('publishing', () => {
         name: 'Routes by strategy',
         event: 'ticket.created',
         conditions: { always: true },
-        // `startWorkflow` used to be the example here; PH-3 delivered it, so
-        // the test moved to the action that is still unavailable rather than
-        // being deleted — the refusal itself is what is worth keeping.
         actions: [{ type: 'assignStrategy', strategy: 'round_robin' }],
       },
     });
-    expect(response.status).toBe(422);
-    expect(response.body.detail).toMatch(/not available yet/);
-    expect(response.body.detail).toMatch(/MOD-20/);
+    expect(response.status).toBe(201);
+
+    const published = await request('/api/v1/rules/needs-routing/publish', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+    });
+    expect(published.status).toBe(200);
+
+    // Left archived so it does not route every later ticket in this suite.
+    await request('/api/v1/rules/needs-routing/archive', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+    });
   });
 
   it('does not let a draft affect a live ticket', async () => {

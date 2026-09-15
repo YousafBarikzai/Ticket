@@ -32,6 +32,7 @@ import { approvalsManifest, seedApprovalDefaults } from '@itsm/module-approvals'
 import { catalogueManifest, seedCatalogueDefaults } from '@itsm/module-catalogue';
 import { knowledgeManifest, seedKnowledgeDefaults } from '@itsm/module-knowledge';
 import { workflowManifest, seedWorkflowDefaults } from '@itsm/module-workflow';
+import { workloadManifest } from '@itsm/module-workload';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -55,6 +56,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   catalogueManifest,
   knowledgeManifest,
   workflowManifest,
+  workloadManifest,
   adminManifest,
 ];
 

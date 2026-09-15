@@ -2,6 +2,7 @@ import { defineHandler, logger, type TenantContext, type Tx } from '@itsm/platfo
 import { ticketService } from '@itsm/module-ticket';
 import { notificationService } from '@itsm/module-notifications';
 import { startRun } from '@itsm/module-workflow';
+import { routingService } from '@itsm/module-workload';
 import { decide, effectsOf, recordApplications } from '../service/engine.js';
 import { loadPublishedRules } from '../service/rule-service.js';
 import { factsForTicket } from '../service/facts.js';
@@ -50,6 +51,8 @@ async function runRules(
   }
 
   const effects = effectsOf(decision);
+  const assignee = await chooseAssignee(ctx, tx, effects, ticketId, ticket as TicketRow);
+
   const outcome = await ticketService.applyAutomatedChange(
     ctx,
     tx,
@@ -59,6 +62,7 @@ async function runRules(
       tags: effects.tags,
       watchers: effects.watchers,
       ...(effects.status ? { status: effects.status } : {}),
+      ...(assignee ? { assignee } : {}),
     },
     {
       kind: 'rule',
@@ -156,3 +160,53 @@ defineHandler({
     await runRules(ctx, tx, 'ticket.status.changed', payload.ticketId, event.id);
   },
 });
+
+/** How a rule's strategy is named in the ticket's own history. */
+const METHODS = {
+  round_robin: 'round_robin',
+  least_loaded: 'load_balanced',
+  skill: 'skills',
+} as const;
+
+interface TicketRow {
+  assigneeId: string | null;
+  groupId: string | null;
+}
+
+/**
+ * Turns `assignStrategy` into a person, or into nothing.
+ *
+ * Two deliberate refusals. A rule routes work that has nobody on it, and work
+ * it is moving to a different team — it does not take a ticket off somebody who
+ * is already working on it, because a rule that fires on every update would
+ * otherwise reassign the same ticket every time anybody touched it. And a rule
+ * with no team to route within does nothing: choosing from "everybody in the
+ * tenant" is not routing, it is a lottery.
+ */
+async function chooseAssignee(
+  ctx: TenantContext,
+  tx: Tx,
+  effects: ReturnType<typeof effectsOf>,
+  ticketId: string,
+  ticket: TicketRow,
+): Promise<{ userId: string; method: (typeof METHODS)[keyof typeof METHODS]; reason: string } | null> {
+  if (!effects.assignStrategy) return null;
+
+  const teamId = (effects.patch.groupId as string | undefined) ?? ticket.groupId;
+  if (!teamId) {
+    logger.info('a rule asked for routing on a ticket with no team', { strategy: effects.assignStrategy });
+    return null;
+  }
+
+  const movingTeam = Boolean(effects.patch.groupId) && effects.patch.groupId !== ticket.groupId;
+  if (ticket.assigneeId && !movingTeam) return null;
+
+  const decision = await routingService.chooseAndRecord(ctx, tx, {
+    teamId,
+    strategy: effects.assignStrategy,
+    ticketId,
+  });
+  if (!decision.userId) return null;
+
+  return { userId: decision.userId, method: METHODS[effects.assignStrategy], reason: decision.reason };
+}

@@ -44,7 +44,7 @@ An error-budget policy is agreed with the steering group: when a phase's budget 
 
 ## 4. Alerting and on-call
 
-- Alerts route to the platform on-call schedule, which lives in MOD-20 once available (PH-3); until then Grafana OnCall/PagerDuty with the same rotation definition.
+- Alerts route to the platform on-call schedule. MOD-20 holds the rotation definition from PH-4 and answers "who is on call at this instant?" for any instant; the paging itself stays with Grafana OnCall/PagerDuty, driven from the same definition.
 - Every alert links to a runbook; alert definitions live in `infra/alerts/*.yaml` and are applied by CI.
 - Severity model: **P1** (customer-facing outage or data risk: page immediately), **P2** (SLO burn, DLQ growth: page in hours), **P3** (capacity, expiry: next business day).
 

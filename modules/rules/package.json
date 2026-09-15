@@ -17,6 +17,7 @@
     "@itsm/module-notifications": "workspace:*",
     "@itsm/module-ticket": "workspace:*",
     "@itsm/module-workflow": "workspace:*",
+    "@itsm/module-workload": "workspace:*",
     "@itsm/platform": "workspace:*",
     "zod": "^3.24.1"
   }

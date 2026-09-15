@@ -19,7 +19,7 @@ type Persona = 'requester' | 'agent' | 'lead' | 'otherAgent' | 'admin';
 
 interface MatrixEntry {
   what: string;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   path: (tenant: TestTenant) => string;
   body?: (tenant: TestTenant) => unknown;
   /** Personas that must be allowed. Everyone else must be refused. */
@@ -269,6 +269,44 @@ const MATRIX: MatrixEntry[] = [
     }),
     // An article is usually written by whoever just worked out the answer, so
     // an agent writes. A requester does not.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'see who is on call',
+    path: () => '/api/v1/workload/rotations',
+    // Anybody who takes tickets needs to know who to hand a P1 to at six in
+    // the evening. A requester does not.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'say they are available for work',
+    method: 'PUT',
+    path: () => '/api/v1/workload/availability',
+    body: () => ({ status: 'available' }),
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'write a shift pattern',
+    method: 'POST',
+    path: () => '/api/v1/workload/shifts',
+    body: (t) => ({
+      key: `matrix-shift-${Math.random().toString(36).slice(2, 10)}`,
+      name: 'Written during the permission matrix run',
+      teamId: t.teamId,
+      timeZone: 'Europe/London',
+      pattern: { mon: [{ from: '09:00', to: '17:00' }] },
+    }),
+    // A lead runs the rota day to day; writing the pattern changes who works
+    // every week to come, which is an administrator's.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'ask why the queue is not moving',
+    path: (t) => `/api/v1/workload/routing/${t.teamId}/explain`,
     allowed: ['agent', 'lead', 'otherAgent', 'admin'],
     deniedStatus: { requester: 403 },
   },

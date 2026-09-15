@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decide, effectsOf, type LoadedRule } from '../service/engine.js';
 import { factsForTicket } from '../service/facts.js';
-import { conflictKey, EXCLUSIVE_ACTIONS, type RuleAction } from '../domain/actions.js';
+import { actionSchema, conflictKey, EXCLUSIVE_ACTIONS, type RuleAction } from '../domain/actions.js';
 
 /**
  * The rules interpreter.
@@ -241,4 +241,55 @@ describe('the action set', () => {
     expect(EXCLUSIVE_ACTIONS.has('setPriority')).toBe(true);
     expect(EXCLUSIVE_ACTIONS.has('assignGroup')).toBe(true);
   });
+});
+
+describe('every action the schema accepts does something', () => {
+  /**
+   * `unavailableActions` refuses, at publish, any action on a list of things
+   * the platform cannot yet do — because a rule that silently does nothing is
+   * worse than one that refuses to go live: the administrator believes it is
+   * working. That list is empty now that MOD-20 has delivered `assignStrategy`.
+   *
+   * This covers the case a list never can: an action added to the schema and
+   * forgotten in `effectsOf`, which would be on no list, refuse nothing, and do
+   * nothing. It is the assertion the integration test used to approximate by
+   * naming whichever action happened to be unavailable that phase.
+   */
+  const uuid = '00000000-0000-0000-0000-0000000000ff';
+
+  const samples: { action: RuleAction; shows: (effects: ReturnType<typeof effectsOf>) => unknown }[] = [
+    { action: { type: 'setField', field: 'impact', value: 'high' }, shows: (e) => e.patch.impact },
+    { action: { type: 'setCategory', categoryId: uuid }, shows: (e) => e.patch.categoryId },
+    { action: { type: 'setPriority', priority: 'P1', reason: 'because' }, shows: (e) => e.patch.priority },
+    { action: { type: 'setStatus', status: 'in_progress' }, shows: (e) => e.status },
+    { action: { type: 'assignGroup', groupId: uuid }, shows: (e) => e.patch.groupId },
+    { action: { type: 'assignStrategy', strategy: 'round_robin' }, shows: (e) => e.assignStrategy },
+    { action: { type: 'addWatcher', userId: uuid }, shows: (e) => e.watchers.length },
+    { action: { type: 'addTag', tag: 'vip' }, shows: (e) => e.tags.length },
+    { action: { type: 'sendNotification', template: 'acknowledged', to: 'requester' }, shows: (e) => e.notifications.length },
+    { action: { type: 'linkDuplicate', of: uuid }, shows: (e) => e.links.length },
+    { action: { type: 'startWorkflow', definitionKey: 'onboarding' }, shows: (e) => e.workflows.length },
+  ];
+
+  it('and this test knows about every one of them', () => {
+    const covered = new Set(samples.map((sample) => sample.action.type));
+    const declared = actionSchema.options.map((option) => option.shape.type.value as string);
+    // Asserted so that a schema whose options could not be read makes this test
+    // fail rather than pass over an empty list.
+    expect(declared.length).toBe(samples.length);
+    expect(declared.filter((type) => !covered.has(type as RuleAction['type']))).toEqual([]);
+  });
+
+  for (const sample of samples) {
+    it(`${sample.action.type} reaches the effects`, () => {
+      const effects = effectsOf({
+        matched: [{ ruleId: uuid, ruleKey: 'sample', ruleVersion: 1 }],
+        applied: [{ ruleId: uuid, ruleKey: 'sample', ruleVersion: 1, action: sample.action }],
+        skipped: [],
+        notReached: [],
+        errors: [],
+      });
+      expect(sample.shows(effects)).toBeTruthy();
+    });
+  }
 });

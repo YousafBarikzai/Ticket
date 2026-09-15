@@ -207,6 +207,9 @@ importers:
       '@itsm/module-workflow':
         specifier: workspace:*
         version: link:../../modules/workflow
+      '@itsm/module-workload':
+        specifier: workspace:*
+        version: link:../../modules/workload
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -420,6 +423,9 @@ importers:
       '@itsm/module-workflow':
         specifier: workspace:*
         version: link:../workflow
+      '@itsm/module-workload':
+        specifier: workspace:*
+        version: link:../workload
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -538,6 +544,21 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  modules/workload:
+    dependencies:
+      '@itsm/business-time':
+        specifier: workspace:*
+        version: link:../../packages/business-time
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
   packages/business-time: {}
 
   packages/config: {}
@@ -628,6 +649,9 @@ importers:
       '@itsm/module-workflow':
         specifier: workspace:*
         version: link:../../modules/workflow
+      '@itsm/module-workload':
+        specifier: workspace:*
+        version: link:../../modules/workload
       '@itsm/platform':
         specifier: workspace:*
         version: link:../platform

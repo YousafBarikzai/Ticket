@@ -80,6 +80,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Reading runs answers "why did this ticket go on hold?" without asking
       // an administrator. Operating them is somebody else's.
       { key: 'workflow.read', scope: 'any' },
+      // An agent says whether they are available, and sees their team's rota so
+      // they know who to hand a P1 to at six in the evening.
+      { key: 'workload.read', scope: 'team' },
+      { key: 'workload.availability.set', scope: 'own' },
     ],
   },
   {
@@ -132,6 +136,13 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // somebody already approved, where authoring one is approving a new one.
       { key: 'integration.action.read', scope: 'any' },
       { key: 'integration.action.replay', scope: 'any' },
+      // A lead runs the rota day to day: marks somebody as away or departed and
+      // records a swap. Writing the rota itself — the cadence, the order, the
+      // shift patterns — stays an administrator's, because it changes who is
+      // paged for every week to come rather than for one of them.
+      { key: 'workload.read', scope: 'any' },
+      { key: 'workload.availability.set', scope: 'any' },
+      { key: 'workload.oncall.override', scope: 'team' },
     ],
   },
   {
@@ -150,6 +161,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'tenant.read', scope: 'any' },
       { key: 'knowledge.read', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      { key: 'workload.read', scope: 'any' },
     ],
   },
   {
@@ -230,6 +242,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'integration.action.replay', scope: 'any' },
       { key: 'catalogue.form.read', scope: 'any' },
       { key: 'catalogue.form.manage', scope: 'any' },
+      { key: 'workload.read', scope: 'any' },
+      { key: 'workload.manage', scope: 'any' },
+      { key: 'workload.availability.set', scope: 'any' },
+      { key: 'workload.oncall.override', scope: 'any' },
     ],
   },
 ];

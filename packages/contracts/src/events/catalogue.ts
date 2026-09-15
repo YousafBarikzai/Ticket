@@ -555,6 +555,38 @@ export const workflowRunFailed = defineEvent({
   payload: z.object({ runId: id, definitionId: id, ticketId: id.nullable(), stepKey: z.string(), error: z.string() }),
 });
 
+// ---- MOD-20 Workload and routing (PH-4) ------------------------------------
+export const workloadAssignmentDeclined = defineEvent({
+  type: 'workload.assignment.declined',
+  version: 1,
+  aggregateType: 'ticket',
+  webhook: true,
+  description: 'Routing found nobody able to take a ticket, and said why.',
+  payload: z.object({
+    ticketId: id,
+    groupId: id.nullable(),
+    strategy: z.string(),
+    /** A sentence an administrator can act on: "4 of 6 away". */
+    reason: z.string(),
+    considered: z.number().int(),
+  }),
+});
+
+export const workloadOnCallOverridden = defineEvent({
+  type: 'workload.oncall.overridden',
+  version: 1,
+  aggregateType: 'oncall_rotation',
+  webhook: true,
+  description: 'Somebody was recorded as covering an on-call rotation.',
+  payload: z.object({
+    rotationId: id,
+    rotationKey: z.string(),
+    userId: id,
+    startsAt: z.string(),
+    endsAt: z.string(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -572,6 +604,7 @@ export const eventCatalogue = [
   catalogueItemPublished, requestSubmitted,
   knowledgeArticleSubmitted, knowledgeArticlePublished, knowledgeArticleRetired, knowledgeArticleFeedback,
   workflowRunStarted, workflowRunCompleted, workflowRunFailed,
+  workloadAssignmentDeclined, workloadOnCallOverridden,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

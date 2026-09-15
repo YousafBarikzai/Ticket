@@ -36,6 +36,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0021](0021-expression-language-strict-ordering.md) | Expression language: ordering across types raises, and is refused at publish | Accepted | MOD-06, MOD-02 |
 | [0022](0022-email-providers-per-tenant.md) | Email: Postmark and Microsoft Graph, chosen per tenant | Accepted | MOD-03, OD-03 |
 | [0023](0023-integration-gateway-single-egress.md) | The integration gateway is the only way out | Accepted | MOD-14-E3, MOD-06-E2 |
+| [0024](0024-rotas-computed-not-stored.md) | Rotas, turns and shifts are computed from a definition, never stored as a cursor | Accepted | MOD-20 |
 
 ## Template
 

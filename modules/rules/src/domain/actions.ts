@@ -64,8 +64,10 @@ export type ActionType = RuleAction['type'];
  * administrator believes it is working.
  */
 export const ACTIONS_NOT_YET_AVAILABLE: Partial<Record<ActionType, string>> = {
-  assignStrategy: 'MOD-20 Workload and routing (PH-4)',
-  // `startWorkflow` was here until PH-3 delivered the engine.
+  // `startWorkflow` was here until PH-3 delivered the engine, and
+  // `assignStrategy` until PH-4 delivered MOD-20. The map stays because the
+  // next phase will put something in it, and an empty map is the honest state
+  // of a schema that currently promises nothing it cannot do.
 };
 
 /**
