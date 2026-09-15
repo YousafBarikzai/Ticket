@@ -136,7 +136,7 @@ describe('availability', () => {
       status: 'away',
       until: new Date(Date.now() - 60_000).toISOString(),
     });
-    expect(attempt.status).toBe(400);
+    expect(attempt.status).toBe(422);
   });
 
   it('brings somebody back by itself once the date they gave has passed', async () => {
@@ -229,7 +229,7 @@ describe('shifts', () => {
         pattern: { mon: [{ from: '09:00', to: '09:00' }] },
       },
     });
-    expect(attempt.status).toBe(400);
+    expect(attempt.status).toBe(422);
   });
 });
 
@@ -331,7 +331,7 @@ describe('on call', () => {
       token: asLead(),
       body: { userId: tenant.people.agent!.id, startsAt: '2025-04-02T00:00:00Z', endsAt: '2025-04-04T00:00:00Z' },
     });
-    expect(clash.status).toBe(400);
+    expect(clash.status).toBe(422);
 
     await request(`/api/v1/workload/overrides/${first.body.id}`, { method: 'DELETE', token: asLead() });
   });
@@ -347,7 +347,7 @@ describe('on call', () => {
         members: [tenant.people.agent!.id, tenant.people.agent!.id],
       },
     });
-    expect(attempt.status).toBe(400);
+    expect(attempt.status).toBe(422);
   });
 
   it('refuses a rotation in a time zone that does not exist, at write time', async () => {
@@ -362,7 +362,7 @@ describe('on call', () => {
         members: [tenant.people.agent!.id],
       },
     });
-    expect(attempt.status).toBe(400);
+    expect(attempt.status).toBe(422);
   });
 
   it('does not let an agent write the rota', async () => {
