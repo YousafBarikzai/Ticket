@@ -6,6 +6,7 @@ import {
   publish,
   recordAudit,
   registerLimitChecker,
+  tenantKey,
   transaction,
   type LimitVerdict,
   type TenantContext,
@@ -44,7 +45,19 @@ import { readVerdict, writeVerdict } from './verdict-cache.js';
  * lets the work through (see `packages/platform/src/limits.ts`).
  */
 
-const API_BUFFER_KEY = 'usage:api-calls';
+/**
+ * One key per tenant, not one hash keyed by tenant.
+ *
+ * A single global key holding a field per tenant is exactly the shape the
+ * isolation suite refuses, and it is right to: it cannot be dropped when a
+ * tenant is purged, and it is one careless `hgetall` away from being read
+ * across the boundary. The suite caught this on the first live run.
+ */
+function bufferKey(tenantId: string): string {
+  return tenantKey(tenantId, 'usage', 'api-calls');
+}
+
+const BUFFER_PATTERN = 't:*:usage:api-calls';
 
 // ---------------------------------------------------------------------------
 // Reading the figure
@@ -283,44 +296,56 @@ export async function recompute(ctx: TenantContext, now: Date = new Date()): Pro
  */
 export async function bumpApiCalls(tenantId: string, by = 1): Promise<void> {
   try {
-    await cache().hincrby(API_BUFFER_KEY, tenantId, by);
+    await cache().incrby(bufferKey(tenantId), by);
   } catch {
     // A request that was not counted is a request that was not counted.
     // Availability first; the figure is approximate by design.
   }
 }
 
-/** Empties the buffer into the meters. Run every minute by the worker. */
+/** Empties each tenant's buffer into its meter. Run every minute by the worker. */
 export async function flushApiCalls(contextFor: (tenantId: string) => TenantContext | null, now: Date = new Date()): Promise<number> {
   let flushed = 0;
-  let buffered: Record<string, string>;
-  try {
-    buffered = await cache().hgetall(API_BUFFER_KEY);
-  } catch (error) {
-    logger.warn('the API-call buffer could not be read', { error: (error as Error).message });
-    return 0;
-  }
-  for (const [tenantId, raw] of Object.entries(buffered ?? {})) {
-    const delta = Number(raw);
-    if (!Number.isFinite(delta) || delta <= 0) continue;
+  for (const tenantId of await tenantsAwaitingFlush()) {
     const ctx = contextFor(tenantId);
     if (!ctx) continue;
-    // Taken out of the buffer before it is written down, so a flush that
-    // fails loses a minute of counting rather than counting it twice.
-    await cache().hincrby(API_BUFFER_KEY, tenantId, -delta);
+    // Taken out of the buffer before it is written down, and taken by
+    // subtracting what was read rather than by deleting the key: a request
+    // counted between the read and the write survives to the next flush
+    // instead of being lost, and a flush that fails loses a minute of
+    // counting rather than counting it twice.
+    let delta: number;
+    try {
+      delta = Number(await cache().get(bufferKey(tenantId)));
+    } catch (error) {
+      logger.warn('a tenant\'s API-call buffer could not be read', { tenantId, error: (error as Error).message });
+      continue;
+    }
+    if (!Number.isFinite(delta) || delta <= 0) continue;
+    await cache().decrby(bufferKey(tenantId), delta);
     await transaction(ctx, (tx) => note(ctx, tx, 'api_calls', delta, now));
     flushed += delta;
   }
   return flushed;
 }
 
-/** Tenants with something waiting in the buffer, so the sweep visits only them. */
+/** Tenants with something waiting, so the sweep visits only them. */
 export async function tenantsAwaitingFlush(): Promise<string[]> {
+  const found: string[] = [];
   try {
-    return Object.keys((await cache().hgetall(API_BUFFER_KEY)) ?? {});
-  } catch {
-    return [];
+    let cursor = '0';
+    do {
+      const [next, keys] = await cache().scan(cursor, 'MATCH', BUFFER_PATTERN, 'COUNT', 500);
+      cursor = next;
+      for (const key of keys) {
+        const tenantId = key.split(':')[1];
+        if (tenantId) found.push(tenantId);
+      }
+    } while (cursor !== '0');
+  } catch (error) {
+    logger.warn('the API-call buffers could not be listed', { error: (error as Error).message });
   }
+  return found;
 }
 
 export { METERS, METER_CATALOGUE, type Meter };

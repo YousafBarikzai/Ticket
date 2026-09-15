@@ -1,22 +1,26 @@
 import { defineHandler, type TenantContext, type Tx } from '@itsm/platform';
-import { measure, note, set } from '../service/usage-service.js';
+import { measure, set } from '../service/usage-service.js';
+import type { Meter } from '../domain/meters.js';
 
 /**
- * MOD-21 watches what it charges for.
+ * MOD-21 watches what it charges for, by counting rather than by adding up.
  *
- * Two shapes, for the two kinds of meter. A **counted** one moves by a
- * delta as each event lands, because the thing being counted has just
- * happened and nothing else knows how many there have been. A **live** one
- * is re-measured from the source rows, because the question is "how many
- * are there now" and a delta would be an answer that drifts — a person
- * given two roles is not two agents, and an attachment deleted is space
- * returned that no event announces.
+ * Every handler here re-measures its meter from the rows that define it.
+ * None of them adds one. That is ADR-0031's rule, and it was reintroduced
+ * and caught here the same way MOD-12's comment count was: delivery is at
+ * least once, so an accumulating handler counts the same ticket again on
+ * every redelivery, and a figure nobody can rebuild is a figure nobody can
+ * defend. The event says look again; the rows say at what.
  *
- * Re-measuring on each event is a small query on a small table; the nightly
- * recompute exists for the cases no event reaches at all.
+ * This is a count per event, which the request path is forbidden from doing
+ * (ADR-0038) — and a handler is not the request path. It runs in the
+ * worker, over an indexed range, after the work is already done.
+ *
+ * The only thing in this module that accumulates is the API-call buffer,
+ * which is drained exactly once because it is a counter and not an event.
  */
 
-async function remeasure(ctx: TenantContext, tx: Tx, meter: 'agents' | 'storage'): Promise<void> {
+async function remeasure(ctx: TenantContext, tx: Tx, meter: Meter): Promise<void> {
   const measured = await measure(ctx, tx, meter);
   if (measured !== null) await set(ctx, tx, meter, measured);
 }
@@ -28,12 +32,11 @@ defineHandler({
   required: false,
   async handle(ctx, event, tx) {
     const { channel } = event.payload as { channel: string };
-    // A migration's history is not this month's work (ADR-0038). MOD-24
-    // publishes `ticket.imported`, which nothing here listens for; this is
-    // the belt to that brace, for anything raised through the import
-    // channel by another route.
+    // A migration's history is not this month's work (ADR-0038), and
+    // `measure` excludes the import channel from the count it makes. This
+    // early return only saves the query.
     if (channel === 'import') return;
-    await note(ctx, tx, 'tickets', 1);
+    await remeasure(ctx, tx, 'tickets');
   },
 });
 

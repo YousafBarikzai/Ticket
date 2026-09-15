@@ -250,23 +250,40 @@ describe('the tenant\'s own warning threshold', () => {
 });
 
 describe('API calls', () => {
-  it('are counted in the cache and written down in batches', async () => {
+  // Read from the database rather than through `/api/v1/usage`: reading the
+  // meter over HTTP is itself an API call, and a test whose act of
+  // measuring changes the figure cannot prove anything about it.
+  async function counted(): Promise<number> {
+    const row = await read((tx) => tx.usageMeter.findFirst({ where: { meter: 'api_calls' } }));
+    return Number(row?.value ?? 0n);
+  }
+
+  it('are counted in the cache and written down in batches, and never twice', async () => {
     const context = ctx();
-    const before = (await meter('api_calls')).value;
-    for (let i = 0; i < 3; i += 1) await request('/api/v1/me', { token: asAdmin() });
+    const before = await counted();
+    for (let i = 0; i < 3; i += 1) expect((await request('/api/v1/me', { token: asAdmin() })).status).toBe(200);
 
     // Nothing is written until the flush: a counter per request would make
     // throughput a function of how closely the API is metered.
-    expect((await meter('api_calls')).value).toBe(before);
+    expect(await counted()).toBe(before);
 
     const flushed = await withContext(context, () => usageService.flushApiCalls((tenantId) => (tenantId === tenant.id ? context : null)));
     expect(flushed).toBeGreaterThanOrEqual(3);
-    expect((await meter('api_calls')).value).toBeGreaterThan(before);
+    // Exactly what was taken out of the buffer, and not a call more: the
+    // flush subtracts what it read rather than clearing the key, so a
+    // request that arrived mid-flush is still owed rather than lost.
+    expect(await counted()).toBe(before + flushed);
 
-    // The buffer is emptied as it is read, so a second flush counts nothing
-    // twice.
     const again = await withContext(context, () => usageService.flushApiCalls((tenantId) => (tenantId === tenant.id ? context : null)));
-    expect(again).toBe(0);
+    expect(await counted()).toBe(before + flushed + again);
+  });
+
+  it('keeps each tenant\'s buffer under its own key', async () => {
+    // A single global key holding a field per tenant cannot be dropped when
+    // a tenant is purged, and is one careless read away from crossing the
+    // boundary. The isolation suite refuses it; this names why.
+    await request('/api/v1/me', { token: asAdmin() });
+    expect(await usageService.tenantsAwaitingFlush()).toContain(tenant.id);
   });
 });
 
