@@ -16,6 +16,7 @@ import {
 } from '@itsm/platform';
 import { evaluate, events, type Expr } from '@itsm/contracts';
 import { renderTemplate } from './template.js';
+import { decideDelivery } from '../domain/delivery-window.js';
 
 /**
  * MOD-11 notification engine.
@@ -243,6 +244,33 @@ export async function dispatch(
       where: { userId: notification.recipientId, channel },
     });
     if (preference && !preference.enabled) return 'skipped';
+
+    // Quiet hours and digest mode say "later", not "never", so the message is
+    // held and re-enqueued rather than dropped. Urgency overrides both: someone
+    // who set quiet hours did not mean "do not tell me the building is on fire".
+    const decision = decideDelivery(new Date(), recipient, preference as never, {
+      urgent: notification.eventType === 'sla.timer.breached' || notification.eventType === 'incident.major.declared',
+    });
+    if (!decision.deliver && decision.deferUntil) {
+      await tx.notification.update({
+        where: { id: notificationId },
+        data: { status: decision.reason === 'digest' ? 'digesting' : 'deferred' },
+      });
+      await enqueue(
+        ctx,
+        'notify',
+        'notification.dispatch',
+        { notificationId, channel },
+        {
+          delay: Math.max(0, decision.deferUntil.getTime() - Date.now()),
+          // The deferral instant is part of the key, so a message held twice
+          // does not collide with its own earlier attempt and vanish.
+          idempotencyKey: `notify-${notificationId}-${channel}-${decision.deferUntil.getTime()}`,
+        },
+      );
+      metrics.increment('notifications_deferred_total', { channel, reason: decision.reason ?? 'unknown' });
+      return 'skipped';
+    }
 
     const attemptNumber = (await tx.deliveryAttempt.count({ where: { notificationId, channel } })) + 1;
 
