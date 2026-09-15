@@ -80,10 +80,20 @@ describe('announcing a line', () => {
 });
 
 describe('reading a budget back', () => {
-  it('formats money the way money is read', () => {
+  it('formats money at the scale it is being talked about', () => {
     expect(formatMicros(0n)).toBe('£0.00');
-    expect(formatMicros(4_000_000n)).toBe('£0.04');
     expect(formatMicros(1_240_000_000n)).toBe('£12.40');
+    expect(formatMicros(100_000_000n)).toBe('£1.00');
+  });
+
+  it('never renders the cost of one call as nothing', () => {
+    // A completion costs a fraction of a penny. Shown as "£0.00" it reads as
+    // free, which is the one thing it is not, and is how a budget quietly
+    // stops meaning anything.
+    expect(formatMicros(54_000n)).toBe('0.054p');
+    expect(formatMicros(4_000_000n)).toBe('4p');
+    expect(formatMicros(99_000_000n)).toBe('99p');
+    expect(formatMicros(1n)).toBe('0.001p');
   });
 
   it('names the figure, the cap and the month, and says what still works', () => {

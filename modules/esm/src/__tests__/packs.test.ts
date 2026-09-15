@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assertDocumentIsCoherent } from '@itsm/module-catalogue';
+import { AUDIENCES } from '@itsm/module-knowledge';
 import { checkGraph, parseGraph } from '@itsm/module-workflow';
 import { ALL_PACKS, packFor } from '../packs/index.js';
 import { entriesOf, hashOf, packSchema, selectorOf } from '../domain/pack.js';
@@ -83,6 +84,17 @@ describe('the packs this deployment ships', () => {
         const match = JSON.stringify(policy.match);
         expect(match, `${pack.key}: ${policy.key}`).toContain('ticket.serviceKey');
         expect(services.some((key) => match.includes(`"${key}"`)), `${pack.key}: ${policy.key}`).toBe(true);
+      }
+    }
+  });
+
+  it('gives its articles an audience the knowledge module recognises', () => {
+    // The pack schema and MOD-09 are two lists of the same vocabulary, and the
+    // one here was written from memory. Checked against the module that owns
+    // it rather than against itself.
+    for (const pack of ALL_PACKS) {
+      for (const article of pack.articles) {
+        expect(AUDIENCES as readonly string[], `${pack.key}: ${article.key}`).toContain(article.audience ?? 'internal');
       }
     }
   });

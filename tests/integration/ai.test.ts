@@ -74,10 +74,10 @@ async function work(jobId: string): Promise<void> {
   await withContext(worker, () => runSuggestionJob(worker, jobId));
 }
 
-async function raiseTicket(title: string, description: string): Promise<string> {
+async function raiseTicket(title: string, description: string, token = asAgent()): Promise<string> {
   const response = await request<{ id: string }>('/api/v1/tickets', {
     method: 'POST',
-    token: asAgent(),
+    token,
     body: { type: 'incident', title, description, priority: 'P3' },
   });
   expect(response.status).toBe(201);
@@ -133,9 +133,11 @@ describe('a suggestion, end to end', () => {
     expect(['low', 'medium', 'high']).toContain(finished.suggestion!.confidence);
     expect(finished.suggestion!.content.summary).toContain('charg');
     // A call that reported no tokens and cost nothing is a call that did not
-    // happen, however convincing the answer looks.
+    // happen, however convincing the answer looks. One completion costs a
+    // fraction of a penny, and it is shown as one rather than as £0.00.
     expect(finished.inputTokens).toBeGreaterThan(0);
     expect(finished.outputTokens).toBeGreaterThan(0);
+    expect(finished.cost).toMatch(/p$/);
     expect(finished.cost).not.toBe('£0.00');
   });
 
@@ -212,7 +214,11 @@ describe('grounding', () => {
         title: 'Diagnosing a laptop that will not charge',
         summary: 'Cable, port, battery, in that order.',
         body: [{ type: 'paragraph', content: [{ text: 'Try a known-good charger before replacing anything.' }] }],
-        audience: 'internal',
+        // `tenant`, not `internal`: an internal article is reachable only by a
+        // caller whose search scope is tenant-wide, and an agent's is their
+        // team (MOD-09's ACL, deliberately). A reply to a requester is
+        // grounded in what the requester could have read anyway.
+        audience: 'tenant',
       });
       await articleService.publishArticle(context, 'charging-faults');
     });
@@ -236,11 +242,14 @@ describe('the controls that stop it', () => {
   it('refuses over the budget, and leaves retrieval working', async () => {
     const ticketId = await raiseTicket('Monitor flickers on the left side', 'Since this morning.');
 
-    // A cap of one penny, which the first call has already passed.
+    // A cap of nothing: the honest way to prove the refusal, because a
+    // completion costs a fraction of a penny and reaching a cap of one would
+    // take twenty calls to say the same thing. An administrator setting zero
+    // is also a real act — it is how AI is paused without switching it off.
     const set = await request<{ state: string }>('/api/v1/ai/budget', {
       method: 'PUT',
       token: asAdmin(),
-      body: { limitPence: 1, warnPence: 1 },
+      body: { limitPence: 0, warnPence: 0 },
     });
     expect(set.status).toBe(200);
 
@@ -299,7 +308,10 @@ describe('who the job runs as', () => {
     const spare = tenant.people.spare!;
     await withContext(context, () => userService.assignRole(context, { userId: spare.id, roleKey: 'agent' }));
 
-    const ticketId = await raiseTicket('Docking station drops the network', 'Happens when the lid closes.');
+    // Raised by the spare themselves: they hold the agent role but belong to
+    // no team, so a ticket in somebody else's queue is one they may not read
+    // — and a suggestion must not be the thing that shows it to them.
+    const ticketId = await raiseTicket('Docking station drops the network', 'Happens when the lid closes.', spare.token);
     const queued = await request<SuggestResult>('/api/v1/ai/suggest', {
       method: 'POST',
       token: spare.token,

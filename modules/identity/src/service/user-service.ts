@@ -230,6 +230,14 @@ export async function deactivateUser(ctx: TenantContext, id: string, reason?: st
       aggregateId: id,
       payload: { userId: id, reason: reason ?? null },
     });
+    // The resolved permission set is cached per user, and deactivation left it
+    // there — `reactivateUser` invalidated and this did not. Nothing noticed
+    // because every other caller resolves an actor from a request, and a
+    // revoked session fails at the door first. Background work that resolves
+    // an actor by id has no door: MOD-09's suggestion worker was the first,
+    // and it would have run a deactivated person's job on their old rights
+    // until the cache expired.
+    await invalidatePermissions(ctx.tenantId, id);
     return updated;
   });
 }

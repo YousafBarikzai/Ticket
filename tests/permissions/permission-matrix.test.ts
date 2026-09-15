@@ -547,9 +547,10 @@ const MATRIX: MatrixEntry[] = [
   {
     what: 'see what this tenant is spending on AI',
     path: () => '/api/v1/ai/budget',
-    // What the desk costs is the administrator's business; an agent sees the
-    // suggestions, not the bill.
-    allowed: ['agent', 'lead', 'admin'],
+    // Every agent holds `ai.read`, including one in another team: the budget
+    // is the tenant's, not a team's, and an agent who is about to be refused
+    // should be able to see why. Setting it is the administrator's, below.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
     deniedStatus: { requester: 403 },
   },
   {

@@ -93,12 +93,28 @@ export function crossings(
   return out;
 }
 
-/** `£12.40`. Two decimal places, because that is how money is read. */
+/**
+ * Money, at the scale it is actually being talked about.
+ *
+ * A pound figure for a month's budget, and **pence with decimals for one
+ * call**, because a completion costs a fraction of a penny and rendering that
+ * as `£0.00` tells an operator the thing is free. It is not free; it is
+ * cheap, and the difference is the whole reason the budget exists. Nothing
+ * ever rounds a non-zero cost to nothing: below a thousandth of a penny it
+ * says so rather than pretending.
+ */
 export function formatMicros(micros: bigint): string {
-  const pence = micros / MICROS_PER_PENNY;
-  const pounds = pence / 100n;
-  const remainder = pence % 100n;
-  return `£${pounds}.${String(remainder).padStart(2, '0')}`;
+  if (micros >= 100n * MICROS_PER_PENNY) {
+    const pence = micros / MICROS_PER_PENNY;
+    return `£${pence / 100n}.${String(pence % 100n).padStart(2, '0')}`;
+  }
+  if (micros === 0n) return '£0.00';
+  // Three decimal places of a penny, trailing zeros trimmed.
+  const thousandths = (micros + 999n) / 1000n;
+  if (thousandths === 0n) return '<0.001p';
+  const whole = thousandths / 1000n;
+  const fraction = String(thousandths % 1000n).padStart(3, '0').replace(/0+$/, '');
+  return fraction.length > 0 ? `${whole}.${fraction}p` : `${whole}p`;
 }
 
 export function formatPence(pence: number): string {
