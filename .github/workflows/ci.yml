@@ -151,7 +151,9 @@ jobs:
       # One scan covers both: the API and worker images share every filesystem
       # layer and differ only in their entry point, environment and health check.
       - name: Scan the images
-        uses: aquasecurity/trivy-action@0.28.0
+        # The tag carries a `v`: `0.28.0` does not exist and fails the job at
+        # set-up, before any step runs, with only "unable to find version".
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: itsm-api:${{ github.sha }}
           severity: CRITICAL,HIGH
