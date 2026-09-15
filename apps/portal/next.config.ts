@@ -47,7 +47,7 @@ const nextConfig: NextConfig = {
    */
   output: 'standalone',
   outputFileTracingRoot: join(import.meta.dirname, '..', '..'),
-  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/contracts', '@itsm/expr'],
+  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/pwa', '@itsm/contracts', '@itsm/expr'],
   poweredByHeader: false,
   /**
    * Every module in this repository imports its neighbours with an explicit
@@ -72,6 +72,19 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      {
+        /*
+         * The worker itself is never cached. A browser that held a stale
+         * `sw.js` would keep serving the caching rules of a build that has been
+         * replaced — which is the one bug a service worker can have that
+         * nobody can clear by refreshing.
+         */
+        source: '/sw.js',
+        headers: [
+          { key: 'cache-control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'service-worker-allowed', value: '/' },
+        ],
+      },
       {
         source: '/:path*',
         headers: [

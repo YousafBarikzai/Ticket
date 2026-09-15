@@ -4,15 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --webpack -p 3100",
-    "build": "next build --webpack",
+    "dev": "pnpm sw && next dev --webpack -p 3100",
+    "build": "pnpm sw && next build --webpack",
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --root ../.. --project unit apps/workbench"
+    "test": "vitest run --root ../.. --project unit apps/workbench",
+    "sw": "tsx ../../infra/scripts/build-service-worker.ts"
   },
   "dependencies": {
     "@itsm/bff": "workspace:*",
     "@itsm/contracts": "workspace:*",
+    "@itsm/pwa": "workspace:*",
     "@itsm/sdk": "workspace:*",
     "@itsm/ui": "workspace:*",
     "next": "^16.3.5",

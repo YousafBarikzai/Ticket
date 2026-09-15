@@ -76,6 +76,54 @@ export interface Article {
   keywords: string[];
 }
 
+export interface QueueableRequest {
+  /** The path on the API, without the proxy prefix. */
+  readonly path: string;
+  readonly body: Record<string, unknown>;
+}
+
+/**
+ * The three writes the portal is allowed to queue when it is offline
+ * (doc 14 §5), as shapes rather than as calls.
+ *
+ * They exist separately from `portal()` so that the online path and the
+ * offline path send **the same body**. The alternative — a component building
+ * a body by hand for the queue and calling the client when online — is two
+ * request shapes for one action, and the one that is wrong is the one nobody
+ * exercises until a train goes into a tunnel.
+ */
+export const queueable = {
+  reportIssue(input: { title: string; description?: string; urgency?: 'high' | 'medium' | 'low' }): QueueableRequest {
+    return {
+      path: '/api/v1/tickets',
+      body: {
+        type: 'incident',
+        title: input.title,
+        ...(input.description ? { description: input.description } : {}),
+        ...(input.urgency ? { urgency: input.urgency } : {}),
+        // Every rule, report and calendar can distinguish a ticket a person
+        // typed from one an inbox produced.
+        sourceChannel: 'portal',
+      },
+    };
+  },
+
+  comment(idOrNumber: string, body: string): QueueableRequest {
+    return {
+      path: `/api/v1/tickets/${encodeURIComponent(idOrNumber)}/comments`,
+      // A requester's message is always public; there is no internal note here.
+      body: { body, visibility: 'public' },
+    };
+  },
+
+  decide(id: string, decision: 'approved' | 'rejected', comment?: string): QueueableRequest {
+    return {
+      path: `/api/v1/approvals/${encodeURIComponent(id)}/decide`,
+      body: { decision, ...(comment ? { comment } : {}) },
+    };
+  },
+} as const;
+
 export function portal(client: Client) {
   return {
     me: (): Promise<Me> => client.request<Me>('/api/v1/me'),
@@ -88,17 +136,10 @@ export function portal(client: Client) {
      * person typed from one an inbox produced, and a client that left it at
      * the API's default would make the portal invisible in its own numbers.
      */
-    reportIssue: (input: { title: string; description?: string; urgency?: 'high' | 'medium' | 'low' }): Promise<Ticket> =>
-      client.request<Ticket>('/api/v1/tickets', {
-        method: 'POST',
-        body: {
-          type: 'incident',
-          title: input.title,
-          ...(input.description ? { description: input.description } : {}),
-          ...(input.urgency ? { urgency: input.urgency } : {}),
-          sourceChannel: 'portal',
-        },
-      }),
+    reportIssue: (input: { title: string; description?: string; urgency?: 'high' | 'medium' | 'low' }): Promise<Ticket> => {
+      const request = queueable.reportIssue(input);
+      return client.request<Ticket>(request.path, { method: 'POST', body: request.body });
+    },
 
     catalogue: (): Promise<{ data: CatalogueItem[] }> => client.request('/api/v1/catalogue'),
 
@@ -130,11 +171,10 @@ export function portal(client: Client) {
       client.request<Timeline>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/timeline`),
 
     /** A requester's comment is always public: there is no internal note to write from here. */
-    comment: (idOrNumber: string, body: string) =>
-      client.request<{ id: string }>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/comments`, {
-        method: 'POST',
-        body: { body, visibility: 'public' },
-      }),
+    comment: (idOrNumber: string, body: string) => {
+      const request = queueable.comment(idOrNumber, body);
+      return client.request<{ id: string }>(request.path, { method: 'POST', body: request.body });
+    },
 
     /**
      * Reopening. The state machine allows `resolved → reopened` and nothing
@@ -155,11 +195,10 @@ export function portal(client: Client) {
 
     approval: (id: string): Promise<unknown> => client.request(`/api/v1/approvals/${encodeURIComponent(id)}`),
 
-    decide: (id: string, decision: 'approved' | 'rejected', comment?: string) =>
-      client.request<{ id: string; status: string }>(`/api/v1/approvals/${encodeURIComponent(id)}/decide`, {
-        method: 'POST',
-        body: { decision, ...(comment ? { comment } : {}) },
-      }),
+    decide: (id: string, decision: 'approved' | 'rejected', comment?: string) => {
+      const request = queueable.decide(id, decision, comment);
+      return client.request<{ id: string; status: string }>(request.path, { method: 'POST', body: request.body });
+    },
 
     // ---- Knowledge (MOD-09) ------------------------------------------------
 

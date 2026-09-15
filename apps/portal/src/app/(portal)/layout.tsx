@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { AppShell } from '@itsm/ui';
 import { apiFor, currentSession } from '../../server/session.js';
+import { OfflineStatus } from '../../components/OfflineStatus.js';
 import { SignOutButton } from '../../components/SignOutButton.js';
 
 /**
@@ -66,6 +67,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
         </>
       }
     >
+      <OfflineStatus />
       {children}
     </AppShell>
   );

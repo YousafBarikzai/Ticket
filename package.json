@@ -69,6 +69,7 @@
     "@itsm/module-workload": "workspace:*",
     "@itsm/platform": "workspace:*",
     "@itsm/portal": "workspace:*",
+    "@itsm/pwa": "workspace:*",
     "@itsm/runtime": "workspace:*",
     "@itsm/sdk": "workspace:*",
     "@itsm/workbench": "workspace:*",

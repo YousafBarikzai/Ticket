@@ -31,8 +31,13 @@ Model prices are the operator's to supply, and a model with no price is
 refused rather than counted as free. Residency is still open — there is one
 provider per deployment and no per-tenant policy.
 
+Both applications are installable and work offline for reading, and queue
+three writes — report an issue, add a comment, decide an approval — when there
+is no network (ADR-0043). Only those three, because only those three are
+additive: a delay changes when they happen and not whether they were right.
+
 `pnpm skeleton` runs 59 assertions end to end against the bundled production
-artefacts — a demo that needs no code reading. 1158 unit tests pass, plus the
+artefacts — a demo that needs no code reading. 1190 unit tests pass, plus the
 release-blocking tenant-isolation and permission-matrix suites against a real
 PostgreSQL and Redis.
 
@@ -68,7 +73,7 @@ does not exist in production (ADR-0041).
 ## Documentation
 
 - [`docs/architecture`](docs/architecture/README.md) — the software architecture (23 documents: context, runtime topology, modules, platform primitives, data, eventing, API, identity and security, tenancy, engines, AI, experience, operations, deployment, evolution, quality attributes, risks, and a readiness record per phase).
-- [`docs/adr`](docs/adr/README.md) — Architecture Decision Records (ADR-0001 … ADR-0042).
+- [`docs/adr`](docs/adr/README.md) — Architecture Decision Records (ADR-0001 … ADR-0043).
 
 ## Repository layout
 
@@ -78,7 +83,8 @@ modules/     one package per MOD-nn: tenancy · identity · ticket · sla · not
              search · security · integrations · admin · rules · workflow · approvals ·
              catalogue · knowledge · channels · incident · problem · change · assets ·
              workload · analytics · feedback · time · statuspage · migration · esm · ai
-packages/    platform · contracts · expr · business-time · ui · sdk · bff · runtime · config
+packages/    platform · contracts · expr · business-time · ui · sdk · bff · pwa ·
+             runtime · config
 infra/       docker · railway · scripts (migrate, seed, platform console, walking skeleton)
 prisma/      schema assembled from each module's fragment, plus migrations
 tests/       integration · isolation · permissions

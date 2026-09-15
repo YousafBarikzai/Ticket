@@ -55,6 +55,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0040](0040-the-provider-is-a-socket-and-the-governance-is-the-product.md) | The provider is a socket, and the governance is the product | Accepted | MOD-09, OD-04 |
 | [0041](0041-the-browser-holds-a-cookie-and-nothing-else.md) | The browser holds a cookie and nothing else | Accepted | MOD-16, MOD-04 |
 | [0042](0042-a-model-with-no-price-is-not-called.md) | A model with no price is not called | Accepted | MOD-09, OD-04 |
+| [0043](0043-only-additive-work-may-wait.md) | Only additive work may wait | Accepted | MOD-16, doc 14 §5 |
 
 ## Template
 

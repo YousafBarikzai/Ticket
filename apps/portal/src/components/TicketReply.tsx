@@ -2,7 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { ApiError } from '@itsm/sdk';
+import { ApiError, queueable } from '@itsm/sdk';
+import { submitOrQueue } from '@itsm/pwa';
 import { Button, FormField, Textarea } from '@itsm/ui';
 import { api } from '../client/api.js';
 
@@ -23,6 +24,12 @@ import { api } from '../client/api.js';
  * Every message a requester writes is public. There is no internal note here
  * and no switch to get wrong — which is the one thing this screen has that the
  * agent's composer does not.
+ *
+ * A reply is queueable offline; a reopen is not, and the difference is the
+ * rule doc 14 §5 draws. A comment is additive: whenever it arrives it is still
+ * the thing they meant to say. A reopen is a transition, and a transition made
+ * against a ticket that has moved since is a transition the API will refuse —
+ * hours later, with nobody watching. So an offline reopen says so and waits.
  */
 
 export interface TicketReplyProps {
@@ -37,6 +44,7 @@ export function TicketReply({ ticketNumber, version, status, canReopen }: Ticket
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState<null | 'reply' | 'reopen'>(null);
   const [error, setError] = useState<string | null>(null);
+  const [queued, setQueued] = useState(false);
 
   const finished = status === 'closed' || status === 'cancelled';
 
@@ -52,15 +60,30 @@ export function TicketReply({ ticketNumber, version, status, canReopen }: Ticket
     if (!body.trim() || busy) return;
     setBusy('reply');
     setError(null);
-    try {
-      await api.comment(ticketNumber, body.trim());
+    setQueued(false);
+
+    const request = queueable.comment(ticketNumber, body.trim());
+    const result = await submitOrQueue({
+      action: 'add-comment',
+      path: `/api/proxy${request.path}`,
+      body: request.body,
+      summary: `Reply on ${ticketNumber}`,
+    });
+
+    if (result.queued) {
+      setQueued(true);
+      setBody('');
+    } else if (result.ok) {
       setBody('');
       router.refresh();
-    } catch (failure) {
-      setError(describe(failure));
-    } finally {
-      setBusy(null);
+    } else {
+      setError(
+        result.response?.status === 409 || result.response?.status === 422
+          ? 'This ticket changed while you were typing. Reload the page and your message will still be here.'
+          : 'That did not send. Your text is still here — try again.',
+      );
     }
+    setBusy(null);
   }
 
   async function reopen(): Promise<void> {
@@ -68,6 +91,12 @@ export function TicketReply({ ticketNumber, version, status, canReopen }: Ticket
     const reason = body.trim();
     if (!reason) {
       setError('Tell us what is still wrong, then reopen it.');
+      return;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // A transition cannot be queued: made against a ticket that has moved
+      // since, the API refuses it hours later with nobody watching.
+      setError('Reopening needs a connection. Your message is still here — try again when you are back online.');
       return;
     }
     setBusy('reopen');
@@ -127,6 +156,12 @@ export function TicketReply({ ticketNumber, version, status, canReopen }: Ticket
           </Button>
         ) : null}
       </div>
+
+      {queued ? (
+        <p className="itsm-Reply__queued" role="status">
+          You are offline, so your message is saved on this device and will be sent when you are back.
+        </p>
+      ) : null}
 
       {error ? (
         <p className="itsm-Reply__error" role="alert">
