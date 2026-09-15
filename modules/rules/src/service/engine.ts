@@ -1,13 +1,7 @@
 import { type TenantContext, type Tx, logger, metrics, newId, recordAudit, publish } from '@itsm/platform';
 import { evaluate, type EvalContext } from '@itsm/expr';
 import { events } from '@itsm/contracts';
-import {
-  EXCLUSIVE_ACTIONS,
-  conflictKey,
-  type RuleAction,
-  type RuleEvent,
-  ACTIONS_NOT_YET_AVAILABLE,
-} from '../domain/actions.js';
+import { EXCLUSIVE_ACTIONS, conflictKey, type RuleAction, type RuleEvent } from '../domain/actions.js';
 
 /**
  * The rules interpreter.
@@ -124,6 +118,8 @@ export interface RuleEffects {
   workflows: { definitionKey: string }[];
   status?: { status: string; reason?: string };
   priorityReason?: string;
+  /** How the ticket should be routed to a person (MOD-20). */
+  assignStrategy?: 'round_robin' | 'least_loaded' | 'skill';
 }
 
 export function effectsOf(decision: Decision): RuleEffects {
@@ -167,13 +163,10 @@ export function effectsOf(decision: Decision): RuleEffects {
         effects.workflows.push({ definitionKey: action.definitionKey });
         break;
       case 'assignStrategy':
-        // Rejected at publish (ACTIONS_NOT_YET_AVAILABLE), so reaching here means
-        // a rule was published before that check existed. Refuse quietly rather
-        // than pretend, and say so loudly enough to be found.
-        logger.warn('rule action is not available in this phase and was ignored', {
-          action: action.type,
-          delivers: ACTIONS_NOT_YET_AVAILABLE[action.type],
-        });
+        // The rule names *how* to choose, never who: picking the person needs
+        // the team's availability, shifts, skills and current load, and all of
+        // that belongs to MOD-20. The caller asks it, in the same transaction.
+        effects.assignStrategy = action.strategy;
         break;
     }
   }

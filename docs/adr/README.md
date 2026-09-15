@@ -35,6 +35,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0020](0020-identifiers-uuidv7-and-numbering.md) | Identifiers: UUID v7 ids and transactional per-type numbering | Accepted | §7 |
 | [0021](0021-expression-language-strict-ordering.md) | Expression language: ordering across types raises, and is refused at publish | Accepted | MOD-06, MOD-02 |
 | [0022](0022-email-providers-per-tenant.md) | Email: Postmark and Microsoft Graph, chosen per tenant | Accepted | MOD-03, OD-03 |
+| [0024](0024-rotas-computed-not-stored.md) | Rotas, turns and shifts are computed from a definition, never stored as a cursor | Accepted | MOD-20 |
 
 ## Template
 

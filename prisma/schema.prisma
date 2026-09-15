@@ -1940,3 +1940,210 @@ model WorkflowWait {
   @@map("wf_wait")
 }
 
+// ===========================================================================
+// modules/workload/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-20 Workload and routing (PH-4).
+///
+/// Answers one question the rest of the platform keeps asking and could not
+/// answer until now: *who should do this?* Everything here exists to make that
+/// answer defensible — who is working, what they can do, how much they already
+/// have, and who is on call when nobody is working.
+
+/// Whether an agent is available, and why not.
+///
+/// A reason rather than a boolean, because "not available" is not one state:
+/// somebody on holiday will be back on a known date, somebody at lunch will be
+/// back within the hour, and somebody who has left is never coming back. A
+/// router that cannot tell them apart either holds work for a departed
+/// employee or reassigns a ticket somebody is actively working on.
+model AgentAvailability {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  /// available | busy | away | off_shift | left
+  status    String   @default("available")
+  reason    String?
+  /// When they expect to be back. Null means indefinite, which routing reads
+  /// as "do not queue work for this person".
+  until     DateTime? @db.Timestamptz(6)
+  /// Set by the person, by a shift, or by the platform noticing they are gone.
+  source    String   @default("manual")
+  /// How much work they will hold at once. Null means the team default.
+  capacity  Int?
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, status])
+  @@map("agent_availability")
+}
+
+/// A repeating pattern of when a team works.
+///
+/// Stored as local wall-clock times against a time zone rather than as UTC
+/// instants, because "the early shift starts at 07:00" stays true across a
+/// daylight-saving change and an instant does not. `packages/business-time`
+/// does the conversion, so the rule lives in one place.
+model Shift {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  teamId     String   @map("team_id") @db.Uuid
+  key        String
+  name       String
+  timeZone   String   @map("time_zone")
+  /// Weekday keys to local start/end times: `{ "mon": [{ "from": "07:00", "to": "15:00" }] }`.
+  pattern    Json
+  status     String   @default("active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  assignments ShiftAssignment[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, teamId, status])
+  @@map("shift")
+}
+
+/// Who works a shift, over what dates.
+model ShiftAssignment {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  shiftId   String   @map("shift_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  startsOn  DateTime @map("starts_on") @db.Date
+  /// Null means open-ended, which is the common case for a permanent rota.
+  endsOn    DateTime? @map("ends_on") @db.Date
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, shiftId, userId, startsOn])
+  @@index([tenantId, userId])
+  @@map("shift_assignment")
+}
+
+/// Who answers when nobody is at work.
+model OnCallRotation {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  teamId     String   @map("team_id") @db.Uuid
+  key        String
+  name       String
+  timeZone   String   @map("time_zone")
+  /// daily | weekly
+  cadence    String   @default("weekly")
+  /// When the first period began; every later period is counted from here, so
+  /// the rotation is a function of time rather than a cursor that can drift.
+  startsAt   DateTime @map("starts_at") @db.Timestamptz(6)
+  /// The order people take it, by user id. Rotating the list rotates the rota.
+  members    String[] @default([])
+  /// Local time of day the handover happens.
+  handoverAt String   @default("09:00") @map("handover_at")
+  status     String   @default("active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  overrides  OnCallOverride[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, teamId, status])
+  @@map("oncall_rotation")
+}
+
+/// Somebody covering for somebody else.
+///
+/// Separate from the rotation rather than an edit to it, because a swap is a
+/// fact about one week and the rota is a fact about every week. Editing the
+/// member list to cover a holiday shifts everybody's turn for ever.
+model OnCallOverride {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  rotationId String   @map("rotation_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  startsAt   DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt     DateTime @map("ends_at") @db.Timestamptz(6)
+  reason     String?
+  createdBy  String?  @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rotation   OnCallRotation @relation(fields: [rotationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, rotationId, startsAt])
+  @@map("oncall_override")
+}
+
+/// Something an agent can do.
+model Skill {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  agents      AgentSkill[]
+
+  @@unique([tenantId, key])
+  @@map("skill")
+}
+
+/// How well one agent can do it.
+model AgentSkill {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  skillId  String @map("skill_id") @db.Uuid
+  /// 1 learning, 2 competent, 3 expert. Deliberately coarse: a finer scale
+  /// invites an accuracy nobody maintains.
+  level    Int    @default(2)
+
+  skill    Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, skillId])
+  @@index([tenantId, skillId, level])
+  @@map("agent_skill")
+}
+
+/// How a team wants its work distributed.
+model RoutingPolicy {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  teamId        String   @map("team_id") @db.Uuid
+  /// round_robin | least_loaded | skill
+  strategy      String   @default("least_loaded")
+  /// What counts as full. A router that ignores this queues work on somebody
+  /// who already has more than they can do, which is how a queue becomes a
+  /// person's personal backlog.
+  defaultCapacity Int    @default(10) @map("default_capacity")
+  /// Required skills are matched against the ticket's category when set.
+  requireSkill  Boolean  @default(false) @map("require_skill")
+  /// Whether a ticket may be assigned to somebody who is off shift.
+  allowOffShift Boolean  @default(false) @map("allow_off_shift")
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, teamId])
+  @@map("routing_policy")
+}
+
+/// When each agent was last given a ticket.
+///
+/// Round robin is derived from this rather than from a stored "whose turn is
+/// it next" cursor, for the same reason the on-call rota is: a cursor that is
+/// missed, replayed or processed twice drifts, and nobody notices until one
+/// person has had three in a row. A mark written late merely delays somebody's
+/// turn by one ticket, which is the failure worth having.
+model AgentRoutingMark {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  lastAssignedAt DateTime @map("last_assigned_at") @db.Timestamptz(6)
+  /// How many the router has given them, for a fairness report that does not
+  /// require reading the whole ticket table.
+  assignedCount  Int      @default(0) @map("assigned_count")
+
+  @@unique([tenantId, userId])
+  @@map("agent_routing_mark")
+}
+

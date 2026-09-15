@@ -838,6 +838,16 @@ export interface AutomatedChange {
   tags?: string[];
   watchers?: string[];
   status?: { status: string; reason?: string };
+  /**
+   * Who automation chose to do the work (MOD-20).
+   *
+   * Separate from `patch` on purpose. `assigneeId` is deliberately absent from
+   * AUTOMATION_FIELDS, so a `setField` action can never name a person; and an
+   * assignment is not a field change — it has its own ticket event, its own
+   * audit action and its own published event, which notifications and webhooks
+   * are already listening for.
+   */
+  assignee?: { userId: string; method: 'rule' | 'round_robin' | 'load_balanced' | 'skills'; reason?: string };
 }
 
 export interface AutomationOutcome {
@@ -845,6 +855,7 @@ export interface AutomationOutcome {
   tagsAdded: string[];
   watchersAdded: string[];
   statusChanged: { from: string; to: string } | null;
+  assigned: { from: string | null; to: string } | null;
   refused: { what: string; why: string }[];
 }
 
@@ -870,6 +881,7 @@ export async function applyAutomatedChange(
     tagsAdded: [],
     watchersAdded: [],
     statusChanged: null,
+    assigned: null,
     refused: [],
   };
 
@@ -945,6 +957,51 @@ export async function applyAutomatedChange(
       data: { id: newId(), tenantId: ctx.tenantId, ticketId: ticket.id, userId, reason: provenance.kind },
     });
     outcome.watchersAdded.push(userId);
+  }
+
+  // --- assignee ------------------------------------------------------------
+  if (change.assignee) {
+    const current = (await repo.findById(tx, ticket.id))!;
+    if (current.assigneeId === change.assignee.userId) {
+      // Already theirs. Nothing to write, and nothing to notify them about.
+    } else {
+      const affected = await repo.updateWithVersion(tx, current.id, current.version, {
+        assigneeId: change.assignee.userId,
+        updatedBy: null,
+      } as never);
+      if (affected === 0) {
+        outcome.refused.push({ what: 'assign', why: 'the ticket changed while the rule was running' });
+      } else {
+        outcome.assigned = { from: current.assigneeId, to: change.assignee.userId };
+        await repo.insertTicketEvent(tx, ctx, ticket.id, 'assigned', {
+          assigneeId: change.assignee.userId,
+          groupId: current.groupId,
+          method: change.assignee.method,
+          by: { automation: provenance.kind, key: provenance.key, version: provenance.version },
+        });
+        await recordAudit(tx, ctx, {
+          action: 'ticket.assigned',
+          targetType: 'ticket',
+          targetId: ticket.id,
+          before: { assigneeId: current.assigneeId },
+          after: { assigneeId: change.assignee.userId },
+          reason: change.assignee.reason ?? `${provenance.kind} ${provenance.key} v${provenance.version}`,
+        });
+        await publish(tx, ctx, {
+          definition: events.ticketAssigned,
+          aggregateId: ticket.id,
+          aggregateVersion: current.version + 1,
+          payload: {
+            ticketId: ticket.id,
+            number: ticket.number,
+            assigneeId: change.assignee.userId,
+            groupId: current.groupId,
+            method: change.assignee.method,
+          },
+          actorOverride: automationActor(provenance),
+        });
+      }
+    }
   }
 
   // --- status --------------------------------------------------------------

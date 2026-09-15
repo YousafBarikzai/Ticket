@@ -6,7 +6,7 @@ Two engines share one expression language and one versioned-definition lifecycle
 
 - `business_rule (id, tenant_id, org_id, name, order, event, conditions expr, actions jsonb, mode: stop|continue, status, version)`.
 - Evaluated by the `rules` consumer on `ticket.created`, `ticket.updated`, `ticket.comment.added`, `request.submitted` and on the schedule tick (reminders, auto-close). Rules for one event run in `order`; the first matching rule per action type wins unless `continue`.
-- Action types (closed set): `setField`, `setCategory`, `setPriority` (with reason, overriding the impact/urgency matrix), `assignGroup`, `assignStrategy` (delegates to MOD-20), `addWatcher`, `addTag`, `sendNotification` (template key), `linkDuplicate`, `setStatus`, `startWorkflow`.
+- Action types (closed set): `setField`, `setCategory`, `setPriority` (with reason, overriding the impact/urgency matrix), `assignGroup`, `assignStrategy` (delegates to MOD-20, delivered PH-4), `addWatcher`, `addTag`, `sendNotification` (template key), `linkDuplicate`, `setStatus`, `startWorkflow`.
 - Each applied rule writes a `TicketEvent` and an audit event with `rule_id` and `version`; publishes `rule.applied`.
 - **Test panel:** `POST /rules/{id}/test` replays the last 100 tickets' creation events through the candidate rule set in a dry run and returns what would change; nothing is written.
 - Rules execute inside the handler's transaction so they are exactly-once per event; they complete within the handler budget (< 500 ms) or hand off to a workflow.

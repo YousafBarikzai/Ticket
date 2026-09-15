@@ -27,6 +27,7 @@
     "@itsm/module-tenancy": "workspace:*",
     "@itsm/module-ticket": "workspace:*",
     "@itsm/module-workflow": "workspace:*",
+    "@itsm/module-workload": "workspace:*",
     "@itsm/platform": "workspace:*"
   }
 }
