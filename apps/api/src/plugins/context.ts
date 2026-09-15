@@ -35,6 +35,8 @@ declare module 'fastify' {
   }
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Routes that must work before a caller has a tenant or a session. */
 const UNAUTHENTICATED_PATHS = new Set(['/health/live', '/health/ready', '/api/openapi.json', '/api/docs', '/metrics']);
 
@@ -140,7 +142,10 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
       permissions: SYSTEM_PERMISSIONS,
     });
 
-    let actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, token.userId!));
+    // A token from the identity provider names its subject, which is not one
+    // of our ids; looking that up as one would be a database error, not a miss.
+    const namesOurId = UUID.test(token.userId ?? '');
+    let actor = namesOurId ? await withContext(bootstrapContext, () => resolveActor(bootstrapContext, token.userId!)) : null;
     if (!actor && token.email && token.userId === token.subject) {
       // First login through the identity provider: the token names nobody the
       // platform knows yet. Provision just in time, or link an account that
