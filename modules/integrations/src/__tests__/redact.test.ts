@@ -10,7 +10,10 @@ describe('redacting headers', () => {
   it('removes the ones that carry credentials', () => {
     expect(
       redactHeaders({
-        authorization: 'Bearer sk_live_notarealkey',
+        // Deliberately not shaped like a real credential: a secret scanner
+        // cannot tell a fixture from a leak, and a test that trips it costs a
+        // CI cycle every time somebody touches this file.
+        authorization: 'Bearer example-token',
         cookie: 'session=abc',
         'x-api-key': 'k',
         'content-type': 'application/json',

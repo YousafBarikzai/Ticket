@@ -21,16 +21,38 @@ useDefault = true
 
 [allowlist]
 description = """
-Business rule and approval policy keys.
+Two narrow exemptions.
+
+1. Business rule and approval policy keys.
 
 The generic-api-key rule fires on `key: '...'`, and a rule key is exactly that
 shape: a short lower-case slug such as 'major-incident-p1'. The pattern is
 restricted to that shape, so a real credential assigned to a field called `key`
 is still reported — anything containing upper case, an underscore, or a run of
 digits falls outside it and is caught.
+
+2. One test fixture in this branch's history.
+
+`Bearer sk_live_notarealkey` was written as a redaction-test fixture and reads
+to the scanner as a Stripe key — correctly, which is the scanner working. The
+fixture has been changed to something that is not credential-shaped, but the
+string is in a commit, and the scan runs over the branch's whole range.
+
+Exempted as the exact literal rather than as a pattern or a path: a real key
+such as `sk_live_4eC39HqLyjWDarjtT1zdp7dc` does not match it, and neither does
+anything else anybody might write. The lesson is the one worth keeping — a test
+fixture should never be shaped like a real credential, because a scanner cannot
+tell a fixture from a leak and every CI run pays for the confusion.
 """
 regexTarget = "line"
 # Case-sensitive on purpose. An earlier draft used (?i) for the field name,
 # which also made the *value* case-insensitive and would have exempted an
 # upper-case credential such as an AWS key id assigned to `key:`.
-regexes = ['''(?:rule|policy|template|setting)?[Kk]ey['"]?\s*[:=]\s*['"][a-z][a-z0-9]*(?:-[a-z0-9]+)*['"]''']
+regexes = [
+  '''(?:rule|policy|template|setting)?[Kk]ey['"]?\s*[:=]\s*['"][a-z][a-z0-9]*(?:-[a-z0-9]+)*['"]''',
+  # The exact historical fixture, quotes included, and nothing else. Without
+  # the closing quote this would also exempt `sk_live_notarealkeyBUTLONGER` —
+  # an unanchored literal is a prefix anybody can append a real key to, which
+  # the check in this file's history caught before it shipped.
+  """'Bearer sk_live_notarealkey'""",
+]

@@ -35,16 +35,16 @@ afterEach(() => {
 
 describe('sealing a secret', () => {
   it('round-trips', () => {
-    const sealed = seal('pk_live_notarealkey');
-    expect(open(sealed)).toBe('pk_live_notarealkey');
+    const sealed = seal('a-stored-secret');
+    expect(open(sealed)).toBe('a-stored-secret');
   });
 
   it('never puts the plaintext in the stored value', () => {
     // The row goes in a database, a backup and a dump. Any of those leaking
     // must not leak the credential.
-    const sealed = seal('pk_live_notarealkey');
-    expect(JSON.stringify(sealed)).not.toContain('notarealkey');
-    expect(Buffer.from(sealed.ciphertext, 'base64').toString('utf8')).not.toContain('notarealkey');
+    const sealed = seal('a-stored-secret');
+    expect(JSON.stringify(sealed)).not.toContain('a-stored-secret');
+    expect(Buffer.from(sealed.ciphertext, 'base64').toString('utf8')).not.toContain('a-stored-secret');
   });
 
   it('produces a different ciphertext each time for the same input', () => {
@@ -76,13 +76,13 @@ describe('when something is wrong', () => {
   it('refuses an altered ciphertext rather than returning plausible garbage', () => {
     // GCM authenticates. For a credential this is the difference between a
     // failed call and a request signed with something an attacker chose.
-    const sealed = seal('pk_live_notarealkey');
+    const sealed = seal('a-stored-secret');
     const altered = { ...sealed, ciphertext: Buffer.from('not the same length!!').toString('base64') };
     expect(() => open(altered)).toThrow(DecryptionFailedError);
   });
 
   it('refuses an altered wrapped key', () => {
-    const sealed = seal('pk_live_notarealkey');
+    const sealed = seal('a-stored-secret');
     const altered = { ...sealed, dek: Buffer.alloc(48, 9).toString('base64') };
     expect(() => open(altered)).toThrow(DecryptionFailedError);
   });
@@ -151,10 +151,10 @@ describe('rotating the key', () => {
 
 describe('showing a credential without showing it', () => {
   it('fingerprints stably, and reveals nothing', () => {
-    expect(fingerprint('pk_live_notarealkey')).toBe(fingerprint('pk_live_notarealkey'));
-    expect(fingerprint('pk_live_notarealkey')).not.toBe(fingerprint('pk_live_anotherkey'));
-    expect(fingerprint('pk_live_notarealkey')).toHaveLength(8);
-    expect(fingerprint('pk_live_notarealkey')).not.toContain('notarealkey');
+    expect(fingerprint('a-stored-secret')).toBe(fingerprint('a-stored-secret'));
+    expect(fingerprint('a-stored-secret')).not.toBe(fingerprint('a-different-secret'));
+    expect(fingerprint('a-stored-secret')).toHaveLength(8);
+    expect(fingerprint('a-stored-secret')).not.toContain('a-stored-secret');
   });
 
   it('compares secrets without leaking the answer through timing', () => {
