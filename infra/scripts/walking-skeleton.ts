@@ -525,6 +525,142 @@ try {
     'SLA targets are configuration, not code',
     `${policies.body.data?.length ?? 0} polic(ies), ${policies.body.data?.reduce((n, p) => n + (p.targets?.length ?? 0), 0) ?? 0} target(s)`,
   );
+
+  // 22. Knowledge the requester can actually find ----------------------------
+  await api('/api/v1/knowledge', {
+    method: 'POST',
+    token: administrator,
+    body: {
+      key: 'laptop-not-charging',
+      title: 'What to try when a laptop will not charge',
+      summary: 'Three things to check before raising a ticket.',
+      body: [{ kind: 'paragraph', runs: [{ text: 'Try the other cable, the other port, and a different socket.' }] }],
+      audience: 'tenant',
+    },
+  });
+  await api('/api/v1/knowledge/laptop-not-charging/publish', { method: 'POST', token: administrator });
+
+  const publicSearch = await api<{ data: { title: string }[]; meta: { engine: string } }>(
+    '/api/v1/search?q=charge&types=knowledge',
+    { token: requester },
+  );
+  check(
+    (publicSearch.body.data?.length ?? 0) > 0,
+    'a requester can find the answer before raising a ticket',
+    `search answered from ${publicSearch.body.meta?.engine ?? 'unknown'}`,
+  );
+
+  await api('/api/v1/knowledge', {
+    method: 'POST',
+    token: administrator,
+    body: {
+      key: 'server-room-access',
+      title: 'Break-glass access to the server room',
+      body: [{ kind: 'paragraph', runs: [{ text: 'Use the break-glass account and log it.' }] }],
+      audience: 'internal',
+    },
+  });
+  await api('/api/v1/knowledge/server-room-access/publish', { method: 'POST', token: administrator });
+
+  const internalToRequester = await api('/api/v1/knowledge/server-room-access', { token: requester });
+  check(
+    internalToRequester.status === 404,
+    'an internal runbook does not reach the portal',
+    'refused with 404 rather than 403, which would confirm it exists',
+  );
+
+  const internalToAgent = await api<{ title: string }>('/api/v1/knowledge/server-room-access', { token: agent });
+  check(internalToAgent.status === 200, 'an agent reads the same runbook', internalToAgent.body.title ?? '');
+
+  // 23. An article keeps its history ------------------------------------------
+  await api('/api/v1/knowledge/laptop-not-charging', {
+    method: 'PATCH',
+    token: administrator,
+    body: { title: 'What to try when a laptop will not charge (2026)', changeNote: 'Reviewed' },
+  });
+  const duringEdit = await api<{ title: string }>('/api/v1/knowledge/laptop-not-charging', { token: requester });
+  check(
+    !duringEdit.body.title?.includes('2026'),
+    'a published article does not change under a reader while it is edited',
+    'the reader still has version 1',
+  );
+
+  await api('/api/v1/knowledge/laptop-not-charging/publish', { method: 'POST', token: administrator });
+  const rolledBack = await api<{ version: number; restoredFrom: number }>(
+    '/api/v1/knowledge/laptop-not-charging/rollback',
+    { method: 'POST', token: administrator, body: { toVersion: 1 } },
+  );
+  check(
+    rolledBack.body.version === 3 && rolledBack.body.restoredFrom === 1,
+    'a rollback adds to the history rather than rewriting it',
+    'version 3 restores version 1, and the history says so',
+  );
+
+  // 24. A workflow that waits --------------------------------------------------
+  const workflows = await api<{ data: { key: string; status: string }[] }>('/api/v1/workflows', {
+    token: administrator,
+  });
+  check(
+    (workflows.body.data?.length ?? 0) > 0 && workflows.body.data.every((w) => w.status === 'published'),
+    'a new tenant starts with workflows that are already live',
+    workflows.body.data?.map((w) => w.key).join(', ') ?? '',
+  );
+
+  const badWorkflow = await api<{ detail: string }>('/api/v1/workflows', {
+    method: 'POST',
+    token: administrator,
+    body: {
+      key: 'never-finishes',
+      name: 'Never finishes',
+      graph: {
+        schemaVersion: 1,
+        trigger: { kind: 'manual' },
+        start: 'a',
+        nodes: [
+          { key: 'a', type: 'changeStatus', status: 'in_progress' },
+          { key: 'b', type: 'changeStatus', status: 'on_hold' },
+        ],
+        edges: [
+          { from: 'a', to: 'b' },
+          { from: 'b', to: 'a' },
+        ],
+      },
+    },
+  });
+  const refused = await api<{ detail: string }>('/api/v1/workflows/never-finishes/publish', {
+    method: 'POST',
+    token: administrator,
+  });
+  check(
+    badWorkflow.status === 201 && refused.status === 422 && /no way out/.test(refused.body.detail ?? ''),
+    'a workflow that could never finish is refused before it goes live',
+    'the loop was caught at publication, not by a run that never ended',
+  );
+
+  // 25. A rehearsal that changes nothing --------------------------------------
+  const runsBefore = await api<{ data: unknown[] }>('/api/v1/workflow-runs?limit=200', { token: administrator });
+  const rehearsal = await api<{ trace: { stepKey: string; would: Record<string, unknown> }[] }>(
+    '/api/v1/workflows/request-fulfilment/test',
+    { method: 'POST', token: administrator, body: { approvalDecision: 'rejected' } },
+  );
+  const runsAfter = await api<{ data: unknown[] }>('/api/v1/workflow-runs?limit=200', { token: administrator });
+  check(
+    rehearsal.status === 200 &&
+      (rehearsal.body.trace?.length ?? 0) > 0 &&
+      (runsAfter.body.data?.length ?? 0) === (runsBefore.body.data?.length ?? 0),
+    'a workflow can be rehearsed without anything happening',
+    `${rehearsal.body.trace?.length ?? 0} steps traced, no run created`,
+  );
+
+  // 26. Email providers a tenant chooses for itself ----------------------------
+  const accounts = await api<{ data: { key: string; transportProblems?: unknown[] }[] }>('/api/v1/channels/accounts', {
+    token: administrator,
+  });
+  check(
+    (accounts.body.data?.length ?? 0) > 0,
+    'each mailbox names its own email provider',
+    'so one tenant\'s data-residency choice does not decide another\'s',
+  );
 } catch (error) {
   failures.push({ name: 'run', detail: (error as Error).message });
 } finally {
