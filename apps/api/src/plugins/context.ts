@@ -152,7 +152,11 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
       // SCIM or an import already made for this address (doc 09 §JIT).
       const provisioned = await withContext(bootstrapContext, () =>
         userService.provisionFromToken(bootstrapContext, { sub: token.subject, email: token.email!, ...(token.name ? { name: token.name } : {}) }),
-      );
+      ).catch((error: unknown) => {
+        // A deactivated account presenting a fresh token is refused, not a
+        // validation problem: the answer to "may I come in" is no.
+        throw new UnauthorisedError(error instanceof Error ? error.message : 'this account is not active');
+      });
       actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, provisioned.userId));
     }
     if (!actor) throw new UnauthorisedError('this account no longer exists');
