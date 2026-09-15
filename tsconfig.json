@@ -11,6 +11,6 @@
       "@itsm/module-*": ["modules/*/src/index.ts"]
     }
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "modules/**/*.ts", "infra/**/*.ts"],
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "modules/**/*.ts", "infra/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "**/dist/**", "**/.next/**"]
 }

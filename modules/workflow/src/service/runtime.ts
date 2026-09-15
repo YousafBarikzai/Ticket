@@ -89,28 +89,6 @@ export async function advance(
     const idempotencyKey = idempotencyKeyFor(run.id, request.stepKey);
     const context = (run.context ?? {}) as EvalContext;
 
-    try {
-      await tx.workflowStepRun.create({
-        data: {
-          id: newId(),
-          tenantId: ctx.tenantId,
-          runId: run.id,
-          stepKey: request.stepKey,
-          attempt,
-          status: 'started',
-          input: { node: node.type } as never,
-          idempotencyKey,
-        },
-      });
-    } catch {
-      // Somebody else claimed this exact attempt. Theirs, not ours.
-      return { kind: 'taken' as const, run };
-    }
-
-    if (run.status !== 'running') {
-      await tx.workflowRun.update({ where: { id: run.id }, data: { status: 'running' } });
-    }
-
     // What a previous attempt produced, so a step that is naturally hard to
     // repeat can recognise its own half-finished work.
     const previous = await tx.workflowStepRun.findFirst({
@@ -139,12 +117,44 @@ export async function advance(
 
   if (claim.kind === 'gone') return { status: 'skipped', runStatus: 'gone', next: [] };
   if (claim.kind === 'finished') return { status: 'skipped', runStatus: claim.run.status, next: [] };
-  if (claim.kind === 'taken') return { status: 'skipped', runStatus: claim.run.status, next: [] };
   if (claim.kind === 'unknown-node') {
     return failRun(ctx, claim.run.id, `the workflow has no step called ${request.stepKey}`);
   }
   if (claim.kind === 'exhausted') {
     return failRun(ctx, claim.run.id, `${request.stepKey} failed ${MAX_ATTEMPTS} times and was not retried again`);
+  }
+
+  // ---- 1b. Claim, in a transaction of its own ------------------------------
+  // Separate on purpose. In PostgreSQL a failed statement aborts the whole
+  // surrounding transaction, so losing the race on the unique constraint from
+  // inside the read transaction would poison every statement after it,
+  // including the commit — the same trap the Phase 2 tenant purge fell into.
+  // Here, losing the race spoils nothing but its own transaction.
+  const claimed = await transaction(ctx, async (tx) => {
+    await tx.workflowStepRun.create({
+      data: {
+        id: newId(),
+        tenantId: ctx.tenantId,
+        runId: claim.run.id,
+        stepKey: request.stepKey,
+        attempt: claim.attempt,
+        status: 'started',
+        input: { node: claim.node.type } as never,
+        idempotencyKey: claim.idempotencyKey,
+      },
+    });
+    return true;
+  }).catch(() => false);
+
+  if (!claimed) {
+    // Somebody else has this exact attempt. Theirs, not ours.
+    return { status: 'skipped', runStatus: claim.run.status, next: [] };
+  }
+
+  if (claim.run.status !== 'running') {
+    await transaction(ctx, (tx) =>
+      tx.workflowRun.update({ where: { id: claim.run.id }, data: { status: 'running' } }),
+    );
   }
 
   // ---- 2. Execute ---------------------------------------------------------

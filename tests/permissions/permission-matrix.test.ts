@@ -251,8 +251,6 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
-    what: 'reach the platform console',
-  {
     what: 'read the knowledge base',
     path: () => '/api/v1/knowledge',
     // Everyone reads; what differs is what comes back, which the scope tests
@@ -275,6 +273,7 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403 },
   },
   {
+    what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.
     allowed: [],

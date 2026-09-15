@@ -222,6 +222,38 @@ export async function request<T = unknown>(
  * Returns how many deliveries were made, so a test can assert that something
  * actually ran rather than silently passing on an empty outbox.
  */
+/**
+ * Waits for the external search engine to finish what it has been given.
+ *
+ * Meilisearch accepts a write with 202 and indexes it a moment later, so any
+ * assertion made immediately after indexing is a race. Waiting here rather than
+ * sleeping in each test keeps the waiting in one place and makes it honest: the
+ * platform's contract is search freshness within seconds, not instantly.
+ */
+export async function settleSearch(timeoutMs = 20_000): Promise<void> {
+  const url = process.env.MEILISEARCH_URL;
+  if (!url) return;
+
+  const base = url.replace(/\/+$/, '');
+  const key = process.env.MEILISEARCH_API_KEY;
+  const headers: Record<string, string> = key ? { authorization: `Bearer ${key}` } : {};
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    try {
+      const response = await fetch(`${base}/tasks?statuses=enqueued,processing&limit=1`, { headers });
+      const body = (await response.json()) as { results?: unknown[] };
+      if ((body.results?.length ?? 0) === 0) return;
+    } catch {
+      // The engine is not answering; the fallback covers this, and a test that
+      // needed it will fail on its own assertion rather than here.
+      return;
+    }
+    if (Date.now() > deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
 export async function drainEvents(tenantId: string, rounds = 5): Promise<number> {
   const { consumersFor, systemContext, transaction, withContext } = await import('@itsm/platform');
   const { outboxPublisher } = await import('@itsm/module-integrations');
@@ -237,7 +269,13 @@ export async function drainEvents(tenantId: string, rounds = 5): Promise<number>
       ),
     );
     const fresh = rows.filter((row) => !seen.has(row.id));
-    if (fresh.length === 0) return delivered;
+    if (fresh.length === 0) {
+      // Pushing a document to the external search engine is one of the
+      // consumers that just ran, and the engine indexes asynchronously. A test
+      // that drains events and then searches is entitled to see the result.
+      await settleSearch();
+      return delivered;
+    }
 
     for (const row of fresh) {
       seen.add(row.id);
@@ -248,5 +286,6 @@ export async function drainEvents(tenantId: string, rounds = 5): Promise<number>
       }
     }
   }
+  await settleSearch();
   return delivered;
 }

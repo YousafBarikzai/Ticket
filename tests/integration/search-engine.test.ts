@@ -14,6 +14,7 @@ import {
   deleteTestTenant,
   drainEvents,
   request,
+  settleSearch,
   type TestTenant,
 } from '../support/harness.js';
 
@@ -44,7 +45,7 @@ beforeAll(async () => {
     await searchService.reindexTenant(contextFor(tenant.id));
     // Meilisearch indexes asynchronously; a write returns a task id, not a
     // committed document.
-    await settle();
+    await settleSearch();
   }
 }, 120_000);
 
@@ -52,22 +53,6 @@ afterAll(async () => {
   await deleteTestTenant('search');
   await closeHarness();
 });
-
-/** Waits for Meilisearch to finish the tasks queued so far. */
-async function settle(): Promise<void> {
-  const url = process.env.MEILISEARCH_URL!.replace(/\/+$/, '');
-  const key = process.env.MEILISEARCH_API_KEY;
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    const response = await fetch(`${url}/tasks?statuses=enqueued,processing&limit=1`, {
-      headers: key ? { authorization: `Bearer ${key}` } : {},
-    });
-    const body = (await response.json()) as { results: unknown[] };
-    if (body.results.length === 0) return;
-    if (Date.now() > deadline) throw new Error('Meilisearch did not settle within 20s');
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-}
 
 describe('search, whichever backend answers', () => {
   it('finds a ticket by a word in its title', async () => {
@@ -170,7 +155,7 @@ withEngine('with a search engine configured', () => {
     try {
       await drainEvents(other.id);
       await searchService.reindexTenant(contextFor(other.id));
-      await settle();
+      await settleSearch();
 
       expect(indexNameFor(tenant.id)).not.toBe(indexNameFor(other.id));
 
@@ -189,17 +174,17 @@ withEngine('with a search engine configured', () => {
     const doomed = await createTestTenant('search-doomed');
     await drainEvents(doomed.id);
     await searchService.reindexTenant(contextFor(doomed.id));
-    await settle();
+    await settleSearch();
 
     const url = process.env.MEILISEARCH_URL!.replace(/\/+$/, '');
     const key = process.env.MEILISEARCH_API_KEY;
-    const headers = key ? { authorization: `Bearer ${key}` } : {};
+    const headers: Record<string, string> = key ? { authorization: `Bearer ${key}` } : {};
     const uid = indexNameFor(doomed.id);
 
     expect((await fetch(`${url}/indexes/${uid}`, { headers })).ok).toBe(true);
 
     await deleteTestTenant('search-doomed');
-    await settle();
+    await settleSearch();
 
     expect((await fetch(`${url}/indexes/${uid}`, { headers })).ok).toBe(false);
   }, 120_000);

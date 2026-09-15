@@ -199,15 +199,19 @@ describe('publishing', () => {
       method: 'POST',
       token: tenant.people.admin!.token,
       body: {
-        key: 'needs-workflow',
-        name: 'Starts a workflow',
+        key: 'needs-routing',
+        name: 'Routes by strategy',
         event: 'ticket.created',
         conditions: { always: true },
-        actions: [{ type: 'startWorkflow', definitionKey: 'new-starter' }],
+        // `startWorkflow` used to be the example here; PH-3 delivered it, so
+        // the test moved to the action that is still unavailable rather than
+        // being deleted — the refusal itself is what is worth keeping.
+        actions: [{ type: 'assignStrategy', strategy: 'round_robin' }],
       },
     });
     expect(response.status).toBe(422);
     expect(response.body.detail).toMatch(/not available yet/);
+    expect(response.body.detail).toMatch(/MOD-20/);
   });
 
   it('does not let a draft affect a live ticket', async () => {
