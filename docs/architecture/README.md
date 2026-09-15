@@ -28,7 +28,8 @@ This folder defines the complete software architecture for the browser-first, om
 | 17 | [Evolution and extraction](17-evolution-and-extraction.md) | How the modular monolith becomes services when measurement justifies it; multi-region; partner platform readiness. | Tech leads |
 | 18 | [Quality attributes](18-quality-attributes.md) | Every non-functional requirement mapped to the mechanism that meets it and the test that proves it. | QA, engineering |
 | 19 | [Risks and decisions](19-risks-and-decisions.md) | Architecture risks, the specification's open decisions with recommendations, and assumptions. | Steering group |
-| 20 | [Phase 1 readiness](20-phase-1-readiness.md) | What PH-1 builds, in what order, the entry-criteria checklist and the readiness statement. | Steering group, platform squad |
+| 20 | [Phase 1 readiness and delivery record](20-phase-1-readiness.md) | What PH-1 builds, in what order, the entry-criteria checklist and the readiness statement. | Steering group, platform squad |
+| 21 | [Phase 2 readiness and delivery record](21-phase-2-readiness.md) | What PH-2 has built and verified, what remains, the traps it found, and the one decision it leaves open. | Steering group, platform squad |
 
 Decisions are recorded in [`../adr`](../adr/README.md). Where a document says "see ADR-nnnn" the ADR is authoritative.
 
