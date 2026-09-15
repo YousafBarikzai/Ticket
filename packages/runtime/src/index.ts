@@ -27,6 +27,12 @@ import { slaManifest, seedDefaultSlaPolicy } from '@itsm/module-sla';
 import { adminManifest, syncInstalledModules } from '@itsm/module-admin';
 import { rulesManifest, seedDefaultRules } from '@itsm/module-rules';
 import { approvalsManifest, seedApprovalDefaults } from '@itsm/module-approvals';
+import {
+  channelsManifest,
+  seedChannelDefaults,
+  registerEmailTransport,
+  developmentTransport,
+} from '@itsm/module-channels';
 
 /** Every module in this deployment, in dependency order. */
 export const ALL_MODULES: ModuleManifest[] = [
@@ -40,6 +46,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   searchManifest,
   rulesManifest,
   approvalsManifest,
+  channelsManifest,
   adminManifest,
 ];
 
@@ -62,6 +69,13 @@ export function bootstrapModules(): BootstrapResult {
   // than read from the database on every serialisation.
   registerDefaultClassifications();
 
+  // The development email transport verifies nothing, so it is registered only
+  // outside production. In production its presence would turn "no provider is
+  // configured yet" (OD-03) from a loud error into silent mail loss.
+  if (process.env.NODE_ENV !== 'production') {
+    registerEmailTransport(developmentTransport());
+  }
+
   // Tenant provisioning runs these in order; each is idempotent so a failed
   // provision can be resumed rather than restarted (docs/architecture/10 §4).
   registerSeedStep('identity.roles', async (ctx: TenantContext) => {
@@ -81,6 +95,9 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('approvals.defaults', async (ctx: TenantContext) => {
     await seedApprovalDefaults(ctx);
+  });
+  registerSeedStep('channels.defaults', async (ctx: TenantContext) => {
+    await seedChannelDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

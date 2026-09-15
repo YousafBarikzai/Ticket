@@ -21,6 +21,7 @@ export {
   type TransitionEffects,
 } from './domain/state-machine.js';
 export type {
+  ChannelTicketInput,
   AutomatedChange,
   AutomationOutcome,
   AutomationProvenance,

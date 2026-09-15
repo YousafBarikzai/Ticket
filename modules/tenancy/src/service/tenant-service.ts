@@ -1,18 +1,20 @@
 import { z } from 'zod';
 import {
   type TenantContext,
+  type Tx,
   ConflictError,
   NotFoundError,
   SYSTEM_PERMISSIONS,
   createContext,
+  logger,
   newId,
   platformDb,
   platformTransaction,
   publish,
   recordAudit,
   systemContext,
+  transaction,
   withContext,
-  logger,
 } from '@itsm/platform';
 import { events } from '@itsm/contracts';
 
@@ -263,4 +265,81 @@ export function contextForTenant(tenantId: string, region = 'eu-west'): TenantCo
     actor: { type: 'system', id: null, displayName: 'platform' },
     permissions: SYSTEM_PERMISSIONS,
   });
+}
+
+/**
+ * Deletes a tenant and everything belonging to it.
+ *
+ * Deleting the directory row alone is not deletion: every tenant-scoped table
+ * still holds that tenant's rows, invisible only because no context names them
+ * any more. That is wrong twice over — a customer who asks to be removed is
+ * entitled to actual removal, and an orphaned row can still be *found* by any
+ * lookup that searches across tenants. The channel directory is exactly such a
+ * lookup: an orphaned mailbox from a deleted tenant went on receiving mail.
+ *
+ * Two things make this harder than a loop of DELETEs.
+ *
+ * **It must run inside the tenant's own context.** Row-level security is forced
+ * on every tenant-scoped table, so a DELETE with no `app.tenant_id` set matches
+ * nothing at all and reports success — the same silent no-op that a data
+ * migration hits. Running in context also bounds the damage: this can only ever
+ * delete the tenant it was asked to.
+ *
+ * **Some rows are meant to survive.** The audit trail is append-only by
+ * database trigger (ADR-0014), so it refuses to be deleted here and is reported
+ * as retained rather than treated as a failure. Whether a purged tenant's audit
+ * trail is then removed is a retention decision with a legal dimension, not
+ * something a delete helper should make on its own.
+ */
+export async function purgeTenant(tenantId: string): Promise<{ rows: number; passes: number; retained: string[] }> {
+  const ctx = systemContext(tenantId);
+
+  const tables = await platformDb().$queryRaw<{ table_name: string }[]>`
+    SELECT c.relname AS table_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'r'
+      AND c.relname <> 'tenant'
+      AND EXISTS (
+        SELECT 1 FROM information_schema.columns col
+        WHERE col.table_schema = 'public' AND col.table_name = c.relname AND col.column_name = 'tenant_id'
+      )
+  `;
+
+  let remaining = tables.map((row) => row.table_name);
+  let rows = 0;
+  let passes = 0;
+
+  // Each table gets its own transaction. In PostgreSQL a failed statement
+  // aborts the surrounding transaction, so one foreign-key violation inside a
+  // shared transaction makes every statement after it fail too — the purge then
+  // looks as though nothing could be deleted, and stops having deleted almost
+  // nothing.
+  //
+  // Passes rather than a hand-maintained order: foreign keys between
+  // tenant-scoped tables mean one pass cannot always succeed, and a
+  // hand-maintained order is a list that goes stale the next time somebody adds
+  // a table.
+  while (remaining.length > 0 && passes < 10) {
+    passes += 1;
+    const failed: string[] = [];
+    for (const table of remaining) {
+      try {
+        rows += await withContext(ctx, () =>
+          platformTransaction(ctx, (tx) => tx.$executeRawUnsafe(`DELETE FROM "${table}"`), { timeout: 30_000 }),
+        );
+      } catch {
+        failed.push(table);
+      }
+    }
+    if (failed.length === remaining.length) break;
+    remaining = failed;
+  }
+
+  const result = { rows, passes, retained: remaining };
+
+  await platformDb().tenant.deleteMany({ where: { id: tenantId } });
+  logger.info('tenant purged', { tenantId, ...result });
+  return result;
 }

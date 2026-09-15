@@ -130,80 +130,95 @@ export async function createTicket(ctx: TenantContext, input: CreateTicketInput)
     throw new ForbiddenError('ticket.create', 'raising a ticket on behalf of someone else needs tenant-wide permission');
   }
 
-  return transaction(ctx, async (tx) => {
-    const type = parsed.type as TicketType;
-    const number = await nextNumber(tx, ctx, type, numberPrefix[type]);
-    const status: CanonicalState = 'new';
+  return transaction(ctx, (tx) => insertTicketOn(ctx, tx, parsed, requesterId ?? null));
+}
 
-    const derived = await derivePriority(tx, ctx, parsed.impact, parsed.urgency);
-    const priority = parsed.priority ?? derived ?? (await getSetting<string>(ctx, 'ticket.defaultPriority'));
+/**
+ * The insert itself, on a caller's transaction.
+ *
+ * Split out so a channel adapter can raise a ticket inside the transaction that
+ * recorded the message it came from: the inbound row, the ticket, its audit
+ * entry and its outbox event commit together, or the provider retries and
+ * nothing was half-done.
+ */
+async function insertTicketOn(
+  ctx: TenantContext,
+  tx: Tx,
+  parsed: z.infer<typeof createTicketSchema>,
+  requesterId: string | null,
+): Promise<repo.TicketRow> {
+  const type = parsed.type as TicketType;
+  const number = await nextNumber(tx, ctx, type, numberPrefix[type]);
+  const status: CanonicalState = 'new';
 
-    const id = newId();
-    const ticket = await repo.insertTicket(tx, {
-      id,
-      tenantId: ctx.tenantId,
-      orgId: parsed.orgId ?? ctx.organisationIds[0] ?? null,
+  const derived = await derivePriority(tx, ctx, parsed.impact, parsed.urgency);
+  const priority = parsed.priority ?? derived ?? (await getSetting<string>(ctx, 'ticket.defaultPriority'));
+
+  const id = newId();
+  const ticket = await repo.insertTicket(tx, {
+    id,
+    tenantId: ctx.tenantId,
+    orgId: parsed.orgId ?? ctx.organisationIds[0] ?? null,
+    number,
+    type,
+    title: parsed.title,
+    description: parsed.description ?? null,
+    descriptionFormat: parsed.descriptionFormat,
+    status,
+    statusCategory: categoryOf(status),
+    priority,
+    impact: parsed.impact ?? null,
+    urgency: parsed.urgency ?? null,
+    requesterId: requesterId ?? null,
+    affectedUserId: parsed.affectedUserId ?? requesterId ?? null,
+    assigneeId: parsed.assigneeId ?? null,
+    groupId: parsed.groupId ?? null,
+    serviceId: parsed.serviceId ?? null,
+    categoryId: parsed.categoryId ?? null,
+    sourceChannel: parsed.sourceChannel,
+    channelRef: parsed.channelRef ?? null,
+    parentId: parsed.parentId ?? null,
+    externalRef: parsed.externalRef ?? null,
+    custom: parsed.custom as never,
+    createdBy: ctx.actor.id,
+    createdByType: ctx.actor.type,
+    updatedBy: ctx.actor.id,
+  });
+
+  await repo.insertTicketEvent(tx, ctx, id, 'created', { number, channel: parsed.sourceChannel });
+
+  if (requesterId) {
+    await tx.ticketWatcher.create({
+      data: { id: newId(), tenantId: ctx.tenantId, ticketId: id, userId: requesterId, reason: 'requester' },
+    });
+  }
+
+  await recordAudit(tx, ctx, {
+    action: 'ticket.created',
+    targetType: 'ticket',
+    targetId: id,
+    after: { number, type, title: parsed.title, status, priority },
+  });
+
+  await publish(tx, ctx, {
+    definition: events.ticketCreated,
+    aggregateId: id,
+    aggregateVersion: ticket.version,
+    payload: {
+      ticketId: id,
       number,
       type,
-      title: parsed.title,
-      description: parsed.description ?? null,
-      descriptionFormat: parsed.descriptionFormat,
-      status,
-      statusCategory: categoryOf(status),
-      priority,
-      impact: parsed.impact ?? null,
-      urgency: parsed.urgency ?? null,
+      channel: parsed.sourceChannel,
       requesterId: requesterId ?? null,
-      affectedUserId: parsed.affectedUserId ?? requesterId ?? null,
-      assigneeId: parsed.assigneeId ?? null,
-      groupId: parsed.groupId ?? null,
+      priority,
       serviceId: parsed.serviceId ?? null,
       categoryId: parsed.categoryId ?? null,
-      sourceChannel: parsed.sourceChannel,
-      channelRef: parsed.channelRef ?? null,
-      parentId: parsed.parentId ?? null,
-      externalRef: parsed.externalRef ?? null,
-      custom: parsed.custom as never,
-      createdBy: ctx.actor.id,
-      createdByType: ctx.actor.type,
-      updatedBy: ctx.actor.id,
-    });
-
-    await repo.insertTicketEvent(tx, ctx, id, 'created', { number, channel: parsed.sourceChannel });
-
-    if (requesterId) {
-      await tx.ticketWatcher.create({
-        data: { id: newId(), tenantId: ctx.tenantId, ticketId: id, userId: requesterId, reason: 'requester' },
-      });
-    }
-
-    await recordAudit(tx, ctx, {
-      action: 'ticket.created',
-      targetType: 'ticket',
-      targetId: id,
-      after: { number, type, title: parsed.title, status, priority },
-    });
-
-    await publish(tx, ctx, {
-      definition: events.ticketCreated,
-      aggregateId: id,
-      aggregateVersion: ticket.version,
-      payload: {
-        ticketId: id,
-        number,
-        type,
-        channel: parsed.sourceChannel,
-        requesterId: requesterId ?? null,
-        priority,
-        serviceId: parsed.serviceId ?? null,
-        categoryId: parsed.categoryId ?? null,
-        groupId: parsed.groupId ?? null,
-        orgId: ticket.orgId,
-      },
-    });
-
-    return ticket;
+      groupId: parsed.groupId ?? null,
+      orgId: ticket.orgId,
+    },
   });
+
+  return ticket;
 }
 
 /** Loads a ticket and checks the caller may see it, raising 404 if not. */
@@ -1017,4 +1032,102 @@ export async function listTags(ctx: TenantContext, idOrNumber: string): Promise<
     const rows = await tx.ticketTag.findMany({ where: { ticketId: ticket.id }, orderBy: { tag: 'asc' } });
     return rows.map((row) => row.tag);
   });
+}
+
+// ---------------------------------------------------------------------------
+// The channel write path (MOD-03).
+//
+// A message that arrives by email is subject to exactly the rules a request
+// through the API would be, so these go through the same insert and the same
+// comment writer. What they add is the transaction: the inbound row and the
+// ticket it produced commit together, or the provider retries and nothing was
+// half-done.
+// ---------------------------------------------------------------------------
+
+export interface ChannelTicketInput {
+  title: string;
+  description: string;
+  requesterId: string;
+  sourceChannel: string;
+  channelRef: string;
+  orgId?: string | null;
+}
+
+export async function createFromChannel(
+  ctx: TenantContext,
+  tx: Tx,
+  input: ChannelTicketInput,
+): Promise<repo.TicketRow> {
+  authz.require(ctx, 'ticket.create');
+
+  // The organisation comes from the person who wrote in. A channel runs under a
+  // system context, which belongs to no organisation, so without this the ticket
+  // is created with none — and a ticket with neither a group nor an organisation
+  // falls outside every agent's scope and is invisible to the whole service desk.
+  const requester = await tx.user.findFirst({ where: { id: input.requesterId } });
+
+  const parsed = createTicketSchema.parse({
+    type: 'incident',
+    title: input.title.slice(0, 300),
+    description: input.description,
+    sourceChannel: input.sourceChannel,
+    channelRef: input.channelRef,
+    requesterId: input.requesterId,
+    ...(input.orgId ?? requester?.primaryOrgId ? { orgId: input.orgId ?? requester!.primaryOrgId } : {}),
+  });
+  return insertTicketOn(ctx, tx, parsed, input.requesterId);
+}
+
+export async function addCommentFromChannel(
+  ctx: TenantContext,
+  tx: Tx,
+  ticketId: string,
+  input: { body: string; authorId: string; channel: string },
+) {
+  const ticket = await repo.findById(tx, ticketId);
+  if (!ticket) throw new NotFoundError('ticket not found');
+
+  // A reply by email is always public: the sender cannot see the visibility
+  // control, so defaulting to internal would silently hide what they wrote,
+  // and defaulting an agent's reply to internal would hide it from the person
+  // waiting for it.
+  authz.require(ctx, 'ticket.comment.public', { aggregate: 'ticket', record: ticket });
+
+  const comment = await repo.insertComment(tx, {
+    id: newId(),
+    tenantId: ctx.tenantId,
+    ticketId: ticket.id,
+    authorId: input.authorId,
+    authorType: 'user',
+    body: input.body,
+    bodyFormat: 'text',
+    visibility: 'public',
+    channel: input.channel,
+  } as never);
+
+  await repo.insertTicketEvent(tx, ctx, ticket.id, 'comment.added', {
+    commentId: comment.id,
+    visibility: 'public',
+    channel: input.channel,
+  });
+  await recordAudit(tx, ctx, {
+    action: 'ticket.comment.added',
+    targetType: 'ticket',
+    targetId: ticket.id,
+    after: { commentId: comment.id, visibility: 'public', channel: input.channel },
+  });
+  await publish(tx, ctx, {
+    definition: events.ticketCommentAdded,
+    aggregateId: ticket.id,
+    payload: {
+      ticketId: ticket.id,
+      number: ticket.number,
+      commentId: comment.id,
+      visibility: 'public',
+      authorId: input.authorId,
+      channel: input.channel,
+    },
+  });
+
+  return comment;
 }

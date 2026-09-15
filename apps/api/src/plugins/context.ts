@@ -42,7 +42,12 @@ function isUnauthenticated(request: FastifyRequest): boolean {
   const url = request.url.split('?')[0] ?? '';
   if (UNAUTHENTICATED_PATHS.has(url)) return true;
   // Signed-token endpoints carry their own proof and have no session.
-  return url.startsWith('/api/v1/public/') || url.startsWith('/status/');
+  if (url.startsWith('/api/v1/public/') || url.startsWith('/status/')) return true;
+  // A provider webhook has no token to present: it proves itself with a
+  // signature over the body, checked by the channel's transport before the
+  // payload is looked at. Matched exactly rather than by prefix, so the rest of
+  // the channel routes stay behind authentication.
+  return /^\/api\/v1\/channels\/[a-z-]+\/[^/]+\/inbound$/.test(url);
 }
 
 export const contextPlugin = fp(async (app: FastifyInstance) => {

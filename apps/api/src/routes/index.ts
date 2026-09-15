@@ -23,6 +23,7 @@ import { ruleRoutes } from './rules.js';
 import { approvalRoutes } from './approvals.js';
 import { slaRoutes } from './sla.js';
 import { notificationPreferenceRoutes } from './notification-preferences.js';
+import { channelRoutes } from './channels.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -35,6 +36,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await approvalRoutes(v1);
       await slaRoutes(v1);
       await notificationPreferenceRoutes(v1);
+      await channelRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },

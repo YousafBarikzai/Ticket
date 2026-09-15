@@ -90,6 +90,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:modules/approvals
+      '@itsm/module-channels':
+        specifier: workspace:*
+        version: link:modules/channels
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:modules/identity
@@ -153,6 +156,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals
+      '@itsm/module-channels':
+        specifier: workspace:*
+        version: link:../../modules/channels
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity
@@ -207,6 +213,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals
+      '@itsm/module-channels':
+        specifier: workspace:*
+        version: link:../../modules/channels
       '@itsm/module-integrations':
         specifier: workspace:*
         version: link:../../modules/integrations
@@ -261,6 +270,24 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/channels:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-identity':
+        specifier: workspace:*
+        version: link:../identity
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../ticket
@@ -472,6 +499,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals
+      '@itsm/module-channels':
+        specifier: workspace:*
+        version: link:../../modules/channels
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity

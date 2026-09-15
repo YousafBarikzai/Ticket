@@ -94,6 +94,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.delegate', scope: 'own' },
       { key: 'approval.policy.read', scope: 'any' },
       { key: 'sla.policy.read', scope: 'any' },
+      { key: 'channel.account.read', scope: 'any' },
+      { key: 'channel.message.read', scope: 'any' },
     ],
   },
   {
@@ -167,6 +169,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.policy.read', scope: 'any' },
       { key: 'approval.policy.manage', scope: 'any' },
       { key: 'sla.policy.read', scope: 'any' },
+      { key: 'channel.account.read', scope: 'any' },
+      { key: 'channel.message.read', scope: 'any' },
+      { key: 'channel.account.manage', scope: 'any' },
+      { key: 'channel.identity.manage', scope: 'any' },
     ],
   },
 ];

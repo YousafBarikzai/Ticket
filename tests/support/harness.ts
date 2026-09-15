@@ -99,7 +99,7 @@ const PEOPLE = [
  */
 export async function createTestTenant(slug: string): Promise<TestTenant> {
   const existing = await tenantService.findTenantBySlug(slug);
-  if (existing) await platformDb().tenant.delete({ where: { id: existing.id } });
+  if (existing) await tenantService.purgeTenant(existing.id);
 
   const { tenantId } = await tenantService.provisionTenant({ name: `Tenant ${slug}`, slug, region: 'eu-west' });
   const base = contextFor(tenantId);
@@ -172,7 +172,11 @@ export async function createTestTenant(slug: string): Promise<TestTenant> {
 
 export async function deleteTestTenant(slug: string): Promise<void> {
   const tenant = await tenantService.findTenantBySlug(slug);
-  if (tenant) await platformDb().tenant.delete({ where: { id: tenant.id } });
+  // A real purge, not just the directory row. Deleting the tenant alone leaves
+  // every tenant-scoped table holding its rows, and anything that looks *across*
+  // tenants can still find them — which is how an orphaned mailbox from a
+  // deleted tenant went on receiving mail.
+  if (tenant) await tenantService.purgeTenant(tenant.id);
 }
 
 export interface InjectOptions {

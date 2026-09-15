@@ -194,8 +194,12 @@ export async function transaction<T>(
 }
 
 /** As `transaction`, but on the platform role, for tenant provisioning. */
-export async function platformTransaction<T>(ctx: TenantContext, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return transaction(ctx, fn, { client: platformDb() });
+export async function platformTransaction<T>(
+  ctx: TenantContext,
+  fn: (tx: Tx) => Promise<T>,
+  options: { timeout?: number } = {},
+): Promise<T> {
+  return transaction(ctx, fn, { client: platformDb(), ...options });
 }
 
 /**

@@ -426,6 +426,31 @@ export const approvalDecided = defineEvent({
   }),
 });
 
+// ---- MOD-03 Omnichannel (PH-2) --------------------------------------------
+export const channelMessageReceived = defineEvent({
+  type: 'channel.message.received',
+  version: 1,
+  aggregateType: 'inbound_message',
+  webhook: false,
+  description: 'A message arrived on a channel and was accepted for processing.',
+  payload: z.object({
+    messageId: id,
+    channel: z.string(),
+    accountId: id,
+    fromAddress: z.string(),
+    ticketId: id.nullable(),
+  }),
+});
+
+export const channelHealthDegraded = defineEvent({
+  type: 'channel.health.degraded',
+  version: 1,
+  aggregateType: 'channel_account',
+  webhook: true,
+  description: 'A channel account is failing or has gone quiet, and needs an administrator.',
+  payload: z.object({ accountId: id, channel: z.string(), reason: z.string(), failureCount: z.number().int() }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -439,6 +464,7 @@ export const eventCatalogue = [
   securityAlertRaised, webhookDeliveryFailed, searchDocumentIndexed,
   ruleApplied,
   approvalRequested, approvalDecided,
+  channelMessageReceived, channelHealthDegraded,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);
