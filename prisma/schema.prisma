@@ -230,6 +230,135 @@ model ApprovalDelegation {
 }
 
 // ===========================================================================
+// modules/catalogue/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-05 Service catalogue and request fulfilment, with MOD-02's forms (PH-2).
+///
+/// A catalogue item is what a requester actually asks for. It joins three
+/// versioned things: the service it belongs to, the form that collects the
+/// request, and the entitlement that decides who may see it at all.
+
+model Service {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  orgId       String?  @map("org_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// The person accountable for this service. Resolves `serviceOwner`
+  /// approvers (MOD-17) and owns the service's SLA reporting.
+  ownerId     String?  @map("owner_id") @db.Uuid
+  /// The team that fulfils requests for it, unless an offering overrides.
+  groupId     String?  @map("group_id") @db.Uuid
+  status      String   @default("active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  requestTypes RequestType[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("service")
+}
+
+/// One thing a requester can ask for.
+model RequestType {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  serviceId     String   @map("service_id") @db.Uuid
+  key           String
+  name          String
+  description   String?
+  /// Shown in the portal tile, before the form is opened.
+  shortSummary  String?  @map("short_summary")
+  formKey       String?  @map("form_key")
+  /// Who may see and raise this. An expression over the requester's facts;
+  /// absent means everyone in the tenant.
+  entitlement   Json?
+  /// The team that fulfils it, overriding the service's.
+  groupId       String?  @map("group_id") @db.Uuid
+  priority      String   @default("P3")
+  status        String   @default("draft")
+  sortOrder     Int      @default(100) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+
+  service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  submissions   FormSubmission[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status, sortOrder])
+  @@index([tenantId, serviceId])
+  @@map("request_type")
+}
+
+/// MOD-02's form, as a versioned definition.
+model FormDefinitionRecord {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  /// The document in packages/contracts' FormDefinition shape: a JSON Schema
+  /// for the data and a UI schema for how it is presented.
+  document    Json     @default("{}")
+  status      String   @default("draft")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  publishedBy String?  @map("published_by") @db.Uuid
+
+  versions    FormVersionRecord[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("form_definition")
+}
+
+model FormVersionRecord {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  definitionId String   @map("definition_id") @db.Uuid
+  version      Int
+  document     Json
+  publishedAt  DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy  String?  @map("published_by") @db.Uuid
+
+  definition   FormDefinitionRecord @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  submissions  FormSubmission[]
+
+  @@unique([definitionId, version])
+  @@index([tenantId])
+  @@map("form_version")
+}
+
+/// What somebody actually answered.
+///
+/// Pinned to the form version they were shown, so a form edited afterwards
+/// cannot make an old submission look invalid — or, worse, make it look as
+/// though they were asked a question they never saw.
+model FormSubmission {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  requestTypeId String?  @map("request_type_id") @db.Uuid
+  formVersionId String   @map("form_version_id") @db.Uuid
+  ticketId      String?  @map("ticket_id") @db.Uuid
+  submittedBy   String?  @map("submitted_by") @db.Uuid
+  answers       Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  requestType   RequestType?      @relation(fields: [requestTypeId], references: [id])
+  formVersion   FormVersionRecord @relation(fields: [formVersionId], references: [id])
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, requestTypeId, createdAt(sort: Desc)])
+  @@map("form_submission")
+}
+
+// ===========================================================================
 // modules/channels/prisma/schema.prisma
 // ===========================================================================
 

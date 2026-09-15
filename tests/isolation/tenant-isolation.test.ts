@@ -253,6 +253,42 @@ describe('approvals stay inside their tenant', () => {
   });
 });
 
+describe('the catalogue stays inside its tenant', () => {
+  it('never shows one tenant the other\'s request types', async () => {
+    const { transaction, withContext } = await import('@itsm/platform');
+    const ctx = contextFor(beta.id);
+    const visible = await withContext(ctx, () =>
+      transaction(ctx, (tx) => tx.requestType.findMany({})),
+    );
+    // Both tenants seed the same keys, so identity is what must be compared.
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.every((item) => item.tenantId === beta.id)).toBe(true);
+  });
+
+  it('never lets one tenant submit against another\'s catalogue item', async () => {
+    const alphaCtx = contextFor(alpha.id);
+    const { transaction, withContext } = await import('@itsm/platform');
+    const alphaItems = await withContext(alphaCtx, () =>
+      transaction(alphaCtx, (tx) => tx.requestType.findMany({})),
+    );
+    expect(alphaItems.length).toBeGreaterThan(0);
+
+    // Submission resolves by key, and both tenants have the same key — so this
+    // must land on beta's own item, never alpha's.
+    const response = await request<{ ticketId: string }>('/api/v1/catalogue/system-access/submit', {
+      method: 'POST',
+      token: beta.people.requester!.token,
+      body: { answers: { system: 'crm', accessLevel: 'read' } },
+    });
+    expect(response.status).toBe(201);
+
+    const betaTickets = await withContext(contextFor(beta.id), () =>
+      transaction(contextFor(beta.id), (tx) => tx.ticket.findMany({ where: { id: response.body.ticketId } })),
+    );
+    expect(betaTickets).toHaveLength(1);
+  });
+});
+
 describe('caches and keys', () => {
   it('prefixes every tenant-specific Redis key with its tenant', async () => {
     // A cache key without a tenant prefix is a cross-tenant read waiting to

@@ -36,6 +36,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.read', scope: 'own' },
       { key: 'approval.decide', scope: 'own' },
       { key: 'approval.delegate', scope: 'own' },
+      { key: 'catalogue.read', scope: 'own' },
+      { key: 'catalogue.request', scope: 'own' },
     ],
   },
   {
@@ -63,6 +65,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.read', scope: 'own' },
       { key: 'approval.decide', scope: 'own' },
       { key: 'approval.delegate', scope: 'own' },
+      { key: 'catalogue.read', scope: 'own' },
+      { key: 'catalogue.request', scope: 'own' },
     ],
   },
   {
@@ -96,6 +100,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'sla.policy.read', scope: 'any' },
       { key: 'channel.account.read', scope: 'any' },
       { key: 'channel.message.read', scope: 'any' },
+      { key: 'catalogue.read', scope: 'any' },
+      { key: 'catalogue.request', scope: 'own' },
+      { key: 'catalogue.form.read', scope: 'any' },
     ],
   },
   {
@@ -173,6 +180,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'channel.message.read', scope: 'any' },
       { key: 'channel.account.manage', scope: 'any' },
       { key: 'channel.identity.manage', scope: 'any' },
+      { key: 'catalogue.read', scope: 'any' },
+      { key: 'catalogue.request', scope: 'own' },
+      { key: 'catalogue.manage', scope: 'any' },
+      { key: 'catalogue.form.read', scope: 'any' },
+      { key: 'catalogue.form.manage', scope: 'any' },
     ],
   },
 ];

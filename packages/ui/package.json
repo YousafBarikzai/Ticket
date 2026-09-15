@@ -15,6 +15,7 @@
     "test": "vitest run --root ../.. --project unit packages/ui"
   },
   "dependencies": {
+    "@itsm/contracts": "workspace:*",
     "@itsm/expr": "workspace:*"
   },
   "peerDependencies": {

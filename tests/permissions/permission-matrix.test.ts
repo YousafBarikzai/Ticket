@@ -215,6 +215,42 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'browse the catalogue',
+    path: () => '/api/v1/catalogue',
+    allowed: ALL_PERSONAS,
+  },
+  {
+    what: 'raise a request from the catalogue',
+    method: 'POST',
+    path: () => '/api/v1/catalogue/system-access/submit',
+    body: () => ({ answers: { system: 'crm', accessLevel: 'read' } }),
+    allowed: ALL_PERSONAS,
+  },
+  {
+    what: 'write a catalogue item',
+    method: 'POST',
+    path: () => '/api/v1/request-types',
+    body: () => ({ key: `matrix-item-${Date.now()}`, serviceKey: 'business-applications', name: 'Matrix item' }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'write a form definition',
+    method: 'POST',
+    path: () => '/api/v1/forms',
+    body: () => ({
+      key: `matrix-form-${Date.now()}`,
+      name: 'Matrix form',
+      document: {
+        key: 'matrix-form',
+        schema: { type: 'object', properties: { note: { type: 'string' } } },
+        ui: { elements: [{ kind: 'field', field: 'note', control: 'text' }] },
+      },
+    }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'reach the platform console',
     path: () => '/api/platform/v1/tenants',
     // A tenant administrator is not a platform operator.

@@ -90,6 +90,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:modules/approvals
+      '@itsm/module-catalogue':
+        specifier: workspace:*
+        version: link:modules/catalogue
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:modules/channels
@@ -156,6 +159,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals
+      '@itsm/module-catalogue':
+        specifier: workspace:*
+        version: link:../../modules/catalogue
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels
@@ -213,6 +219,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals
+      '@itsm/module-catalogue':
+        specifier: workspace:*
+        version: link:../../modules/catalogue
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels
@@ -270,6 +279,27 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/catalogue:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/expr':
+        specifier: workspace:*
+        version: link:../../packages/expr
+      '@itsm/module-approvals':
+        specifier: workspace:*
+        version: link:../approvals
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../ticket
@@ -499,6 +529,9 @@ importers:
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals
+      '@itsm/module-catalogue':
+        specifier: workspace:*
+        version: link:../../modules/catalogue
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels
@@ -535,6 +568,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@itsm/expr':
         specifier: workspace:*
         version: link:../expr

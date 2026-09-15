@@ -451,6 +451,31 @@ export const channelHealthDegraded = defineEvent({
   payload: z.object({ accountId: id, channel: z.string(), reason: z.string(), failureCount: z.number().int() }),
 });
 
+// ---- MOD-05 Service catalogue (PH-2) --------------------------------------
+export const catalogueItemPublished = defineEvent({
+  type: 'catalogue.item.published',
+  version: 1,
+  aggregateType: 'request_type',
+  webhook: true,
+  description: 'A catalogue item became available to raise.',
+  payload: z.object({ requestTypeId: id, key: z.string(), serviceId: id }),
+});
+
+export const requestSubmitted = defineEvent({
+  type: 'request.submitted',
+  version: 1,
+  aggregateType: 'ticket',
+  webhook: true,
+  description: 'Somebody raised a request from the service catalogue.',
+  payload: z.object({
+    ticketId: id,
+    number: z.string(),
+    requestTypeId: id,
+    requestTypeKey: z.string(),
+    requesterId: id,
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -465,6 +490,7 @@ export const eventCatalogue = [
   ruleApplied,
   approvalRequested, approvalDecided,
   channelMessageReceived, channelHealthDegraded,
+  catalogueItemPublished, requestSubmitted,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

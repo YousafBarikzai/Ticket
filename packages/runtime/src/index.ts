@@ -27,6 +27,7 @@ import { slaManifest, seedDefaultSlaPolicy } from '@itsm/module-sla';
 import { adminManifest, syncInstalledModules } from '@itsm/module-admin';
 import { rulesManifest, seedDefaultRules } from '@itsm/module-rules';
 import { approvalsManifest, seedApprovalDefaults } from '@itsm/module-approvals';
+import { catalogueManifest, seedCatalogueDefaults } from '@itsm/module-catalogue';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -47,6 +48,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   rulesManifest,
   approvalsManifest,
   channelsManifest,
+  catalogueManifest,
   adminManifest,
 ];
 
@@ -98,6 +100,9 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('channels.defaults', async (ctx: TenantContext) => {
     await seedChannelDefaults(ctx);
+  });
+  registerSeedStep('catalogue.defaults', async (ctx: TenantContext) => {
+    await seedCatalogueDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

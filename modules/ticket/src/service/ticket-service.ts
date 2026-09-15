@@ -1131,3 +1131,45 @@ export async function addCommentFromChannel(
 
   return comment;
 }
+
+/**
+ * Raises a request from a published catalogue item (MOD-05).
+ *
+ * Separate from `createTicket` because the routing and the priority come from
+ * the catalogue rather than from the caller: a requester who could name their
+ * own group could route work anywhere, and one who could name their own
+ * priority could make everything a P1. This signature has no way to express
+ * either, which is the point.
+ */
+export async function createRequestFromCatalogue(
+  ctx: TenantContext,
+  tx: Tx,
+  input: {
+    title: string;
+    description: string;
+    requesterId: string;
+    serviceId: string;
+    groupId: string | null;
+    priority: string;
+    answers: Record<string, unknown>;
+  },
+): Promise<repo.TicketRow> {
+  authz.require(ctx, 'ticket.create');
+
+  const requester = await tx.user.findFirst({ where: { id: input.requesterId } });
+  const parsed = createTicketSchema.parse({
+    type: 'request',
+    title: input.title.slice(0, 300),
+    description: input.description,
+    sourceChannel: 'portal',
+    requesterId: input.requesterId,
+    serviceId: input.serviceId,
+    priority: input.priority,
+    ...(input.groupId ? { groupId: input.groupId } : {}),
+    ...(requester?.primaryOrgId ? { orgId: requester.primaryOrgId } : {}),
+    // The answers ride on the ticket so the workbench can show them without
+    // joining back to the submission.
+    custom: input.answers,
+  });
+  return insertTicketOn(ctx, tx, parsed, input.requesterId);
+}
