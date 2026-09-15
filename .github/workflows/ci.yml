@@ -62,6 +62,9 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Named rather than left to auto-detection, so a config that fails to
+          # load is a loud error instead of a silently stricter scan.
+          GITLEAKS_CONFIG: .gitleaks.toml
 
   integration:
     name: 3 · Integration, isolation and permissions
