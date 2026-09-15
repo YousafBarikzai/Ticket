@@ -47,6 +47,7 @@ export const postgresBackend: SearchBackend = {
           ))
           AND (
             ${visibility.scope === 'any'}
+            OR (acl->>'everyone')::boolean = true
             OR (acl->>'tenantWide')::boolean = true AND ${visibility.scope === 'team'}
             OR acl->'userIds' ? ${visibility.userId}
             OR EXISTS (

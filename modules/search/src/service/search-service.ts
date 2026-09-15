@@ -233,5 +233,8 @@ export function aclForTicket(
     teamIds: ticket.groupId ? [ticket.groupId] : [],
     orgId: ticket.orgId,
     tenantWide: true,
+    // Never `everyone`: a ticket is visible to the people working it and the
+    // people named on it, not to everybody who can sign in.
+    everyone: false,
   };
 }

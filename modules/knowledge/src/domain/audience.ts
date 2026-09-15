@@ -47,19 +47,23 @@ export function aclForArticle(article: ArticleVisibility): DocumentAcl {
   const editors = [article.ownerId, article.authorId].filter((id): id is string => Boolean(id));
 
   if (article.status !== 'published') {
-    return { userIds: editors, teamIds: [], orgId: null, tenantWide: false };
+    return { userIds: editors, teamIds: [], orgId: null, tenantWide: false, everyone: false };
   }
 
   switch (article.audience) {
     case 'tenant':
-      return { userIds: editors, teamIds: [], orgId: null, tenantWide: true };
+      // `everyone`, not just `tenantWide`: an article for the whole tenant is
+      // meant for requesters, and `tenantWide` alone reaches only callers whose
+      // search scope is team or wider — which would make self-service knowledge
+      // invisible to the people it exists for.
+      return { userIds: editors, teamIds: [], orgId: null, tenantWide: true, everyone: true };
     case 'organisation':
-      return { userIds: editors, teamIds: [], orgId: article.orgId, tenantWide: false };
+      return { userIds: editors, teamIds: [], orgId: article.orgId, tenantWide: false, everyone: false };
     case 'internal':
     default:
       // Not tenant-wide and belonging to no organisation: only a caller with
       // tenant-wide read reaches it.
-      return { userIds: editors, teamIds: [], orgId: null, tenantWide: false };
+      return { userIds: editors, teamIds: [], orgId: null, tenantWide: false, everyone: false };
   }
 }
 

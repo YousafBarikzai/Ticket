@@ -19,6 +19,17 @@ export interface DocumentAcl {
   orgId: string | null;
   /** When true, anyone with tenant-wide read may see it. */
   tenantWide: boolean;
+  /**
+   * When true, anyone signed in to the tenant may see it, whatever their scope.
+   *
+   * Distinct from `tenantWide`, and the distinction is load-bearing. Every
+   * ticket is `tenantWide`, which the backends read as "visible to a caller
+   * whose scope is team or wider" — that is what keeps one requester's ticket
+   * out of another's search. A published knowledge article for the whole tenant
+   * is a different thing: it is *meant* for requesters, and without this flag
+   * self-service knowledge would be invisible to the people it exists for.
+   */
+  everyone?: boolean;
 }
 
 /** One document as the backend holds it, independent of how it is stored. */

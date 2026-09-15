@@ -91,3 +91,22 @@ describe('reading an article directly', () => {
     expect(aclForArticle(article({ audience: 'everyone-on-the-internet' })).tenantWide).toBe(false);
   });
 });
+
+describe('what search is told', () => {
+  it('marks a whole-tenant article as visible to everyone signed in', () => {
+    // Caught by the integration suite: `tenantWide` alone reaches only a caller
+    // whose search scope is team or wider, because every ticket is tenantWide
+    // and that is what keeps one requester's ticket out of another's results.
+    // An article for the whole tenant is meant for requesters, so without a
+    // separate flag self-service knowledge was invisible to the people it
+    // exists for.
+    const acl = aclForArticle(article({ audience: 'tenant' }));
+    expect(acl.everyone).toBe(true);
+  });
+
+  it('never marks an internal or organisation article as visible to everyone', () => {
+    expect(aclForArticle(article({ audience: 'internal' })).everyone).toBe(false);
+    expect(aclForArticle(article({ audience: 'organisation', orgId: 'org-9' })).everyone).toBe(false);
+    expect(aclForArticle(article({ status: 'draft', audience: 'tenant' })).everyone).toBe(false);
+  });
+});

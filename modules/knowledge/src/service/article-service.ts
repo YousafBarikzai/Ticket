@@ -246,7 +246,11 @@ export async function publishArticle(ctx: TenantContext, key: string) {
 
   return transaction(ctx, async (tx) => {
     const article = await loadArticle(tx, key);
-    assertTransition(article.status, 'published');
+    // An article that is already published is publishing its *next version*,
+    // which is the ordinary case rather than a transition: the status does not
+    // change, the current version does. Asserting a published → published
+    // transition would refuse every edit after the first.
+    if (article.status !== 'published') assertTransition(article.status, 'published');
 
     const draft = await tx.knowledgeArticleVersion.findFirst({
       where: { articleId: article.id, status: { in: ['draft', 'in_review'] } },

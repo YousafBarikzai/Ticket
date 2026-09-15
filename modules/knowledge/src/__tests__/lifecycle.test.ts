@@ -42,3 +42,15 @@ describe('the article lifecycle', () => {
     ]);
   });
 });
+
+describe('publishing the next version', () => {
+  it('is not a transition, because the status does not change', () => {
+    // Caught by the integration suite: `publishArticle` asserted a
+    // published → published transition, so every edit after the first was
+    // refused with "this article is already published".
+    expect(canTransition('published', 'published')).toBe(false);
+    expect(refusalReason('published', 'published')).toBe('this article is already published');
+    // The service therefore skips the assertion when the article is already
+    // published: what changes is the current version, not the status.
+  });
+});

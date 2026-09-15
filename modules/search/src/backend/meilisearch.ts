@@ -101,7 +101,16 @@ export function createMeilisearchBackend(options: MeilisearchOptions): SearchBac
       method: 'PATCH',
       body: JSON.stringify({
         searchableAttributes: ['title', 'bodyText'],
-        filterableAttributes: ['tenantId', 'entityType', 'aclUserIds', 'aclTeamIds', 'aclOrgId', 'aclTenantWide', 'facetValues'],
+        filterableAttributes: [
+          'tenantId',
+          'entityType',
+          'aclUserIds',
+          'aclTeamIds',
+          'aclOrgId',
+          'aclTenantWide',
+          'aclEveryone',
+          'facetValues',
+        ],
         sortableAttributes: ['sourceUpdatedAt'],
         displayedAttributes: ['id', 'entityType', 'entityId', 'title', 'bodyText', 'facets'],
         // Typo tolerance is the reason this backend exists; identifiers and
@@ -133,6 +142,7 @@ export function createMeilisearchBackend(options: MeilisearchOptions): SearchBac
       aclTeamIds: document.acl.teamIds,
       aclOrgId: document.acl.orgId ?? '',
       aclTenantWide: document.acl.tenantWide,
+      aclEveryone: document.acl.everyone === true,
       sourceUpdatedAt: document.sourceUpdatedAt.getTime(),
     };
   }
@@ -246,7 +256,7 @@ export function buildFilter(tenantId: string, options: SearchQuery, visibility: 
   }
 
   if (visibility.scope !== 'any') {
-    const visible: string[] = [`aclUserIds = "${escape(visibility.userId)}"`];
+    const visible: string[] = [`aclUserIds = "${escape(visibility.userId)}"`, 'aclEveryone = true'];
     if (visibility.scope === 'team') visible.push('aclTenantWide = true');
     for (const teamId of visibility.teamIds) visible.push(`aclTeamIds = "${escape(teamId)}"`);
     for (const orgId of visibility.organisationIds) visible.push(`aclOrgId = "${escape(orgId)}"`);
