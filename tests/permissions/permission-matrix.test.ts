@@ -516,6 +516,16 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 422 },
   },
   {
+    what: 'rotate the SCIM token',
+    method: 'POST',
+    path: () => '/api/v1/scim/token',
+    body: () => ({}),
+    // Whoever holds the token can create and deactivate every user: only an
+    // administrator issues one.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.

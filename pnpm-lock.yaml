@@ -486,6 +486,9 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/module-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform

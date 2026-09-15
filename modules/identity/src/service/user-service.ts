@@ -44,9 +44,9 @@ export const createUserSchema = z.object({
 /** The caller supplies what they know; the schema fills in the defaults. */
 export type CreateUserInput = z.input<typeof createUserSchema>;
 
-export async function createUser(ctx: TenantContext, input: CreateUserInput, source: 'admin' | 'jit' | 'import' | 'seed' = 'admin') {
+export async function createUser(ctx: TenantContext, input: CreateUserInput, source: 'admin' | 'jit' | 'import' | 'seed' | 'scim' = 'admin') {
   const parsed = createUserSchema.parse(input);
-  if (source === 'admin') authz.require(ctx, 'identity.user.manage');
+  if (source === 'admin' || source === 'scim') authz.require(ctx, 'identity.user.manage');
 
   return transaction(ctx, async (tx) => {
     const email = parsed.email.toLowerCase();
@@ -231,6 +231,74 @@ export async function deactivateUser(ctx: TenantContext, id: string, reason?: st
     });
     return updated;
   });
+}
+
+/**
+ * Brings a deactivated user back. Sessions and keys are not restored — they
+ * were revoked, and a person who is back signs in again — and role
+ * assignments are not either: whoever reactivates decides what they get, or
+ * SCIM does from their groups.
+ */
+export async function reactivateUser(ctx: TenantContext, id: string): Promise<boolean> {
+  authz.require(ctx, 'identity.user.manage');
+  return transaction(ctx, async (tx) => {
+    const user = await tx.user.findFirst({ where: { id, deletedAt: null } });
+    if (!user) throw new NotFoundError('user', id);
+    if (user.status === 'active') return false;
+    await tx.user.update({ where: { id }, data: { status: 'active', updatedBy: ctx.actor.id, version: { increment: 1 } } });
+    await recordAudit(tx, ctx, { action: 'user.reactivated', targetType: 'user', targetId: id, before: { status: user.status }, after: { status: 'active' } });
+    await publish(tx, ctx, { definition: events.userUpdated, aggregateId: id, payload: { userId: id, changed: ['status'] } });
+    await invalidatePermissions(ctx.tenantId, id);
+    return true;
+  });
+}
+
+/**
+ * The grant itself, on a caller's transaction, for the SCIM reconciler that
+ * grants and revokes several in one go. The caller has checked the
+ * permission; this writes the row, the audit line and the event exactly as
+ * `assignRole` does.
+ */
+export async function grantRoleOn(
+  tx: Tx,
+  ctx: TenantContext,
+  input: { userId: string; roleKey: string; viaScimTeamId?: string | null },
+) {
+  const role = await tx.role.findFirst({ where: { key: input.roleKey } });
+  if (!role) throw new NotFoundError('role', input.roleKey);
+  const existing = await tx.roleAssignment.findFirst({ where: { userId: input.userId, roleId: role.id, scopeType: null, scopeId: null } });
+  if (existing) {
+    if (input.viaScimTeamId && !existing.viaScimTeamId) {
+      // Held by hand already; SCIM does not take it over, so leaving the
+      // group later will not remove something an administrator granted.
+      return existing;
+    }
+    return existing;
+  }
+  const assignment = await tx.roleAssignment.create({
+    data: { id: newId(), tenantId: ctx.tenantId, userId: input.userId, roleId: role.id, viaScimTeamId: input.viaScimTeamId ?? null, createdBy: ctx.actor.id },
+  });
+  await recordAudit(tx, ctx, {
+    action: 'role.assignment.granted',
+    targetType: 'user',
+    targetId: input.userId,
+    after: { roleKey: input.roleKey, scopeType: null, scopeId: null, viaScimTeamId: input.viaScimTeamId ?? null },
+  });
+  await publish(tx, ctx, { definition: events.roleAssignmentChanged, aggregateId: input.userId, payload: { userId: input.userId, roleId: role.id, action: 'granted' } });
+  await invalidatePermissions(ctx.tenantId, input.userId);
+  return assignment;
+}
+
+export async function revokeAssignmentOn(tx: Tx, ctx: TenantContext, assignment: { id: string; userId: string; roleId: string; scopeType: string | null; scopeId: string | null }) {
+  await tx.roleAssignment.delete({ where: { id: assignment.id } });
+  await recordAudit(tx, ctx, {
+    action: 'role.assignment.revoked',
+    targetType: 'user',
+    targetId: assignment.userId,
+    before: { roleId: assignment.roleId, scopeType: assignment.scopeType, scopeId: assignment.scopeId },
+  });
+  await publish(tx, ctx, { definition: events.roleAssignmentChanged, aggregateId: assignment.userId, payload: { userId: assignment.userId, roleId: assignment.roleId, action: 'revoked' } });
+  await invalidatePermissions(ctx.tenantId, assignment.userId);
 }
 
 export async function assignRole(

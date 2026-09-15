@@ -39,6 +39,7 @@ import { feedbackRoutes } from './feedback.js';
 import { timeRoutes } from './time.js';
 import { statusAdminRoutes, statusPublicRoutes } from './status.js';
 import { importRoutes } from './import.js';
+import { scimAdminRoutes, scimRoutes } from './scim.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -67,6 +68,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await timeRoutes(v1);
       await statusAdminRoutes(v1);
       await importRoutes(v1);
+      await scimAdminRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },
@@ -78,6 +80,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // The public status page lives at the root: its URL is printed on things,
   // and it is the one page here that a stranger is meant to open.
   await statusPublicRoutes(app);
+
+  // SCIM, for identity providers: its own prefix, its own token, its own
+  // error shape (RFC 7644).
+  app.register(scimRoutes, { prefix: '/scim/v2' });
 }
 
 async function identityRoutes(app: FastifyInstance): Promise<void> {

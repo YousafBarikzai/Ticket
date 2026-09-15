@@ -14,7 +14,7 @@ import {
   withContext,
   type TenantContext,
 } from '@itsm/platform';
-import { resolveActor } from '@itsm/module-identity';
+import { resolveActor, scimTokenService, userService } from '@itsm/module-identity';
 import { tenantService } from '@itsm/module-tenancy';
 import { verifyAccessToken, type VerifiedToken } from '../auth/verify.js';
 
@@ -76,6 +76,25 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
     const header = request.headers.authorization;
     if (!header) throw new UnauthorisedError('an access token is required');
 
+    // SCIM carries its own token, per tenant, issued by an administrator; the
+    // tenant is inside it, resolved through the directory like every other
+    // pre-tenant request (ADR-0035). Nothing under /scim/v2 accepts a session.
+    if ((request.url.split('?')[0] ?? '').startsWith('/scim/v2')) {
+      if (!header.startsWith('Bearer ')) throw new UnauthorisedError('a SCIM bearer token is required');
+      const scim = await scimTokenService.authenticate(header.slice('Bearer '.length).trim());
+      request.tenantContext = createContext({
+        tenantId: scim.tenantId,
+        region: scim.region,
+        correlationId: request.correlationId,
+        ip: request.ip,
+        userAgent: request.headers['user-agent'],
+        actor: { type: 'integration', id: null, displayName: 'scim' },
+        permissions: scim.permissions,
+      });
+      enterContext(request.tenantContext);
+      return;
+    }
+
     const token = await verifyAccessToken(header);
     request.token = token;
 
@@ -121,7 +140,16 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
       permissions: SYSTEM_PERMISSIONS,
     });
 
-    const actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, token.userId!));
+    let actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, token.userId!));
+    if (!actor && token.email && token.userId === token.subject) {
+      // First login through the identity provider: the token names nobody the
+      // platform knows yet. Provision just in time, or link an account that
+      // SCIM or an import already made for this address (doc 09 §JIT).
+      const provisioned = await withContext(bootstrapContext, () =>
+        userService.provisionFromToken(bootstrapContext, { sub: token.subject, email: token.email!, ...(token.name ? { name: token.name } : {}) }),
+      );
+      actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, provisioned.userId));
+    }
     if (!actor) throw new UnauthorisedError('this account no longer exists');
     if (actor.status !== 'active') throw new UnauthorisedError('this account is not active');
 
