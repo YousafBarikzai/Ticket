@@ -93,6 +93,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.decide', scope: 'own' },
       { key: 'approval.delegate', scope: 'own' },
       { key: 'approval.policy.read', scope: 'any' },
+      { key: 'sla.policy.read', scope: 'any' },
     ],
   },
   {
@@ -165,6 +166,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'approval.delegate', scope: 'own' },
       { key: 'approval.policy.read', scope: 'any' },
       { key: 'approval.policy.manage', scope: 'any' },
+      { key: 'sla.policy.read', scope: 'any' },
     ],
   },
 ];

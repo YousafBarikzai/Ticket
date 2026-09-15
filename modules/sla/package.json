@@ -12,11 +12,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@itsm/contracts": "workspace:*",
-    "@itsm/platform": "workspace:*",
-    "@itsm/expr": "workspace:*",
-    "zod": "^3.24.1",
     "@itsm/business-time": "workspace:*",
-    "@itsm/module-ticket": "workspace:*"
+    "@itsm/contracts": "workspace:*",
+    "@itsm/expr": "workspace:*",
+    "@itsm/module-notifications": "workspace:*",
+    "@itsm/module-ticket": "workspace:*",
+    "@itsm/platform": "workspace:*",
+    "zod": "^3.24.1"
   }
 }

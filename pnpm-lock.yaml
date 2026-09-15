@@ -375,6 +375,9 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../ticket

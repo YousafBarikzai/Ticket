@@ -1,6 +1,6 @@
 import { registerModule, type ModuleManifest } from '@itsm/platform';
 
-/** MOD-07 SLA. PH-1 delivers the timer engine; policies and reporting follow in PH-2. */
+/** MOD-07 SLA. PH-1 delivered the timer engine; PH-2 adds policies, calendars and escalations. */
 export const slaManifest: ModuleManifest = registerModule({
   id: 'MOD-07',
   key: 'sla',
@@ -10,7 +10,8 @@ export const slaManifest: ModuleManifest = registerModule({
   dependsOn: ['MOD-04', 'MOD-01', 'MOD-11'],
   permissions: [
     { key: 'sla.read', scopes: ['own', 'team', 'any'], description: 'See SLA status on a ticket.' },
-    { key: 'sla.policy.manage', scopes: ['any'], description: 'Manage policies, targets and calendars.' },
+    { key: 'sla.policy.read', scopes: ['any'], description: 'See the SLA policies, calendars and priority matrix.' },
+    { key: 'sla.policy.manage', scopes: ['any'], description: 'Manage policies, targets, calendars and escalations.' },
     { key: 'sla.override', scopes: ['team', 'any'], description: 'Pause, resume or excuse a timer with a reason.' },
   ],
   events: {

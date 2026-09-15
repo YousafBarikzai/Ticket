@@ -18,6 +18,7 @@ import {
 } from '@itsm/platform';
 import { evaluate, events, type Expr } from '@itsm/contracts';
 import { partitionFor } from '../manifest.js';
+import { applyEscalations } from './escalation-service.js';
 
 /**
  * MOD-07 timer engine.
@@ -344,7 +345,7 @@ export async function tickPartition(ctx: TenantContext, partition: number, limit
         await tx.breachRecord.create({
           data: { id: newId(), tenantId: ctx.tenantId, timerId: timer.id, ticketId: timer.ticketId, breachedAt: now },
         });
-        await publish(tx, ctx, {
+        const breachEventId = await publish(tx, ctx, {
           definition: events.slaTimerBreached,
           aggregateId: timer.id,
           payload: {
@@ -353,6 +354,13 @@ export async function tickPartition(ctx: TenantContext, partition: number, limit
             targetType: timer.targetType,
             dueAt: timer.dueAt.toISOString(),
           },
+        });
+        await applyEscalations(ctx, tx, {
+          policyId: timer.policyId,
+          ticketId: timer.ticketId,
+          timerId: timer.id,
+          on: 'breach',
+          eventId: breachEventId,
         });
         result.breaches += 1;
         continue;
@@ -380,7 +388,7 @@ export async function tickPartition(ctx: TenantContext, partition: number, limit
             version: { increment: 1 },
           },
         });
-        await publish(tx, ctx, {
+        const warningEventId = await publish(tx, ctx, {
           definition: events.slaTimerWarning,
           aggregateId: timer.id,
           payload: {
@@ -391,6 +399,15 @@ export async function tickPartition(ctx: TenantContext, partition: number, limit
             threshold: fired,
             remainingMs: remaining,
           },
+        });
+        await applyEscalations(ctx, tx, {
+          policyId: timer.policyId,
+          ticketId: timer.ticketId,
+          timerId: timer.id,
+          // Escalations are registered per threshold, so one policy can warn at
+          // 75 per cent and reassign at 90 without needing two policies.
+          on: `warning:${fired}`,
+          eventId: warningEventId,
         });
         result.warnings += 1;
       }
