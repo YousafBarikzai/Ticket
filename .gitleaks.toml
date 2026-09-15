@@ -21,7 +21,7 @@ useDefault = true
 
 [allowlist]
 description = """
-Two narrow exemptions.
+Three narrow exemptions, two of them about the same eight words.
 
 1. Business rule and approval policy keys.
 
@@ -33,16 +33,33 @@ digits falls outside it and is caught.
 
 2. One test fixture in this branch's history.
 
-`Bearer sk_live_notarealkey` was written as a redaction-test fixture and reads
-to the scanner as a Stripe key — correctly, which is the scanner working. The
-fixture has been changed to something that is not credential-shaped, but the
-string is in a commit, and the scan runs over the branch's whole range.
+An `Authorization` header fixture, written to look like a live Stripe secret
+key, reads to the scanner as exactly that — correctly, which is the scanner
+working. The fixture has been changed to something that is not
+credential-shaped, but the string is in a commit, and the scan runs over the
+branch's whole range.
 
 Exempted as the exact literal rather than as a pattern or a path: a real key
 such as `sk_live_4eC39HqLyjWDarjtT1zdp7dc` does not match it, and neither does
 anything else anybody might write. The lesson is the one worth keeping — a test
 fixture should never be shaped like a real credential, because a scanner cannot
 tell a fixture from a leak and every CI run pays for the confusion.
+
+The literal is spelled out only in the regexes below. Prose that quotes it is
+itself a finding the moment the scan range reaches it, which is how this file's
+own commentary came to be rewritten.
+
+3. Two sentences in this branch's history that quoted that fixture.
+
+The Phase 4 delivery record explained the row above by reproducing the string,
+and the scan read the explanation exactly as it read the fixture. The document
+no longer quotes it, but a scan runs over a branch's whole range, so a string
+removed in a later commit is still a finding in the one that added it.
+
+Exempted as two exact sentence fragments, each with fixed text on both sides of
+the string. Nothing can be appended or prepended to turn either into a match for
+a real credential, which is the property that matters: the point of an exemption
+is that it fits the thing it excuses and nothing else.
 """
 regexTarget = "line"
 # Case-sensitive on purpose. An earlier draft used (?i) for the field name,
@@ -51,8 +68,11 @@ regexTarget = "line"
 regexes = [
   '''(?:rule|policy|template|setting)?[Kk]ey['"]?\s*[:=]\s*['"][a-z][a-z0-9]*(?:-[a-z0-9]+)*['"]''',
   # The exact historical fixture, quotes included, and nothing else. Without
-  # the closing quote this would also exempt `sk_live_notarealkeyBUTLONGER` —
-  # an unanchored literal is a prefix anybody can append a real key to, which
-  # the check in this file's history caught before it shipped.
+  # the closing quote it would exempt the fixture and anything beginning with
+  # it — an unanchored literal is a prefix anybody can append a real key to,
+  # which the check in this file's history caught before it shipped.
   """'Bearer sk_live_notarealkey'""",
+  # The two historical prose lines, each bounded by fixed text on both sides.
+  """`Bearer sk_live_notarealkey`, written as a redaction-test fixture""",
+  """would also have exempted `sk_live_notarealkeyBUTLONGER` —""",
 ]
