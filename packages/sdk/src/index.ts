@@ -2,6 +2,19 @@
 export { ApiError, createClient, type Client, type ClientOptions, type RequestOptions } from './client.js';
 export { ticketQuery, workbench, type TicketFilter, type Workbench } from './resources/workbench.js';
 export {
+  admin,
+  type Admin,
+  type FieldRow,
+  type FlagRow,
+  type OrganisationRow,
+  type PermissionRow,
+  type PlanRow,
+  type SettingRow,
+  type TeamRow,
+  type TenantRow,
+  type UserRow,
+} from './resources/admin.js';
+export {
   portal,
   queueable,
   type QueueableRequest,
