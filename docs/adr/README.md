@@ -42,6 +42,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0027](0027-two-registers-and-a-bounded-graph.md) | Two registers, and a graph that is bounded, typed and never guessed | Accepted | MOD-10-E1 |
 | [0028](0028-discovery-proposes-a-person-confirms.md) | Discovery proposes; a person confirms | Accepted | MOD-10-E2 |
 | [0029](0029-request-signing-belongs-in-the-gateway.md) | Request signing belongs in the gateway, and both halves of a credential travel together | Accepted | MOD-14-E3, MOD-10-E2 |
+| [0030](0030-chat-identity-has-a-middle-state.md) | Chat identity has a middle state, and it buys exactly one thing | Accepted | MOD-03 |
 
 ## Template
 

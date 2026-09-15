@@ -2,16 +2,23 @@ import { z } from 'zod';
 import { registerModule, type ModuleManifest } from '@itsm/platform';
 
 /**
- * MOD-03 Omnichannel — PH-2 slice: the adapter framework and the email channel.
+ * MOD-03 Omnichannel.
  *
- * Slack, Teams, WhatsApp and voice arrive in PH-4 and reuse this framework
- * rather than extending it (docs/architecture/07 §5).
+ * PH-2 built the adapter framework and the email channel. PH-4 (E2) adds Slack
+ * and Teams on that same framework rather than beside it: they implement the
+ * same verify/parse/send interface, and the inbound path cannot tell a chat
+ * message from an email once it is parsed.
+ *
+ * What chat genuinely needed that email did not is a guard of its own — chat
+ * has no RFC 3834 headers and an entirely different set of ways to go wrong —
+ * and a middle state for identity, because a workspace can vouch for an email
+ * in a way an anonymous sender cannot (ADR-0030).
  */
 export const channelsManifest: ModuleManifest = registerModule({
   id: 'MOD-03',
   key: 'channels',
   name: 'Omnichannel intake',
-  version: '1.0.0',
+  version: '1.1.0',
   phase: 'PH-2',
   dependsOn: ['MOD-01', 'MOD-04'],
   permissions: [
@@ -39,6 +46,14 @@ export const channelsManifest: ModuleManifest = registerModule({
       default: 'development',
       scopes: ['tenant'],
       description: 'Which email transport this tenant sends and receives through (OD-03).',
+    },
+    {
+      key: 'channel.chat.maxBytes',
+      schema: z.number().int().min(1_000).max(1_000_000),
+      default: 64 * 1024,
+      scopes: ['tenant'],
+      description:
+        'How large a chat message may be before it is dropped. Far smaller than the email limit: a novel pasted into a channel should not become a ticket.',
     },
   ],
   jobs: [{ name: 'channel.inbound', queue: 'channels', description: 'Normalise and execute one accepted inbound message.' }],

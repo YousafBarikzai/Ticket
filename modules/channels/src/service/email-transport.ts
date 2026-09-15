@@ -1,5 +1,6 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { logger } from '@itsm/platform';
+import { constantTimeEquals, timingSafeCompare } from '../domain/signatures.js';
 import type { ParsedInbound } from './inbound-service.js';
 
 /**
@@ -39,11 +40,12 @@ export interface EmailTransport {
 }
 
 /**
- * Verifies an HMAC signature in constant time.
+ * Verifies a plain HMAC-over-the-body signature, as the mail providers use.
  *
- * Shared rather than written per provider, because a signature comparison with
- * `===` leaks its answer through timing, and that is exactly the sort of detail
- * each new adapter would otherwise get slightly wrong on its own.
+ * The chat providers each sign something more elaborate — Slack a timestamped
+ * base string, Twilio the URL and its parameters — so their constructions live
+ * in `domain/signatures.ts`. The constant-time comparison is shared with them,
+ * because a comparison is the one part that must not be written twice.
  */
 export function verifyHmac(rawBody: string, signature: string, secret: string, algorithm = 'sha256'): boolean {
   if (!signature || !secret) return false;
@@ -54,8 +56,7 @@ export function verifyHmac(rawBody: string, signature: string, secret: string, a
   } catch {
     return false;
   }
-  if (provided.length !== expected.length) return false;
-  return timingSafeEqual(provided, expected);
+  return timingSafeCompare(provided, expected);
 }
 
 /**
@@ -108,19 +109,10 @@ export function developmentTransport(): EmailTransport {
   };
 }
 
-/**
- * Compares two secrets without leaking the answer through timing.
- *
- * Shared for the same reason `verifyHmac` is: `a === b` on a secret returns
- * faster the sooner it differs, and each adapter would otherwise reach for it.
- */
-export function constantTimeEquals(a: string, b: string): boolean {
-  const left = Buffer.from(a, 'utf8');
-  const right = Buffer.from(b, 'utf8');
-  // Length is not secret, and timingSafeEqual throws on a mismatch.
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
+// Re-exported so the transports that already import it from here keep working.
+// The implementation is in `domain/signatures.ts`, which is the one place in
+// this module that compares a secret.
+export { constantTimeEquals };
 
 const transports = new Map<string, EmailTransport>();
 

@@ -5,6 +5,7 @@ import { outboxPublisher } from '@itsm/module-integrations';
 import { contextPlugin } from './plugins/context.js';
 import { errorsPlugin } from './plugins/errors.js';
 import { guardsPlugin } from './plugins/guards.js';
+import { rawBodyPlugin } from './plugins/raw-body.js';
 import { registerRoutes } from './routes/index.js';
 
 /**
@@ -27,6 +28,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     disableRequestLogging: true,
   });
 
+  // Before anything that reads a body: the content-type parsers have to be in
+  // place when the first route is registered.
+  await app.register(rawBodyPlugin);
   await app.register(errorsPlugin);
   await app.register(contextPlugin);
   await app.register(guardsPlugin);

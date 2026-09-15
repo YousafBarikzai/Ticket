@@ -432,12 +432,72 @@ action.
 
 ---
 
+### 2.9 Chat channels: Slack and Teams (MOD-03-E2)
+
+**The security boundary for a chat channel is the webhook signature and nothing
+else.** An email adapter can at least fall back on the sending domain; a chat
+webhook is a public URL that accepts JSON, so without a verified signature "a
+message from the finance director asking for every open ticket" is a `curl`
+command. Everything downstream — the identity policy, the closed command set —
+assumes an envelope that was proved genuine here or not at all.
+
+Four provider constructions, each a place to get it wrong: Slack signs a
+timestamped base string, Teams an HMAC keyed by the *decoded bytes* of its
+secret rather than its text, Meta a plain body hash, Twilio the URL with its
+parameters appended in key order. The timestamp bound is what makes a captured
+Slack request stop working — a signature is otherwise valid for ever. The
+comparison is constant-time and there is exactly one of it in the module.
+
+**The chat guard replaces RFC 3834 with the signals chat actually has**: the
+desk hearing its own voice, another application posting, events *about* a
+message rather than messages, and — the commonest by a wide margin — a channel
+message that never addressed the desk at all. Each is counted separately,
+because "37 rejected" tells nobody anything and "37 not addressed to us" tells
+them the desk was invited to a busy channel.
+
+**Identity gets a middle state, and it buys exactly one thing** (ADR-0030). A
+workspace can report a verified email, which is real evidence the platform did
+not gather — a workspace administrator can usually edit a profile. So it counts
+only on a domain the tenant has claimed from that account, and it permits
+raising a request in your own name and nothing else. The asymmetry is the whole
+decision: a wrongly attributed `createTicket` is a ticket you did not raise,
+addressed to you; a wrongly attributed `addComment` puts words in your mouth on
+a record people are acting on, `getStatus` discloses, and `decideApproval`
+commits money.
+
+The obvious cut — trust the provider for reads, require a code for writes — is
+wrong in both directions here, and saying why is the useful part: `getStatus` is
+a read and the clearest disclosure risk in the set, `createTicket` is a write
+and the safest thing on the list. Sorting by read and write sorts by the wrong
+property.
+
+**Teams uses the outgoing-webhook form and says why.** The richer Bot Framework
+path needs an Azure AD JWT validated against published keys, with rotation,
+issuer, audience and clock-skew handling — all of which this platform already
+does correctly for Keycloak in `apps/api/src/auth`, and none of which is
+reachable from a module without duplicating it or inverting a dependency. Doing
+that badly would be worse than doing the HMAC form well, and the bot path fits
+behind the same interface later. What the HMAC form costs is real and stated:
+no timestamp, so de-duplication upstream is load-bearing rather than tidy.
+
+**A latent trap found on the way in.** There was no raw-body capture anywhere,
+and the email webhook reconstructed the body with `JSON.stringify(request.body)`
+before verifying it. That had never bitten because both mail transports
+authenticate with a shared-secret header rather than a body HMAC — but
+`verifyHmac` was exported and waiting, and all four chat providers sign the
+body. Re-serialising loses whitespace and reorders numeric-looking keys, so the
+signature never matches, which reads as "the provider is broken" and usually
+ends with somebody turning verification off.
+
+---
+
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
 |---|---|
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
-| **MOD-03 chat and voice** | Copies the email adapter, and now has the gateway to route through. |
+| **MOD-03-E3 WhatsApp and voice** | E2 landed Slack and Teams on the shared framework. WhatsApp adds the Meta Business API and its 24-hour session window; voice is a provider-agnostic call-completed webhook carrying a transcript, with real-time call control explicitly out of scope. |
+| **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
 | MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
 
 ---
@@ -463,11 +523,14 @@ action.
 
 | Check | Result |
 |---|---|
-| Unit tests | 613 passing, 290 of them over the seven modules |
+| Unit tests | 684 passing, 361 of them over the eight modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
 | — AWS SigV4 | 22, asserting the canonical request and string to sign as plain text a reviewer can check against AWS's published example |
+| — chat webhook signatures | 18, one per way each of the four schemes is got wrong |
+| — the chat guard and identity policy | 32, including that an unrecognised verification method is treated as none |
+| — the Slack and Teams adapters | 21, over parsing rather than sending |
 | — rotas and shifts | 26, including both daylight-saving transitions with real dates |
 | — routing strategies | 17, every tie-break and every refusal |
 | — the incident lifecycle | 17, each naming the way an incident goes wrong without the rule |

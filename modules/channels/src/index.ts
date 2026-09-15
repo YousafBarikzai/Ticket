@@ -56,3 +56,55 @@ export {
 } from './domain/threading.js';
 export { seedChannelDefaults } from './seed/defaults.js';
 import './handlers/index.js';
+
+// ---- MOD-03-E2 chat channels (PH-4) ----------------------------------------
+export {
+  MAX_SIGNATURE_AGE_SECONDS,
+  constantTimeEquals as constantTimeCompareSecrets,
+  timingSafeCompare,
+  verifyMetaSignature,
+  verifySlackSignature,
+  verifyTeamsSignature,
+  verifyTwilioSignature,
+  type VerificationFailure,
+  type VerificationResult,
+} from './domain/signatures.js';
+export { guardChat, type ChatEvent, type ChatGuardOptions, type ChatGuardVerdict } from './domain/chat-guard.js';
+export {
+  VERIFICATION_METHODS,
+  canAutoLink,
+  isVerificationMethod,
+  permits,
+  type IdentityState,
+  type PolicyVerdict,
+  type VerificationMethod,
+} from './domain/identity-policy.js';
+export {
+  actionPayloadSchema,
+  findTicketRef,
+  parseAction,
+  parseMessage,
+  parseSlash,
+  stripMention,
+  titleFrom,
+} from './domain/chat-commands.js';
+export {
+  chatTransport,
+  clearChatTransports,
+  registerChatTransport,
+  registeredChatTransports,
+  type ChatIdentityHint,
+  type ChatTransport,
+  type OutboundChat,
+  type ParsedChat,
+} from './service/chat-transport.js';
+export { slackTransport, type SlackOptions } from './service/slack.js';
+export { teamsTransport, type TeamsOptions } from './service/teams.js';
+export { clientCredentialsToken, type TokenRequest } from './service/aad-token.js';
+export {
+  autoLinkIfAllowed,
+  commandFor,
+  handleChat,
+  replyToChat,
+  type ChatOutcome,
+} from './service/chat-inbound.js';

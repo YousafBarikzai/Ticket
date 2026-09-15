@@ -54,5 +54,13 @@ export const REJECTION_REASONS = [
   'unknown_account',
   'unverified_sender',
   'empty',
+  // Chat channels. `loop_detected` is still our own bot hearing itself;
+  // `bot_message` is somebody else's integration posting, which is ordinary
+  // rather than a fault. `not_addressed` is the commonest of all — a busy
+  // channel the desk was invited to — and counting it separately is what keeps
+  // it from swamping the number that matters.
+  'bot_message',
+  'not_addressed',
+  'unsupported_event',
 ] as const;
 export type RejectionReason = (typeof REJECTION_REASONS)[number];
