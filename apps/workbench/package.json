@@ -1,0 +1,28 @@
+{
+  "name": "@itsm/workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --webpack -p 3100",
+    "build": "next build --webpack",
+    "start": "next start -p 3100",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. --project unit apps/workbench"
+  },
+  "dependencies": {
+    "@itsm/contracts": "workspace:*",
+    "@itsm/sdk": "workspace:*",
+    "@itsm/ui": "workspace:*",
+    "ioredis": "^6",
+    "next": "^16.3.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.0.1"
+  }
+}

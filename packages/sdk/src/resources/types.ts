@@ -44,35 +44,84 @@ export interface Ticket {
   updatedAt: string;
 }
 
-export interface TimelineComment {
+/**
+ * A timeline entry, in the shape the API sends it.
+ *
+ * Flat, and discriminated on `kind`, because that is what
+ * `GET /tickets/:id/timeline` returns — the fields sit directly on the entry
+ * rather than under a nested `comment`/`event`/`task` object. Written from the
+ * route rather than from doc 08, after a first pass written from the document
+ * described a response the API has never produced.
+ */
+export interface TimelineCommentEntry {
+  kind: 'comment';
+  at: string;
   id: string;
-  body: string;
-  isInternal: boolean;
+  /** `internal` is agent-only. The service filters them out for a requester. */
+  visibility: 'public' | 'internal';
   authorId: string | null;
-  createdAt: string;
+  body: string;
+  channel: string;
 }
 
-export interface TimelineEntry {
-  kind: 'comment' | 'event' | 'task';
+export interface TimelineEventEntry {
+  kind: 'event';
   at: string;
-  comment?: TimelineComment;
-  event?: { id: string; type: string; summary?: string; occurredAt: string };
-  task?: { id: string; title: string; status: string };
+  id: string;
+  type: string;
+  actorType: string;
+  actorId: string | null;
+  payload: Record<string, unknown>;
+}
+
+export interface TimelineTaskEntry {
+  kind: 'task';
+  at: string;
+  id: string;
+  title: string;
+  status: string;
+  assigneeId: string | null;
+}
+
+export type TimelineEntry = TimelineCommentEntry | TimelineEventEntry | TimelineTaskEntry;
+
+export interface TimelineAttachment {
+  id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  createdAt: string;
 }
 
 export interface Timeline {
   ticket: Ticket;
+  /** Whether this is the agent view or the requester view. */
+  includesInternal: boolean;
   entries: TimelineEntry[];
-  includeInternal: boolean;
+  attachments: TimelineAttachment[];
 }
 
+/**
+ * An SLA timer. Milliseconds, not minutes: the engine works in business
+ * milliseconds against a calendar (MOD-07), and rounding on the way out of the
+ * API would make two timers that differ by a minute read as identical.
+ */
 export interface SlaTimer {
   id: string;
   targetType: string;
   state: string;
+  startedAt: string;
   dueAt: string | null;
-  /** Null while the clock is paused or the target is already met. */
-  remainingMinutes: number | null;
+  remainingMs: number;
+  elapsedMs: number;
+  warningsFired: number;
+  metAt: string | null;
+  breachedAt: string | null;
+}
+
+export interface SlaTimers {
+  ticketId: string;
+  timers: SlaTimer[];
 }
 
 export interface Me {
@@ -93,18 +142,33 @@ export interface SuggestionEvidence {
   title: string;
   /** What a person opens to check the answer: an article key or a number. */
   ref: string;
+  /** The part that was actually put in front of the model. */
   extract: string;
 }
 
-export interface Suggestion {
+export type SuggestionOutcome = 'pending' | 'accepted' | 'edited' | 'rejected';
+
+/**
+ * What a job carries back with it.
+ *
+ * Narrower than `Suggestion`: the job already names the capability and the
+ * subject, so `GET /ai/jobs/:id` does not repeat them on the nested
+ * suggestion. Two types rather than one optional-everything type, so a caller
+ * cannot read `suggestion.capability` off a job and get `undefined` at runtime
+ * with no complaint at compile time.
+ */
+export interface JobSuggestion {
   id: string;
-  capability: string;
-  subjectId: string;
   content: Record<string, unknown>;
   reason: string;
   confidence: ConfidenceBand;
   evidence: SuggestionEvidence[];
-  outcome: 'pending' | 'accepted' | 'edited' | 'rejected';
+  outcome: SuggestionOutcome;
+}
+
+export interface Suggestion extends JobSuggestion {
+  capability: string;
+  subjectId: string;
   createdAt: string;
 }
 
@@ -112,14 +176,28 @@ export interface AiJob {
   id: string;
   capability: string;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'refused';
+  subjectType: string;
   subjectId: string;
   model: string;
   provider: string;
+  inputTokens: number;
+  outputTokens: number;
+  /** Already formatted for a person — "£0.02", "3p", "<0.001p" — never a number to do arithmetic on. */
   cost: string;
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
-  suggestion: Suggestion | null;
+  suggestion: JobSuggestion | null;
+}
+
+export interface AiCapability {
+  key: string;
+  name: string;
+  description: string;
+  /** False for retrieval-only capabilities, which cost nothing and survive an exhausted budget. */
+  callsAModel: boolean;
+  available: boolean;
+  unavailableBecause: string | null;
 }
 
 export interface TimeSummary {

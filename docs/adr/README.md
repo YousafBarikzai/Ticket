@@ -53,6 +53,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0038](0038-a-limit-is-a-cached-verdict-never-a-count.md) | A limit is a cached verdict, never a count | Accepted | MOD-21 |
 | [0039](0039-a-pack-is-a-copy-not-a-connection.md) | A pack is a copy, not a connection | Accepted | MOD-22 |
 | [0040](0040-the-provider-is-a-socket-and-the-governance-is-the-product.md) | The provider is a socket, and the governance is the product | Accepted | MOD-09, OD-04 |
+| [0041](0041-the-browser-holds-a-cookie-and-nothing-else.md) | The browser holds a cookie and nothing else | Accepted | MOD-16, MOD-04 |
 
 ## Template
 

@@ -1,3 +1,5 @@
+'use client';
+
 import type { ReactNode } from 'react';
 import { Badge } from '../web/Badge.js';
 import { Button } from '../web/Button.js';

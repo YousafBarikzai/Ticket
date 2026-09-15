@@ -55,6 +55,14 @@ jobs:
       - name: Typecheck
         run: pnpm exec tsc --noEmit -p tsconfig.json
 
+      # The root project is server-side TypeScript and deliberately has no DOM
+      # library, so it does not cover `.tsx`. Every workspace that has one runs
+      # its own `typecheck` here — which is what puts the design system's
+      # components and the workbench's pages in front of a compiler in CI at
+      # all, rather than only on whoever last ran it locally.
+      - name: Typecheck each workspace
+        run: pnpm exec turbo run typecheck
+
       - name: Unit tests
         run: pnpm exec vitest run --project unit
 

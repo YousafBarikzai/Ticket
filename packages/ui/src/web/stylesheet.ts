@@ -12,6 +12,23 @@
  * Hebrew locales mirror without a second stylesheet.
  */
 
+import { renderTokenStylesheet } from '../tokens/css.js';
+
+/**
+ * The whole stylesheet: the token variables, then the components.
+ *
+ * Lives here rather than beside `ThemeProvider` because a server component
+ * calls it. `ThemeProvider` holds state, so it is a client module, and a
+ * function exported from a client module cannot be *called* on the server —
+ * only passed around as a reference. Keeping this in a file with no hooks and
+ * no DOM is what lets an application emit the stylesheet into its document
+ * head during server rendering, which is the difference between a first paint
+ * and a flash of unstyled content.
+ */
+export function uiStylesheet(): string {
+  return `${renderTokenStylesheet()}\n${componentStylesheet}`;
+}
+
 export const componentStylesheet = `
 .itsm-visually-hidden {
   position: absolute;

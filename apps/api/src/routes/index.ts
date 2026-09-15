@@ -43,6 +43,7 @@ import { scimAdminRoutes, scimRoutes } from './scim.js';
 import { usageRoutes } from './usage.js';
 import { packRoutes } from './packs.js';
 import { aiRoutes } from './ai.js';
+import { authRoutes } from './auth.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -75,6 +76,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await usageRoutes(v1);
       await packRoutes(v1);
       await aiRoutes(v1);
+      await authRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },

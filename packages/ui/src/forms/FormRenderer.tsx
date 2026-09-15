@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { cx } from '../web/cx.js';
 import { Checkbox } from '../web/Checkbox.js';

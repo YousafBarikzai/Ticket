@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Live-region announcer.
  *

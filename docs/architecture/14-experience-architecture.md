@@ -78,3 +78,67 @@ packages/ui/
 
 - Product-analytics events for the Appendix C journeys live in their own `ux.` namespace so they are never confused with domain events (`ux.ticket.create.started`, `ux.ticket.create.completed`, `ux.search.performed`, `ux.deflection.recorded`, `ux.approval.decided`); they are sent to `POST /api/v1/analytics/events` in batches; no third-party analytics script by default.
 - Errors to Sentry (EU region) with release tagging and the correlation ID of the failing request.
+
+## 10. What is built, and where this document is ahead of it
+
+Sections 1 to 9 describe the intended shape of the experience tier. This
+section records what exists, because a document that describes four
+applications while one exists is a plan, and a reader cannot tell which
+sentences are which.
+
+### 10.1 Built
+
+| Piece | State |
+|---|---|
+| `packages/ui` | Tokens, a11y primitives, 26 web components, `FormRenderer`, and the two workbench components (`AiSuggestionCard`, `SlaClock`). Every component file carries `'use client'` (ADR-0041); the tokens and `uiStylesheet()` do not, so an application can emit the stylesheet during server rendering. |
+| `packages/sdk` | The typed API client: problem-details errors, idempotency keys on creates, `If-Match` on conditional updates, cursor paging, and the workbench's resource surface. |
+| `apps/workbench` | Next.js App Router. The BFF (`/api/session/*`, `/api/proxy/*`), the queue, and the three-pane ticket workspace with timeline, composer, transitions, assignment, SLA clocks, time totals and the AI suggestion surface. |
+| The development sign-in | `POST /api/v1/auth/dev-session`, registered only outside production and only with no `OIDC_ISSUER` (ADR-0041). |
+
+### 10.2 Deviations from sections 1 to 9
+
+These are decisions, not omissions, and each is one somebody may reasonably
+reverse later:
+
+- **No Tailwind and no Radix** (§2). `packages/ui` is built on one generated
+  stylesheet driven by the token variables, and on hand-written ARIA patterns
+  with keyboard tests. What §2 describes is a reasonable stack; what exists has
+  no build-time CSS step and no third-party component semantics to keep in step
+  with the product's own.
+- **No TanStack Query** (§4). Server components fetch for first paint and
+  `router.refresh()` re-reads after a mutation. A cache layer is worth adding
+  when there is a screen that needs one; the queue and the ticket page do not.
+- **No Storybook, no `packages/i18n`, no `packages/ui/native`, no
+  `packages/ui/icons`** (§2, §6, §7). None of these has been built. The
+  accessibility tests §2 promises exist as keyboard and ARIA tests in
+  `packages/ui/src/**/__tests__`; there is no axe-core run.
+- **No service worker, no offline queue, no push** (§5). The workbench is
+  online-only today.
+- **Polling, not SSE, for an AI job** (§4). `GET /events/stream` exists in the
+  API (ADR-0015) and the proxy does not carry it. A job the person just started
+  is polled with a ceiling; a queue that updates by itself needs the stream.
+- **`apps/portal`, `apps/admin`, `apps/status` and `apps/mobile` do not
+  exist.** MOD-23's status page is served by the API, not by a Next app.
+
+### 10.3 What building the first application found in the API
+
+Recorded here rather than in a module's document, because each was invisible
+until something tried to use the API the way an application does:
+
+- **`POST /tickets/:id/assign` reads no `If-Match`.** Every other mutation on a
+  ticket is conditional. Two agents taking the same ticket at the same moment
+  is therefore last-write-wins, silently. The SDK deliberately does not send a
+  version on that call rather than implying a guarantee the API does not make.
+- **The list grammar is `filter[...]`, and a wrong parameter is ignored rather
+  than refused.** A client that sent `?status=open` got every ticket back and
+  no error. The SDK now spells the grammar in one tested function; the wider
+  point is that an API which ignores unknown query parameters makes a whole
+  class of client bug invisible.
+- **A comment's visibility is `public`/`internal` and defaults to `public`.** A
+  client sending anything else — `isInternal: true`, say — has its internal
+  note delivered to the requester. This one is worth a schema that refuses
+  unknown keys rather than a convention.
+- **There is still no JIT provisioning and no `POST /auth/session`.** Doc 09 §2
+  describes both; `userService.provisionFromToken` exists and has no caller. A
+  person who authenticates against Keycloak but has no row in `user` cannot use
+  the workbench.
