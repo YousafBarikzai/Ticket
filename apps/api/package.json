@@ -26,6 +26,7 @@
     "@itsm/module-search": "workspace:*",
     "@itsm/module-security": "workspace:*",
     "@itsm/module-sla": "workspace:*",
+    "@itsm/module-statuspage": "workspace:*",
     "@itsm/module-tenancy": "workspace:*",
     "@itsm/module-ticket": "workspace:*",
     "@itsm/module-workflow": "workspace:*",

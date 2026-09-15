@@ -42,7 +42,9 @@ function isUnauthenticated(request: FastifyRequest): boolean {
   const url = request.url.split('?')[0] ?? '';
   if (UNAUTHENTICATED_PATHS.has(url)) return true;
   // Signed-token endpoints carry their own proof and have no session.
-  if (url.startsWith('/api/v1/public/') || url.startsWith('/status/')) return true;
+  if (url.startsWith('/api/v1/public/')) return true;
+  // The public status page, by slug or on a mapped host (MOD-23).
+  if (url === '/status' || url.startsWith('/status/')) return true;
   // A provider webhook has no token to present: it proves itself with a
   // signature over the body, checked by the channel's transport before the
   // payload is looked at. Matched exactly rather than by prefix, so the rest of

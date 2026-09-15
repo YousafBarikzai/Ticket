@@ -1071,6 +1071,48 @@ export const budgetThresholdReached = defineEvent({
   }),
 });
 
+// ---- MOD-23 Status page (PH-4) --------------------------------------------
+export const statusIncidentUpdated = defineEvent({
+  type: 'status.incident.updated',
+  version: 1,
+  aggregateType: 'status_incident',
+  webhook: true,
+  description: 'Something on the public status page changed: an incident opened, moved, or was resolved.',
+  payload: z.object({
+    incidentId: id,
+    pageSlug: z.string(),
+    title: z.string(),
+    /** investigating | identified | monitoring | resolved */
+    status: z.string(),
+    /** none | minor | major | critical */
+    impact: z.string(),
+    componentKeys: z.array(z.string()),
+    body: z.string(),
+    /** major_incident | manual */
+    source: z.string(),
+  }),
+});
+
+export const statusMaintenanceScheduled = defineEvent({
+  type: 'status.maintenance.scheduled',
+  version: 1,
+  aggregateType: 'maintenance_window',
+  webhook: true,
+  description: 'A maintenance window was announced, moved, started, finished or cancelled on the public status page.',
+  payload: z.object({
+    maintenanceId: id,
+    pageSlug: z.string(),
+    title: z.string(),
+    /** scheduled | in_progress | completed | cancelled */
+    status: z.string(),
+    componentKeys: z.array(z.string()),
+    startsAt: z.string(),
+    endsAt: z.string(),
+    /** change | manual */
+    source: z.string(),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -1098,6 +1140,7 @@ export const eventCatalogue = [
   analyticsDriftDetected, reportGenerated,
   surveyInvited, surveyResponded,
   timeEntryLogged, timeEntryDeleted, budgetThresholdReached,
+  statusIncidentUpdated, statusMaintenanceScheduled,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

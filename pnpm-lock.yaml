@@ -141,6 +141,9 @@ importers:
       '@itsm/module-sla':
         specifier: workspace:*
         version: link:modules/sla
+      '@itsm/module-statuspage':
+        specifier: workspace:*
+        version: link:modules/statuspage
       '@itsm/module-tenancy':
         specifier: workspace:*
         version: link:modules/tenancy
@@ -234,6 +237,9 @@ importers:
       '@itsm/module-sla':
         specifier: workspace:*
         version: link:../../modules/sla
+      '@itsm/module-statuspage':
+        specifier: workspace:*
+        version: link:../../modules/statuspage
       '@itsm/module-tenancy':
         specifier: workspace:*
         version: link:../../modules/tenancy
@@ -294,6 +300,9 @@ importers:
       '@itsm/module-sla':
         specifier: workspace:*
         version: link:../../modules/sla
+      '@itsm/module-statuspage':
+        specifier: workspace:*
+        version: link:../../modules/statuspage
       '@itsm/module-tenancy':
         specifier: workspace:*
         version: link:../../modules/tenancy
@@ -628,6 +637,24 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  modules/statuspage:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@itsm/module-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
   modules/tenancy:
     dependencies:
       '@itsm/contracts':
@@ -817,6 +844,9 @@ importers:
       '@itsm/module-sla':
         specifier: workspace:*
         version: link:../../modules/sla
+      '@itsm/module-statuspage':
+        specifier: workspace:*
+        version: link:../../modules/statuspage
       '@itsm/module-tenancy':
         specifier: workspace:*
         version: link:../../modules/tenancy

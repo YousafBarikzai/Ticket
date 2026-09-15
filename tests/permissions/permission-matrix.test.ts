@@ -487,6 +487,24 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'see the status page as an operator',
+    path: () => '/api/v1/status-page',
+    // Subscriber addresses and hidden incidents: the service owner's and the
+    // administrator's, and neither a lead nor an agent is either.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'open an incident on the status page',
+    method: 'POST',
+    path: () => '/api/v1/status-page/incidents',
+    body: () => ({ title: 'Matrix incident', impact: 'minor', body: 'Looking into it.' }),
+    // A statement to the public, so it is made by whoever answers for the
+    // service, not by whoever noticed.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.

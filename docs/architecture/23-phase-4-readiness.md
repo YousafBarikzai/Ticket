@@ -746,6 +746,49 @@ dashboard.
 
 ---
 
+### 2.15 Status page (MOD-23)
+
+**The page is a statement, not a view** (ADR-0035). Its incidents, updates
+and maintenance windows are the module's own rows, written by its handlers
+from what MOD-08 publishes and by its API from what an operator types, and
+read by the public page and nothing else. What the public is told is decided
+once, in the handlers: a major incident appears only if it was declared
+customer-facing; a timeline entry only if its audience is `public`; a
+scheduled change only if it touches a service the page lists. The page has
+its own five words for an incident and four for a component, mapped from the
+desk's, so an internal state it was not designed to explain cannot leak by
+being new.
+
+**Every handler reads the row, not the payload**, carries the MOD-08 entry
+it came from, and is idempotent from either direction: the same declaration
+delivered twice opens nothing twice, an update that arrives before its
+declaration opens the incident rather than being dropped, and resolution —
+which arrives as both a public "resolved" update and an
+`incident.major.resolved` event, in no particular order — is applied once.
+
+**The tenant directory is the only pre-tenant lookup.** The page lives at
+`/status/<tenant slug>` (or at `/status` on a mapped host). The public request
+resolves the slug through MOD-21 and reads the page *as that tenant*, through
+a context with no permissions that the database confines like any other. No
+MOD-23 table joins the platform allowlist. The API serves the page — HTML to a
+browser, JSON to anything else, cacheable for thirty seconds; the static
+export in document 03 remains the end state and waits on OD-06.
+
+**Subscribers are addresses**, confirmed by a signed link before anything is
+sent, told through a job after the transaction that wrote the line, with the
+row marked before the first email so a retried job sends nothing twice. The
+subscribe endpoint says the same thing whatever the truth about the address
+or the page, and is rationed per address and per client, in process.
+
+**Components follow what touches them.** Each is recomputed as the worst of
+every open incident over it, or maintenance if a window is live over it, or
+operational — recomputed rather than nudged, so nothing is left red by an
+incident resolved through another door. A five-minute sweep moves windows
+through scheduled, in progress and completed by the clock and never revives
+one somebody cancelled.
+
+---
+
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
@@ -753,7 +796,8 @@ dashboard.
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
-| MOD-23, MOD-24, SCIM, metering | Not started. |
+| **MOD-23 static export** | The page is served by the API (ADR-0035). The edge-hosted export that survives an API outage is a job that renders the same JSON to a file, and waits on a hosting account (OD-06). |
+| MOD-24, SCIM, metering | Not started. |
 
 ---
 
@@ -773,11 +817,14 @@ dashboard.
 | Every survey link answered 414 | The signed token rides in the URL path and is about three hundred characters; Fastify refuses a path parameter longer than a hundred by default, before any handler runs. Five of the seven failures in the survey suite's first live run were this one number, and no unit test could have seen it: the token, the route and the limit are three different layers that only meet in a running server. The limit is now two kilobytes, which is what browsers and mail clients carry without complaint. The other two failures were the suite's own ordering — a test that re-publishes the survey as 0–10 ran before the thread tests, which then found no buttons (eleven is a keyboard) and a "4" worth 40; it now runs last, and says why. |
 | A reply in the desk's own thread was "not addressed" | The chat guard accepts a message only when it is a direct message or mentions the bot — the right rule for a busy channel the desk was merely invited to. It was also applied to a reply *inside a thread the desk itself opened*, so a "4" typed under a survey question on Slack would have been dropped as `not_addressed` before anything looked at it, and the survey would have waited for an @ nobody would think to type. Found reading the guard while writing the fake message for the thread test, not by the test. `acceptInbound` now looks the thread up where it has a transaction and tells the guard, which stays a pure function; the busy-channel rule is unchanged everywhere else and a unit test pins both halves. |
 | The platform's `fingerprint` is eight hex characters | Written for showing a credential's identity in a log, it is the last eight characters of a SHA-256. MOD-18's first draft used it to bind a survey link to its invitation row — a 32-bit "hash" of a secret, in a column named `token_hash`. Nothing would have broken: the link is HMAC-signed and the check is a second factor. But a column named for a hash that holds a fingerprint is how the next person reasons wrongly about what the database can prove. The full digest now lives next to the short form, and each says what the other is for. |
-| A notification rule for an event MOD-11 does not listen to never fires, silently | MOD-11 registers a handler per event type from a six-entry list, and its rule table accepts a rule for any event type at all. A rule for `report.generated` was seeded, validated, listed in the admin console and would have sent nothing, because no handler ever called `notifyForEvent` for it. The integration test that asks "where is the lead's notification" is what found it; the fix is one more entry, and the comment on the list now says what the list is. Handlers are registered at import and rules are read per tenant at run time, so the list cannot be derived from the rules — the third hand-maintained list this phase, and the first that cannot be replaced by a derivation. Worth a registry check at boot: every seeded rule's event type must be in the list. Not done in this change. |
+| A notification rule for an event MOD-11 does not listen to never fires, silently | MOD-11 registers a handler per event type from a six-entry list, and its rule table accepts a rule for any event type at all. A rule for `report.generated` was seeded, validated, listed in the admin console and would have sent nothing, because no handler ever called `notifyForEvent` for it. The integration test that asks "where is the lead's notification" is what found it; the fix is one more entry, and the comment on the list now says what the list is. Handlers are registered at import and rules are read per tenant at run time, so the list cannot be derived from the rules — the third hand-maintained list this phase, and the first that cannot be replaced by a derivation. Now checked at boot: `registerNotificationPack` and the default rules are held to the list when the module loads, so a rule for an event MOD-11 does not listen for stops the process with the name of the list to extend, rather than shipping. |
 | The CSV writer defused negative numbers | The formula guard prefixes anything beginning with `=`, `+`, `-` or `@` with a quote, so a spreadsheet shows it as text rather than running it. Written first over `String(value)`, which meant a margin of −30 minutes came out as `'-30` — text, in the one column that exists to be summed. Caught by a unit test whose name said the opposite of what its assertion did; reading the two together was the finding. A number is the platform's, not a person's, and is now written as a number. |
 | An accumulating projector cannot be replayed | E1a's comment count was "the old count plus one" on every `ticket.comment.added`, which is right until an event is delivered twice past the inbox — a replay, precisely. E1b needed a replay to make the spec's `analytics:rebuild` real, and the first design was "delete the facts, then replay", which works and is a hard-delete on a reporting table in a command anybody with `analytics.admin` can run. The better fix was upstream: read the count from `ticket_comment` like every other field, so replay is idempotent by construction and deletes nothing. The projector is now a pure function of the source rows, which is what ADR-0031 already claimed. |
 | The worker scheduled four jobs by hand, and the manifests declared five | `registerSchedules` in `apps/worker` was a list of four cron entries copied from module manifests. MOD-04's manifest declares `ticket.autoClose` hourly; nothing scheduled it, and nothing implements it either, so the manifest has been promising a job that does not exist since Phase 1. Found because MOD-12 needed two schedules and adding two more lines would have repeated the mistake. The list is now derived from the manifests at boot and skips any declared job with no registered handler, saying so in the log. That is the same shape as three earlier rows: a declaration copied into a second place drifts, and the fix is to have one place. |
 | A unique index over nullable columns does not enforce uniqueness | The rollup's natural key is `(tenant, date, team, service, priority)` where the last three are null for "all". PostgreSQL treats NULLs in a unique index as distinct from one another, so `(t, d, NULL, NULL, NULL)` never conflicts with itself: the "all" row would have inserted a fresh duplicate on every upsert and every headline total would have climbed with every event. Caught reading the schema back before the migration was written, not by a test — the unit tests could not see it because no row ever reaches a database there. The row's identity is now a spelled-out grouping key (`all`, `team:<id>|priority:P1`) with a constraint that it is non-empty; the nullable columns stay for filtering. |
+| A dependency named a module that does not exist | MOD-23's first manifest depended on `MOD-08`, which is the specification's name for a practice and nobody's module id: the incident, problem and change modules are `MOD-08-E1`, `-E2` and `-E3`. `validateRegistry` would have logged it at boot and carried on. Found by reading the id list before the first typecheck; the fix is the three real ids, and the reminder is that a manifest's `dependsOn` is checked against what is registered, not against the document it was copied from. |
+| A public page nearly ran on the platform role | The first draft of MOD-23's slug lookup read `status_page` through `platformDb()`, because a public request has no tenant to read as. That read returns nothing — the table is isolated like every other — and the honest fix was to allowlist it, which is a public endpoint running on the role that sees every tenant. The better fix was to drop the page's own slug and use the tenant's: the directory is the one pre-tenant lookup the platform already permits, and everything after it reads as that tenant (ADR-0035). One fewer table on the allowlist, and nothing to enumerate. |
+| The context plugin let `/status/` through, but not `/status` | The unauthenticated-path rule was a prefix match on `/status/`, written when the page had only a slug form. The host-resolved form has no slug and no trailing slash, and would have answered 401 on a tenant's own domain — the one URL a customer is most likely to be given. One more clause, and the comment on the rule now says what both forms are. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -786,7 +833,7 @@ dashboard.
 
 | Check | Result |
 |---|---|
-| Unit tests | 811 passing, 483 of them over the eleven modules |
+| Unit tests | 835 passing, 507 of them over the modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -814,7 +861,9 @@ dashboard.
 | — survey documents, scoring and throttling | 19, including the scale that would have reported a 7 as 150 % and the button row that refuses to be a keyboard |
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
 | — time pricing, periods and thresholds | 12, including that one entry crossing both budget lines reports both and a decrement reports neither |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| — the MOD-11 listener list | 2, proving the boot-time check refuses a rule for an event nobody listens for and names the list to extend |
+| — the status page vocabulary, allowance and rendering | 22, including that maintenance loses to anything actually broken, that the sweep never revives a cancelled window, that a refused subscribe attempt does not count against the person behind the script, and that a title of `<script>` renders as text |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), a 22-test status-page suite (a customer-facing major incident marking its service's component and an internal one never appearing, an internal update kept off the page beside a public one shown, resolution applied once from two events, a scheduled change becoming a notice that moves rather than multiplies, the sweep marking the component under maintenance, a subscriber confirmed by link, told once and not again after unsubscribing, and a private page answering nothing either way), seven permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift

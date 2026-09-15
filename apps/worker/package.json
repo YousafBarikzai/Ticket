@@ -18,6 +18,7 @@
     "@itsm/module-rules": "workspace:*",
     "@itsm/module-security": "workspace:*",
     "@itsm/module-sla": "workspace:*",
+    "@itsm/module-statuspage": "workspace:*",
     "@itsm/module-tenancy": "workspace:*",
     "@itsm/platform": "workspace:*",
     "@itsm/runtime": "workspace:*",

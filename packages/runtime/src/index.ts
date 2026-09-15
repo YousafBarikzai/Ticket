@@ -40,6 +40,7 @@ import { assetsManifest } from '@itsm/module-assets';
 import { analyticsManifest, seedAnalyticsDefaults } from '@itsm/module-analytics';
 import { feedbackManifest, seedFeedbackDefaults } from '@itsm/module-feedback';
 import { timeManifest, seedTimeDefaults } from '@itsm/module-time';
+import { statusPageManifest, seedStatusDefaults } from '@itsm/module-statuspage';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -70,6 +71,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   assetsManifest,
   feedbackManifest,
   timeManifest,
+  statusPageManifest,
   analyticsManifest,
   adminManifest,
 ];
@@ -147,6 +149,10 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('time.defaults', async (ctx: TenantContext) => {
     await seedTimeDefaults(ctx);
+  });
+  // After the catalogue, so the default service is a component from the start.
+  registerSeedStep('statuspage.defaults', async (ctx: TenantContext) => {
+    await seedStatusDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

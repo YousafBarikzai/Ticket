@@ -20,6 +20,7 @@ import { tickPartition, TIMER_PARTITIONS } from '@itsm/module-sla';
 import { checkTicketDrift, rebuildRecent, reportService } from '@itsm/module-analytics';
 import { invitationService } from '@itsm/module-feedback';
 import { budgetService } from '@itsm/module-time';
+import { incidentService as statusIncidentService } from '@itsm/module-statuspage';
 import type { EventEnvelope } from '@itsm/contracts';
 
 /**
@@ -178,6 +179,16 @@ defineJob('analytics', 'budget.sweep', async () => {
     await withContext(ctx, async () => {
       const result = await budgetService.recomputeAll(ctx);
       if (result.corrected > 0) logger.info('budget totals corrected', { tenantId: tenant.id, ...result });
+    });
+  }
+});
+
+defineJob('notify', 'status.maintenance.sweep', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const moved = await statusIncidentService.sweepMaintenance(ctx);
+      if (moved > 0) logger.debug('maintenance windows moved', { tenantId: tenant.id, moved });
     });
   }
 });
