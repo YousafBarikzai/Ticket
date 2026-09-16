@@ -202,7 +202,7 @@ jobs:
         if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
         run: |
           echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
-          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::The images are deployed; whether they are serving is what the check below reports. Nobody can sign in until the realm exists."
           echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
 
       - name: Apply the realm for this preview
@@ -332,7 +332,7 @@ jobs:
         if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
         run: |
           echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
-          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::The images are deployed; whether they are serving is what the check below reports. Nobody can sign in until the realm exists."
           echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
 
       - name: Apply the realm
@@ -405,7 +405,7 @@ jobs:
         if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
         run: |
           echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
-          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::The images are deployed; whether they are serving is what the check below reports. Nobody can sign in until the realm exists."
           echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
 
       - name: Apply the realm for production
