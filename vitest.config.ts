@@ -18,6 +18,12 @@ export default defineConfig({
             // would mean the only tested part of an app was the part that
             // happened to live in a package.
             'apps/*/src/**/__tests__/**/*.test.ts?(x)',
+            // And the infrastructure scripts. A deploy plan — what order
+            // services come up in, which image each runs, which hostname each
+            // answers on — is ordinary logic that happens to live outside a
+            // workspace, and the alternative to testing it here is finding out
+            // during a deployment.
+            'infra/scripts/**/__tests__/**/*.test.ts',
           ],
           environment: 'node',
         },

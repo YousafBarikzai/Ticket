@@ -1,0 +1,184 @@
+{
+  "realm": "itsm",
+  "displayName": "IT Service Management",
+  "enabled": true,
+  "sslRequired": "all",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "failureFactor": 10,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "attributes": {
+    "frontendUrl": "",
+    "comment.frontendUrl": "Set per environment by the deploy workflow to https://auth.<environment-label>.<domain>. Left empty here because a realm file with one environment's hostname baked in is a realm file that is wrong in the other two."
+  },
+
+  "comment.userProfile": [
+    "tenant_id is a declared user attribute, not an ad-hoc one.",
+    "apps/api/src/auth/verify.ts refuses any token whose payload has no tenant_id:",
+    "'this token names no tenant'. So the attribute, the mapper below that copies",
+    "it into the access token, and SCIM writing it at provisioning time are three",
+    "halves of one mechanism — break any and every sign-in fails closed, which is",
+    "the right direction but an expensive way to learn the claim was missing.",
+    "itsm_user_id is optional: verify.ts falls back to `sub` when it is absent."
+  ],
+  "userProfile": {
+    "attributes": [
+      { "name": "username", "displayName": "${username}", "permissions": { "view": ["admin", "user"], "edit": ["admin"] } },
+      { "name": "email", "displayName": "${email}", "required": { "roles": ["user"] }, "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] } },
+      { "name": "firstName", "displayName": "${firstName}", "required": { "roles": ["user"] }, "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] } },
+      { "name": "lastName", "displayName": "${lastName}", "required": { "roles": ["user"] }, "permissions": { "view": ["admin", "user"], "edit": ["admin", "user"] } },
+      {
+        "name": "tenant_id",
+        "displayName": "Tenant",
+        "required": { "roles": ["user"] },
+        "permissions": { "view": ["admin", "user"], "edit": ["admin"] },
+        "validations": { "length": { "min": 1, "max": 64 } }
+      },
+      {
+        "name": "itsm_user_id",
+        "displayName": "ITSM user id",
+        "permissions": { "view": ["admin", "user"], "edit": ["admin"] },
+        "validations": { "length": { "min": 0, "max": 64 } }
+      }
+    ]
+  },
+
+  "comment.clientScopes": [
+    "One shared scope carries the two claims the API reads, rather than four",
+    "copies of the same two mappers on four clients. A mapper that exists on",
+    "three clients out of four is the kind of fault that looks like 'only the",
+    "console is broken'."
+  ],
+  "clientScopes": [
+    {
+      "name": "itsm-claims",
+      "description": "The tenant and user claims apps/api reads off every access token",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "itsm-user-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "itsm_user_id",
+            "claim.name": "itsm_user_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-itsm-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "comment": "Without this the access token's aud names the front-end client, and jwtVerify refuses it against OIDC_AUDIENCE=itsm-api. Nothing else in the token would look wrong.",
+            "included.client.audience": "itsm-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": ["itsm-claims"],
+
+  "comment.clients": [
+    "Three confidential clients, one per application, and one bearer-only",
+    "resource server. Separate rather than shared because the redirect URI is",
+    "what stops an authorisation code being returned to somewhere else, and one",
+    "client holding all three origins' URIs is one compromised application away",
+    "from being all of them.",
+    "",
+    "redirectUris and webOrigins are placeholders resolved per environment by",
+    "the deploy workflow from DEPLOY_DOMAIN. The + in webOrigins means 'the",
+    "origins of the redirect URIs', so it needs no substitution."
+  ],
+  "clients": [
+    {
+      "clientId": "itsm-api",
+      "name": "ITSM API",
+      "description": "The resource server. Issues nothing; every token is addressed to it.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "itsm-portal",
+      "name": "Requester portal",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://help.__DOMAIN__/*" },
+      "redirectUris": ["https://help.__DOMAIN__/api/session/callback"],
+      "webOrigins": ["+"],
+      "defaultClientScopes": ["openid", "profile", "email", "itsm-claims"]
+    },
+    {
+      "clientId": "itsm-workbench",
+      "name": "Agent workbench",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://desk.__DOMAIN__/*" },
+      "redirectUris": ["https://desk.__DOMAIN__/api/session/callback"],
+      "webOrigins": ["+"],
+      "defaultClientScopes": ["openid", "profile", "email", "itsm-claims"]
+    },
+    {
+      "clientId": "itsm-admin",
+      "name": "Administration console",
+      "description": "Separate from the workbench so an agent session is not also a console session.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://admin.__DOMAIN__/*" },
+      "redirectUris": ["https://admin.__DOMAIN__/api/session/callback"],
+      "webOrigins": ["+"],
+      "defaultClientScopes": ["openid", "profile", "email", "itsm-claims"]
+    }
+  ]
+}

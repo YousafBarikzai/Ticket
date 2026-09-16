@@ -42,8 +42,16 @@ COPY infra ./infra
 COPY prisma ./prisma
 COPY tsconfig.json turbo.json ./
 
-FROM source AS build
+# The install, on its own, because five stages need it.
+#
+# Before the web applications existed this lived in `build`, and moving it out
+# is not tidying: `deps` is one layer that `build` and each `build-<app>` stage
+# start from, so a Dockerfile that produces six images resolves the workspace
+# once rather than six times.
+FROM source AS deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+FROM deps AS build
 # Assert rather than assemble: assembling here would quietly paper over a module
 # fragment changed without regenerating the committed schema, which is the drift
 # this step exists to catch.
@@ -96,3 +104,81 @@ FROM runtime AS worker
 HEALTHCHECK NONE
 ENV WORKER_QUEUES=*
 CMD ["node", "dist/worker.js"]
+
+# ---------------------------------------------------------------------------
+# The three web applications (docs/architecture/14 §1, 16 §1).
+#
+# Next's `output: 'standalone'` traces what each app actually imports and emits
+# a directory that runs under a bare `node`, with no package manager, no pnpm
+# store and no workspace symlinks. That is why these images do not reuse the
+# `prod-deps` stage the API and worker share: the tracer has already decided
+# what belongs, and installing a second `node_modules` beside its answer would
+# only add what it deliberately left out.
+#
+# `outputFileTracingRoot` in each `next.config.ts` points at the workspace root,
+# so the emitted tree is rooted there too — `server.js` sits at
+# `<app>/.next/standalone/apps/<app>/server.js` with a shared `node_modules` and
+# `packages/` beside it. Copying the standalone directory to `/app` therefore
+# reproduces the workspace layout the traced requires expect, which is why the
+# start command names a path two segments deep rather than `server.js`.
+#
+# Two things the tracer does not copy, and a deploy that forgets either is a
+# site that renders unstyled and 404s every asset:
+#   `.next/static`  — the hashed client bundles, served at `/_next/static`
+#   `public`        — the service worker built by `pnpm sw`, for the two apps
+#                     that have one (the console has none, by ADR-0049)
+
+FROM deps AS build-portal
+RUN pnpm --filter @itsm/portal build
+
+FROM deps AS build-workbench
+RUN pnpm --filter @itsm/workbench build
+
+FROM deps AS build-admin
+RUN pnpm --filter @itsm/admin build
+
+# What all three web images have in common, so the differences below are only
+# the differences.
+FROM runtime-base AS web-runtime
+ENV NODE_ENV=production
+# Next binds to localhost unless told otherwise, and a container that binds to
+# localhost is a container nothing can reach.
+ENV HOSTNAME=0.0.0.0
+# The same removal as the API image, for the same reason: npm ships inside the
+# Node image with its own bundled dependencies, none of which anything here
+# executes, and every one of which a scanner will find.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+RUN useradd --system --uid 10001 --home /app itsm && chown -R itsm:itsm /app
+USER itsm
+
+FROM web-runtime AS portal
+ENV PORT=3200
+COPY --from=build-portal --chown=itsm:itsm /app/apps/portal/.next/standalone ./
+COPY --from=build-portal --chown=itsm:itsm /app/apps/portal/.next/static ./apps/portal/.next/static
+COPY --from=build-portal --chown=itsm:itsm /app/apps/portal/public ./apps/portal/public
+EXPOSE 3200
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/portal/server.js"]
+
+FROM web-runtime AS workbench
+ENV PORT=3100
+COPY --from=build-workbench --chown=itsm:itsm /app/apps/workbench/.next/standalone ./
+COPY --from=build-workbench --chown=itsm:itsm /app/apps/workbench/.next/static ./apps/workbench/.next/static
+COPY --from=build-workbench --chown=itsm:itsm /app/apps/workbench/public ./apps/workbench/public
+EXPOSE 3100
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/workbench/server.js"]
+
+# No `public` copy: the console is the one application here with no service
+# worker (ADR-0049), so it has no `public` directory for `COPY` to find, and a
+# COPY of a path that does not exist fails the build rather than being skipped.
+FROM web-runtime AS admin
+ENV PORT=3300
+COPY --from=build-admin --chown=itsm:itsm /app/apps/admin/.next/standalone ./
+COPY --from=build-admin --chown=itsm:itsm /app/apps/admin/.next/static ./apps/admin/.next/static
+EXPOSE 3300
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/admin/server.js"]
