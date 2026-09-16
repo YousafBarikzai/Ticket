@@ -126,6 +126,48 @@ export async function publishForm(ctx: TenantContext, key: string) {
   });
 }
 
+/**
+ * Edits a form's draft document, its name or its description.
+ *
+ * The document written here is the draft; `publishForm` is what cuts the
+ * version a requester is shown. That separation is why a pack can bring a
+ * newer form across without the person filling one in at that moment seeing
+ * the questions change underneath them.
+ */
+export const updateFormSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    description: z.string().max(500).nullable().optional(),
+    document: formDocumentSchema.optional(),
+  })
+  .strict();
+
+export async function updateForm(ctx: TenantContext, key: string, patch: unknown) {
+  authz.require(ctx, 'catalogue.form.manage');
+  const parsed = updateFormSchema.parse(patch);
+  if (parsed.document) assertDocumentIsCoherent(parsed.document as unknown as FormDefinition);
+
+  return transaction(ctx, async (tx) => {
+    const form = await loadForm(tx, key);
+    const updated = await tx.formDefinitionRecord.update({
+      where: { id: form.id },
+      data: {
+        name: parsed.name,
+        description: parsed.description,
+        document: parsed.document as never,
+      },
+    });
+    await recordAudit(tx, ctx, {
+      action: 'form.updated',
+      targetType: 'form_definition',
+      targetId: form.id,
+      before: { name: form.name, version: form.version },
+      after: { name: updated.name, documentChanged: parsed.document !== undefined },
+    });
+    return updated;
+  });
+}
+
 /** The published version somebody is about to fill in. */
 export async function currentVersion(tx: Tx, key: string) {
   const form = await tx.formDefinitionRecord.findFirst({ where: { key, status: 'published' } });

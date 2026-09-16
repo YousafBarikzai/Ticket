@@ -4,6 +4,8 @@ export * as workflowService from './service/workflow-service.js';
 export {
   createWorkflow,
   saveDraft,
+  updateWorkflow,
+  workflowUpdateSchema,
   publishWorkflow,
   rollbackWorkflow,
   validateWorkflow,

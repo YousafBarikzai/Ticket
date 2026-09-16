@@ -533,6 +533,25 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'see the packs this deployment ships',
+    path: () => '/api/v1/packs',
+    // Which desks could be stood up is a configuration question, and the
+    // catalogue an agent works from is downstream of the answer.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'install a pack',
+    method: 'POST',
+    path: () => '/api/v1/packs/facilities/install',
+    body: () => ({}),
+    // Writes services, forms, workflows and an SLA policy in one act. The
+    // administrator gets 201 because it genuinely installs, which is the line
+    // being drawn: everybody else is refused before anything is written.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 201 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.

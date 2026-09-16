@@ -1194,6 +1194,45 @@ export const statusMaintenanceScheduled = defineEvent({
   }),
 });
 
+// ---- MOD-22 ESM packs (PH-4) -----------------------------------------------
+export const packInstalled = defineEvent({
+  type: 'pack.installed',
+  version: 1,
+  aggregateType: 'pack_installation',
+  webhook: true,
+  description: 'A tenant installed an enterprise service management pack, standing a desk up from shipped content.',
+  payload: z.object({
+    packKey: z.string(),
+    packVersion: z.number().int(),
+    name: z.string(),
+    desk: z.string(),
+    /** How many services, forms, request types, workflows, policies and articles landed. */
+    items: z.number().int(),
+    /** What the desk still has to do itself. */
+    nextSteps: z.array(z.string()),
+    /** Whoever installed it, so MOD-11 can tell them. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+export const packUpgraded = defineEvent({
+  type: 'pack.upgraded',
+  version: 1,
+  aggregateType: 'pack_installation',
+  webhook: true,
+  description: 'A tenant took, or declined, some part of a newer version of a pack it had installed.',
+  payload: z.object({
+    packKey: z.string(),
+    fromVersion: z.number().int(),
+    toVersion: z.number().int(),
+    taken: z.array(z.string()),
+    declined: z.array(z.string()),
+    /** Still waiting for a decision after this round. */
+    outstanding: z.number().int(),
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -1224,6 +1263,7 @@ export const eventCatalogue = [
   statusIncidentUpdated, statusMaintenanceScheduled,
   importJobFinished,
   usageLimitReached, planChanged,
+  packInstalled, packUpgraded,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

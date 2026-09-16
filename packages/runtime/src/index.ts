@@ -42,6 +42,7 @@ import { feedbackManifest, seedFeedbackDefaults } from '@itsm/module-feedback';
 import { timeManifest, seedTimeDefaults } from '@itsm/module-time';
 import { statusPageManifest, seedStatusDefaults } from '@itsm/module-statuspage';
 import { migrationManifest } from '@itsm/module-migration';
+import { esmManifest } from '@itsm/module-esm';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -74,6 +75,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   timeManifest,
   statusPageManifest,
   migrationManifest,
+  esmManifest,
   analyticsManifest,
   adminManifest,
 ];
