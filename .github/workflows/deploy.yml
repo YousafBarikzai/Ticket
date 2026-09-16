@@ -221,9 +221,7 @@ jobs:
       # a browser suite that was never written (docs/architecture/18 §3).
       - name: Walking skeleton against the preview
         if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/walking-skeleton.ts
-        env:
-          API_BASE_URL: ${{ steps.deploy.outputs.api-url }}
+        run: pnpm exec tsx infra/scripts/post-deploy-check.ts --hosts '${{ steps.deploy.outputs.hosts }}'
 
   # A preview environment that outlives its pull request is a database nobody
   # is watching, on a bill somebody is paying.
@@ -348,9 +346,7 @@ jobs:
 
       - name: Smoke test
         if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/walking-skeleton.ts
-        env:
-          API_BASE_URL: ${{ steps.deploy.outputs.api-url }}
+        run: pnpm exec tsx infra/scripts/post-deploy-check.ts --hosts '${{ steps.deploy.outputs.hosts }}'
 
   # ---------------------------------------------------------------------------
   # Stage 6 · Release (tag vX.Y.Z), behind a manual approval
@@ -423,6 +419,4 @@ jobs:
 
       - name: Post-deploy smoke test
         if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/walking-skeleton.ts
-        env:
-          API_BASE_URL: ${{ steps.deploy.outputs.api-url }}
+        run: pnpm exec tsx infra/scripts/post-deploy-check.ts --hosts '${{ steps.deploy.outputs.hosts }}'
