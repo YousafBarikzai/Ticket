@@ -35,6 +35,7 @@ export * from './Badge.js';
 export * from './Avatar.js';
 export * from './Card.js';
 export * from './Table.js';
+export * from './InteractiveTable.js';
 export * from './Tile.js';
 export * from './Metric.js';
 export * from './Tabs.js';

@@ -15,6 +15,7 @@ import {
   RadioGroup,
   Select,
   Switch,
+  InteractiveTable,
   Table,
   Tile,
   TileGrid,
@@ -237,7 +238,7 @@ describe('structure', () => {
 
   it('a sortable table', async () => {
     const { container } = render(
-      <Table
+      <InteractiveTable
         caption="Open tickets"
         columns={columns}
         rows={rows}
@@ -251,7 +252,7 @@ describe('structure', () => {
 
   it('a grid, which is what the table becomes when rows are activatable', async () => {
     const { container } = render(
-      <Table caption="Queue" columns={columns} rows={rows} rowKey={(row) => row.id} onRowActivate={() => undefined} />,
+      <InteractiveTable caption="Queue" columns={columns} rows={rows} rowKey={(row) => row.id} onRowActivate={() => undefined} />,
     );
     await expectNoViolations(container);
   });

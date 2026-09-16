@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { ApiError, type CatalogueItem } from '@itsm/sdk';
-import { Card, EmptyState } from '@itsm/ui';
+import { EmptyState, Tile, TileGrid } from '@itsm/ui';
 import { groupByService } from '../../../catalogue/group.js';
 import { apiFor, requireSession } from '../../../server/session.js';
 
@@ -51,15 +51,16 @@ export default async function CataloguePage(): Promise<ReactNode> {
       {groupByService(items).map(({ service, items: list }) => (
         <section key={service} className="itsm-Catalogue__group" aria-label={service}>
           <h2>{service}</h2>
-          <div className="itsm-Catalogue__items">
+          <TileGrid className="itsm-Catalogue__items">
             {list.map((item) => (
-              <Card key={item.key} title={item.name} subtitle={item.shortSummary ?? undefined}>
-                <Link className="itsm-Catalogue__link" href={`/catalogue/${encodeURIComponent(item.key)}`}>
-                  Request this<span className="itsm-visually-hidden">: {item.name}</span>
-                </Link>
-              </Card>
+              <Tile
+                key={item.key}
+                title={item.name}
+                description={item.shortSummary ?? undefined}
+                href={`/catalogue/${encodeURIComponent(item.key)}`}
+              />
             ))}
-          </div>
+          </TileGrid>
         </section>
       ))}
     </div>

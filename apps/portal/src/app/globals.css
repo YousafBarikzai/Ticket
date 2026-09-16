@@ -48,26 +48,17 @@
 }
 
 /*
- * The two things somebody came to do, side by side on anything wider than a
- * phone and stacked below it — in that order, because "something is broken"
- * is the more urgent of the two and should be first on the small screen.
+ * The two things somebody came to do. The columns come from `.itsm-TileGrid`
+ * in the design system, which reflows on its own at the width the tiles stop
+ * fitting — this only adds the space beneath. Repeating the columns here would
+ * mean a tile that changed size needed two files edited to keep working, and
+ * one of them would be forgotten.
+ *
+ * Source order still matters and is unchanged: "something is broken" is the
+ * more urgent of the two and is first, which is what a single column shows.
  */
 .itsm-Home__actions {
-  display: grid;
-  gap: var(--itsm-space-sm);
-  grid-template-columns: 1fr;
   margin-block-end: var(--itsm-space-xl);
-}
-
-@media (min-width: 40rem) {
-  .itsm-Home__actions {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.itsm-Home__cta {
-  display: inline-block;
-  font-weight: var(--itsm-font-weight-medium);
 }
 
 .itsm-Home__waiting,
@@ -109,18 +100,6 @@
 
 .itsm-Catalogue__group {
   margin-block-end: var(--itsm-space-lg);
-}
-
-.itsm-Catalogue__items {
-  display: grid;
-  gap: var(--itsm-space-sm);
-  grid-template-columns: 1fr;
-}
-
-@media (min-width: 40rem) {
-  .itsm-Catalogue__items {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 
 /* ---- Tickets ------------------------------------------------------------ */

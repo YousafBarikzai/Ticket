@@ -49,7 +49,7 @@ const INTENT: Record<string, 'danger' | 'warning' | 'success' | 'neutral'> = {
 export default async function TicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; assignee?: string }>;
 }): Promise<ReactNode> {
   const { me, api } = await currentActor();
 
@@ -65,10 +65,25 @@ export default async function TicketsPage({
 
   const params = await searchParams;
   const category = isCategory(params.status) ? params.status : undefined;
+  // The API resolves `none` itself; anything else here would be a user id, and
+  // this screen has no picker to produce one.
+  const unassigned = params.assignee === 'none';
 
   const page = await read(() =>
-    api.observe.tickets({ statusCategory: category, limit: 50, sort: '-createdAt' }),
+    api.observe.tickets({
+      statusCategory: category,
+      ...(unassigned ? { assignee: 'none' } : {}),
+      limit: 50,
+      sort: '-createdAt',
+    }),
   );
+
+  const href = (status?: string): string => {
+    const query = new URLSearchParams();
+    if (status) query.set('status', status);
+    if (unassigned) query.set('assignee', 'none');
+    return query.size > 0 ? `/tickets?${query}` : '/tickets';
+  };
 
   return (
     <div className="itsm-Admin">
@@ -81,14 +96,14 @@ export default async function TicketsPage({
       </header>
 
       <nav className="itsm-Filters" aria-label="Filter by status">
-        <a className="itsm-Filters__item" aria-current={category === undefined ? 'page' : undefined} href="/tickets">
+        <a className="itsm-Filters__item" aria-current={category === undefined ? 'page' : undefined} href={href()}>
           Everything
         </a>
         {CATEGORIES.map((value) => (
           <a
             className="itsm-Filters__item"
             aria-current={category === value ? 'page' : undefined}
-            href={`/tickets?status=${value}`}
+            href={href(value)}
             key={value}
           >
             {value[0]!.toUpperCase() + value.slice(1)}
@@ -96,8 +111,14 @@ export default async function TicketsPage({
         ))}
       </nav>
 
+      {unassigned ? (
+        <p className="itsm-Admin__lede">
+          Showing only tickets with nobody assigned. <a href={`/tickets${category ? `?status=${category}` : ''}`}>Include assigned ones</a>.
+        </p>
+      ) : null}
+
       <Panel
-        title={category ? `${category[0]!.toUpperCase()}${category.slice(1)} tickets` : 'All tickets'}
+        title={`${category ? `${category[0]!.toUpperCase()}${category.slice(1)} tickets` : 'All tickets'}${unassigned ? ', unassigned' : ''}`}
         result={page}
       >
         {(value) =>
