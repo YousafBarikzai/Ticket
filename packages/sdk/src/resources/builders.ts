@@ -141,6 +141,13 @@ export interface CalendarRow {
   version: number;
 }
 
+/** One cell of the 3×3 grid. The API requires all nine, every time. */
+export interface PriorityMatrixRow {
+  impact: 'high' | 'medium' | 'low';
+  urgency: 'high' | 'medium' | 'low';
+  priority: 'P1' | 'P2' | 'P3' | 'P4';
+}
+
 export interface Sla {
   policies(): Promise<SlaPolicyRow[]>;
   createPolicy(input: Record<string, unknown>): Promise<SlaPolicyRow>;
@@ -148,8 +155,9 @@ export interface Sla {
   setTargets(idOrKey: string, targets: Record<string, unknown>[]): Promise<SlaPolicyRow>;
   calendars(): Promise<CalendarRow[]>;
   createCalendar(input: Record<string, unknown>): Promise<CalendarRow>;
-  priorityMatrix(): Promise<unknown[]>;
-  setPriorityMatrix(rows: unknown[]): Promise<unknown>;
+  priorityMatrix(): Promise<PriorityMatrixRow[]>;
+  /** Replaces all nine cells: the API refuses a partial matrix. */
+  setPriorityMatrix(rows: readonly PriorityMatrixRow[]): Promise<PriorityMatrixRow[]>;
 }
 
 function sla(client: Client): Sla {
@@ -163,8 +171,9 @@ function sla(client: Client): Sla {
       }),
     calendars: () => client.request<{ data: CalendarRow[] }>('/api/v1/sla-calendars').then(unwrap),
     createCalendar: (input) => client.request<CalendarRow>('/api/v1/sla-calendars', { method: 'POST', body: input }),
-    priorityMatrix: () => client.request<{ data: unknown[] }>('/api/v1/priority-matrix').then(unwrap),
-    setPriorityMatrix: (rows) => client.request('/api/v1/priority-matrix', { method: 'PUT', body: { rows } }),
+    priorityMatrix: () => client.request<{ data: PriorityMatrixRow[] }>('/api/v1/priority-matrix').then(unwrap),
+    setPriorityMatrix: (rows) =>
+      client.request<PriorityMatrixRow[]>('/api/v1/priority-matrix', { method: 'PUT', body: { rows } }),
   };
 }
 

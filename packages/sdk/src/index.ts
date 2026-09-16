@@ -20,6 +20,7 @@ export {
   type CalendarRow,
   type Catalogue,
   type FormRow,
+  type PriorityMatrixRow,
   type RequestTypeRow,
   type RuleFacts,
   type RuleRow,

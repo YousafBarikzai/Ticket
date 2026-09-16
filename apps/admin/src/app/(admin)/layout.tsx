@@ -40,6 +40,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         { id: 'fields', label: 'The shape of a ticket', href: '/fields' },
         { id: 'catalogue', label: 'What people can ask for', href: '/catalogue' },
         { id: 'rules', label: 'What happens automatically', href: '/rules' },
+        { id: 'sla', label: 'What this desk promises', href: '/sla' },
         { id: 'settings', label: 'Settings', href: '/settings' },
         ...(operator ? [{ id: 'platform', label: 'Platform', href: '/tenants' }] : []),
       ]}
