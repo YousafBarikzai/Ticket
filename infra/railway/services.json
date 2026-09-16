@@ -13,8 +13,13 @@
     "before the API so new consumers exist before new events do, and the web applications last",
     "because they are the only ones a person is looking at while it happens.",
     "",
-    "`environments` restricts a service to the environments that should run it. Absent means every environment, which is what all but the seed want."
+    "`environments` restricts a service to the environments that should run it. Absent means every environment, which is what all but the seed want.",
+    "",
+    "`region` is applied to every service instance. It was prose in the README for a release — `Production runs in EU West (Amsterdam)` — and prose is not a setting: the first project stood up under this pipeline landed in US West, because nothing here ever said otherwise to Railway. Decision D-01 option A and the EU data-residency commitment in docs/architecture/19 are the reason it is this value.",
+    "",
+    "`ams`, not `europe-west4`. Both name Amsterdam and the Google-style one is Railway's legacy spelling, but Railway's own tooling reads the legacy name as a *different* region and plans a destructive move of any attached volume to reach it. None of the services below carries a volume, so the blast radius here is nil — but the managed Postgres does, and somebody copying a region out of this file onto a database is the likeliest way that mistake gets made."
   ],
+  "region": "ams",
   "image": {
     "registry": "ghcr.io",
     "repository": "yousafbarikzai/ticket",

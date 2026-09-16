@@ -6,6 +6,7 @@ to tell it worked; it does not explain the architecture.
 
 | Runbook | When |
 |---|---|
+| [Standing production up for the first time](first-production-deploy.md) | Once per environment, before anything can be deployed at all |
 | [Deploy and roll back](deploy-and-rollback.md) | Every release, and when one goes wrong |
 | [Queue replay and outbox reconciliation](queue-replay.md) | Outbox lag alert, dead-letter growth, Redis loss |
 | [Database restore](database-restore.md) | Data loss, a bad migration, the phase restore rehearsal |

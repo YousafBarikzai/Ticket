@@ -46,6 +46,25 @@ object storage in Cloudflare R2's EU jurisdiction. Tenants carry a `region`
 column from Phase 1 so that moving a tenant, or adding a second cell, is a
 routing change rather than a redesign.
 
+That paragraph was the only place the region existed for a release, and a
+paragraph is not a setting: the first project stood up under this pipeline came
+up in **US West**, because nothing in the deploy ever mentioned a region to
+Railway. It is now `region` in `services.json`, applied to every service
+instance, and asserted by a test.
+
+Two things about Railway's regions that decide how much this costs to get
+wrong:
+
+- **A region belongs to a service, not to a project.** Moving a service is a
+  redeploy and nothing else — *unless it has a volume attached*, in which case
+  changing the region **replaces the volume**. None of the ten services here
+  carries one; the managed Postgres and Redis do, which is why theirs is worth
+  setting before they hold anything.
+- **Amsterdam is `ams`.** `europe-west4` names the same place and is Railway's
+  legacy spelling, but Railway's own tooling reads the legacy name as a
+  *different* region and plans a destructive volume move to reach it. Use
+  `ams`.
+
 ## Before the first deploy
 
 The pipeline does everything that happens on every deploy. These are the things
@@ -71,11 +90,27 @@ them is a workflow that could do them to the wrong environment.
    still `devpass`. Four roles rather than one is not ceremony: `app_user` is
    subject to row-level security and `app_owner` owns the tables, so sharing a
    credential would make the isolation in doc 10 decorative.
-4. **The Railway services**, named exactly as `services.json` names them. The
-   deploy refuses a service it cannot find rather than skipping it, because a
-   deploy that silently did less than it said is how a worker family stays on
-   last month's code for a fortnight.
-5. **DNS and Cloudflare** for the subdomains in the table (doc 16 §2).
+4. **The Railway services**, named exactly as `services.json` names them —
+   or `--ensure-services` on the first deploy, which creates the ones the
+   catalogue names and the project lacks. Without that flag the deploy refuses
+   a service it cannot find rather than skipping it, because a deploy that
+   silently did less than it said is how a worker family stays on last month's
+   code for a fortnight. Creating them is doing what was asked; skipping one is
+   doing less, and the flag only ever does the first.
+
+   Each must be created **from an image, not from this GitHub repository**. A
+   Railway service pointed at the repo tries to build it with Railpack, which
+   cannot pick one application out of a pnpm workspace holding three Next.js
+   apps, an API and a worker — and should not have to, because CI has already
+   built, scanned and pushed the images. There is deliberately no root
+   `Dockerfile`, `railway.json` or `nixpacks.toml` for it to find.
+
+5. **A registry credential**, because the GHCR packages are private by default.
+   Railway needs a GitHub personal access token with `read:packages`, or the
+   packages need making public. Without it every deploy fails on the pull with
+   an authentication error that names neither the cause nor the fix.
+6. **DNS and Cloudflare** for the subdomains in the table (doc 16 §2). The
+   deploy creates the custom domain on the Railway side; the CNAME is yours.
 
 After that, deploys are: merge to `main` for staging, publish a release for
 production, open a pull request for a preview. Migrations run as phase 0 inside
@@ -94,10 +129,34 @@ which engine answered. Turning it on for a platform that has been running
 without it needs one `search.reindex` job per tenant; the same job applies a
 change to the index settings, because Meilisearch applies those at write time.
 
+## What the deploy applies, and what it will not touch
+
+`railway-deploy.ts` sets the image, the replica count, the region, the health
+check path, the start command for the two jobs that share an image, each
+service's own variables (`WORKER_QUEUES`, `OTEL_SERVICE_NAME`), the origin
+variables derived from `DEPLOY_DOMAIN`, and the public domain of each public
+service.
+
+It will not set a credential, and that is enforced by a test. `DATABASE_URL`,
+`DATABASE_URL_APP`, `DATABASE_URL_PLATFORM`, `REDIS_URL`, `OIDC_ISSUER`,
+`SMTP_URL`, `MEILISEARCH_API_KEY` and the AI keys are set once per environment
+by a person. The variable upsert is `replace: false` for the same reason: an
+upsert that replaced would delete every variable it did not name, which is a
+deploy that can empty an environment on a typo.
+
+Run it with `--dry-run` to see the whole plan — every service, image, domain
+and variable — without a token.
+
 ## What is not automated, and is not pretending to be
 
 - **Alert rules and dashboards.** Doc 16 §4 says CI applies them. It does not;
   nothing in this repository defines them yet.
+- **The Railway mutations have never run against a real account.** The calls
+  that set variables, create a domain and create a service were written against
+  Railway's published API and are exercised only by the dry run and by tests
+  over the plan. They throw on an error rather than continuing, so the first
+  real deploy will say plainly if a field name is wrong — but nobody should
+  read this section as a claim that they have worked once.
 - **The browser suite.** Stage 4 runs the walking skeleton against the deployed
   preview, which is a real ticket through a real API. Playwright, Lighthouse and
   a full-page axe audit are named in doc 16 §3 as intent and do not exist.
