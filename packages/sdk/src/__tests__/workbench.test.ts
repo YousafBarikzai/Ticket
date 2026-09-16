@@ -90,11 +90,21 @@ describe('writing to a ticket', () => {
     expect(calls[0]!.body).toEqual({ to: 'resolved', reason: 'fixed' });
   });
 
-  it('sends no If-Match on an assignment, because that route does not read one', async () => {
+  it('sends no If-Match on an assignment when the caller has no version', async () => {
+    // Optional, unlike a transition: a queue screen claims from a list it read
+    // a minute ago, and the route answers without one rather than making every
+    // claim re-read the row first.
     const { calls, fetch: doFetch } = recording(200, {});
     await client(doFetch).assign('INC-1', 'u-1');
     expect(calls[0]!.headers['if-match']).toBeUndefined();
     expect(calls[0]!.body).toEqual({ assigneeId: 'u-1', method: 'manual' });
+  });
+
+  it('sends it when the caller does have one, so a second claim is refused', async () => {
+    const { calls, fetch: doFetch } = recording(200, {});
+    await client(doFetch).assign('INC-1', 'u-1', null, 4);
+    expect(calls[0]!.headers['if-match']).toBe('"4"');
+    expect(calls[0]!.body).toEqual({ assigneeId: 'u-1', groupId: null, method: 'manual' });
   });
 
   it('passes a null assignee through rather than dropping it', async () => {

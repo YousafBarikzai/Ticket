@@ -1,5 +1,6 @@
 import type { BffConfig } from './config.js';
 import { readClaims } from './oidc.js';
+import { recordSession } from './record-session.js';
 import { newSessionId, type Session } from './session.js';
 import { sessionStore } from './store.js';
 
@@ -8,7 +9,10 @@ import { sessionStore } from './store.js';
  *
  * Both sign-in paths — the provider callback and the development form — end
  * here, so the session record has one shape and one lifetime however it was
- * obtained.
+ * obtained. That is also why the API is told about the session from here
+ * rather than from each handler: a sign-in route added later gets the
+ * recording without anybody remembering to add it, and the two existing ones
+ * cannot drift apart.
  */
 
 export interface TokensToStore {
@@ -45,5 +49,11 @@ export async function createSession(config: BffConfig, tokens: TokensToStore): P
 
   const store = await sessionStore(config);
   await store.put(session, config.sessionTtlSeconds);
+
+  // Best effort, and awaited rather than left dangling: a promise nobody waits
+  // for is a promise a serverless runtime cancels at the end of the response.
+  // `recordSession` swallows its own failures — see the reasoning there.
+  await recordSession(config, session.accessToken);
+
   return session;
 }

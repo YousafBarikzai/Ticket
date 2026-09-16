@@ -46,7 +46,7 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
   app.put('/usage/limits/:meter', async (request) => {
     const ctx = contextOf(request);
     const { meter } = z.object({ meter: z.enum(METERS) }).parse(request.params);
-    const body = z.object({ soft: z.number().int().min(0).nullable() }).parse(request.body);
+    const body = z.object({ soft: z.number().int().min(0).nullable() }).strict().parse(request.body);
     await setSoftLimit(ctx, { meter, soft: body.soft });
     const { lines, planKey } = await linesFor(ctx.tenantId);
     return { meter, planKey, soft: lines[meter].soft === null ? null : Number(lines[meter].soft), hard: lines[meter].hard === null ? null : Number(lines[meter].hard) };

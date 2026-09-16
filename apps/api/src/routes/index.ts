@@ -138,7 +138,7 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/users', async (request, reply) => {
     const ctx = contextOf(request);
-    const user = await userService.createUser(ctx, userService.createUserSchema.parse(request.body));
+    const user = await userService.createUser(ctx, userService.createUserSchema.strict().parse(request.body));
     reply.status(201);
     return { id: user.id, email: user.email, displayName: user.displayName, status: user.status };
   });
@@ -167,7 +167,7 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
         scopeType: z.enum(['organisation', 'team', 'service']).optional(),
         scopeId: z.string().uuid().optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
     const assignment = await userService.assignRole(ctx, body);
     reply.status(201);
     return { id: assignment.id, userId: assignment.userId, roleId: assignment.roleId };
@@ -230,7 +230,7 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
         parentId: z.string().uuid().optional(),
         type: z.string().max(60).optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
     const org = await tenantService.createOrganisation(ctx, body);
     reply.status(201);
     return { id: org.id, name: org.name, code: org.code, path: org.path };
@@ -240,7 +240,7 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const body = z
       .object({ key: z.string().min(1).max(100), name: z.string().min(1).max(200), orgId: z.string().uuid(), type: z.string().max(60).optional() })
-      .parse(request.body);
+      .strict().parse(request.body);
     const team = await userService.createTeam(ctx, body);
     reply.status(201);
     return { id: team.id, key: team.key, name: team.name };
@@ -249,7 +249,7 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
   app.post('/teams/:id/members', async (request, reply) => {
     const ctx = contextOf(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const body = z.object({ userId: z.string().uuid(), isLead: z.boolean().default(false) }).parse(request.body);
+    const body = z.object({ userId: z.string().uuid(), isLead: z.boolean().default(false) }).strict().parse(request.body);
     const membership = await userService.addTeamMember(ctx, id, body.userId, body.isLead);
     reply.status(201);
     return { teamId: membership.teamId, userId: membership.userId, isLead: membership.isLead };
@@ -281,7 +281,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         scopeId: z.string().uuid().optional(),
         reason: z.string().max(1000).optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
     const { value, ...rest } = body;
     return settingsService.publishSetting(ctx, { key, value, ...rest });
   });
@@ -304,7 +304,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post('/settings/:key/rollback', async (request) => {
     const ctx = contextOf(request);
     const { key } = z.object({ key: z.string().min(1).max(200) }).parse(request.params);
-    const body = z.object({ toVersion: z.number().int().min(1), reason: z.string().max(1000).optional() }).parse(request.body);
+    const body = z.object({ toVersion: z.number().int().min(1), reason: z.string().max(1000).optional() }).strict().parse(request.body);
     return settingsService.rollbackSetting(ctx, { key, ...body });
   });
 
@@ -319,7 +319,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { key } = z.object({ key: z.string().min(1).max(200) }).parse(request.params);
     const body = z
       .object({ value: z.boolean(), scopeType: z.enum(['tenant', 'organisation']).optional(), scopeId: z.string().uuid().optional(), reason: z.string().max(1000).optional() })
-      .parse(request.body);
+      .strict().parse(request.body);
     const override = await settingsService.setFlag(ctx, { key, ...body });
     return { key: override.key, value: override.value, scopeType: override.scopeType };
   });
@@ -495,7 +495,7 @@ async function supportingRoutes(app: FastifyInstance): Promise<void> {
         eventTypes: z.array(z.string().min(1).max(100)).min(1).max(50),
         filters: z.unknown().optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
     const subscription = await webhookService.createSubscription(ctx, body as never);
     reply.status(201);
     // The signing secret is shown exactly once, at creation.

@@ -90,7 +90,7 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/major-incidents', async (request, reply) => {
     const ctx = contextOf(request);
-    const incident = await majorIncidentService.declare(ctx, declareSchema.parse(request.body));
+    const incident = await majorIncidentService.declare(ctx, declareSchema.strict().parse(request.body));
     return reply.code(201).send({
       number: incident.number,
       title: incident.title,
@@ -106,7 +106,7 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
     const entry = await majorIncidentService.postUpdate(
       ctx,
       byNumber.parse(request.params).number,
-      updateEntrySchema.parse(request.body),
+      updateEntrySchema.strict().parse(request.body),
     );
     return reply.code(201).send({ id: entry.id, kind: entry.kind, audience: entry.audience, occurredAt: entry.occurredAt.toISOString() });
   });
@@ -117,7 +117,7 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
     const incident = await majorIncidentService.transition(
       ctx,
       byNumber.parse(request.params).number,
-      transitionSchema.parse(request.body),
+      transitionSchema.strict().parse(request.body),
     );
     return {
       number: incident.number,
@@ -132,7 +132,7 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
     const incident = await majorIncidentService.setRoles(
       ctx,
       byNumber.parse(request.params).number,
-      rolesSchema.parse(request.body),
+      rolesSchema.strict().parse(request.body),
     );
     return { commanderId: incident.commanderId, commsLeadId: incident.commsLeadId, scribeId: incident.scribeId };
   });
@@ -167,7 +167,7 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
     const review = await reviewService.saveReview(
       ctx,
       byNumber.parse(request.params).number,
-      reviewSchema.parse(request.body),
+      reviewSchema.strict().parse(request.body),
     );
     return { status: review.status, dueOn: review.dueOn?.toISOString().slice(0, 10) ?? null };
   });
@@ -177,14 +177,14 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
     const action = await reviewService.addAction(
       ctx,
       byNumber.parse(request.params).number,
-      actionSchema.parse(request.body),
+      actionSchema.strict().parse(request.body),
     );
     return reply.code(201).send({ id: action.id, description: action.description, ownerId: action.ownerId });
   });
 
   app.patch('/major-incidents/review/actions/:id', async (request) => {
     const ctx = contextOf(request);
-    const action = await reviewService.updateAction(ctx, byId.parse(request.params).id, actionUpdateSchema.parse(request.body));
+    const action = await reviewService.updateAction(ctx, byId.parse(request.params).id, actionUpdateSchema.strict().parse(request.body));
     return { id: action.id, status: action.status, ownerId: action.ownerId, ticketId: action.ticketId };
   });
 
@@ -202,7 +202,7 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/major-incidents/:number/close', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ reason: z.string().min(1).max(1000) }).parse(request.body);
+    const body = z.object({ reason: z.string().min(1).max(1000) }).strict().parse(request.body);
     const incident = await reviewService.closeWithoutReview(ctx, byNumber.parse(request.params).number, body.reason);
     return { number: incident.number, status: incident.status };
   });

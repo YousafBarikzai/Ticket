@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { SYSTEM_PERMISSIONS, UnauthorisedError, createContext, loadConfig, logger } from '@itsm/platform';
+import { SYSTEM_PERMISSIONS, UnauthorisedError, ValidationError, createContext, loadConfig, logger } from '@itsm/platform';
 import { userService } from '@itsm/module-identity';
 import { tenantService } from '@itsm/module-tenancy';
+import { contextOf } from '../plugins/context.js';
 import { signDevelopmentToken } from '../auth/verify.js';
 
 /**
@@ -42,7 +43,81 @@ const request = z.object({
   email: z.string().email().max(320),
 });
 
+/** `POST /auth/session` takes nothing: the token is the whole of the evidence. */
+const emptyBody = z.object({});
+
+/**
+ * `POST /auth/session` — the BFF telling the platform a session has begun.
+ *
+ * Doc 09 §2 has the web applications call this after a sign-in. Nothing did,
+ * and the consequence was quiet and complete: `Session` rows were only ever
+ * written by a test, so `GET /me/sessions` listed nothing, `DELETE
+ * /me/sessions/:id` had nothing to revoke, and the denylist the token verifier
+ * consults on every single request never gained an entry. "Sign out
+ * everywhere" was a promise doc 08 §9 makes and the platform could not keep.
+ *
+ * The token is the proof, so there is nothing in the body. Everything recorded
+ * — who, which session, when it expires, from where — comes from the verified
+ * token and the request, never from the caller's claims about itself.
+ *
+ * Idempotent: an application may call it on every refresh, and `recordSession`
+ * updates `last_seen_at` rather than creating a second row.
+ */
+async function sessionRoutes(app: FastifyInstance): Promise<void> {
+  app.post('/auth/session', async (httpRequest, reply) => {
+    const ctx = contextOf(httpRequest);
+    const token = httpRequest.token;
+
+    // There is nothing to send, and saying so is the point: strict, so a
+    // client that puts a user id or a device name in the body is told it was
+    // not read, rather than being left to believe the platform believed it.
+    emptyBody.strict().parse(httpRequest.body ?? {});
+
+    // Three separate refusals rather than one, because they are three different
+    // mistakes and the caller can only fix the one it made.
+    if (!token) throw new UnauthorisedError('a session can only be recorded by the person it belongs to');
+    if (token.kind === 'service') {
+      // An integration has no session to record; it presents a key or a
+      // client-credentials token on every call, and there is nothing to sign
+      // out of.
+      throw new ValidationError('only a person\u2019s session can be recorded');
+    }
+    if (!token.sessionId) {
+      throw new ValidationError('this token carries no session identifier, so there is nothing to record');
+    }
+    if (!ctx.actor.id) {
+      throw new ValidationError('this token has not been matched to a user, so there is no session to record');
+    }
+
+    // The token's own expiry, because the denylist entry has to outlive the
+    // token and nothing else knows when that is. A token without one is
+    // treated as short-lived rather than eternal.
+    const expiresAt = token.expiresAt
+      ? new Date(token.expiresAt * 1000)
+      : new Date(Date.now() + 10 * 60_000);
+
+    const session = await userService.recordSession(ctx, {
+      userId: ctx.actor.id,
+      sid: token.sessionId,
+      expiresAt,
+      ...(httpRequest.ip ? { ip: httpRequest.ip } : {}),
+      ...(typeof httpRequest.headers['user-agent'] === 'string'
+        ? { userAgent: httpRequest.headers['user-agent'] }
+        : {}),
+    });
+
+    reply.status(201);
+    return {
+      id: session.id,
+      expiresAt: session.expiresAt.toISOString(),
+      lastSeenAt: session.lastSeenAt.toISOString(),
+    };
+  });
+}
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
+  await sessionRoutes(app);
+
   if (!isDevelopmentSignInEnabled()) {
     logger.info('development sign-in is not registered', { reason: 'production or an OIDC issuer is configured' });
     return;
@@ -51,7 +126,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   logger.warn('development sign-in is registered; this must never be a deployed configuration');
 
   app.post('/auth/dev-session', async (httpRequest, reply) => {
-    const { tenantSlug, email } = request.parse(httpRequest.body);
+    const { tenantSlug, email } = request.strict().parse(httpRequest.body);
 
     // One message for a missing tenant and a missing user. There is no secret
     // to protect here, but a sign-in that reports which half was wrong is a

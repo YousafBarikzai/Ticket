@@ -168,28 +168,43 @@ is no Lighthouse run at all).
 Recorded here rather than in a module's document, because each was invisible
 until something tried to use the API the way an application does:
 
-- **`POST /tickets/:id/assign` reads no `If-Match`.** Every other mutation on a
+- **`POST /tickets/:id/assign` read no `If-Match`.** Every other mutation on a
   ticket is conditional. Two agents taking the same ticket at the same moment
-  is therefore last-write-wins, silently. The SDK deliberately does not send a
-  version on that call rather than implying a guarantee the API does not make.
+  was therefore last-write-wins, silently. *Closed (ADR-0044):* the route now
+  reads `If-Match` when it is offered and does not require it. The asymmetry is
+  deliberate — a queue screen claims from a list it read a minute ago, and
+  making every claim re-read the row first is a worse trade than the race.
+  The ticket page, which holds the version, sends it and gets a 409; the queue
+  does not and keeps last-write-wins.
 - **The list grammar is `filter[...]`, and a wrong parameter is ignored rather
   than refused.** A client that sent `?status=open` got every ticket back and
   no error. The SDK now spells the grammar in one tested function; the wider
   point is that an API which ignores unknown query parameters makes a whole
   class of client bug invisible.
 - **A comment's visibility is `public`/`internal` and defaults to `public`.** A
-  client sending anything else — `isInternal: true`, say — has its internal
-  note delivered to the requester. This one is worth a schema that refuses
-  unknown keys rather than a convention.
-- **Nobody records a session, so `GET /me/sessions` is always empty.** Doc 09
+  client sending anything else — `isInternal: true`, say — had its internal
+  note delivered to the requester. *Closed (ADR-0044):* every request body
+  under `/api/v1` is now `.strict()`, applied at the 107 places a route parses
+  a body rather than on the schema definitions the modules export. An unknown
+  key is a 422 naming the key. Module schemas stay permissive: an internal
+  caller that passes an extra key is a type error caught at build time, and
+  making those strict would turn a leftover field into a production failure.
+- **Nobody recorded a session, so `GET /me/sessions` was always empty.** Doc 09
   §2 has the BFF call `POST /api/v1/auth/session` after a sign-in "so the
   platform records the session and runs JIT". JIT is fine — the context plugin
   provisions from the token on the first authenticated request, which is a
-  better place for it. Session recording is not: `userService.recordSession`
-  has no caller outside a test, so `GET /me/sessions` lists nothing, `DELETE
-  /me/sessions/:id` has nothing to revoke, and the `sess:deny:` denylist the
-  token verifier checks on every request never gets an entry. "Sign out
-  everywhere" is a promise doc 08 §9 makes and the platform cannot keep.
+  better place for it. Session recording was not: `userService.recordSession`
+  had no caller outside a test, so `GET /me/sessions` listed nothing, `DELETE
+  /me/sessions/:id` had nothing to revoke, and — underneath both — the
+  `sess:deny:` denylist the token verifier checks on every request was read by
+  the verifier and written by nothing at all, so even a working revocation
+  would have changed a column and left the token valid until it expired. "Sign
+  out everywhere" was a promise doc 08 §9 makes and the platform could not
+  keep. *Closed (ADR-0044):* the endpoint exists, `packages/bff` calls it from
+  `createSession` and again on every refresh, and `revokeSession` and
+  `deactivateUser` write the denylist inside the transaction that revokes the
+  row. `tests/integration/session-lifecycle.test.ts` walks the whole chain and
+  asserts the revoked token is refused.
 - **The catalogue's entitlement filter is the only thing between a requester
   and a request type they may not have**, and it is applied twice — once when
   browsing and once on submit (MOD-05). That is right, and worth noticing:

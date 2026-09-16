@@ -124,7 +124,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         externalId: z.string().min(1).max(320),
         userId: z.string().uuid(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
 
     const created = await transaction(ctx, async (tx) => {
       const identity = await tx.channelIdentity.upsert({

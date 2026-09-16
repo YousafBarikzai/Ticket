@@ -96,7 +96,7 @@ function ifMatch(header: string | undefined, required: boolean): number | undefi
 export async function ticketRoutes(app: FastifyInstance): Promise<void> {
   app.post('/tickets', async (request, reply) => {
     const ctx = contextOf(request);
-    const ticket = await ticketService.createTicket(ctx, ticketService.createTicketSchema.parse(request.body));
+    const ticket = await ticketService.createTicket(ctx, ticketService.createTicketSchema.strict().parse(request.body));
     reply.status(201).header('etag', `"${ticket.version}"`).header('location', `/api/v1/tickets/${ticket.number}`);
     return present(ticket);
   });
@@ -126,7 +126,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const ticket = await ticketService.updateTicket(
       ctx,
       idOrNumber,
-      ticketService.updateTicketSchema.parse(request.body),
+      ticketService.updateTicketSchema.strict().parse(request.body),
       ifMatch(request.headers['if-match'] as string | undefined, true),
     );
     reply.header('etag', `"${ticket.version}"`);
@@ -142,7 +142,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         reason: z.string().max(2000).optional(),
         resolutionCode: z.string().max(100).optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
 
     const ticket = await ticketService.transitionTicket(ctx, idOrNumber, body.to, {
       ...(body.reason ? { reason: body.reason } : {}),
@@ -162,9 +162,19 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         groupId: z.string().uuid().nullable().optional(),
         method: z.enum(['manual', 'rule', 'round_robin', 'load_balanced', 'skills']).optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
 
-    const ticket = await ticketService.assignTicket(ctx, idOrNumber, body);
+    // Optional, unlike the one on PATCH. Assignment is the one write a queue
+    // screen makes from a list it may have read a minute ago, and demanding a
+    // version there would mean re-reading every row before every claim. But a
+    // client that *has* the version can say so, and two agents claiming the
+    // same ticket then get a 409 instead of one of them silently losing it.
+    const ticket = await ticketService.assignTicket(
+      ctx,
+      idOrNumber,
+      body,
+      ifMatch(request.headers['if-match'] as string | undefined, false),
+    );
     reply.header('etag', `"${ticket.version}"`);
     return present(ticket);
   });
@@ -172,7 +182,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
   app.post('/tickets/:idOrNumber/comments', async (request, reply) => {
     const ctx = contextOf(request);
     const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
-    const comment = await ticketService.addComment(ctx, idOrNumber, ticketService.addCommentSchema.parse(request.body));
+    const comment = await ticketService.addComment(ctx, idOrNumber, ticketService.addCommentSchema.strict().parse(request.body));
     reply.status(201);
     return {
       id: comment.id,
@@ -279,7 +289,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         key: z.string().max(100).optional(),
         order: z.number().int().min(0).max(1000).optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
 
     const task = await ticketService.createTask(ctx, idOrNumber, body);
     reply.status(201);
@@ -296,7 +306,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
   app.post('/tickets/:idOrNumber/links', async (request, reply) => {
     const ctx = contextOf(request);
     const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
-    const body = z.object({ target: z.string().min(1).max(100), linkType: linkTypeSchema }).parse(request.body);
+    const body = z.object({ target: z.string().min(1).max(100), linkType: linkTypeSchema }).strict().parse(request.body);
     const link = await ticketService.linkTickets(ctx, idOrNumber, body.target, body.linkType);
     reply.status(201);
     return { sourceId: link.sourceId, targetId: link.targetId, linkType: link.linkType };
@@ -305,7 +315,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
   app.post('/tickets/:idOrNumber/watchers', async (request, reply) => {
     const ctx = contextOf(request);
     const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
-    const body = z.object({ userId: z.string().uuid() }).parse(request.body);
+    const body = z.object({ userId: z.string().uuid() }).strict().parse(request.body);
     const watcher = await ticketService.addWatcher(ctx, idOrNumber, body.userId);
     reply.status(201);
     return { ticketId: watcher.ticketId, userId: watcher.userId, reason: watcher.reason };
@@ -320,7 +330,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         mime: z.string().min(1).max(200),
         size: z.number().int().min(1),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
 
     const { upload } = await ticketService.presignAttachment(ctx, idOrNumber, body);
     return upload;
@@ -337,7 +347,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         size: z.number().int().min(1),
         commentId: z.string().uuid().optional(),
       })
-      .parse(request.body);
+      .strict().parse(request.body);
 
     const attachment = await ticketService.registerAttachment(ctx, idOrNumber, body);
     reply.status(201);

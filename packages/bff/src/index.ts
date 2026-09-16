@@ -67,4 +67,5 @@ export {
 } from './oidc.js';
 export { devSignIn, DevSignInFailed, type DevTokenSet } from './dev-sign-in.js';
 export { createSession, SessionRefused, type TokensToStore } from './create-session.js';
+export { recordSession, type RecordDeps, type RecordedSession } from './record-session.js';
 export { postLogoutUriFor, redirectUriFor } from './urls.js';

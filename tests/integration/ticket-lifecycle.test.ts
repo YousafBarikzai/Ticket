@@ -186,6 +186,84 @@ describe('optimistic locking', () => {
     });
     expect(response.status).toBe(428);
   });
+
+  /**
+   * Assignment is the one write where the version is optional, and the
+   * asymmetry is on purpose. A queue screen claims a ticket from a list it read
+   * a minute ago; requiring `If-Match` there would mean re-reading every row
+   * before every claim, so the route answers without one. But a client that
+   * *has* the version can say so, and two agents claiming the same ticket in
+   * the same second then get a 409 rather than one of them silently losing the
+   * ticket they believed they had taken.
+   */
+  it('assigns without a version, because a queue does not hold one', async () => {
+    const response = await request<{ version: number }>(`/api/v1/tickets/${tenant.ticketNumbers[0]}/assign`, {
+      method: 'POST',
+      token: agentToken(),
+      body: { assigneeId: tenant.people.agent!.id, method: 'manual' },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('refuses an assignment carrying a stale version', async () => {
+    const created = await request<{ number: string; version: number }>('/api/v1/tickets', {
+      method: 'POST',
+      token: agentToken(),
+      body: { type: 'incident', title: 'Two agents, one ticket', sourceChannel: 'api' },
+    });
+    const { number, version } = created.body;
+
+    const first = await request(`/api/v1/tickets/${number}/assign`, {
+      method: 'POST',
+      token: agentToken(),
+      body: { assigneeId: tenant.people.agent!.id, method: 'manual' },
+      headers: { 'if-match': `"${version}"` },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await request(`/api/v1/tickets/${number}/assign`, {
+      method: 'POST',
+      token: agentToken(),
+      body: { assigneeId: tenant.people.otherAgent!.id, method: 'manual' },
+      headers: { 'if-match': `"${version}"` },
+    });
+    expect(second.status).toBe(409);
+
+    // The first claim stands. Before the route read `If-Match` the second
+    // silently won, and the first agent kept working a ticket that was no
+    // longer theirs.
+    const current = await request<{ assigneeId: string }>(`/api/v1/tickets/${number}`, { token: agentToken() });
+    expect(current.body.assigneeId).toBe(tenant.people.agent!.id);
+  });
+});
+
+describe('a body the API does not recognise', () => {
+  /**
+   * Zod strips unknown keys by default, so a client that misspelled a field got
+   * a 201 and a ticket without it. Every request body under `/api/v1` is now
+   * strict, which turns that into a 422 naming the key — at the HTTP boundary
+   * only. The module schemas stay permissive, because an internal caller that
+   * passes an extra key is a type error caught at build time, not a stranger's
+   * typo.
+   */
+  it('refuses a misspelled field instead of quietly dropping it', async () => {
+    const response = await request<{ status: number }>('/api/v1/tickets', {
+      method: 'POST',
+      token: agentToken(),
+      body: { type: 'incident', titel: 'A typo nobody would notice', sourceChannel: 'api' },
+    });
+    expect(response.status).toBe(422);
+  });
+
+  it('names the key it did not recognise', async () => {
+    const response = await request<{ detail?: string; errors?: unknown }>('/api/v1/tickets', {
+      method: 'POST',
+      token: agentToken(),
+      body: { type: 'incident', title: 'Valid', sourceChannel: 'api', urgencey: 'high' },
+    });
+    expect(response.status).toBe(422);
+    expect(JSON.stringify(response.body)).toContain('urgencey');
+  });
 });
 
 describe('an update that changes nothing is not a change', () => {

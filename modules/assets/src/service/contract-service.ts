@@ -188,6 +188,10 @@ export const coverageSchema = z
     ciId: z.string().uuid().optional(),
     note: z.string().max(2_000).optional(),
   })
+  // Strict here rather than at the route, for the same reason as
+  // `windowSchema`: a refinement makes this a `ZodEffects`, and `.strict()`
+  // does not exist on one.
+  .strict()
   .refine((value) => Boolean(value.assetTag) !== Boolean(value.ciId), {
     message: 'cover an asset or a configuration item, not both and not neither',
   });

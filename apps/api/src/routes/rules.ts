@@ -38,14 +38,14 @@ export async function ruleRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/rules', async (request, reply) => {
     const ctx = contextOf(request);
-    const rule = await ruleService.createRule(ctx, ruleDefinitionSchema.parse(request.body));
+    const rule = await ruleService.createRule(ctx, ruleDefinitionSchema.strict().parse(request.body));
     reply.code(201);
     return rule;
   });
 
   app.patch('/rules/:idOrKey', async (request) => {
     const ctx = contextOf(request);
-    const body = ruleDefinitionSchema.partial().parse(request.body);
+    const body = ruleDefinitionSchema.partial().strict().parse(request.body);
     return ruleService.updateRule(ctx, idOrKey.parse(request.params).idOrKey, body);
   });
 
@@ -56,7 +56,7 @@ export async function ruleRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/rules/:idOrKey/rollback', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ toVersion: z.number().int().min(1) }).parse(request.body);
+    const body = z.object({ toVersion: z.number().int().min(1) }).strict().parse(request.body);
     return ruleService.rollbackRule(ctx, idOrKey.parse(request.params).idOrKey, body.toVersion);
   });
 

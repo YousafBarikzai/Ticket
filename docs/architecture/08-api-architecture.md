@@ -76,7 +76,8 @@ The specification's Part 7 standards apply verbatim. Implementation notes:
 | Filtering and sorting | `filter[field]=v1,v2`, `filter[field][op]=…` for `gt/lt/contains/isNull`, `sort=-createdAt,priority`; compiled to the expression language then to Prisma; only fields declared filterable in the route metadata are accepted. Saved views serialise to this grammar. |
 | Field selection and expansion | `fields=` and `expand=` as above. |
 | Idempotency | Required for creating `POST`s from integrations (enforced for API keys and OAuth clients; optional for user tokens); 24 h; body-hash mismatch → `422`. |
-| Concurrency | `If-Match: "<version>"` is required on `PATCH`/`PUT` (missing → `428 Precondition Required`); a stale version → `409 Conflict` whose body includes the current representation for the merge UI. |
+| Concurrency | `If-Match: "<version>"` is required on `PATCH`/`PUT` (missing → `428 Precondition Required`); a stale version → `409 Conflict` whose body includes the current representation for the merge UI. `POST /tickets/:id/assign` reads it when it is offered and does not require it, because a queue screen claims from a list it read a minute ago (ADR-0044). |
+| Unknown request fields | Refused, not stripped: every body parsed by a route under `/api/v1` is `.strict()`, so an unrecognised key is a `422` naming the key rather than a `201` for a resource missing the field the client believed it sent (ADR-0044). The module-level schemas stay permissive — an internal caller with an extra key is a build-time type error, not a production failure. |
 | Errors | RFC 9457 with `errors[]` (`{ field, code, message }`) and `correlationId`. |
 | Rate limiting | Token bucket per tenant and per token in Redis; defaults 600 req/min per user token, 1 200 per integration; bulk and search endpoints have separate buckets. |
 | Bulk | `POST /tickets:bulk` up to 200 operations; ≤ 50 executed inline with per-item results, > 50 returns `202` with a job URL (`/jobs/{id}`). |
@@ -95,7 +96,7 @@ The specification's Part 7 standards apply verbatim. Implementation notes:
 
 | Caller | Token | How obtained | Lifetime | Revocation |
 |---|---|---|---|---|
-| Browser (web apps) | Keycloak access token held server-side in the Next.js session; cookie `__Host-session` (httpOnly, Secure, SameSite=Lax) | Authorization Code + PKCE via Keycloak; BFF stores refresh token in Redis-backed session | Access 10 min, refresh sliding up to the tenant's idle/absolute timeouts | Session denylist (`sid`), Keycloak logout, platform `DELETE /me/sessions` |
+| Browser (web apps) | Keycloak access token held server-side in the Next.js session; cookie `__Host-session` (httpOnly, Secure, SameSite=Lax) | Authorization Code + PKCE via Keycloak; BFF stores refresh token in Redis-backed session, then calls `POST /api/v1/auth/session` so the platform has a session to list and revoke | Access 10 min, refresh sliding up to the tenant's idle/absolute timeouts | Session denylist (`sid`), written by `revokeSession` and `deactivateUser` inside the transaction that revokes the row (ADR-0044); Keycloak logout; platform `DELETE /me/sessions` |
 | Mobile | Access + refresh tokens in `expo-secure-store` | Authorization Code + PKCE (`expo-auth-session`) | Same | Same |
 | Integration (OAuth client credentials) | Access token from Keycloak client | Client credentials; client bound to one tenant via attribute | 60 min | Client disable |
 | Server-to-server (API key) | `Authorization: ApiKey <key>` | Created in admin console; stored hashed (argon2id); scopes | Configurable expiry | Delete key |

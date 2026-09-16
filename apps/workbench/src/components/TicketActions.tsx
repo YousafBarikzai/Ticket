@@ -80,7 +80,12 @@ export function TicketActions({
     setBusy('assign');
     setError(null);
     try {
-      await api.assign(ticketNumber, assignedToMe ? null : myUserId);
+      // With the version, because this page has read the ticket. Two agents
+      // pressing "Take" on the same ticket then get the 409 the message below
+      // already knows how to explain, rather than one of them silently losing
+      // a ticket they believe is theirs. A queue screen, which holds no
+      // version, omits it and keeps last-write-wins.
+      await api.assign(ticketNumber, assignedToMe ? null : myUserId, undefined, version);
       router.refresh();
     } catch (failure) {
       setError(describe(failure));

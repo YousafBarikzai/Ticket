@@ -44,7 +44,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/knowledge', async (request, reply) => {
     const ctx = contextOf(request);
-    const article = await articleService.createArticle(ctx, articleSchema.parse(request.body));
+    const article = await articleService.createArticle(ctx, articleSchema.strict().parse(request.body));
     return reply.code(201).send(article);
   });
 
@@ -65,7 +65,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/knowledge/:key/rollback', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ toVersion: z.number().int().min(1) }).parse(request.body);
+    const body = z.object({ toVersion: z.number().int().min(1) }).strict().parse(request.body);
     return articleService.rollbackArticle(ctx, byKey.parse(request.params).key, body.toVersion);
   });
 
@@ -77,7 +77,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/knowledge/:key/feedback', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ helpful: z.boolean(), comment: z.string().max(1000).optional() }).parse(request.body);
+    const body = z.object({ helpful: z.boolean(), comment: z.string().max(1000).optional() }).strict().parse(request.body);
     return articleService.recordFeedback(ctx, byKey.parse(request.params).key, body.helpful, body.comment);
   });
 
@@ -85,7 +85,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const body = z
       .object({ ticketId: z.string().uuid(), relation: z.enum(['referenced', 'resolved']).default('referenced') })
-      .parse(request.body);
+      .strict().parse(request.body);
     return articleService.linkToTicket(ctx, byKey.parse(request.params).key, body.ticketId, body.relation);
   });
 }

@@ -41,14 +41,14 @@ export async function catalogueRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/services', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await catalogueService.createService(ctx, serviceSchema.parse(request.body));
+    const created = await catalogueService.createService(ctx, serviceSchema.strict().parse(request.body));
     reply.code(201);
     return created;
   });
 
   app.post('/request-types', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await catalogueService.createRequestType(ctx, requestTypeSchema.parse(request.body));
+    const created = await catalogueService.createRequestType(ctx, requestTypeSchema.strict().parse(request.body));
     reply.code(201);
     return created;
   });
@@ -66,7 +66,7 @@ export async function catalogueRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/forms', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await formService.createForm(ctx, createFormSchema.parse(request.body));
+    const created = await formService.createForm(ctx, createFormSchema.strict().parse(request.body));
     reply.code(201);
     return created;
   });

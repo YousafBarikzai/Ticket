@@ -8,6 +8,7 @@ import {
 } from './config.js';
 import { clearedAttributes, cookieAttributes, readCookie, serialiseCookie, SESSION_COOKIE } from './cookies.js';
 import { createSession, SessionRefused } from './create-session.js';
+import { recordSession } from './record-session.js';
 import { devSignIn, DevSignInFailed } from './dev-sign-in.js';
 import {
   authorisationUrl,
@@ -130,6 +131,14 @@ export function createBff(app: AppIdentity, env: Environment = process.env): Bff
         displayName: claims.displayName ?? session.displayName,
       };
       await store.put(refreshed, config.sessionTtlSeconds);
+
+      // Again on every refresh, not only at sign-in. Two things come of it:
+      // `last_seen_at` means what it says on the "your sessions" screen, and a
+      // record that could not be written when the person signed in is written
+      // now — so the window in which a session cannot be revoked is one refresh
+      // interval rather than the whole of its life.
+      await recordSession(config, refreshed.accessToken);
+
       return refreshed;
     } catch {
       // A refused refresh means the provider has ended the session — because

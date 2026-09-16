@@ -51,7 +51,7 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/workload/availability', async (request) => {
     const ctx = contextOf(request);
-    const row = await availabilityService.setAvailability(ctx, setAvailabilitySchema.parse(request.body));
+    const row = await availabilityService.setAvailability(ctx, setAvailabilitySchema.strict().parse(request.body));
     return { userId: row.userId, status: row.status, until: row.until?.toISOString() ?? null };
   });
 
@@ -79,7 +79,7 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/workload/shifts', async (request, reply) => {
     const ctx = contextOf(request);
-    const shift = await availabilityService.createShift(ctx, createShiftSchema.parse(request.body));
+    const shift = await availabilityService.createShift(ctx, createShiftSchema.strict().parse(request.body));
     return reply.code(201).send({ key: shift.key, name: shift.name, teamId: shift.teamId });
   });
 
@@ -94,7 +94,7 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
     const assignment = await availabilityService.assignToShift(
       ctx,
       byKey.parse(request.params).key,
-      assignToShiftSchema.parse(request.body),
+      assignToShiftSchema.strict().parse(request.body),
     );
     return reply.code(201).send({ id: assignment.id, userId: assignment.userId });
   });
@@ -125,7 +125,7 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/workload/rotations', async (request, reply) => {
     const ctx = contextOf(request);
-    const rotation = await onCallService.createRotation(ctx, createRotationSchema.parse(request.body));
+    const rotation = await onCallService.createRotation(ctx, createRotationSchema.strict().parse(request.body));
     return reply.code(201).send({ key: rotation.key, name: rotation.name, members: rotation.members });
   });
 
@@ -134,7 +134,7 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
     const rotation = await onCallService.updateRotation(
       ctx,
       byKey.parse(request.params).key,
-      updateRotationSchema.parse(request.body),
+      updateRotationSchema.strict().parse(request.body),
     );
     return { key: rotation.key, members: rotation.members, handoverAt: rotation.handoverAt };
   });
@@ -151,7 +151,7 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
     const override = await onCallService.addOverride(
       ctx,
       byKey.parse(request.params).key,
-      overrideSchema.parse(request.body),
+      overrideSchema.strict().parse(request.body),
     );
     return reply.code(201).send({
       id: override.id,
@@ -176,13 +176,13 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/workload/skills', async (request, reply) => {
     const ctx = contextOf(request);
-    const skill = await routingService.createSkill(ctx, createSkillSchema.parse(request.body));
+    const skill = await routingService.createSkill(ctx, createSkillSchema.strict().parse(request.body));
     return reply.code(201).send({ key: skill.key, name: skill.name });
   });
 
   app.put('/workload/skills/:key/agents', async (request) => {
     const ctx = contextOf(request);
-    const granted = await routingService.grantSkill(ctx, byKey.parse(request.params).key, grantSkillSchema.parse(request.body));
+    const granted = await routingService.grantSkill(ctx, byKey.parse(request.params).key, grantSkillSchema.strict().parse(request.body));
     return { userId: granted.userId, level: granted.level };
   });
 
@@ -204,7 +204,7 @@ export async function workloadRoutes(app: FastifyInstance): Promise<void> {
     const policy = await routingService.setRoutingPolicy(
       ctx,
       byTeam.parse(request.params).teamId,
-      routingPolicySchema.parse(request.body),
+      routingPolicySchema.strict().parse(request.body),
     );
     return { teamId: policy.teamId, strategy: policy.strategy, defaultCapacity: policy.defaultCapacity };
   });

@@ -60,7 +60,7 @@ export async function changeRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/changes', async (request, reply) => {
     const ctx = contextOf(request);
-    const change = await changeService.createChange(ctx, createChangeSchema.parse(request.body));
+    const change = await changeService.createChange(ctx, createChangeSchema.strict().parse(request.body));
     return reply.code(201).send(shape(change));
   });
 
@@ -75,7 +75,7 @@ export async function changeRoutes(app: FastifyInstance): Promise<void> {
     const { change, verdict } = await changeService.scheduleChange(
       ctx,
       byNumber.parse(request.params).number,
-      scheduleSchema.parse(request.body),
+      scheduleSchema.strict().parse(request.body),
     );
     return { ...shape(change), inWindows: verdict.inWindows, outsideWindows: verdict.outsideWindows };
   });
@@ -83,7 +83,7 @@ export async function changeRoutes(app: FastifyInstance): Promise<void> {
   app.post('/changes/:number/transition', async (request) => {
     const ctx = contextOf(request);
     return shape(
-      await changeService.transition(ctx, byNumber.parse(request.params).number, transitionSchema.parse(request.body)),
+      await changeService.transition(ctx, byNumber.parse(request.params).number, transitionSchema.strict().parse(request.body)),
     );
   });
 
@@ -156,7 +156,7 @@ export async function changeRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/standard-changes', async (request, reply) => {
     const ctx = contextOf(request);
-    const template = await windowService.createTemplate(ctx, templateSchema.parse(request.body));
+    const template = await windowService.createTemplate(ctx, templateSchema.strict().parse(request.body));
     return reply.code(201).send({ key: template.key, status: template.status, version: template.version });
   });
 

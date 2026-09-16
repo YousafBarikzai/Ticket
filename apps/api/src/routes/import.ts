@@ -48,7 +48,7 @@ export async function importRoutes(app: FastifyInstance): Promise<void> {
       content = typeof request.body === 'string' ? request.body : '';
       filename = z.string().min(1).max(200).parse(request.headers['x-filename'] ?? 'upload.csv');
     } else {
-      const body = z.object({ filename: z.string().min(1).max(200), content: z.string().min(1) }).parse(request.body);
+      const body = z.object({ filename: z.string().min(1).max(200), content: z.string().min(1) }).strict().parse(request.body);
       filename = body.filename;
       content = body.content;
     }
@@ -68,7 +68,7 @@ export async function importRoutes(app: FastifyInstance): Promise<void> {
   app.put('/import/mappings/:key', async (request) => {
     const ctx = contextOf(request);
     const { key } = byKey.parse(request.params);
-    const body = z.object({ name: z.string().min(1).max(120), entity: z.string(), document: z.unknown() }).parse(request.body);
+    const body = z.object({ name: z.string().min(1).max(120), entity: z.string(), document: z.unknown() }).strict().parse(request.body);
     const row = await jobService.saveMapping(ctx, { key, ...body } as never);
     return { id: row.id, key: row.key, name: row.name, entity: row.entity, document: row.document };
   });
