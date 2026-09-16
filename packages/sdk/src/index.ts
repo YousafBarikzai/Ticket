@@ -3,6 +3,8 @@ export { ApiError, createClient, type Client, type ClientOptions, type RequestOp
 export { ticketQuery, workbench, type TicketFilter, type Workbench } from './resources/workbench.js';
 export {
   portal,
+  queueable,
+  type QueueableRequest,
   type Article,
   type ApprovalRequest,
   type CatalogueItem,

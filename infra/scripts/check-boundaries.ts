@@ -197,6 +197,11 @@ const EGRESS_ALLOWED = [
   // services — a hard timeout, a bounded read, errors classified into
   // retryable and not — are reproduced in the adapter instead.
   'modules/ai/src/providers/anthropic.ts',
+  // The offline layer. Everything it fetches is a relative path on the
+  // application's own origin — the BFF's proxy — so this is not egress either,
+  // and a service worker could not reach the gateway if it wanted to: it runs
+  // in the browser, where `modules/` does not exist.
+  'packages/pwa/',
 ];
 
 const FETCH_PATTERN = /(?:^|[^.\w])fetch\s*\(/;

@@ -95,6 +95,7 @@ sentences are which.
 | `packages/bff` | The backend-for-frontend, once: sign-in, the session store, and the proxy. Handlers speak `Request` and `Response` rather than a framework's types, so a route handler in an application is three lines. Sessions are namespaced per application. |
 | `apps/workbench` | Next.js App Router. The queue, and the three-pane ticket workspace with timeline, composer, transitions, assignment, SLA clocks, time totals and the AI suggestion surface. |
 | `apps/portal` | Next.js App Router. Home, report an issue, the catalogue with `FormRenderer`, my tickets, one ticket with reply and reopen, the approvals inbox, and knowledge search with articles. |
+| `packages/pwa` | The offline layer: a service worker with four caching strategies, and an IndexedDB outbox for the three writes §5 allows to be queued. The rules — what may be queued, what an HTTP answer means, when to stop retrying — are pure functions. |
 | The development sign-in | `POST /api/v1/auth/dev-session`, registered only outside production and only with no `OIDC_ISSUER` (ADR-0041). |
 
 ### 10.2 Deviations from sections 1 to 9
@@ -120,8 +121,8 @@ reverse later:
   `packages/ui/icons`** (§2, §6, §7). None of these has been built. The
   accessibility tests §2 promises exist as keyboard and ARIA tests in
   `packages/ui/src/**/__tests__`; there is no axe-core run.
-- **No service worker, no offline queue, no push** (§5). The workbench is
-  online-only today.
+- **No push** (§5). The Push API is not wired; notifications are the in-app
+  inbox only. A service worker and an offline queue *are* built — see §10.3.
 - **Polling, not SSE, for an AI job** (§4). `GET /events/stream` exists in the
   API (ADR-0015) and the proxy does not carry it. A job the person just started
   is polled with a ceiling; a queue that updates by itself needs the stream.
@@ -130,7 +131,39 @@ reverse later:
   console, every builder in §1 — fields, forms, rules, workflows, SLA
   policies, packs, flags — is reachable only through the API.
 
-### 10.3 What building the applications found in the API
+### 10.3 Offline, as built (ADR-0043)
+
+Doc §5 describes Workbox through `@serwist/next`. What exists is a hand-written
+service worker bundled by `infra/scripts/build-service-worker.ts` into each
+app's `public/sw.js`, because Workbox's value is a build-time precache manifest
+and everything here is runtime caching. Revisit when there is a screen that has
+to work on a *first* visit; there is not.
+
+**Caching, in four rules.** Nothing about a session is ever cached — a cached
+sign-in response is somebody else's session served to the next person on a
+shared machine. API reads are network-first, because a queue showing yesterday's
+tickets is worse than a queue that takes a second. Content-hashed build output
+is cache-first; everything else static is stale-while-revalidate. Navigations
+fall back to a precached `/offline`.
+
+**Three writes may be queued**, and only three: report an issue, add a comment,
+decide an approval. All three are *additive* — none depends on the state of the
+thing it touches — so a delay changes when they happen and not whether they
+were right. A transition is not queueable, and the portal's reopen button says
+so rather than offering something the API would refuse hours later with nobody
+watching.
+
+**The idempotency key is minted when the person acts**, not when the queue
+sends, so two drains racing raise one ticket. A 409 on a create is treated as
+success; a 409 on a *decision* is a conflict, because two people deciding one
+approval is news somebody has to see.
+
+What is not built: push, background sync on browsers without `SyncManager`
+(they drain on `online` instead, which loses the case where the tab has
+closed), and any Lighthouse threshold in CI (§5 asks for ≥ 90 from PH-3; there
+is no Lighthouse run at all).
+
+### 10.4 What building the applications found in the API
 
 Recorded here rather than in a module's document, because each was invisible
 until something tried to use the API the way an application does:
