@@ -39,7 +39,7 @@ Every tenant-scoped table has:
 
 ### 2.3 Custom fields and semi-structured data
 
-- `ticket.custom jsonb` holds custom field values keyed by `FieldDefinition.key`, validated against the field definitions at write time (types, options, required-when via the expression language). A GIN index (`jsonb_path_ops`) supports equality/contains filters; frequently filtered custom fields can be promoted to generated columns with B-tree indexes by an admin action *(PH-3)*.
+- `ticket.custom jsonb` holds custom field values keyed by `FieldDefinition.key`, validated against the field definitions at write time (types, options, required-when via the expression language) and filtered on read by `classification` and `visibleTo` (ADR-0048). Two writers are exempt and say why they are: a catalogue submission, whose answers the request type's form already validated, and a MOD-24 migration, which carries whatever the previous tool held. A GIN index (`jsonb_path_ops`) supports equality/contains filters; frequently filtered custom fields can be promoted to generated columns with B-tree indexes by an admin action *(PH-3)*.
 - Configuration content (`form_version.schema`, `wf_version.graph`, `sla_policy.match`, `approval_policy.steps`) is JSON validated by Zod schemas in `packages/contracts`, with a `schema_version` column for migrations of the JSON shape.
 
 ### 2.4 Indexing strategy

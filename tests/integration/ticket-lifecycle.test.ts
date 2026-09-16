@@ -267,6 +267,24 @@ describe('a body the API does not recognise', () => {
 });
 
 describe('an update that changes nothing is not a change', () => {
+  /**
+   * The fields these tests use have to exist now.
+   *
+   * Before custom fields had a service, `custom` took anything — which is why
+   * these tests could invent keys. Defining them first is not scaffolding
+   * around a new restriction; it is the test doing what a tenant has to do.
+   */
+  beforeAll(async () => {
+    for (const key of ['alpha', 'bravo']) {
+      const saved = await request(`/api/v1/field-definitions/${key}`, {
+        method: 'PUT',
+        token: tenant.people.admin!.token,
+        body: { label: key, type: 'text' },
+      });
+      expect(saved.status).toBe(200);
+    }
+  }, 30_000);
+
   it('does not record a change when custom fields are re-sent with their keys in another order', async () => {
     // `custom` is a JSONB column, so what comes back from the database has been
     // through PostgreSQL's key ordering. Compared by stringifying, an identical
@@ -280,7 +298,7 @@ describe('an update that changes nothing is not a change', () => {
         type: 'incident',
         title: 'Custom field no-op',
         sourceChannel: 'api',
-        custom: { alpha: 'one', bravo: 'two', nested: { x: 1, y: 2 } },
+        custom: { alpha: 'one', bravo: 'two' },
       },
     });
     expect(created.status).toBe(201);
@@ -288,8 +306,10 @@ describe('an update that changes nothing is not a change', () => {
     const resent = await request<{ version: number }>(`/api/v1/tickets/${created.body.number}`, {
       method: 'PATCH',
       token: agentToken(),
-      // The same value, written the other way round.
-      body: { custom: { nested: { y: 2, x: 1 }, bravo: 'two', alpha: 'one' } },
+      // The same values, written the other way round. PostgreSQL returns a
+      // JSONB object's keys in its own order, which is what made an identical
+      // re-send read as a change.
+      body: { custom: { bravo: 'two', alpha: 'one' } },
       headers: { 'if-match': `"${created.body.version}"` },
     });
     expect(resent.status).toBe(200);
@@ -312,6 +332,37 @@ describe('an update that changes nothing is not a change', () => {
     });
     expect(changed.status).toBe(200);
     expect(changed.body.version).toBe(created.body.version + 1);
+  });
+
+  it('refuses a custom key that is not a field, rather than storing it', async () => {
+    // What `custom` used to accept: anything, under any key, forever. A tenant
+    // discovering six months later that half its tickets say `costCentre` and
+    // half say `cost_center` is the failure this stops.
+    const response = await request('/api/v1/tickets', {
+      method: 'POST',
+      token: agentToken(),
+      body: { type: 'incident', title: 'Undefined field', sourceChannel: 'api', custom: { charlie: 'three' } },
+    });
+    expect(response.status).toBe(422);
+    expect(JSON.stringify(response.body)).toContain('charlie');
+  });
+
+  it('leaves the other fields alone when a patch names one', async () => {
+    const created = await request<{ number: string; version: number; custom: Record<string, unknown> }>('/api/v1/tickets', {
+      method: 'POST',
+      token: agentToken(),
+      body: { type: 'incident', title: 'Partial custom patch', sourceChannel: 'api', custom: { alpha: 'one', bravo: 'two' } },
+    });
+
+    const patched = await request<{ custom: Record<string, unknown> }>(`/api/v1/tickets/${created.body.number}`, {
+      method: 'PATCH',
+      token: agentToken(),
+      body: { custom: { alpha: 'changed' } },
+      headers: { 'if-match': `"${created.body.version}"` },
+    });
+    expect(patched.status).toBe(200);
+    // A patch is a patch. Sending one key must not clear the others.
+    expect(patched.body.custom).toEqual({ alpha: 'changed', bravo: 'two' });
   });
 });
 

@@ -42,6 +42,7 @@ import {
   requiresAdministratorOverride,
   STATES,
 } from '../domain/state-machine.js';
+import { fieldsInTx, validateCustom } from './field-service.js';
 import * as repo from '../repo/ticket-repo.js';
 
 /**
@@ -154,6 +155,21 @@ async function insertTicketOn(
   tx: Tx,
   parsed: z.infer<typeof createTicketSchema>,
   requesterId: string | null,
+  /**
+   * Keys in `custom` that another validator has already accepted.
+   *
+   * There is exactly one: a catalogue submission, whose answers were checked
+   * against the request type's form schema (MOD-02) — a stricter check than
+   * the field definitions would apply, because a form knows which of its own
+   * questions were required and what each one accepts. Refusing them here
+   * would mean every request type's questions had to be duplicated as field
+   * definitions before the portal worked at all.
+   *
+   * Named keys rather than a boolean bypass, so the exemption is visible, is
+   * exactly as wide as the form that earned it, and cannot be reached by a
+   * caller that simply sets a flag.
+   */
+  preValidatedKeys: readonly string[] = [],
 ): Promise<repo.TicketRow> {
   const type = parsed.type as TicketType;
   const number = await nextNumber(tx, ctx, type, numberPrefix[type]);
@@ -161,6 +177,42 @@ async function insertTicketOn(
 
   const derived = await derivePriority(tx, ctx, parsed.impact, parsed.urgency);
   const priority = parsed.priority ?? derived ?? (await getSetting<string>(ctx, 'ticket.defaultPriority'));
+
+  // Checked against the tenant's field definitions before anything is written.
+  // The schema comment on `field_definition` has claimed since Phase 1 that
+  // "the ticket API validates `custom` against them from the start"; until this
+  // line it did not, and `custom` was whatever a caller sent.
+  const submitted = (parsed.custom ?? {}) as Record<string, unknown>;
+  const answered = new Set(preValidatedKeys);
+  const fromForm: Record<string, unknown> = {};
+  const toCheck: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(submitted)) {
+    if (answered.has(key)) fromForm[key] = value;
+    else toCheck[key] = value;
+  }
+
+  const custom = {
+    ...fromForm,
+    ...validateCustom(
+      await fieldsInTx(tx),
+      type,
+      toCheck,
+      {
+        type,
+        priority,
+        impact: parsed.impact ?? null,
+        urgency: parsed.urgency ?? null,
+        serviceId: parsed.serviceId ?? null,
+        categoryId: parsed.categoryId ?? null,
+        sourceChannel: parsed.sourceChannel,
+      },
+      // The form's answers count towards a required field being satisfied. A
+      // request type that asks for a cost centre and a field definition that
+      // requires one are the same question asked twice, and the person filling
+      // the form answered it.
+      fromForm,
+    ),
+  };
 
   const id = newId();
   const ticket = await repo.insertTicket(tx, {
@@ -187,7 +239,7 @@ async function insertTicketOn(
     channelRef: parsed.channelRef ?? null,
     parentId: parsed.parentId ?? null,
     externalRef: parsed.externalRef ?? null,
-    custom: parsed.custom as never,
+    custom: custom as never,
     createdBy: ctx.actor.id,
     createdByType: ctx.actor.type,
     updatedBy: ctx.actor.id,
@@ -342,6 +394,40 @@ export async function updateTicket(
     const ticket = await loadVisible(tx, ctx, idOrNumber);
     authz.require(ctx, 'ticket.update', { aggregate: 'ticket', record: ticket });
     requireIfMatch(ifMatch, ticket.version);
+
+    // A patch carrying `custom` is a patch to *some* fields, not a replacement
+    // of all of them: a client that sends one key must not silently clear the
+    // other four. So the stored values are the starting point, the patch is
+    // checked against the definitions, and the required check sees the result
+    // rather than the fragment — otherwise changing one field would report a
+    // different required field as missing because this request did not mention
+    // it.
+    if (parsed.custom !== undefined) {
+      const stored = (ticket.custom as Record<string, unknown>) ?? {};
+      const patch = validateCustom(
+        await fieldsInTx(tx),
+        ticket.type,
+        parsed.custom as Record<string, unknown>,
+        {
+          type: ticket.type,
+          priority: parsed.priority ?? ticket.priority,
+          impact: parsed.impact ?? ticket.impact,
+          urgency: parsed.urgency ?? ticket.urgency,
+          serviceId: parsed.serviceId ?? ticket.serviceId,
+          categoryId: parsed.categoryId ?? ticket.categoryId,
+        },
+        stored,
+      );
+
+      const merged = { ...stored };
+      for (const [key, value] of Object.entries(patch)) {
+        // Null is how a value is removed. Storing it would leave a key whose
+        // presence still says the field was once set.
+        if (value === null) delete merged[key];
+        else merged[key] = value;
+      }
+      (parsed as Record<string, unknown>).custom = merged;
+    }
 
     const changed: Record<string, { before: unknown; after: unknown }> = {};
     const data: Record<string, unknown> = {};
@@ -1263,7 +1349,7 @@ export async function createRequestFromCatalogue(
     // joining back to the submission.
     custom: input.answers,
   });
-  return insertTicketOn(ctx, tx, parsed, input.requesterId);
+  return insertTicketOn(ctx, tx, parsed, input.requesterId, Object.keys(input.answers));
 }
 
 // ---------------------------------------------------------------------------
