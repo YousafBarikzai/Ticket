@@ -16,7 +16,7 @@ export const analyticsManifest: ModuleManifest = registerModule({
   name: 'Reporting and analytics',
   version: '1.0.0',
   phase: 'PH-4',
-  dependsOn: ['MOD-04', 'MOD-07', 'MOD-11', 'MOD-17', 'MOD-18'],
+  dependsOn: ['MOD-04', 'MOD-07', 'MOD-11', 'MOD-17', 'MOD-18', 'MOD-19'],
   permissions: [
     { key: 'analytics.read', scopes: ['team', 'any'], description: 'Read the reporting figures, dashboards and reports; keep personal dashboards.' },
     { key: 'analytics.manage', scopes: ['any'], description: 'Define metrics, shared dashboards, reports and their schedules.' },
@@ -43,6 +43,8 @@ export const analyticsManifest: ModuleManifest = registerModule({
       'notification.sent',
       'notification.failed',
       'survey.responded',
+      'time.entry.logged',
+      'time.entry.deleted',
     ],
   },
   featureFlags: [],

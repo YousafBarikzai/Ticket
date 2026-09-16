@@ -707,6 +707,43 @@ answers.
 
 ---
 
+### 2.14 Time and cost (MOD-19)
+
+**Three kinds of time, and one of them is free** (ADR-0034). `manual` is what
+somebody wrote down; `timer` is what a clock they started measured; `automatic`
+is how long the ticket sat in a working state, recorded when it leaves one,
+against whoever held it then. The third is elapsed time, never effort: it is
+priced at nothing and billable never, by a database constraint, reported beside
+effort rather than added to it, and no built-in metric sums across the kinds.
+Paused and settled states are measured but not recorded — waiting is not
+working.
+
+**The rate is written on the entry.** Resolved when the entry is logged — the
+team's override, else the activity's default — so a rate changed next month
+changes nothing already logged. Per team, not per person: a per-person rate is
+a salary by another name. Every rate seeds at zero, because money is the
+tenant's to state; cost appears the day a rate is entered, for entries logged
+after it.
+
+**One timer per person, not believed past twelve hours.** A second start names
+the first; a stop after longer is capped and the cap is written into the note.
+
+**Budgets** bound a tenant, a service, an organisation or a team for a month,
+quarter or year. The running total moves as entries land and is recomputed
+nightly — MOD-12's rollup shape, for the same reason — and each line (the
+warning at 80 %, the limit at 100 %) is published once per period through
+markers on the period row, so the recompute can correct drift without
+re-announcing a line already crossed. Entries in another currency are logged
+and skipped, not summed. The owner is told through MOD-11.
+
+**MOD-12** gains `fact_time_entry` — the table doc 06 named before the module
+existed — projected on `time.entry.logged`, removed on `time.entry.deleted`,
+with three built-in metrics (`time.logged`, `time.cost`, `time.elapsed`) that
+keep the kinds apart, a `money` unit, and two widgets on the seeded teams
+dashboard.
+
+---
+
 ---
 
 ## 3. What remains in Phase 4
@@ -716,7 +753,7 @@ answers.
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
-| MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
+| MOD-23, MOD-24, SCIM, metering | Not started. |
 
 ---
 
@@ -738,6 +775,7 @@ answers.
 | The platform's `fingerprint` is eight hex characters | Written for showing a credential's identity in a log, it is the last eight characters of a SHA-256. MOD-18's first draft used it to bind a survey link to its invitation row — a 32-bit "hash" of a secret, in a column named `token_hash`. Nothing would have broken: the link is HMAC-signed and the check is a second factor. But a column named for a hash that holds a fingerprint is how the next person reasons wrongly about what the database can prove. The full digest now lives next to the short form, and each says what the other is for. |
 | A notification rule for an event MOD-11 does not listen to never fires, silently | MOD-11 registers a handler per event type from a six-entry list, and its rule table accepts a rule for any event type at all. A rule for `report.generated` was seeded, validated, listed in the admin console and would have sent nothing, because no handler ever called `notifyForEvent` for it. The integration test that asks "where is the lead's notification" is what found it; the fix is one more entry, and the comment on the list now says what the list is. Handlers are registered at import and rules are read per tenant at run time, so the list cannot be derived from the rules — the third hand-maintained list this phase, and the first that cannot be replaced by a derivation. Worth a registry check at boot: every seeded rule's event type must be in the list. Not done in this change. |
 | The CSV writer defused negative numbers | The formula guard prefixes anything beginning with `=`, `+`, `-` or `@` with a quote, so a spreadsheet shows it as text rather than running it. Written first over `String(value)`, which meant a margin of −30 minutes came out as `'-30` — text, in the one column that exists to be summed. Caught by a unit test whose name said the opposite of what its assertion did; reading the two together was the finding. A number is the platform's, not a person's, and is now written as a number. |
+| Three test bugs in the time suite, found only against the live server | `pending` is a status *category*; the ticket states are `pending_requester`, `pending_third_party` and `pending_approval`, so the elapsed-time test's transition was refused with a 422 the unit tests could not see. And `[100, 80].sort()` is `[100, 80]`: JavaScript sorts numbers as strings unless told otherwise, so a test that meant "in ascending order" asserted the opposite and passed in the author's head. And the elapsed-time test expected two working stints where the module records three: `new` is category `open`, so the time between assignment and first pick-up is working time by the module's own rule, and the test had the rule wrong. All three in the test, none in the module; all the kind of thing a live run finds in its first three minutes. |
 | An accumulating projector cannot be replayed | E1a's comment count was "the old count plus one" on every `ticket.comment.added`, which is right until an event is delivered twice past the inbox — a replay, precisely. E1b needed a replay to make the spec's `analytics:rebuild` real, and the first design was "delete the facts, then replay", which works and is a hard-delete on a reporting table in a command anybody with `analytics.admin` can run. The better fix was upstream: read the count from `ticket_comment` like every other field, so replay is idempotent by construction and deletes nothing. The projector is now a pure function of the source rows, which is what ADR-0031 already claimed. |
 | The worker scheduled four jobs by hand, and the manifests declared five | `registerSchedules` in `apps/worker` was a list of four cron entries copied from module manifests. MOD-04's manifest declares `ticket.autoClose` hourly; nothing scheduled it, and nothing implements it either, so the manifest has been promising a job that does not exist since Phase 1. Found because MOD-12 needed two schedules and adding two more lines would have repeated the mistake. The list is now derived from the manifests at boot and skips any declared job with no registered handler, saying so in the log. That is the same shape as three earlier rows: a declaration copied into a second place drifts, and the fix is to have one place. |
 | A unique index over nullable columns does not enforce uniqueness | The rollup's natural key is `(tenant, date, team, service, priority)` where the last three are null for "all". PostgreSQL treats NULLs in a unique index as distinct from one another, so `(t, d, NULL, NULL, NULL)` never conflicts with itself: the "all" row would have inserted a fresh duplicate on every upsert and every headline total would have climbed with every event. Caught reading the schema back before the migration was written, not by a test — the unit tests could not see it because no row ever reaches a database there. The row's identity is now a spelled-out grouping key (`all`, `team:<id>|priority:P1`) with a constraint that it is non-empty; the nullable columns stay for filtering. |
@@ -749,7 +787,7 @@ answers.
 
 | Check | Result |
 |---|---|
-| Unit tests | 800 passing, 472 of them over the ten modules |
+| Unit tests | 811 passing, 483 of them over the eleven modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -776,7 +814,8 @@ answers.
 | — ranges, schedules, the trend line and CSV | 21, including the same 08:00 on both sides of daylight saving and the formula guard that leaves numbers alone |
 | — survey documents, scoring and throttling | 19, including the scale that would have reported a 7 as 150 % and the button row that refuses to be a keyboard |
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| — time pricing, periods and thresholds | 12, including that one entry crossing both budget lines reports both and a decrement reports neither |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift

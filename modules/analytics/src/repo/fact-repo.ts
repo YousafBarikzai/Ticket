@@ -140,6 +140,23 @@ export async function writeSurveyFact(tx: Tx, tenantId: string, row: WriteRow<Pr
   });
 }
 
+export async function findTimeFact(tx: Tx, entryId: string) {
+  return tx.factTimeEntry.findFirst({ where: { entryId } });
+}
+
+export async function writeTimeFact(tx: Tx, tenantId: string, row: WriteRow<Prisma.FactTimeEntryUncheckedCreateInput>): Promise<void> {
+  const { id, tenantId: _tenant, ...data } = row;
+  await tx.factTimeEntry.upsert({
+    where: { tenantId_entryId: { tenantId, entryId: row.entryId } },
+    create: { id: id ?? newId(), tenantId, ...data },
+    update: data,
+  });
+}
+
+export async function deleteTimeFact(tx: Tx, entryId: string): Promise<void> {
+  await tx.factTimeEntry.deleteMany({ where: { entryId } });
+}
+
 // ---------------------------------------------------------------------------
 // The cursor: what each projector has already seen.
 // ---------------------------------------------------------------------------

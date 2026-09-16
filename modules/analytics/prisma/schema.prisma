@@ -565,3 +565,35 @@ model ReportRun {
   @@index([tenantId, reportId, startedAt(sort: Desc)])
   @@map("report_run")
 }
+
+/// One row per time entry, kept apart by kind: logged effort and elapsed
+/// time are different questions and this table lets a metric ask either.
+model FactTimeEntry {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  entryId     String   @map("entry_id") @db.Uuid
+  ticketId    String   @map("ticket_id") @db.Uuid
+  taskId      String?  @map("task_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  teamId      String?  @map("team_id") @db.Uuid
+  serviceId   String?  @map("service_id") @db.Uuid
+  activityKey String   @map("activity_key")
+  /// manual | timer | automatic
+  kind        String
+  minutes     Int
+  cost        Decimal  @default(0) @db.Decimal(14, 2)
+  currency    String   @db.Char(3)
+  billable    Boolean  @default(true)
+  loggedDate  DateTime @map("logged_date") @db.Date
+  loggedAt    DateTime @map("logged_at") @db.Timestamptz(6)
+
+  lastEventId String   @map("last_event_id") @db.Uuid
+  lastEventAt DateTime @map("last_event_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entryId])
+  @@index([tenantId, loggedDate])
+  @@index([tenantId, teamId, loggedDate])
+  @@index([tenantId, kind, loggedDate])
+  @@map("fact_time_entry")
+}

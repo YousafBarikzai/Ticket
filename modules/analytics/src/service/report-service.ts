@@ -238,6 +238,7 @@ function format(value: number | null, unit: string): string {
   if (value === null) return '—';
   if (unit === 'percent') return `${value.toFixed(1)} %`;
   if (unit === 'minutes') return `${Math.round(value)} min`;
+  if (unit === 'money') return value.toFixed(2);
   return String(Math.round(value));
 }
 

@@ -110,6 +110,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // The support number for the thing that just broke is on the contract,
       // and the person who needs it at that moment is the agent.
       { key: 'contract.read', scope: 'any' },
+      // Their own time, logged and seen; nobody else's.
+      { key: 'time.log', scope: 'own' },
+      { key: 'time.read', scope: 'own' },
     ],
   },
   {
@@ -206,6 +209,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'analytics.read', scope: 'team' },
       // What their team's requesters said, and no more than that.
       { key: 'feedback.read', scope: 'team' },
+      // Logs on behalf of the team and sees what the team's tickets cost.
+      { key: 'time.log', scope: 'team' },
+      { key: 'time.read', scope: 'team' },
     ],
   },
   {
@@ -249,6 +255,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // judged by the answers, so the owner writes the questions.
       { key: 'feedback.read', scope: 'any' },
       { key: 'feedback.manage', scope: 'any' },
+      // Sets the rates and the budgets: the owner is who answers for the cost.
+      { key: 'time.read', scope: 'any' },
+      { key: 'time.manage', scope: 'any' },
     ],
   },
   {
@@ -365,6 +374,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'analytics.admin', scope: 'any' },
       { key: 'feedback.read', scope: 'any' },
       { key: 'feedback.manage', scope: 'any' },
+      { key: 'time.log', scope: 'any' },
+      { key: 'time.read', scope: 'any' },
+      { key: 'time.manage', scope: 'any' },
     ],
   },
 ];

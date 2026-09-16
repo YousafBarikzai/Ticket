@@ -23,6 +23,7 @@ const NOTIFYING_EVENTS = [
   'sla.timer.breached',
   'report.generated',
   'survey.invited',
+  'budget.threshold.reached',
 ] as const;
 
 for (const eventType of NOTIFYING_EVENTS) {

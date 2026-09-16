@@ -1018,6 +1018,59 @@ export const surveyResponded = defineEvent({
   }),
 });
 
+// ---- MOD-19 Time and cost (PH-4) ------------------------------------------
+export const timeEntryLogged = defineEvent({
+  type: 'time.entry.logged',
+  version: 1,
+  aggregateType: 'time_entry',
+  webhook: true,
+  description: 'Time was recorded against a ticket: logged by hand, stopped on a timer, or measured from how long the ticket sat in a working state.',
+  payload: z.object({
+    entryId: id,
+    ticketId: id,
+    taskId: id.nullable(),
+    userId: id,
+    activityKey: z.string(),
+    /** manual | timer | automatic — automatic is elapsed time, never effort. */
+    kind: z.enum(['manual', 'timer', 'automatic']),
+    minutes: z.number().int().min(0),
+    cost: z.number().min(0),
+    currency: z.string().length(3),
+    billable: z.boolean(),
+  }),
+});
+
+export const timeEntryDeleted = defineEvent({
+  type: 'time.entry.deleted',
+  version: 1,
+  aggregateType: 'time_entry',
+  webhook: true,
+  description: 'A time entry was withdrawn.',
+  payload: z.object({ entryId: id, ticketId: id, userId: id, minutes: z.number().int().min(0), cost: z.number().min(0) }),
+});
+
+export const budgetThresholdReached = defineEvent({
+  type: 'budget.threshold.reached',
+  version: 1,
+  aggregateType: 'budget',
+  webhook: true,
+  description: 'Spend against a budget crossed its warning line or its limit for the current period.',
+  payload: z.object({
+    budgetId: id,
+    key: z.string(),
+    name: z.string(),
+    periodStart: z.string(),
+    periodEnd: z.string(),
+    /** 80 for the warning, 100 for the limit. */
+    threshold: z.number().int(),
+    spent: z.number().min(0),
+    amount: z.number().min(0),
+    currency: z.string().length(3),
+    /** Audience descriptors for MOD-11: the budget's owner. */
+    audience: z.array(z.object({ kind: z.string() }).passthrough()),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
@@ -1044,6 +1097,7 @@ export const eventCatalogue = [
   discoveryRunCompleted, discoveryProposalDecided, contractExpiring,
   analyticsDriftDetected, reportGenerated,
   surveyInvited, surveyResponded,
+  timeEntryLogged, timeEntryDeleted, budgetThresholdReached,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

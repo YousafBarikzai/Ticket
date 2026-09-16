@@ -24,6 +24,7 @@ export { refreshApprovalFact } from './service/approval-projector.js';
 export { refreshTaskFact } from './service/task-projector.js';
 export { refreshNotificationFact } from './service/notification-projector.js';
 export { refreshSurveyFact } from './service/survey-projector.js';
+export { refreshTimeFact } from './service/time-projector.js';
 export { replayProjection } from './service/replay-service.js';
 export * as metricService from './service/metric-service.js';
 export * as dashboardService from './service/dashboard-service.js';

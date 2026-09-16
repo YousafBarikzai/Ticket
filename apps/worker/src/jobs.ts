@@ -19,6 +19,7 @@ import { auditService } from '@itsm/module-security';
 import { tickPartition, TIMER_PARTITIONS } from '@itsm/module-sla';
 import { checkTicketDrift, rebuildRecent, reportService } from '@itsm/module-analytics';
 import { invitationService } from '@itsm/module-feedback';
+import { budgetService } from '@itsm/module-time';
 import type { EventEnvelope } from '@itsm/contracts';
 
 /**
@@ -167,6 +168,16 @@ defineJob('retention', 'feedback.expiry.sweep', async () => {
     await withContext(ctx, async () => {
       const expired = await invitationService.expireDue(ctx);
       if (expired > 0) logger.debug('survey invitations expired', { tenantId: tenant.id, expired });
+    });
+  }
+});
+
+defineJob('analytics', 'budget.sweep', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const result = await budgetService.recomputeAll(ctx);
+      if (result.corrected > 0) logger.info('budget totals corrected', { tenantId: tenant.id, ...result });
     });
   }
 });

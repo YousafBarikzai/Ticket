@@ -657,6 +657,38 @@ model ReportRun {
   @@map("report_run")
 }
 
+/// One row per time entry, kept apart by kind: logged effort and elapsed
+/// time are different questions and this table lets a metric ask either.
+model FactTimeEntry {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  entryId     String   @map("entry_id") @db.Uuid
+  ticketId    String   @map("ticket_id") @db.Uuid
+  taskId      String?  @map("task_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  teamId      String?  @map("team_id") @db.Uuid
+  serviceId   String?  @map("service_id") @db.Uuid
+  activityKey String   @map("activity_key")
+  /// manual | timer | automatic
+  kind        String
+  minutes     Int
+  cost        Decimal  @default(0) @db.Decimal(14, 2)
+  currency    String   @db.Char(3)
+  billable    Boolean  @default(true)
+  loggedDate  DateTime @map("logged_date") @db.Date
+  loggedAt    DateTime @map("logged_at") @db.Timestamptz(6)
+
+  lastEventId String   @map("last_event_id") @db.Uuid
+  lastEventAt DateTime @map("last_event_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entryId])
+  @@index([tenantId, loggedDate])
+  @@index([tenantId, teamId, loggedDate])
+  @@index([tenantId, kind, loggedDate])
+  @@map("fact_time_entry")
+}
+
 // ===========================================================================
 // modules/approvals/prisma/schema.prisma
 // ===========================================================================
@@ -3541,6 +3573,178 @@ model TicketCounter {
 
   @@id([tenantId, type])
   @@map("ticket_counter")
+}
+
+// ===========================================================================
+// modules/time/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-19 Time and cost (PH-4).
+///
+/// Three kinds of time, kept apart on purpose. `manual` is what somebody
+/// wrote down; `timer` is what a clock they started measured; `automatic` is
+/// how long a ticket sat in a working state, which is elapsed time and never
+/// effort. Reporting that added the third to the first two would report every
+/// lunch break as work, so the kind is on every row and the automatic kind
+/// carries no cost.
+///
+/// Money is `Decimal(14,2)` with an ISO currency, as MOD-10's contracts hold
+/// it, and every entry carries the rate that applied when it was logged: a
+/// rate change next month does not rewrite what last month cost.
+
+/// What time can be spent on: investigation, communication, travel. One is
+/// the system's own, for elapsed time, and cannot be chosen by hand.
+model ActivityType {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  billable    Boolean  @default(true)
+  /// The default cost of an hour of this, before any team override.
+  ratePerHour Decimal  @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
+  currency    String   @default("GBP") @db.Char(3)
+  isSystem    Boolean  @default(false) @map("is_system")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rates       CostRate[]
+
+  @@unique([tenantId, key])
+  @@map("activity_type")
+}
+
+/// A team's own hourly rate for an activity, overriding the activity's
+/// default. Per team rather than per person: a per-person rate is a salary by
+/// another name, and a reporting table is not where one belongs.
+model CostRate {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  activityTypeId String   @map("activity_type_id") @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  ratePerHour    Decimal  @map("rate_per_hour") @db.Decimal(14, 2)
+  currency       String   @db.Char(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  activityType   ActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, activityTypeId, teamId])
+  @@map("cost_rate")
+}
+
+model TimeEntry {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  ticketId       String    @map("ticket_id") @db.Uuid
+  taskId         String?   @map("task_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  activityTypeId String    @map("activity_type_id") @db.Uuid
+  /// manual | timer | automatic
+  kind           String
+  minutes        Int
+  startedAt      DateTime? @map("started_at") @db.Timestamptz(6)
+  endedAt        DateTime? @map("ended_at") @db.Timestamptz(6)
+  note           String?
+  /// The rate that applied when this was logged. Frozen here on purpose.
+  ratePerHour    Decimal   @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
+  currency       String    @default("GBP") @db.Char(3)
+  cost           Decimal   @default(0) @db.Decimal(14, 2)
+  billable       Boolean   @default(true)
+  loggedAt       DateTime  @default(now()) @map("logged_at") @db.Timestamptz(6)
+  createdBy      String?   @map("created_by") @db.Uuid
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, userId, loggedAt(sort: Desc)])
+  @@index([tenantId, loggedAt])
+  @@map("time_entry")
+}
+
+/// One per person. A second start while one is running is a conflict that
+/// names the first, not a second timer.
+model RunningTimer {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  ticketId       String   @map("ticket_id") @db.Uuid
+  activityTypeId String   @map("activity_type_id") @db.Uuid
+  note           String?
+  startedAt      DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, userId])
+  @@map("running_timer")
+}
+
+/// How long a ticket has been in each status, for the automatic kind.
+///
+/// Its own table rather than a read of the ticket timeline, because the
+/// question "when did it enter the state it is leaving" has to be answered
+/// inside the status-change handler, quickly, and the timeline is a log.
+model TicketStatusSpan {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  ticketId  String    @map("ticket_id") @db.Uuid
+  status    String
+  category  String
+  enteredAt DateTime  @map("entered_at") @db.Timestamptz(6)
+  exitedAt  DateTime? @map("exited_at") @db.Timestamptz(6)
+
+  @@index([tenantId, ticketId, exitedAt])
+  @@map("ticket_status_span")
+}
+
+/// A limit on spend for a scope and a period, with a warning line.
+model Budget {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  key        String
+  name       String
+  /// tenant | service | organisation | team
+  scopeType  String   @map("scope_type")
+  scopeId    String?  @map("scope_id") @db.Uuid
+  /// month | quarter | year — periods start on the calendar boundary, UTC.
+  periodKind String   @map("period_kind")
+  amount     Decimal  @db.Decimal(14, 2)
+  currency   String   @db.Char(3)
+  /// Percent of the amount at which the warning goes out.
+  warnAt     Int      @default(80) @map("warn_at")
+  ownerId    String?  @map("owner_id") @db.Uuid
+  isActive   Boolean  @default(true) @map("is_active")
+  createdBy  String?  @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  periods    BudgetPeriod[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, scopeType, scopeId, isActive])
+  @@map("budget")
+}
+
+/// Spend against a budget for one period, kept as a running total so a
+/// threshold can be noticed as it is crossed, and recomputed nightly so a
+/// missed decrement cannot leave it wrong for the rest of the quarter.
+model BudgetPeriod {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  budgetId     String    @map("budget_id") @db.Uuid
+  periodStart  DateTime  @map("period_start") @db.Date
+  periodEnd    DateTime  @map("period_end") @db.Date
+  spent        Decimal   @default(0) @db.Decimal(14, 2)
+  /// When each line was first crossed; null until it is. What makes the
+  /// event fire once.
+  warnedAt     DateTime? @map("warned_at") @db.Timestamptz(6)
+  reachedAt    DateTime? @map("reached_at") @db.Timestamptz(6)
+  recomputedAt DateTime? @map("recomputed_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  budget       Budget    @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, periodStart])
+  @@index([tenantId, periodStart])
+  @@map("budget_period")
 }
 
 // ===========================================================================

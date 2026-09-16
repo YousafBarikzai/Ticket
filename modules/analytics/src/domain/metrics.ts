@@ -12,7 +12,7 @@
  * decision (ADR-0032): nothing a person types is ever an identifier in SQL.
  */
 
-export const FACTS = ['ticket', 'sla_timer', 'approval', 'task', 'notification', 'survey'] as const;
+export const FACTS = ['ticket', 'sla_timer', 'approval', 'task', 'notification', 'survey', 'time_entry'] as const;
 export type FactName = (typeof FACTS)[number];
 
 export const AGGREGATES = ['count', 'sum', 'avg', 'p50', 'p90', 'rate'] as const;
@@ -128,6 +128,22 @@ export const FACT_CATALOGUE: Record<FactName, FactSpec> = {
       latencyMinutes: { column: 'latency_minutes', type: 'number' },
     },
   },
+  time_entry: {
+    table: 'fact_time_entry',
+    timeColumn: 'logged_at',
+    fields: {
+      userId: { column: 'user_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_user' },
+      teamId: { column: 'team_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_team' },
+      serviceId: { column: 'service_id', type: 'string', uuid: true, dimension: true, labelledBy: 'dim_service' },
+      activityKey: { column: 'activity_key', type: 'string', dimension: true },
+      kind: { column: 'kind', type: 'string', dimension: true },
+      currency: { column: 'currency', type: 'string', dimension: true },
+      billable: { column: 'billable', type: 'boolean' },
+      loggedAt: { column: 'logged_at', type: 'date' },
+      minutes: { column: 'minutes', type: 'number' },
+      cost: { column: 'cost', type: 'number' },
+    },
+  },
   survey: {
     table: 'fact_survey',
     timeColumn: 'responded_at',
@@ -149,7 +165,7 @@ export interface Filter {
   value?: string | number | boolean | (string | number)[] | null;
 }
 
-export type Unit = 'count' | 'minutes' | 'percent';
+export type Unit = 'count' | 'minutes' | 'percent' | 'money';
 
 /** One metric, built-in or tenant-defined: the same shape either way. */
 export interface MetricSpec {
@@ -323,6 +339,39 @@ export const BUILTIN_METRICS: readonly MetricSpec[] = [
     filters: [{ field: 'outcome', op: 'in', value: ['sent', 'failed'] }],
     numeratorFilters: [{ field: 'outcome', op: 'eq', value: 'sent' }],
     unit: 'percent',
+    builtin: true,
+  },
+  {
+    key: 'time.logged',
+    name: 'Time logged',
+    description: 'Minutes of effort recorded by hand or on a timer. Elapsed time is not effort and is not here.',
+    fact: 'time_entry',
+    aggregate: 'sum',
+    field: 'minutes',
+    filters: [{ field: 'kind', op: 'in', value: ['manual', 'timer'] }],
+    unit: 'minutes',
+    builtin: true,
+  },
+  {
+    key: 'time.cost',
+    name: 'Cost of time',
+    description: 'What the recorded effort cost, at the rates that applied when it was logged. Mixed currencies are summed as numbers; break down by currency to keep them apart.',
+    fact: 'time_entry',
+    aggregate: 'sum',
+    field: 'cost',
+    filters: [{ field: 'kind', op: 'in', value: ['manual', 'timer'] }],
+    unit: 'money',
+    builtin: true,
+  },
+  {
+    key: 'time.elapsed',
+    name: 'Elapsed in working states',
+    description: 'Minutes tickets spent in a working state, measured, not logged. A measure of how long work takes, never of how much was done.',
+    fact: 'time_entry',
+    aggregate: 'sum',
+    field: 'minutes',
+    filters: [{ field: 'kind', op: 'eq', value: 'automatic' }],
+    unit: 'minutes',
     builtin: true,
   },
   {

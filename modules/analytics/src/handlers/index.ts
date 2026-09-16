@@ -5,6 +5,7 @@ import { refreshApprovalFact } from '../service/approval-projector.js';
 import { refreshTaskFact } from '../service/task-projector.js';
 import { refreshNotificationFact } from '../service/notification-projector.js';
 import { refreshSurveyFact } from '../service/survey-projector.js';
+import { refreshTimeFact } from '../service/time-projector.js';
 
 /**
  * MOD-12 consumes; it never publishes anything a person acts on directly, and
@@ -110,3 +111,16 @@ defineHandler({
     await refreshSurveyFact(ctx, tx, event, responseId);
   },
 });
+
+for (const eventType of ['time.entry.logged', 'time.entry.deleted']) {
+  defineHandler({
+    consumer,
+    moduleId,
+    eventType,
+    required: true,
+    async handle(ctx, event, tx) {
+      const { entryId } = event.payload as { entryId: string };
+      await refreshTimeFact(ctx, tx, event, entryId);
+    },
+  });
+}

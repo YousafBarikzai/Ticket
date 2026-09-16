@@ -39,6 +39,7 @@ import { changeManifest } from '@itsm/module-change';
 import { assetsManifest } from '@itsm/module-assets';
 import { analyticsManifest, seedAnalyticsDefaults } from '@itsm/module-analytics';
 import { feedbackManifest, seedFeedbackDefaults } from '@itsm/module-feedback';
+import { timeManifest, seedTimeDefaults } from '@itsm/module-time';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -68,6 +69,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   changeManifest,
   assetsManifest,
   feedbackManifest,
+  timeManifest,
   analyticsManifest,
   adminManifest,
 ];
@@ -142,6 +144,9 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('feedback.defaults', async (ctx: TenantContext) => {
     await seedFeedbackDefaults(ctx);
+  });
+  registerSeedStep('time.defaults', async (ctx: TenantContext) => {
+    await seedTimeDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);
