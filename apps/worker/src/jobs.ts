@@ -4,8 +4,10 @@ import {
   enqueue,
   logger,
   metrics,
+  modules,
   newCorrelationId,
   platformDb,
+  registeredJobs,
   schedule,
   systemContext,
   withContext,
@@ -15,6 +17,8 @@ import { outboxPublisher, webhookService } from '@itsm/module-integrations';
 import { notificationService } from '@itsm/module-notifications';
 import { auditService } from '@itsm/module-security';
 import { tickPartition, TIMER_PARTITIONS } from '@itsm/module-sla';
+import { checkTicketDrift, rebuildRecent, reportService } from '@itsm/module-analytics';
+import { invitationService } from '@itsm/module-feedback';
 import type { EventEnvelope } from '@itsm/contracts';
 
 /**
@@ -130,19 +134,82 @@ defineJob('retention', 'audit.verifyChain', async () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Reporting (MOD-12)
+//
+// Both fan out over tenants here rather than inside the module, so one tenant's
+// year of history cannot hold up everybody else's nightly rebuild.
+// ---------------------------------------------------------------------------
+
+defineJob('analytics', 'analytics.rollup.rebuild', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const result = await rebuildRecent(ctx);
+      logger.debug('rollup rebuilt', { tenantId: tenant.id, ...result });
+    });
+  }
+});
+
+defineJob('analytics', 'analytics.report.sweep', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const ran = await reportService.runDue(ctx);
+      if (ran > 0) logger.info('scheduled reports ran', { tenantId: tenant.id, ran });
+    });
+  }
+});
+
+defineJob('retention', 'feedback.expiry.sweep', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const expired = await invitationService.expireDue(ctx);
+      if (expired > 0) logger.debug('survey invitations expired', { tenantId: tenant.id, expired });
+    });
+  }
+});
+
+defineJob('analytics', 'analytics.drift.check', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const result = await checkTicketDrift(ctx);
+      if (result.breached) {
+        logger.warn('analytics projection has drifted', {
+          tenantId: tenant.id,
+          expected: result.expected,
+          actual: result.actual,
+        });
+      }
+    });
+  }
+});
+
 /** Registers the repeatable schedules. Idempotent: BullMQ keys them by job id. */
 export async function registerSchedules(queues: QueueName[]): Promise<void> {
-  const wanted: { queue: QueueName; job: string; pattern: string }[] = [
-    { queue: 'outbox', job: 'outbox.publish', pattern: '* * * * *' },
-    { queue: 'reconcile', job: 'outbox.reconcile', pattern: '* * * * *' },
-    { queue: 'sla', job: 'sla.tick', pattern: '* * * * *' },
-    { queue: 'retention', job: 'audit.verifyChain', pattern: '0 2 * * *' },
-  ];
+  // Read from the manifests rather than listed here. The list had already
+  // drifted: MOD-04 declares `ticket.autoClose` hourly and nothing scheduled
+  // it, which is the failure mode a second copy of a declaration always has —
+  // the module says the job runs nightly, the deployment quietly disagrees, and
+  // nobody looks until a report is missing.
+  const wanted = modules()
+    .flatMap((module) => module.jobs.map((job) => ({ ...job, moduleId: module.id })))
+    .filter((job): job is typeof job & { schedule: string } => Boolean(job.schedule));
+
+  const handled = new Set(registeredJobs());
 
   for (const entry of wanted) {
     if (!queues.includes(entry.queue)) continue;
-    await schedule(entry.queue, entry.job, entry.pattern);
-    logger.info('schedule registered', { queue: entry.queue, job: entry.job, pattern: entry.pattern });
+    // A declared job with no handler would be enqueued every tick and dropped
+    // with a warning. Skipping it says so once, at boot, where it is visible.
+    if (!handled.has(`${entry.queue}:${entry.name}`)) {
+      logger.warn('declared job has no handler; not scheduling', { module: entry.moduleId, job: entry.name });
+      continue;
+    }
+    await schedule(entry.queue, entry.name, entry.schedule);
+    logger.info('schedule registered', { queue: entry.queue, job: entry.name, pattern: entry.schedule });
   }
 }
 

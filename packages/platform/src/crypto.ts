@@ -202,7 +202,16 @@ export function rewrap(sealed: SealedValue): SealedValue {
  * who steals the database.
  */
 export function fingerprint(plaintext: string): string {
-  return createHash('sha256').update(plaintext, 'utf8').digest('hex').slice(-8);
+  return digest(plaintext).slice(-8);
+}
+
+/**
+ * The whole SHA-256, for binding a secret to a row without storing it: a
+ * signed link's token is kept only as this, so a database read cannot answer
+ * for the person it was sent to. `fingerprint` is the short form for showing.
+ */
+export function digest(plaintext: string): string {
+  return createHash('sha256').update(plaintext, 'utf8').digest('hex');
 }
 
 /** Constant-time comparison, for anywhere a secret is checked rather than used. */

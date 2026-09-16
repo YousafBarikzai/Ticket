@@ -13,8 +13,18 @@ import { loadConfig } from './config.js';
  * A bug in one is caught by the other, and by the isolation suite.
  */
 
-/** Models that are NOT tenant-scoped. Kept in step with the SQL allow-list. */
-export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegistry']);
+/**
+ * Models that are NOT tenant-scoped. Kept in step with the SQL allow-list.
+ *
+ * `DimDate` is the one that needs a word: it is a calendar, not data. A Tuesday
+ * in March is the same Tuesday for every tenant, and giving it a `tenant_id`
+ * would mean a row per day per tenant to record that the 3rd fell in week 10.
+ * It carries no `tenant_id` column, so row-level security has nothing to attach
+ * to and the SQL allow-list has nothing to say about it — but the query
+ * extension would still try to filter by a column that does not exist, which is
+ * what this entry prevents.
+ */
+export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegistry', 'DimDate']);
 
 /** Models that carry tenant_id but are readable by the platform role pre-context. */
 export const DIRECTORY_MODELS = new Set(['TenantDomain', 'ChannelDirectory']);
@@ -38,6 +48,7 @@ export type Tx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$trans
 
 let appClient: PrismaClient | undefined;
 let platformClient: PrismaClient | undefined;
+let readonlyClient: PrismaClient | undefined;
 
 function baseClient(url: string): PrismaClient {
   return new PrismaClient({
@@ -193,6 +204,47 @@ export async function transaction<T>(
   );
 }
 
+/**
+ * The read-only pool, for queries that scan rather than fetch.
+ *
+ * A dashboard that draws a year is a sequential scan with a sort, and on the
+ * application pool it competes with the ticket somebody is trying to save. So
+ * analytical reads go through a separate pool — a replica where the deployment
+ * has one, otherwise the primary under the `app_readonly` role — with a
+ * statement timeout that turns a runaway query into an error for the analyst
+ * rather than a slow save for everybody else.
+ *
+ * With no `DATABASE_URL_READONLY` configured it falls back to the application
+ * pool, so development and the test suite need no second database. The
+ * timeout still applies.
+ */
+export function readonlyDb(): PrismaClient {
+  if (!readonlyClient) {
+    const config = loadConfig();
+    readonlyClient = config.DATABASE_URL_READONLY ? baseClient(config.DATABASE_URL_READONLY) : (appClient ??= baseClient(appUrl()));
+  }
+  return readonlyClient;
+}
+
+/** The longest an analytical query may run before it is the analyst's problem. */
+export const READ_STATEMENT_TIMEOUT_MS = 15_000;
+
+/**
+ * As `transaction`, but on the read-only pool with a statement timeout. Tenant
+ * isolation is unchanged: the same `SET LOCAL` runs, and row-level security
+ * applies to `app_readonly` exactly as it does to `app_user`.
+ */
+export async function readTransaction<T>(ctx: TenantContext, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return transaction(
+    ctx,
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('statement_timeout', ${String(READ_STATEMENT_TIMEOUT_MS)}, true)`;
+      return fn(tx);
+    },
+    { client: readonlyDb(), timeout: READ_STATEMENT_TIMEOUT_MS + 1_000 },
+  );
+}
+
 /** As `transaction`, but on the platform role, for tenant provisioning. */
 export async function platformTransaction<T>(
   ctx: TenantContext,
@@ -231,8 +283,13 @@ function extendTx(tx: Prisma.TransactionClient, ctx: TenantContext): Tx {
 
 /** Closes pooled connections. Used by tests and by graceful shutdown. */
 export async function disconnectDb(): Promise<void> {
-  await Promise.all([appClient?.$disconnect(), platformClient?.$disconnect()]);
+  await Promise.all([
+    appClient?.$disconnect(),
+    platformClient?.$disconnect(),
+    readonlyClient !== appClient ? readonlyClient?.$disconnect() : undefined,
+  ]);
   appClient = undefined;
+  readonlyClient = undefined;
   platformClient = undefined;
 }
 

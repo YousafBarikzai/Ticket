@@ -33,7 +33,14 @@ export type AudienceDescriptor =
   | { kind: 'group' }
   | { kind: 'watchers' }
   | { kind: 'role'; key: string }
-  | { kind: 'user'; userId: string };
+  | { kind: 'user'; userId: string }
+  /**
+   * Descriptors carried in the event payload itself, at `path`. For events
+   * whose audience is decided by the thing that happened rather than by a
+   * rule — a scheduled report knows who asked for it — so the rule says "ask
+   * the event" instead of naming people it cannot know.
+   */
+  | { kind: 'payload'; path: string };
 
 interface TicketLike {
   id: string;
@@ -52,11 +59,23 @@ export async function resolveAudience(
   ctx: TenantContext,
   audience: AudienceDescriptor[],
   ticket: TicketLike | null,
+  payload: Record<string, unknown> = {},
+  depth = 0,
 ): Promise<string[]> {
   const recipients = new Set<string>();
 
   for (const entry of audience) {
     switch (entry.kind) {
+      case 'payload': {
+        // One level only: a payload descriptor that pointed at another payload
+        // descriptor would be a loop with extra steps.
+        if (depth > 0) break;
+        const nested = payload[entry.path];
+        if (!Array.isArray(nested)) break;
+        const descriptors = nested.filter(isDescriptor).filter((d) => d.kind !== 'payload');
+        for (const id of await resolveAudience(tx, ctx, descriptors, ticket, payload, depth + 1)) recipients.add(id);
+        break;
+      }
       case 'requester':
         if (ticket?.requesterId) recipients.add(ticket.requesterId);
         break;
@@ -91,6 +110,10 @@ export async function resolveAudience(
   return [...recipients];
 }
 
+function isDescriptor(value: unknown): value is AudienceDescriptor {
+  return typeof value === 'object' && value !== null && typeof (value as { kind?: unknown }).kind === 'string';
+}
+
 /**
  * Evaluates every active rule for an event and queues what it produces. Runs
  * inside the consumer's transaction, so a failure rolls back the inbox claim
@@ -122,7 +145,7 @@ export async function notifyForEvent(ctx: TenantContext, envelope: EventEnvelope
       }
     }
 
-    const recipients = await resolveAudience(tx, ctx, rule.audience as AudienceDescriptor[], ticket);
+    const recipients = await resolveAudience(tx, ctx, rule.audience as AudienceDescriptor[], ticket, payload);
 
     for (const recipientId of recipients) {
       // Nobody is told about their own action.

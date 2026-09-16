@@ -129,15 +129,23 @@ export function parseMessage(input: MessageInput): ChannelCommand {
  * "we put that value there" is a statement about the past.
  */
 export const actionPayloadSchema = z.object({
-  action: z.enum(['approve', 'reject', 'status']),
+  action: z.enum(['approve', 'reject', 'status', 'custom']),
   /** The approval or ticket the button was about. */
   subjectId: z.string().uuid().optional(),
   ticketRef: z.string().max(40).optional(),
+  /** For `custom`: which registered handler, and what it put in the button. */
+  name: z.string().min(1).max(40).optional(),
+  data: z.record(z.unknown()).optional(),
 });
 
 export function parseAction(raw: unknown): ChannelCommand | null {
   const parsed = actionPayloadSchema.safeParse(raw);
   if (!parsed.success) return null;
+
+  if (parsed.data.action === 'custom') {
+    if (!parsed.data.name) return null;
+    return { kind: 'custom', name: parsed.data.name, data: parsed.data.data ?? {} };
+  }
 
   if (parsed.data.action === 'status') {
     const ref = findTicketRef(parsed.data.ticketRef ?? null);

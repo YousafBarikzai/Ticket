@@ -90,6 +90,9 @@ importers:
       '@itsm/module-admin':
         specifier: workspace:*
         version: link:modules/admin
+      '@itsm/module-analytics':
+        specifier: workspace:*
+        version: link:modules/analytics
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:modules/approvals
@@ -105,6 +108,9 @@ importers:
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:modules/channels
+      '@itsm/module-feedback':
+        specifier: workspace:*
+        version: link:modules/feedback
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:modules/identity
@@ -316,6 +322,30 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  modules/analytics:
+    dependencies:
+      '@itsm/business-time':
+        specifier: workspace:*
+        version: link:../../packages/business-time
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@itsm/module-sla':
+        specifier: workspace:*
+        version: link:../sla
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
   modules/approvals:
     dependencies:
       '@itsm/contracts':
@@ -396,6 +426,27 @@ importers:
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../identity
+      '@itsm/module-ticket':
+        specifier: workspace:*
+        version: link:../ticket
+      '@itsm/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  modules/feedback:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/module-channels':
+        specifier: workspace:*
+        version: link:../channels
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../ticket
@@ -694,6 +745,9 @@ importers:
       '@itsm/module-admin':
         specifier: workspace:*
         version: link:../../modules/admin
+      '@itsm/module-analytics':
+        specifier: workspace:*
+        version: link:../../modules/analytics
       '@itsm/module-approvals':
         specifier: workspace:*
         version: link:../../modules/approvals
@@ -709,6 +763,9 @@ importers:
       '@itsm/module-channels':
         specifier: workspace:*
         version: link:../../modules/channels
+      '@itsm/module-feedback':
+        specifier: workspace:*
+        version: link:../../modules/feedback
       '@itsm/module-identity':
         specifier: workspace:*
         version: link:../../modules/identity

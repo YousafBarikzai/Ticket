@@ -534,6 +534,179 @@ Voice takes no automated replies. Calling somebody back is a person's decision,
 and an automated outbound call is a different product with different regulations
 attached.
 
+### 2.11 The analytics projection pipeline (MOD-12-E1a)
+
+**Reporting keeps its own star schema, fed by events, and rebuilds it rather
+than trusting it** (ADR-0031). Fifteen tables: six dimensions, six fact tables,
+a daily rollup, a cursor per projector and a drift log. Projectors run as
+`required` consumers of seventeen event types across MOD-04, MOD-07, MOD-11 and
+MOD-17.
+
+The decision that shapes everything else is that **durations are computed once,
+at projection, and stored**. A dashboard that recomputed a business-time
+duration would need every calendar and every exception in scope for the whole
+period being charted — and, worse, the same figure would change when somebody
+edited an opening hour last March. A resolution time is a fact about what
+happened, so it is fixed when it happens. Both numbers are kept: business
+minutes, which is what an SLA was measured against, and elapsed minutes, which
+is what the requester actually waited. A report that shows only the first
+quietly disagrees with everybody's experience.
+
+**Projectors read the source row rather than replaying the event payload.**
+Delivery is at-least-once and unordered — two workers can process a status
+change and an assignment for the same ticket at the same time, in either order
+— so a projector that applied "status became resolved" from the payload would
+produce a different answer depending on which finished last. The event says
+*look again*; the row says *at what*. Two things cannot be read back and are
+handled explicitly: the first response takes the earlier of the two candidate
+times, and the comment count only ever rises.
+
+**The rollup is treated as a cache of the facts.** Six slices per ticket per day
+— all, team, service, priority, team+priority, service+priority — maintained by
+addition and subtraction, and rebuilt nightly. For the rebuild to be a
+*correction* rather than a *second opinion*, every counter has to be derivable
+from a fact row, which is why reopens and breaches are counted against the day
+the ticket was **raised** rather than the day they happened: the fact records the
+former and not the latter. The integration suite asserts the two paths agree,
+because if they did not, the drift check below would be measuring the difference
+between two implementations rather than between the projection and the truth.
+
+**Drift is measured against the module that owns the truth, through that
+module's own service.** `ticketService.countTickets` was added for it. Reading
+`ticket` from the analytics code would produce a check that agrees with the
+projection exactly when both are wrong about the same thing — the soft-delete
+predicate, the scope filter — which is the failure a reconciliation exists to
+catch. Above 0.5 % over a thirty-day window ending an hour ago, a drift row is
+written and `analytics.drift.detected` is published. The window ends an hour ago
+because an event published a second ago has not been projected yet, and a check
+that counted it would report drift on every run and teach everybody to ignore
+the alert.
+
+`fact_survey` exists with **no projector**. MOD-18 does not exist, so there are
+no `survey.*` events to consume; the table is here so satisfaction needs no
+migration when it lands, and so a dashboard can declare a widget that reads zero
+rows rather than failing.
+
+---
+
+### 2.12 Metrics, dashboards and scheduled reports (MOD-12-E1b)
+
+**A metric is a structured query, not an expression** (ADR-0032). A fact table,
+an aggregate — count, sum, mean, median, 90th percentile or a rate — an optional
+field and a list of `(field, operator, value)` filters. Every identifier comes
+from a catalogue and is spliced in as a quoted column; every value a person
+supplied travels as a bound parameter; the two never meet. Fourteen built-in
+metrics are written in exactly the same shape as a tenant's own, so there is
+one evaluator rather than two paths that drift apart. The unit tests read the
+generated SQL as text and assert that no user value appears in it.
+
+The headline ticket metrics are answered from the daily rollup when the query
+is one the cube stores — a slice by team, service or priority, or a breakdown
+by one of them — and from the facts otherwise. The integration suite asks the
+same question both ways, through a built-in and through a tenant copy of it, and
+asserts the two series are identical. Each query names which path answered, so
+an operator can see it too.
+
+Analytical reads run on their own pool: `DATABASE_URL_READONLY`, a replica where
+the deployment has one and otherwise the primary under `app_readonly`, with a
+fifteen-second statement timeout so a runaway query becomes an error for the
+analyst rather than a slow save for everybody else (doc 06 §6). With no such URL
+configured it falls back to the application pool, so development and the test
+suite need no second database; the timeout still applies.
+
+**Dashboards are one table, shared or personal.** A dashboard with no owner is
+shared and needs `analytics.manage` to change; one with an owner is theirs and
+needs only `analytics.read`. Reading is one permission filtered by ownership —
+the query asks for "shared, or mine" — so a private dashboard is absent from
+everybody else's list by construction, and a peek at its id is a 404, not a 403.
+Three dashboards are seeded (service desk overview, teams, SLA) and left alone
+once they exist, so a tenant's edits survive a redeploy. A widget that fails
+reports on itself rather than taking the dashboard down.
+
+**A report keeps its result.** A definition is an ordered list of sections; a
+schedule says when — a structured `frequency, hour, minute, day, time zone`
+rather than a cron string, because "Mondays at 08:00 London time" is what a
+person means and it survives daylight saving without an argument about which
+08:00 — and who. A run stores what it found, so the figure in March's report is
+the figure March's report showed even after a rebuild has corrected the facts
+underneath. The CSV is rendered from the stored result on request and served
+from the API with a permission check, so nothing goes to object storage and the
+link in the notification stays valid for as long as the run exists. Values that
+would be formulas in a spreadsheet are defused; numbers are not, because a
+margin of −30 minutes must stay a number.
+
+Delivery goes through MOD-11 the way everything else does: the run publishes
+`report.generated` and a seeded rule sends it. The rule's audience is a new
+descriptor kind, `payload`, which says "whoever the event names" — a scheduled
+report knows who asked for it and a rule written in advance cannot. MOD-12 ships
+its template and rule as a *pack* that MOD-11's seed includes, so the rows stay
+MOD-11's to write. A run somebody asked for right now notifies nobody: they are
+looking at the result.
+
+**The projector became a pure function of the source rows.** E1a carried two
+things from the payload — the comment count, accumulated by one per event, and
+the first response, taken as the earlier of two candidates. Both doubled or
+drifted on a replay, and a projection that cannot be replayed cannot be rebuilt
+from the outbox. Both are now read from `ticket_comment` like everything else,
+and `replayProjection` — the API, and `pnpm platform analytics-rebuild` — hands
+every consumed event back to the handlers without deleting anything first. The
+integration suite replays a tenant and asserts the facts are unchanged, counts
+included. ADR-0031 is amended.
+
+**Forecasting is a straight line, and says so.** Ordinary least squares over the
+series with the r² alongside, so a widget can put "this is a guess" in a number
+rather than a footnote. Fewer than three points refuses to guess; a projection
+never goes below zero. Nothing cleverer, because anything cleverer needs a year
+of rollups to be judged against and that year does not exist yet.
+
+---
+
+### 2.13 Feedback and surveys (MOD-18)
+
+**A survey is a form with a score** (ADR-0033). The questions are MOD-02's
+form document — the same schema, the same UI elements, the same validator the
+catalogue runs — and what a survey adds is a scoring rule: which answer is the
+headline and what scale it was on, normalised to 0–100 so a 1–5 and a 0–10 sit
+on one chart. Published versions are immutable and a response names the
+version it was shown, so a survey re-scaled on Tuesday does not rewrite
+Monday's answers.
+
+**Three triggers, all read off events the platform already publishes.** A
+ticket resolved, a request fulfilled — a resolved ticket of type `request`,
+not a new event nobody would publish — and a major incident resolved, through
+the ticket that raised it. A trigger may carry a condition in the rules
+engine's expression language, type-checked at save time. One ask per person
+per thing; no second ask to anybody inside the throttle window, from any
+survey or trigger, because the person does not experience surveys per survey;
+and nobody is asked to rate a ticket they resolved themselves.
+
+**The ask goes where the person already is.** By email and in-app through
+MOD-11, always, carrying a signed link. And into the chat thread the ticket
+lives in when it lives in one — as a row of buttons on Slack and Teams, as a
+typed number on WhatsApp — posted by a job so the outbound call is outside the
+event consumer's transaction. MOD-03 gained two things for it: a registrable
+custom action, because MOD-18 depends on MOD-03 and the handler has to be
+looked up by name rather than imported; and an "awaiting a reply" state on a
+conversation, so a "4" typed instead of clicked reaches the survey rather than
+being read as a comment. **In a thread, only the person the survey was sent to
+may answer it**: a button in a shared channel can be pressed by anyone, so the
+sender's linked identity must match the recipient or the reply says so and
+nothing is recorded.
+
+**The link proves itself.** A signed token — tenant, invitation, expiry, HMAC,
+through a new platform helper — and the invitation stores only its digest, so
+a database read cannot answer for somebody. The page behind `/public/surveys/`
+is served by the API: JSON for a portal, and a small escaped HTML form for a
+browser, because there is no portal application in this repository and a link
+has to land on something a person can use.
+
+**MOD-12's `fact_survey` finally has a projector.** It reads the response row
+and takes the team and service from the ticket at projection, so the default
+dashboards' satisfaction widget stops reading zero rows the first time somebody
+answers.
+
+---
+
 ---
 
 ## 3. What remains in Phase 4
@@ -543,7 +716,7 @@ attached.
 | **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
-| MOD-12, MOD-18, MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
+| MOD-19, MOD-23, MOD-24, SCIM, metering | Not started. |
 
 ---
 
@@ -560,6 +733,14 @@ attached.
 | The same trap was already in MOD-04, and the platform had already solved it once | Auditing for the row below found `JSON.stringify(before) === JSON.stringify(after)` in `ticket-service.ts`, where `MUTABLE_FIELDS` includes `custom` — a JSONB column. Re-sending identical custom fields recorded a change: an audit row, a version bump, a `ticket.updated` event and every rule and notification waiting on one. Nothing failed; the ticket simply acquired a history of edits nobody made. The same audit found `packages/platform/src/audit.ts` already carrying a correct private `canonical()` for the hash chain — so the idea existed three times, once right and twice missing. It is now one helper in the platform, with a module-contract rule (8) failing the build on a hand-rolled comparison, proved to fail before it was trusted to pass. **The audit copy was deliberately left alone**: it sorts with `localeCompare` where the shared helper sorts by code point, and the two disagree on any key starting with a capital, so adopting the shared one would change historical hashes and make the nightly verifier report tampering that never happened. That `localeCompare` is itself locale-dependent, and therefore a reproducibility risk across Node builds with different ICU data, is recorded as a separate finding: fixing it needs a hash version on the row and a verifier that understands both. |
 | `JSON.stringify` is not a value comparison once a value has been through JSONB | MOD-10-E2 fingerprints a discovery proposal so that one a person already rejected is not raised again. The fingerprint was `JSON.stringify(proposed)` on both sides — but PostgreSQL JSONB does not preserve key order, so the stored copy came back with its keys rearranged and never matched. The effect was not a crash: rejecting a proposal simply stopped working, and the same suggestion returned every run for ever, which is the behaviour the feature exists to prevent. Unit tests could not see it, because in JavaScript the object never round-trips; the integration suite found it on the first run against a real database. The same flaw was latent in the reconciler's object comparison, where it would have reported an unchanged attribute as changed on every run. Both now use a canonical fingerprint with sorted keys, and the unit tests assert that reordering keys does not change it while reordering a *list* does — order is information in one and not the other. |
 | The fixture lesson held, and cost nothing to apply | MOD-14-E3's SigV4 tests began with AWS's published example credentials, both halves. The secret half is forty characters of mixed-case base64 assigned to a field called `secretAccessKey`, which reads to a scanner as exactly what it looks like — the same shape as the Stripe fixture two rows down. The reflex was to write an allowlist entry. The better question was what the fixture buys: **nothing**. The canonical request and the string to sign do not contain the secret, the signing-key tests use their own values, and no test pins a signature. So the key *id* stayed, because assertions quote it, and the secret became `not-a-real-secret-for-signing-tests`. No exemption, no scan to argue with, and not one assertion weaker. Worth recording because the reflex was wrong in a way that would have looked reasonable in review: an allowlist is where a scanner stops protecting you, and the first question is always whether the credential-shaped thing needs to be there at all. |
+| Every survey link answered 414 | The signed token rides in the URL path and is about three hundred characters; Fastify refuses a path parameter longer than a hundred by default, before any handler runs. Five of the seven failures in the survey suite's first live run were this one number, and no unit test could have seen it: the token, the route and the limit are three different layers that only meet in a running server. The limit is now two kilobytes, which is what browsers and mail clients carry without complaint. The other two failures were the suite's own ordering — a test that re-publishes the survey as 0–10 ran before the thread tests, which then found no buttons (eleven is a keyboard) and a "4" worth 40; it now runs last, and says why. |
+| A reply in the desk's own thread was "not addressed" | The chat guard accepts a message only when it is a direct message or mentions the bot — the right rule for a busy channel the desk was merely invited to. It was also applied to a reply *inside a thread the desk itself opened*, so a "4" typed under a survey question on Slack would have been dropped as `not_addressed` before anything looked at it, and the survey would have waited for an @ nobody would think to type. Found reading the guard while writing the fake message for the thread test, not by the test. `acceptInbound` now looks the thread up where it has a transaction and tells the guard, which stays a pure function; the busy-channel rule is unchanged everywhere else and a unit test pins both halves. |
+| The platform's `fingerprint` is eight hex characters | Written for showing a credential's identity in a log, it is the last eight characters of a SHA-256. MOD-18's first draft used it to bind a survey link to its invitation row — a 32-bit "hash" of a secret, in a column named `token_hash`. Nothing would have broken: the link is HMAC-signed and the check is a second factor. But a column named for a hash that holds a fingerprint is how the next person reasons wrongly about what the database can prove. The full digest now lives next to the short form, and each says what the other is for. |
+| A notification rule for an event MOD-11 does not listen to never fires, silently | MOD-11 registers a handler per event type from a six-entry list, and its rule table accepts a rule for any event type at all. A rule for `report.generated` was seeded, validated, listed in the admin console and would have sent nothing, because no handler ever called `notifyForEvent` for it. The integration test that asks "where is the lead's notification" is what found it; the fix is one more entry, and the comment on the list now says what the list is. Handlers are registered at import and rules are read per tenant at run time, so the list cannot be derived from the rules — the third hand-maintained list this phase, and the first that cannot be replaced by a derivation. Worth a registry check at boot: every seeded rule's event type must be in the list. Not done in this change. |
+| The CSV writer defused negative numbers | The formula guard prefixes anything beginning with `=`, `+`, `-` or `@` with a quote, so a spreadsheet shows it as text rather than running it. Written first over `String(value)`, which meant a margin of −30 minutes came out as `'-30` — text, in the one column that exists to be summed. Caught by a unit test whose name said the opposite of what its assertion did; reading the two together was the finding. A number is the platform's, not a person's, and is now written as a number. |
+| An accumulating projector cannot be replayed | E1a's comment count was "the old count plus one" on every `ticket.comment.added`, which is right until an event is delivered twice past the inbox — a replay, precisely. E1b needed a replay to make the spec's `analytics:rebuild` real, and the first design was "delete the facts, then replay", which works and is a hard-delete on a reporting table in a command anybody with `analytics.admin` can run. The better fix was upstream: read the count from `ticket_comment` like every other field, so replay is idempotent by construction and deletes nothing. The projector is now a pure function of the source rows, which is what ADR-0031 already claimed. |
+| The worker scheduled four jobs by hand, and the manifests declared five | `registerSchedules` in `apps/worker` was a list of four cron entries copied from module manifests. MOD-04's manifest declares `ticket.autoClose` hourly; nothing scheduled it, and nothing implements it either, so the manifest has been promising a job that does not exist since Phase 1. Found because MOD-12 needed two schedules and adding two more lines would have repeated the mistake. The list is now derived from the manifests at boot and skips any declared job with no registered handler, saying so in the log. That is the same shape as three earlier rows: a declaration copied into a second place drifts, and the fix is to have one place. |
+| A unique index over nullable columns does not enforce uniqueness | The rollup's natural key is `(tenant, date, team, service, priority)` where the last three are null for "all". PostgreSQL treats NULLs in a unique index as distinct from one another, so `(t, d, NULL, NULL, NULL)` never conflicts with itself: the "all" row would have inserted a fresh duplicate on every upsert and every headline total would have climbed with every event. Caught reading the schema back before the migration was written, not by a test — the unit tests could not see it because no row ever reaches a database there. The row's identity is now a spelled-out grouping key (`all`, `team:<id>|priority:P1`) with a constraint that it is non-empty; the nullable columns stay for filtering. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -568,12 +749,13 @@ attached.
 
 | Check | Result |
 |---|---|
-| Unit tests | 703 passing, 380 of them over the eight modules |
+| Unit tests | 800 passing, 472 of them over the ten modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
 | — AWS SigV4 | 22, asserting the canonical request and string to sign as plain text a reviewer can check against AWS's published example |
 | — chat webhook signatures | 18, one per way each of the four schemes is got wrong |
+| — the chat guard's thread rule | 2, pinning that a reply in the desk's own thread is addressed and a reply anywhere else still is not |
 | — the chat guard and identity policy | 32, including that an unrecognised verification method is treated as none |
 | — the Slack and Teams adapters | 21, over parsing rather than sending |
 | — WhatsApp and voice | 19, including the session window as a pure function and the refusal to sign against a claimed host |
@@ -588,7 +770,13 @@ attached.
 | — field mapping | 18, including each built-in preset's mapping |
 | — reconciliation | 17, written so that removing the absence-is-silence rule fails, and so that a key-order difference from JSONB is not read as a change |
 | — contract dates | 12, over notice, expiry and both sides of auto-renewal |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| — the rollup arithmetic | 19, written so that a create-then-withdraw cycle must sum to zero and a team change must leave the headline total alone |
+| — durations and ISO weeks | 10, including the year boundary where 1 January belongs to the previous ISO year |
+| — the metric catalogue and query builder | 21, reading the generated SQL as text: catalogue columns quoted, user values as parameters, and every way a filter or a rollup plan is refused |
+| — ranges, schedules, the trend line and CSV | 21, including the same 08:00 on both sides of daylight saving and the formula guard that leaves numbers alone |
+| — survey documents, scoring and throttling | 19, including the scale that would have reported a 7 as 150 % and the button row that refuses to be a keyboard |
+| — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift

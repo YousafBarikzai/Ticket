@@ -37,6 +37,8 @@ import { incidentManifest } from '@itsm/module-incident';
 import { problemManifest } from '@itsm/module-problem';
 import { changeManifest } from '@itsm/module-change';
 import { assetsManifest } from '@itsm/module-assets';
+import { analyticsManifest, seedAnalyticsDefaults } from '@itsm/module-analytics';
+import { feedbackManifest, seedFeedbackDefaults } from '@itsm/module-feedback';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -65,6 +67,8 @@ export const ALL_MODULES: ModuleManifest[] = [
   problemManifest,
   changeManifest,
   assetsManifest,
+  feedbackManifest,
+  analyticsManifest,
   adminManifest,
 ];
 
@@ -132,6 +136,12 @@ export function bootstrapModules(): BootstrapResult {
   });
   registerSeedStep('workflow.defaults', async (ctx: TenantContext) => {
     await seedWorkflowDefaults(ctx);
+  });
+  registerSeedStep('analytics.defaults', async (ctx: TenantContext) => {
+    await seedAnalyticsDefaults(ctx);
+  });
+  registerSeedStep('feedback.defaults', async (ctx: TenantContext) => {
+    await seedFeedbackDefaults(ctx);
   });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);

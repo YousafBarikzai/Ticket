@@ -34,6 +34,8 @@ import { problemRoutes } from './problems.js';
 import { changeRoutes } from './changes.js';
 import { cmdbRoutes } from './cmdb.js';
 import { discoveryRoutes } from './discovery.js';
+import { analyticsRoutes } from './analytics.js';
+import { feedbackRoutes } from './feedback.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -57,6 +59,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await changeRoutes(v1);
       await cmdbRoutes(v1);
       await discoveryRoutes(v1);
+      await analyticsRoutes(v1);
+      await feedbackRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },
