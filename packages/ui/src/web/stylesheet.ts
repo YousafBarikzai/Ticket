@@ -53,6 +53,156 @@ export const componentStylesheet = `
   border-radius: var(--itsm-radius-sm);
 }
 
+/* ------------------------------------------------- Interaction (the brief)
+ *
+ * One rule set for every surface a person can point at or tab to: a soft blue
+ * background, a slightly firmer border, and a 2–4px rise.
+ *
+ * Hover and ':focus-visible' are listed together on purpose rather than the
+ * hover being written and the focus being left to the outline. Somebody
+ * driving this with a keyboard is doing the same thing as somebody with a
+ * mouse, and the brief asks for both; an outline alone tells them where they
+ * are but not that the thing is pointable. The outline stays as well — it is
+ * what carries the state at high contrast, where a tint is not enough.
+ *
+ * ':focus-within' covers a row that contains a link: the row is what lifts,
+ * not the four words inside it.
+ *
+ * Nothing essential is hidden behind any of this. Every one of these states
+ * changes colour and position only, so a touch device that never fires hover
+ * loses nothing — which is also why the selection state on a row is a
+ * background rather than a disclosure.
+ */
+.itsm-Interactive,
+.itsm-Card--interactive,
+.itsm-Tile,
+.itsm-Metric--interactive {
+  transition:
+    background-color var(--itsm-duration-fast) var(--itsm-easing-standard),
+    border-color var(--itsm-duration-fast) var(--itsm-easing-standard),
+    box-shadow var(--itsm-duration-fast) var(--itsm-easing-standard),
+    transform var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+.itsm-Interactive:hover,
+.itsm-Interactive:focus-visible,
+.itsm-Card--interactive:hover,
+.itsm-Card--interactive:focus-visible,
+.itsm-Tile:hover,
+.itsm-Tile:focus-visible,
+.itsm-Metric--interactive:hover,
+.itsm-Metric--interactive:focus-visible {
+  background: var(--itsm-colour-surface-hover);
+  border-color: var(--itsm-colour-brand-border);
+  box-shadow: var(--itsm-elevation-md);
+  transform: translateY(calc(-1 * var(--itsm-lift-md)));
+}
+
+/* In a list, where a bigger movement would shove the neighbours about. */
+.itsm-Table tbody tr.itsm-Interactive:hover,
+.itsm-Table tbody tr.itsm-Interactive:focus-within {
+  transform: translateY(calc(-1 * var(--itsm-lift-sm)));
+}
+
+.itsm-AppShell__navLink:hover,
+.itsm-AppShell__navLink:focus-visible {
+  transform: translateY(calc(-1 * var(--itsm-lift-sm)));
+}
+
+/*
+ * Movement is the part that is dropped, not the state.
+ *
+ * Somebody who asks for reduced motion still needs to know what is hovered and
+ * what is focused, so the colour and the border stay and only the transform and
+ * the transition go. The token layer already collapses every duration to 1ms
+ * under this query; this removes the displacement itself, which a duration
+ * cannot.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .itsm-Interactive,
+  .itsm-Card--interactive,
+  .itsm-Tile,
+  .itsm-Metric--interactive,
+  .itsm-AppShell__navLink {
+    transition: none;
+  }
+  .itsm-Interactive:hover,
+  .itsm-Interactive:focus-visible,
+  .itsm-Interactive:focus-within,
+  .itsm-Card--interactive:hover,
+  .itsm-Card--interactive:focus-visible,
+  .itsm-Tile:hover,
+  .itsm-Tile:focus-visible,
+  .itsm-Metric--interactive:hover,
+  .itsm-Metric--interactive:focus-visible,
+  .itsm-AppShell__navLink:hover,
+  .itsm-AppShell__navLink:focus-visible {
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------- Tile and Metric */
+.itsm-Tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-2xs);
+  padding: var(--itsm-space-md);
+  text-align: start;
+  inline-size: 100%;
+  background: var(--itsm-colour-surface-raised);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+  color: var(--itsm-colour-text-primary);
+  cursor: pointer;
+  text-decoration: none;
+  /* 44px is the touch floor in 'controlHeight'; a tile is a primary target. */
+  min-block-size: var(--itsm-control-height-lg);
+}
+.itsm-Tile__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-brand-solid);
+  color: var(--itsm-colour-brand-solidText);
+  font-size: var(--itsm-font-size-lg);
+}
+.itsm-Tile__title { font-size: var(--itsm-font-size-md); font-weight: var(--itsm-font-weight-semibold); }
+.itsm-Tile__description { font-size: var(--itsm-font-size-sm); color: var(--itsm-colour-text-muted); margin: 0; }
+
+.itsm-TileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+.itsm-Metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  padding: var(--itsm-space-sm);
+  background: var(--itsm-colour-surface-sunken);
+  border: var(--itsm-border-hair) solid transparent;
+  border-radius: var(--itsm-radius-lg);
+  text-align: start;
+  inline-size: 100%;
+  color: inherit;
+}
+.itsm-Metric--interactive { cursor: pointer; text-decoration: none; }
+.itsm-Metric__label { font-size: var(--itsm-font-size-xs); color: var(--itsm-colour-text-muted); }
+.itsm-Metric__value { font-size: var(--itsm-font-size-2xl); font-weight: var(--itsm-font-weight-semibold); letter-spacing: var(--itsm-letter-spacing-tight); }
+.itsm-Metric__note { font-size: var(--itsm-font-size-xs); color: var(--itsm-colour-text-muted); }
+.itsm-Metric__note--good { color: var(--itsm-colour-success-subtleText); }
+.itsm-Metric__note--bad { color: var(--itsm-colour-danger-subtleText); }
+
+.itsm-MetricGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--itsm-space-xs);
+}
+
 /* ---------------------------------------------------------------- Button */
 
 .itsm-Button {

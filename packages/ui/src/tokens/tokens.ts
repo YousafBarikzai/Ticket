@@ -13,9 +13,9 @@
  * unit its platform understands.
  */
 
-export type ThemeName = 'light' | 'dark' | 'high-contrast';
+export type ThemeName = 'apple' | 'apple-dark' | 'light' | 'dark' | 'high-contrast';
 
-export const themeNames: readonly ThemeName[] = ['light', 'dark', 'high-contrast'];
+export const themeNames: readonly ThemeName[] = ['apple', 'apple-dark', 'light', 'dark', 'high-contrast'];
 
 /* -------------------------------------------------------------------------
  * Spacing
@@ -54,6 +54,23 @@ export const radius = {
 } as const;
 export type RadiusToken = keyof typeof radius;
 
+/**
+ * How far an interactive surface rises when it is hovered or focused.
+ *
+ * A token rather than a number in a rule because the brief asks for the same
+ * 2–4px movement on four different things — service tiles, ticket rows,
+ * navigation items and metric tiles — and four hand-written `translateY`
+ * values are four chances to drift apart.
+ *
+ * `sm` is for something in a list, where a larger movement would push its
+ * neighbours around; `md` is for a tile with space around it.
+ */
+export const lift = {
+  sm: 2,
+  md: 4,
+} as const;
+export type LiftToken = keyof typeof lift;
+
 export const borderWidth = {
   hair: 1,
   thick: 2,
@@ -86,8 +103,18 @@ export const focusRing = {
  * can resolve. No webfont is loaded by default — the portal's LCP budget
  * (§8 of the experience architecture) is easier to hold with system faces.
  */
+/**
+ * `-apple-system` leads because the theme's typography is the platform's own.
+ *
+ * It is a keyword rather than a family: the browser resolves it to whatever the
+ * operating system's interface face is — San Francisco on Apple platforms,
+ * Segoe on Windows, Roboto on Android — which is what makes the same stylesheet
+ * look native in three places without shipping a font. Inter stays as the first
+ * real family after it, so a machine with neither keyword still gets the face
+ * this design system was drawn against.
+ */
 export const fontFamily = {
-  sans: ['Inter', 'SF Pro Text', 'Segoe UI', 'Roboto', 'system-ui', 'sans-serif'],
+  sans: ['-apple-system', 'BlinkMacSystemFont', 'Inter', 'SF Pro Text', 'Segoe UI', 'Roboto', 'system-ui', 'sans-serif'],
   mono: ['SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', 'monospace'],
 } as const;
 export type FontFamilyToken = keyof typeof fontFamily;
@@ -276,6 +303,201 @@ export interface ColourTheme {
   /** Backdrop behind modal surfaces. */
   readonly scrim: string;
 }
+
+
+/**
+ * The default theme: calm, light, and mostly out of the way.
+ *
+ * Derived from the visual reference in `claude-apple-theme-brief.md` — a very
+ * light neutral canvas, white surfaces, near-black text, one restrained blue —
+ * and then corrected against the audit in `contrast.ts`, which is why several
+ * values are not the ones the reference used.
+ *
+ * Three of those corrections are worth recording, because each looks like a
+ * mistake next to the reference and is not:
+ *
+ *   The reference's blue, `#0071e3`, reaches 4.71:1 on white and only 4.32:1
+ *   on the `#f5f5f7` canvas. It stays as a *fill* — where it carries white
+ *   text at 4.71:1 — and `text.link` is a darker blue that clears 4.5:1 on
+ *   both surfaces. A link is read; a button is aimed at.
+ *
+ *   The reference's green, `#168a62`, is 4.33:1 on white. It is fine as a
+ *   border or a fill and not as text, so `success.subtleText` is darker.
+ *
+ *   `border.interactive` is darker than the reference's hairline, because a
+ *   border that separates two controls has to reach 3:1 to be seen at all by
+ *   somebody who cannot rely on the subtle one.
+ *
+ * `surface.hover` is the soft blue the brief asks for on every interactive
+ * surface, which is why it is a tint rather than the usual grey: the hover
+ * state is a deliberate part of this design rather than a darkening.
+ */
+const apple: ColourTheme = {
+  surface: {
+    canvas: '#f5f5f7',
+    raised: '#ffffff',
+    sunken: '#ececf0',
+    overlay: '#ffffff',
+    hover: '#eaf3ff',
+    selected: '#dcecff',
+    inverse: '#1d1d1f',
+  },
+  text: {
+    primary: '#1d1d1f',
+    secondary: '#424245',
+    muted: '#68686d',
+    disabled: '#86868b',
+    link: '#0062cc',
+    inverse: '#f5f5f7',
+  },
+  border: {
+    subtle: '#e5e5ea',
+    interactive: '#86868b',
+    strong: '#6e6e73',
+    focus: '#0062cc',
+  },
+  intent: {
+    brand: {
+      solid: '#0071e3',
+      solidHover: '#0062cc',
+      solidText: '#ffffff',
+      subtle: '#eaf3ff',
+      subtleText: '#0a4f9e',
+      border: '#3f86d8',
+    },
+    neutral: {
+      solid: '#424245',
+      solidHover: '#2c2c2e',
+      solidText: '#ffffff',
+      subtle: '#ececf0',
+      subtleText: '#424245',
+      border: '#86868b',
+    },
+    success: {
+      solid: '#0f7351',
+      solidHover: '#0b5c41',
+      solidText: '#ffffff',
+      subtle: '#e3f5ed',
+      subtleText: '#0d5a40',
+      border: '#168a62',
+    },
+    warning: {
+      solid: '#8a5200',
+      solidHover: '#6f4200',
+      solidText: '#ffffff',
+      subtle: '#fbf0dc',
+      subtleText: '#6f4200',
+      border: '#b3822f',
+    },
+    danger: {
+      solid: '#c9302c',
+      solidHover: '#a32522',
+      solidText: '#ffffff',
+      subtle: '#fdeae9',
+      subtleText: '#9b201d',
+      border: '#d05a56',
+    },
+    info: {
+      solid: '#0f5e78',
+      solidHover: '#0c4c61',
+      solidText: '#ffffff',
+      subtle: '#e4f1f6',
+      subtleText: '#0d5065',
+      border: '#4a93ab',
+    },
+  },
+  shadow: '#1d1d1f',
+  scrim: 'rgba(29, 29, 31, 0.45)',
+};
+
+/**
+ * The same language after dark.
+ *
+ * Not in the reference, which is light only — but the product follows the
+ * operating system, and a great many people run theirs dark. Leaving this out
+ * would mean the theme simply stopped applying for them.
+ *
+ * Filled intents invert exactly as the existing dark theme does: a hue bright
+ * enough to read against a near-black canvas cannot also carry white text at
+ * 4.5:1, so it carries near-black text instead.
+ */
+const appleDark: ColourTheme = {
+  surface: {
+    canvas: '#000000',
+    raised: '#1c1c1e',
+    sunken: '#0c0c0d',
+    overlay: '#2c2c2e',
+    hover: '#16324f',
+    selected: '#1d3f63',
+    inverse: '#f5f5f7',
+  },
+  text: {
+    primary: '#f5f5f7',
+    secondary: '#d1d1d6',
+    muted: '#a1a1a6',
+    disabled: '#8e8e93',
+    link: '#6cb2ff',
+    inverse: '#1d1d1f',
+  },
+  border: {
+    subtle: '#38383a',
+    interactive: '#8e8e93',
+    strong: '#aeaeb2',
+    focus: '#6cb2ff',
+  },
+  intent: {
+    brand: {
+      solid: '#4da2ff',
+      solidHover: '#7cbaff',
+      solidText: '#00142b',
+      subtle: '#10233a',
+      subtleText: '#9ccbff',
+      border: '#2f6da8',
+    },
+    neutral: {
+      solid: '#aeaeb2',
+      solidHover: '#c7c7cc',
+      solidText: '#1d1d1f',
+      subtle: '#2c2c2e',
+      subtleText: '#d1d1d6',
+      border: '#8e8e93',
+    },
+    success: {
+      solid: '#4ecb96',
+      solidHover: '#7bdcb3',
+      solidText: '#00231a',
+      subtle: '#0e2a21',
+      subtleText: '#8fe0bd',
+      border: '#2f8f6b',
+    },
+    warning: {
+      solid: '#e6a44a',
+      solidHover: '#f0bb76',
+      solidText: '#241600',
+      subtle: '#2e2314',
+      subtleText: '#eec38a',
+      border: '#9a7233',
+    },
+    danger: {
+      solid: '#ff7b74',
+      solidHover: '#ffa19b',
+      solidText: '#2c0503',
+      subtle: '#331614',
+      subtleText: '#ffaba6',
+      border: '#a8524d',
+    },
+    info: {
+      solid: '#5cc3e0',
+      solidHover: '#8ad6ec',
+      solidText: '#00202b',
+      subtle: '#0d2830',
+      subtleText: '#9bdaec',
+      border: '#37879e',
+    },
+  },
+  shadow: '#000000',
+  scrim: 'rgba(0, 0, 0, 0.65)',
+};
 
 /**
  * Light theme. Every value was chosen against the audit in `contrast.ts`
@@ -527,6 +749,8 @@ const highContrast: ColourTheme = {
 };
 
 export const colour: Readonly<Record<ThemeName, ColourTheme>> = {
+  apple,
+  'apple-dark': appleDark,
   light,
   dark,
   'high-contrast': highContrast,

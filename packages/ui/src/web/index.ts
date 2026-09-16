@@ -35,6 +35,8 @@ export * from './Badge.js';
 export * from './Avatar.js';
 export * from './Card.js';
 export * from './Table.js';
+export * from './Tile.js';
+export * from './Metric.js';
 export * from './Tabs.js';
 export * from './Dialog.js';
 export * from './Toast.js';

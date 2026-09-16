@@ -16,7 +16,10 @@ describe('CSS rendering', () => {
       expect(vars['--itsm-colour-text-primary']).toBe(palette.text.primary);
       expect(vars['--itsm-colour-surface-canvas']).toBe(palette.surface.canvas);
       expect(vars['--itsm-colour-danger-solid']).toBe(palette.intent.danger.solid);
-      expect(vars['color-scheme']).toBe(theme === 'dark' ? 'dark' : 'light');
+      // Both dark themes tell the browser to darken its own furniture — the
+      // scrollbars, the caret, the controls we do not skin.
+      const isDark = theme === 'dark' || theme === 'apple-dark';
+      expect(vars['color-scheme'], theme).toBe(isDark ? 'dark' : 'light');
     }
   });
 
@@ -34,8 +37,15 @@ describe('CSS rendering', () => {
 
   it('renders a stylesheet with a selector for each theme and an OS fallback', () => {
     const css = renderTokenStylesheet();
-    expect(css).toContain(':root, [data-itsm-theme="light"]');
+    // `apple` is the default, so it is the one that also answers at `:root` —
+    // a document that pins no theme and expresses no OS preference still gets
+    // a complete palette rather than half of one.
+    expect(css).toContain(':root, [data-itsm-theme="apple"]');
     for (const theme of themeNames) expect(css).toContain(`[${themeAttribute}="${theme}"]`);
+    // Every theme keeps its own selector, including the three that predate the
+    // Apple one: the theme is a layer over this system, not a replacement, and
+    // a tenant that pinned `light` still gets `light`.
+    expect(css).toContain(`[${themeAttribute}="light"]`);
     expect(css).toContain('@media (prefers-color-scheme: dark)');
     expect(css).toContain('@media (prefers-contrast: more)');
     // Reduced motion is answered once, at the token layer.

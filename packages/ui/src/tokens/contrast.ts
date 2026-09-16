@@ -89,6 +89,8 @@ export const wcagMinimum: Readonly<Record<PairKind, number>> = {
  * decoration rather than an accommodation.
  */
 export const themeMinimum: Readonly<Record<ThemeName, Readonly<Record<PairKind, number>>>> = {
+  apple: wcagMinimum,
+  'apple-dark': wcagMinimum,
   light: wcagMinimum,
   dark: wcagMinimum,
   'high-contrast': { body: 7, large: 4.5, ui: 3 },
