@@ -66,7 +66,7 @@ Each non-functional requirement from the specification is mapped to the architec
 
 | Requirement | Mechanism | Where | Verification |
 |---|---|---|---|
-| WCAG 2.2 AA on every surface; keyboard completion | Design system a11y primitives; axe in tests | 14 §2, §7 | axe-core; manual audit per phase |
+| WCAG 2.2 AA on every surface; keyboard completion | Design system a11y primitives; axe in tests | 14 §2, §7 | axe-core over every exported component in the unit suite (ADR-0046), plus hand-written keyboard and ARIA tests. Contrast is computed from the tokens rather than from a render. **Not** covered: a full-page audit — heading order, landmark structure and the skip link only exist once components are composed into a screen — and no manual audit has been run. |
 | Localisation: ICU strings, locale formats, RTL, two languages by PH-2, five by PH-4 | `packages/i18n`; Intl; logical CSS | 14 §7 | Pseudo-localisation build; Storybook RTL tests |
 | Works at 400 px and 200 % zoom; usable on 3G; offline drafts | Responsive layouts; PWA; drafts | 14 §4–5 | Lighthouse throttled; Playwright viewports |
 | 12 core journeys automated (Appendix C) | Playwright against preview environments | 16 §3 | CI stage 4 |
