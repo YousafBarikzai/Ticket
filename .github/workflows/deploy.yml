@@ -186,8 +186,20 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # The same gate as every other job, and computed the same way for a
+      # reason: the `secrets` context is not available in a step's `if:`, only
+      # in `run:` and `env:`. Written directly in the `if:` it is not a wrong
+      # answer, it is a workflow file GitHub cannot parse at all — no jobs, a
+      # run named after the file, and a `push` trigger firing on a branch the
+      # `on:` filter excludes, because the filter is in the part that did not
+      # parse either.
+      - name: Is there anything to tear down?
+        id: gate
+        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
       - name: Delete the environment
-        if: vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != ''
+        if: steps.gate.outputs.ready == 'true'
         run: pnpm exec tsx infra/scripts/railway-teardown.ts --environment pr-${{ github.event.number }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
