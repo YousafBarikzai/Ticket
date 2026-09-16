@@ -109,6 +109,9 @@ export function phasesOf(catalogue: Catalogue, environment = 'production'): Serv
  * environment: `help.example.com`, `help.staging.example.com`. Six subdomains
  * times three environments is eighteen strings to keep in step, and the one
  * that goes stale is always the redirect URI nobody tests until sign-in breaks.
+ *
+ * Only for a deployment that *has* a domain. Without one, Railway generates a
+ * hostname per service and nothing can derive it — see `resolveHosts`.
  */
 export function hostFor(service: ServiceDefinition, domain: string, environment: string): string | null {
   if (!service.public || !service.subdomain) return null;
@@ -118,36 +121,35 @@ export function hostFor(service: ServiceDefinition, domain: string, environment:
 }
 
 /**
- * Every origin variable each application needs, derived from the same domain.
+ * Service name to public hostname, for a deployment with a domain of its own.
  *
- * The BFF checks the request origin against its own `*_ORIGIN` and builds the
- * OIDC redirect URI from it, so a wrong value here is not a cosmetic fault: it
- * is a sign-in that returns to the wrong host, or an origin check that refuses
- * every request the application makes to itself.
+ * The generated-domain case builds the same map at deploy time from what
+ * Railway hands back, which is why everything downstream takes a map rather
+ * than a domain: the two paths differ only in where the hostnames come from,
+ * and a second code path for the variables would be a second place to get the
+ * origin wrong.
  */
-export function originsFor(catalogue: Catalogue, domain: string, environment: string): Record<string, string> {
-  const origins: Record<string, string> = {};
-  const named: Record<string, string> = { portal: 'PORTAL_ORIGIN', workbench: 'WORKBENCH_ORIGIN', admin: 'ADMIN_ORIGIN', api: 'PUBLIC_BASE_URL' };
+export function hostsFor(catalogue: Catalogue, domain: string, environment: string): Map<string, string> {
+  const hosts = new Map<string, string>();
   for (const service of catalogue.services) {
-    const variable = named[service.name];
     const host = hostFor(service, domain, environment);
-    if (variable && host) origins[variable] = `https://${host}`;
+    if (host) hosts.set(service.name, host);
   }
-  return origins;
+  return hosts;
 }
 
 /**
  * Every variable this deploy sets on one service.
  *
- * `originsFor` has computed these since the pipeline was written and the deploy
- * printed them in its dry run and then sent none of them. That is not a
- * cosmetic omission. `WORKER_QUEUES` is the only thing distinguishing the four
- * worker services from one another, and its default is `*` — so without it
- * every worker consumes every family, and the split that exists to stop a burst
- * of indexing starving the outbox (doc 03 §4) would have been four identical
- * services with different names. `PORTAL_ORIGIN` and its siblings are what the
- * BFF checks a request's origin against and what it builds the OIDC redirect
- * URI from; absent, sign-in returns to the wrong host.
+ * These were computed since the pipeline was written, printed in its dry run,
+ * and sent nowhere. That is not a cosmetic omission. `WORKER_QUEUES` is the
+ * only thing distinguishing the four worker services from one another, and its
+ * default is `*` — so without it every worker consumes every family, and the
+ * split that exists to stop a burst of indexing starving the outbox
+ * (doc 03 §4) would have been four identical services with different names.
+ * `PORTAL_ORIGIN` and its siblings are what the BFF checks a request's origin
+ * against and what it builds the OIDC redirect URI from; absent, sign-in
+ * returns to the wrong host.
  *
  * What is deliberately *not* here: `DATABASE_URL`, `REDIS_URL`, `OIDC_ISSUER`,
  * `SMTP_URL`, every password and every key. Those are set once per environment
@@ -155,28 +157,24 @@ export function originsFor(catalogue: Catalogue, domain: string, environment: st
  * — which is why the upsert below sets these keys and leaves the rest alone
  * rather than replacing the collection.
  */
-export function variablesFor(
-  catalogue: Catalogue,
-  service: ServiceDefinition,
-  domain: string,
-  environment: string,
-): Record<string, string> {
-  const origins = originsFor(catalogue, domain, environment);
+export function variablesFor(service: ServiceDefinition, hosts: ReadonlyMap<string, string>): Record<string, string> {
   const own: Record<string, string> = { portal: 'PORTAL_ORIGIN', workbench: 'WORKBENCH_ORIGIN', admin: 'ADMIN_ORIGIN' };
-
   const variables: Record<string, string> = { ...service.variables };
 
+  const apiHost = hosts.get('api');
+  const mine = hosts.get(service.name);
+
   // Its own public URL, under whichever name that application reads.
-  const mine = own[service.name];
-  if (mine && origins[mine]) variables[mine] = origins[mine]!;
-  if (service.name === 'api' && origins.PUBLIC_BASE_URL) variables.PUBLIC_BASE_URL = origins.PUBLIC_BASE_URL;
+  const name = own[service.name];
+  if (name && mine) variables[name] = `https://${mine}`;
+  if (service.name === 'api' && mine) variables.PUBLIC_BASE_URL = `https://${mine}`;
 
   // Where the three web applications find the API. Server components call it
   // directly and the proxy forwards to it, so it is the same value for all
   // three and it is the public hostname rather than an internal one: the
   // browser never talks to it, but the OIDC redirect and the origin check are
   // both expressed in public terms.
-  if (mine && origins.PUBLIC_BASE_URL) variables.API_BASE_URL = origins.PUBLIC_BASE_URL;
+  if (name && apiHost) variables.API_BASE_URL = `https://${apiHost}`;
 
   return variables;
 }
@@ -236,6 +234,28 @@ const SET_VARIABLES = `
 const CREATE_DOMAIN = `
   mutation CreateDomain($input: CustomDomainCreateInput!) {
     customDomainCreate(input: $input) { id domain }
+  }`;
+
+/**
+ * A hostname Railway invents, for a deployment that has no domain of its own.
+ *
+ * The hostname cannot be known in advance — Railway picks it — so unlike the
+ * custom-domain path this one has to be *asked* before the origin variables
+ * can be set. That is the whole reason `variablesFor` takes a map of hostnames
+ * rather than a domain to derive them from.
+ */
+const CREATE_SERVICE_DOMAIN = `
+  mutation CreateServiceDomain($input: ServiceDomainCreateInput!) {
+    serviceDomainCreate(input: $input) { domain }
+  }`;
+
+/** What a service already answers on, so a second deploy reuses the first one's hostname. */
+const DOMAINS_QUERY = `
+  query Domains($projectId: String!, $environmentId: String!, $serviceId: String!) {
+    domains(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId) {
+      serviceDomains { domain }
+      customDomains { domain }
+    }
   }`;
 
 const CREATE_SERVICE = `
@@ -307,11 +327,44 @@ async function ensureDomain(
   }
 }
 
+interface DomainsShape {
+  domains: { serviceDomains: { domain: string }[]; customDomains: { domain: string }[] };
+}
+
+/**
+ * The hostname a service answers on when nobody has bought a domain.
+ *
+ * Asks first and creates second, in that order and not the other way round: a
+ * deploy runs many times and a service that already has a generated hostname
+ * must keep it. A fresh one each deploy would change `PORTAL_ORIGIN` under a
+ * live environment, which breaks the origin check and every OIDC redirect URI
+ * registered against the old one.
+ */
+async function generatedHost(
+  ids: { projectId: string; environmentId: string; serviceId: string },
+  targetPort: number | undefined,
+  token: string,
+): Promise<string> {
+  const existing = await callApi<DomainsShape>(DOMAINS_QUERY, ids, token);
+  const already = existing.domains.serviceDomains[0]?.domain ?? existing.domains.customDomains[0]?.domain;
+  if (already) return already;
+
+  const created = await callApi<{ serviceDomainCreate: { domain: string } }>(
+    CREATE_SERVICE_DOMAIN,
+    { input: { environmentId: ids.environmentId, serviceId: ids.serviceId, ...(targetPort ? { targetPort } : {}) } },
+    token,
+  );
+  return created.serviceDomainCreate.domain;
+}
+
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
   const catalogue = readCatalogue();
+  // Optional, and the two paths differ only in where a hostname comes from.
+  // With a domain, every host is derived and claimed as a custom domain.
+  // Without one, Railway invents a host per public service and the deploy has
+  // to ask for it before it can tell the applications their own origin.
   const domain = process.env.DEPLOY_DOMAIN;
-  if (!domain) throw new Error('DEPLOY_DOMAIN is not set; every public hostname is derived from it');
 
   const phases = phasesOf(catalogue, options.environment);
 
@@ -322,17 +375,21 @@ async function main(): Promise<void> {
     // heading, while the deploy below sent none of them. A dry run that shows
     // more than the real thing does is worse than no dry run, because it is
     // read as evidence.
+    const planned = domain ? hostsFor(catalogue, domain, options.environment) : new Map<string, string>();
     console.log(`plan for ${options.environment} at ${options.tag}`);
     console.log(`  region: ${catalogue.region ?? '(Railway default)'}`);
+    console.log(`  domains: ${domain ? `derived from ${domain}` : 'generated by Railway, so the hostnames below are not knowable until it runs'}`);
     for (const [index, phase] of phases.entries()) {
       console.log(`  phase ${index}: ${phase.map((one) => one.name).join(', ')}`);
       for (const service of phase) {
         console.log(`    ${service.name} <- ${imageFor(catalogue, service, options.tag)}`);
-        const host = hostFor(service, domain, options.environment);
+        const host = planned.get(service.name);
         if (host) console.log(`      domain https://${host}${service.port ? ` -> :${service.port}` : ''}`);
-        for (const [name, value] of Object.entries(variablesFor(catalogue, service, domain, options.environment))) {
+        else if (service.public) console.log(`      domain <generated>${service.port ? ` -> :${service.port}` : ''}`);
+        for (const [name, value] of Object.entries(variablesFor(service, planned))) {
           console.log(`      ${name}=${value}`);
         }
+        if (!domain && service.public) console.log('      *_ORIGIN / API_BASE_URL set once Railway has named the host');
       }
     }
     console.log('  set once per environment by a person, never by this script:');
@@ -348,6 +405,18 @@ async function main(): Promise<void> {
   const { environments, services } = idsFrom(project);
   const environmentId = environments.get(options.environment);
   if (!environmentId) throw new Error(`no Railway environment named ${options.environment} in this project`);
+
+  /*
+   * Filled as the deploy goes, phase by phase.
+   *
+   * With a domain it is known up front. Without one it cannot be, and the
+   * phase order carries it: the API is phase 2 and the three web applications
+   * are phase 3, so by the time any of them needs `API_BASE_URL` the API's
+   * hostname has been asked for and answered. That ordering was already there
+   * for a different reason — the API must be up before the applications that
+   * call it — and this is the second thing it buys.
+   */
+  const hosts = domain ? hostsFor(catalogue, domain, options.environment) : new Map<string, string>();
 
   for (const [index, phase] of phases.entries()) {
     console.log(`phase ${index}: ${phase.map((one) => one.name).join(', ')}`);
@@ -393,10 +462,29 @@ async function main(): Promise<void> {
           token,
         );
 
+        // The domain before the variables, and the variables before the
+        // redeploy. Without a domain of our own the hostname does not exist
+        // until it is asked for, and the origin variables are made of it — so
+        // an order that set the variables first would set them from nothing.
+        if (service.public) {
+          if (domain) {
+            const host = hosts.get(service.name)!;
+            const outcome = await ensureDomain(
+              { projectId, environmentId, serviceId, domain: host, ...(service.port ? { targetPort: service.port } : {}) },
+              token,
+            );
+            console.log(`  ${service.name} at https://${host} (${outcome})`);
+          } else {
+            const host = await generatedHost({ projectId, environmentId, serviceId }, service.port, token);
+            hosts.set(service.name, host);
+            console.log(`  ${service.name} at https://${host} (Railway generated)`);
+          }
+        }
+
         // Before the redeploy, so the instance that starts already has them.
         // A worker that came up with WORKER_QUEUES unset would consume every
         // family for as long as it took the next deploy to correct it.
-        const variables = variablesFor(catalogue, service, domain, options.environment);
+        const variables = variablesFor(service, hosts);
         if (Object.keys(variables).length > 0) {
           await callApi(
             SET_VARIABLES,
@@ -405,20 +493,40 @@ async function main(): Promise<void> {
           );
         }
 
-        const host = hostFor(service, domain, options.environment);
-        if (host) {
-          const outcome = await ensureDomain(
-            { projectId, environmentId, serviceId, domain: host, ...(service.port ? { targetPort: service.port } : {}) },
-            token,
-          );
-          console.log(`  ${service.name} at https://${host} (${outcome})`);
-        }
-
         await callApi(REDEPLOY, { serviceId, environmentId }, token);
         console.log(`  ${service.name} -> ${imageFor(catalogue, service, options.tag)}`);
       }),
     );
   }
+
+  await publishHosts(hosts);
+}
+
+/**
+ * Where the deployment actually ended up, for whatever runs next.
+ *
+ * The smoke test needs the API's URL, and with a generated domain no workflow
+ * expression can spell it — it is whatever Railway named it, discovered in the
+ * middle of this run. So it is written out rather than derived a second time,
+ * which also removes the four places the workflow spelled a hostname of its
+ * own and could disagree with the deploy about it.
+ */
+async function publishHosts(hosts: ReadonlyMap<string, string>): Promise<void> {
+  const urls = Object.fromEntries([...hosts].map(([name, host]) => [name, `https://${host}`]));
+  console.log('hosts:');
+  for (const [name, url] of Object.entries(urls)) console.log(`  ${name}=${url}`);
+
+  const output = process.env.GITHUB_OUTPUT;
+  if (!output) return;
+  const { appendFile } = await import('node:fs/promises');
+  const lines = [
+    `hosts=${JSON.stringify(urls)}`,
+    ...(urls.api ? [`api-url=${urls.api}`] : []),
+    ...(urls.portal ? [`portal-url=${urls.portal}`] : []),
+    ...(urls.workbench ? [`workbench-url=${urls.workbench}`] : []),
+    ...(urls.admin ? [`admin-url=${urls.admin}`] : []),
+  ];
+  await appendFile(output, `${lines.join('\n')}\n`, 'utf8');
 }
 
 // Only when run, so the pure functions above can be imported by a test without

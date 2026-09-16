@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostFor, imageFor, originsFor, phasesOf, readCatalogue, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
+import { hostFor, hostsFor, imageFor, phasesOf, readCatalogue, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
 import { isPreview } from '../railway-teardown.js';
 
 /**
@@ -101,21 +101,14 @@ describe('where each service answers', () => {
     expect(hostFor(named('worker-events'), 'example.com', 'production')).toBeNull();
   });
 
-  it('derives every origin variable the applications read from the one domain', () => {
-    // These four names are not decorative: the BFF checks the request origin
-    // against its own and builds the OIDC redirect URI from it, so a wrong
-    // value is a sign-in that returns to the wrong host.
-    expect(originsFor(catalogue, 'example.com', 'staging')).toEqual({
-      PORTAL_ORIGIN: 'https://help.staging.example.com',
-      WORKBENCH_ORIGIN: 'https://desk.staging.example.com',
-      ADMIN_ORIGIN: 'https://admin.staging.example.com',
-      PUBLIC_BASE_URL: 'https://api.staging.example.com',
-    });
-  });
-
-  it('gives the three applications and the API four distinct hosts', () => {
-    const origins = Object.values(originsFor(catalogue, 'example.com', 'production'));
-    expect(new Set(origins).size).toBe(origins.length);
+  it('maps only the public services, by name', () => {
+    const hosts = hostsFor(catalogue, 'example.com', 'production');
+    expect(hosts.get('portal')).toBe('help.example.com');
+    expect(hosts.get('api')).toBe('api.example.com');
+    // A private service must not appear: `variablesFor` reads this map, and a
+    // worker with an origin variable would be a worker claiming a public URL.
+    expect(hosts.has('worker-events')).toBe(false);
+    expect(hosts.has('migrate')).toBe(false);
   });
 });
 
@@ -177,7 +170,7 @@ describe('what each service is actually given', () => {
 
   it('gives each worker the one variable that makes it different from the others', () => {
     const queues = ['worker-events', 'worker-engine', 'worker-comms', 'worker-data'].map(
-      (name) => variablesFor(catalogue, named(name), domain, 'production').WORKER_QUEUES,
+      (name) => variablesFor(named(name), hostsFor(catalogue, domain, 'production')).WORKER_QUEUES,
     );
 
     // Unset, WORKER_QUEUES defaults to `*` and every worker consumes every
@@ -193,7 +186,7 @@ describe('what each service is actually given', () => {
       ['workbench', 'WORKBENCH_ORIGIN'],
       ['admin', 'ADMIN_ORIGIN'],
     ] as const) {
-      const variables = variablesFor(catalogue, named(name), domain, 'production');
+      const variables = variablesFor(named(name), hostsFor(catalogue, domain, 'production'));
       // The BFF checks a request's origin against this and builds the OIDC
       // redirect URI from it. Wrong, and sign-in returns to the wrong host.
       expect(variables[variable], name).toBe(`https://${named(name).subdomain}.${domain}`);
@@ -202,13 +195,13 @@ describe('what each service is actually given', () => {
   });
 
   it('gives the API its own public base URL and no origin it does not own', () => {
-    const variables = variablesFor(catalogue, named('api'), domain, 'production');
+    const variables = variablesFor(named('api'), hostsFor(catalogue, domain, 'production'));
     expect(variables.PUBLIC_BASE_URL).toBe(`https://api.${domain}`);
     expect(variables.PORTAL_ORIGIN).toBeUndefined();
   });
 
   it('carries the environment into every hostname outside production', () => {
-    const variables = variablesFor(catalogue, named('portal'), domain, 'staging');
+    const variables = variablesFor(named('portal'), hostsFor(catalogue, domain, 'staging'));
     expect(variables.PORTAL_ORIGIN).toBe(`https://help.staging.${domain}`);
     expect(variables.API_BASE_URL).toBe(`https://api.staging.${domain}`);
   });
@@ -219,7 +212,7 @@ describe('what each service is actually given', () => {
     // become something that can overwrite a database password.
     const forbidden = /^(DATABASE_URL|DATABASE_URL_APP|DATABASE_URL_PLATFORM|DATABASE_URL_READONLY|REDIS_URL|OIDC_ISSUER|SMTP_URL|MEILISEARCH_API_KEY|ANTHROPIC_API_KEY|DEV_TOKEN_SECRET)$/;
     for (const service of catalogue.services) {
-      for (const name of Object.keys(variablesFor(catalogue, service, domain, 'production'))) {
+      for (const name of Object.keys(variablesFor(service, hostsFor(catalogue, domain, 'production')))) {
         expect(name, `${service.name} sets ${name}`).not.toMatch(forbidden);
       }
     }
@@ -244,5 +237,51 @@ describe('what each service is actually given', () => {
       expect(service.subdomain, service.name).toBeTruthy();
       expect(Number.isInteger(service.port), service.name).toBe(true);
     }
+  });
+});
+
+describe('a deployment with no domain of its own', () => {
+  /*
+   * Railway names each public service itself, and the name is not knowable
+   * until it exists. Everything downstream therefore reads a map of hostnames
+   * rather than deriving them, and these are the properties that has to keep.
+   */
+
+  it('builds the same variables from discovered hostnames as from derived ones', () => {
+    // What the deploy collects as it goes, in the shape Railway hands back.
+    const discovered = new Map([
+      ['api', 'itsm-api-production-7f3a.up.railway.app'],
+      ['portal', 'itsm-portal-production-91bc.up.railway.app'],
+    ]);
+
+    const portal = variablesFor(named('portal'), discovered);
+    expect(portal.PORTAL_ORIGIN).toBe('https://itsm-portal-production-91bc.up.railway.app');
+    expect(portal.API_BASE_URL).toBe('https://itsm-api-production-7f3a.up.railway.app');
+    // The queue split survives the other path too — it has nothing to do with
+    // hostnames, and a refactor that lost it would be silent.
+    expect(variablesFor(named('worker-comms'), discovered).WORKER_QUEUES).toBe('comms');
+  });
+
+  it('sets no origin for a service whose host is not known yet', () => {
+    // Phase order is what makes this safe: the API is deployed before the web
+    // applications, so by the time one of them needs API_BASE_URL the API has
+    // a hostname. Before that point the map is empty, and an empty map must
+    // produce no variable rather than `https://undefined`.
+    const nothing = new Map<string, string>();
+    const portal = variablesFor(named('portal'), nothing);
+    expect(portal.PORTAL_ORIGIN).toBeUndefined();
+    expect(portal.API_BASE_URL).toBeUndefined();
+    expect(portal.OTEL_SERVICE_NAME).toBe('itsm-portal');
+  });
+
+  it('never invents an origin for a private service', () => {
+    // A generated host is only ever asked for where `public` is true, so a
+    // worker cannot acquire one — but if it ever did, this is what would
+    // notice before the deploy handed it a URL it has no business holding.
+    const hosts = new Map([['worker-events', 'somehow.up.railway.app']]);
+    expect(variablesFor(named('worker-events'), hosts)).toEqual({
+      WORKER_QUEUES: 'events',
+      OTEL_SERVICE_NAME: 'itsm-worker-events',
+    });
   });
 });

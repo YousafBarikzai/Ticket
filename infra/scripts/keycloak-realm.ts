@@ -25,7 +25,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { hostFor, readCatalogue, type Catalogue } from './railway-deploy.js';
+import { hostsFor, readCatalogue } from './railway-deploy.js';
 
 export const PLACEHOLDER = '__DOMAIN__';
 
@@ -63,14 +63,23 @@ export function authHost(domain: string, environment: string): string {
   return environment === 'production' ? `auth.${domain}` : `auth.${environment}.${domain}`;
 }
 
-export function resolveRealm(realm: Realm, catalogue: Catalogue, domain: string, environment: string): Realm {
+/**
+ * The realm, with every redirect URI pointed at a host that actually exists.
+ *
+ * Takes the hostnames rather than a domain to derive them from, because with
+ * no domain of our own there is nothing to derive: Railway names each service
+ * and the deploy discovers those names as it runs. One function for both
+ * cases, because a second one would be a second chance for the realm and the
+ * deploy to disagree — and they disagree silently, in a redirect nobody tests
+ * until somebody cannot sign in.
+ */
+export function resolveRealm(realm: Realm, hosts: ReadonlyMap<string, string>, authUrl: string): Realm {
   const hostOf = (serviceName: string): string => {
-    const service = catalogue.services.find((one) => one.name === serviceName);
-    const host = service ? hostFor(service, domain, environment) : null;
-    // Thrown rather than defaulted: a client whose application is not in the
-    // catalogue would otherwise get a plausible hostname for an application
-    // that is not deployed, and sign-in would fail at the redirect.
-    if (!host) throw new Error(`the catalogue gives no public host for ${serviceName}, which client config needs`);
+    const host = hosts.get(serviceName);
+    // Thrown rather than defaulted: a client whose application has no host
+    // would otherwise get a plausible hostname for an application that is not
+    // deployed, and sign-in would fail at the redirect.
+    if (!host) throw new Error(`no public host for ${serviceName}, which client config needs`);
     return host;
   };
 
@@ -87,7 +96,7 @@ export function resolveRealm(realm: Realm, catalogue: Catalogue, domain: string,
 
   return {
     ...realm,
-    attributes: { ...realm.attributes, frontendUrl: `https://${authHost(domain, environment)}` },
+    attributes: { ...realm.attributes, frontendUrl: authUrl.replace(/\/$/, '') },
     clients,
   };
 }
@@ -182,11 +191,39 @@ async function main(): Promise<void> {
   const shouldApply = argv.includes('--apply');
   const domain = process.env.DEPLOY_DOMAIN;
   if (!environment || (!out && !shouldApply)) {
-    throw new Error('usage: keycloak-realm.ts --environment <name> [--out <file>] [--apply]');
+    throw new Error('usage: keycloak-realm.ts --environment <name> [--hosts <json>] [--out <file>] [--apply]');
   }
-  if (!domain) throw new Error('DEPLOY_DOMAIN is not set; every hostname in the realm is derived from it');
 
-  const resolved = resolveRealm(readRealm(), readCatalogue(), domain, environment);
+  /*
+   * Two ways to know where the applications live, and only two.
+   *
+   * With a domain they are derived, as they always were. Without one they are
+   * whatever Railway named them, which only the deploy knows — so it prints
+   * them and passes them here. `--hosts` rather than an environment variable
+   * because it is data produced by the step before, not configuration.
+   */
+  const supplied = value('--hosts');
+  const hosts = supplied
+    ? new Map<string, string>(
+        Object.entries(JSON.parse(supplied) as Record<string, string>).map(([name, url]) => [
+          name,
+          url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+        ]),
+      )
+    : domain
+      ? hostsFor(readCatalogue(), domain, environment)
+      : null;
+  if (!hosts) {
+    throw new Error('neither DEPLOY_DOMAIN nor --hosts is set; the realm has no hostnames to point its redirect URIs at');
+  }
+
+  // Keycloak's own public URL. Derived alongside the rest when there is a
+  // domain; read from KEYCLOAK_URL when Railway named it, since Keycloak is a
+  // managed service this pipeline does not deploy and cannot discover.
+  const authUrl = domain ? `https://${authHost(domain, environment)}` : process.env.KEYCLOAK_URL;
+  if (!authUrl) throw new Error('KEYCLOAK_URL is not set, and without DEPLOY_DOMAIN there is nothing to derive it from');
+
+  const resolved = resolveRealm(readRealm(), hosts, authUrl);
   const left = unresolvedPlaceholders(resolved);
   // A realm applied with `__DOMAIN__` still in it is a realm whose redirect
   // URIs match nothing, so this refuses rather than warns.

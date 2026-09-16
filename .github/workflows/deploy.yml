@@ -3,12 +3,19 @@ name: Deploy
 # Stages 4 to 6 of the pipeline in docs/architecture/16 §3. Stages 1 to 3 —
 # validate, build, integration — are ci.yml and are what this waits on.
 #
-# Every job that touches Railway is guarded by `vars.DEPLOY_DOMAIN` and
-# `secrets.RAILWAY_TOKEN` being present. Not a placeholder: until the project
-# variables exist, this workflow builds and scans the images and then skips the
-# deploy, so the pipeline is reviewable, its image builds are exercised on every
-# push, and nothing here is red for the want of a credential. The day the token
-# is set, the same jobs start deploying with no edit to this file.
+# Every job that touches Railway is guarded by `secrets.RAILWAY_TOKEN` being
+# present. Not a placeholder: until it exists, this workflow builds and scans
+# the images and then skips the deploy, so the pipeline is reviewable, its image
+# builds are exercised on every push, and nothing here is red for the want of a
+# credential. The day the token is set, the same jobs start deploying with no
+# edit to this file.
+#
+# `vars.DEPLOY_DOMAIN` is optional and no longer part of the gate. Set it and
+# every hostname is derived from it and claimed as a custom domain; leave it
+# unset and Railway names each public service itself. The second is what a
+# deployment with no domain of its own gets, and it is the deploy that
+# discovers those names — which is why the URLs below come from its outputs
+# rather than from an expression in this file.
 
 on:
   pull_request:
@@ -144,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: preview-${{ github.event.number }}
-      url: https://help.pr-${{ github.event.number }}.${{ vars.DEPLOY_DOMAIN }}
+      url: ${{ steps.deploy.outputs.portal-url }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -156,7 +163,12 @@ jobs:
 
       - name: Is there anywhere to deploy to?
         id: gate
-        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Say what would have happened
         if: steps.gate.outputs.ready != 'true'
@@ -165,25 +177,37 @@ jobs:
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
             --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }} --dry-run
 
+      - name: Deploy
+        id: deploy
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }} --ensure-services
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+
       # Applied, not written to a file for somebody to apply: doc 16 §4 says
       # realm changes are code applied by a job on deploy, and a realm file that
       # nothing applies is a redirect URI nobody updated.
+      #
+      # After the deploy, not before it. The realm's redirect URIs are made of
+      # the applications' hostnames, and without a domain of our own those do
+      # not exist until the deploy has asked Railway to name them.
+      - name: Say the realm was skipped
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
+        run: |
+          echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
+          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
+
       - name: Apply the realm for this preview
-        if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment pr-${{ github.event.number }} --apply
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm == 'true'
+        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment pr-${{ github.event.number }} --hosts '${{ steps.deploy.outputs.hosts }}' --apply
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
           KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
-
-      - name: Deploy
-        if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }}
-        env:
-          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
       # The walking skeleton is what this repository already has that answers
       # "is it actually working": it drives a real ticket through a real API.
@@ -194,7 +218,7 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         run: pnpm exec tsx infra/scripts/walking-skeleton.ts
         env:
-          API_BASE_URL: https://api.pr-${{ github.event.number }}.${{ vars.DEPLOY_DOMAIN }}
+          API_BASE_URL: ${{ steps.deploy.outputs.api-url }}
 
   # A preview environment that outlives its pull request is a database nobody
   # is watching, on a bill somebody is paying.
@@ -220,7 +244,12 @@ jobs:
       # parse either.
       - name: Is there anything to tear down?
         id: gate
-        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Delete the environment
         if: steps.gate.outputs.ready == 'true'
@@ -239,7 +268,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: https://desk.staging.${{ vars.DEPLOY_DOMAIN }}
+      url: ${{ steps.deploy.outputs.workbench-url }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -251,7 +280,12 @@ jobs:
 
       - name: Is there anywhere to deploy to?
         id: gate
-        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Say what would have happened
         if: steps.gate.outputs.ready != 'true'
@@ -260,28 +294,41 @@ jobs:
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
             --environment staging --tag ${{ needs.images.outputs.tag }} --dry-run
 
-      - name: Apply the realm for staging
+      - name: Deploy
+        id: deploy
         if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment staging --apply
+        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment staging --tag ${{ needs.images.outputs.tag }} --ensure-services
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+
+      # After the deploy, not before it. The realm's redirect URIs are made of
+      # the applications' hostnames, and without a domain of our own those do
+      # not exist until the deploy has asked Railway to name them. Running this
+      # first would have written redirect URIs for hosts that did not exist yet
+      # — which fails as "invalid redirect_uri" at sign-in, a long way from here.
+      - name: Say the realm was skipped
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
+        run: |
+          echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
+          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
+
+      - name: Apply the realm for staging
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm == 'true'
+        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment staging --hosts '${{ steps.deploy.outputs.hosts }}' --apply
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
           KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
 
-      - name: Deploy
-        if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment staging --tag ${{ needs.images.outputs.tag }}
-        env:
-          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-
       - name: Smoke test
         if: steps.gate.outputs.ready == 'true'
         run: pnpm exec tsx infra/scripts/walking-skeleton.ts
         env:
-          API_BASE_URL: https://api.staging.${{ vars.DEPLOY_DOMAIN }}
+          API_BASE_URL: ${{ steps.deploy.outputs.api-url }}
 
   # ---------------------------------------------------------------------------
   # Stage 6 · Release (tag vX.Y.Z), behind a manual approval
@@ -296,7 +343,7 @@ jobs:
     # workflow in the pull request that wants to deploy.
     environment:
       name: production
-      url: https://desk.${{ vars.DEPLOY_DOMAIN }}
+      url: ${{ steps.deploy.outputs.workbench-url }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -308,7 +355,12 @@ jobs:
 
       - name: Is there anywhere to deploy to?
         id: gate
-        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Say what would have happened
         if: steps.gate.outputs.ready != 'true'
@@ -317,16 +369,8 @@ jobs:
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
             --environment production --tag ${{ github.event.release.tag_name }} --dry-run
 
-      - name: Apply the realm for production
-        if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment production --apply
-        env:
-          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
-          KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
-          KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
-          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
-
       - name: Deploy
+        id: deploy
         if: steps.gate.outputs.ready == 'true'
         run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment production --tag ${{ github.event.release.tag_name }}
         env:
@@ -334,8 +378,29 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
+      # After the deploy, not before it. The realm's redirect URIs are made of
+      # the applications' hostnames, and without a domain of our own those do
+      # not exist until the deploy has asked Railway to name them. Running this
+      # first would have written redirect URIs for hosts that did not exist yet
+      # — which fails as "invalid redirect_uri" at sign-in, a long way from here.
+      - name: Say the realm was skipped
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
+        run: |
+          echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
+          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
+
+      - name: Apply the realm for production
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm == 'true'
+        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment production --hosts '${{ steps.deploy.outputs.hosts }}' --apply
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
+          KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+
       - name: Post-deploy smoke test
         if: steps.gate.outputs.ready == 'true'
         run: pnpm exec tsx infra/scripts/walking-skeleton.ts
         env:
-          API_BASE_URL: https://api.${{ vars.DEPLOY_DOMAIN }}
+          API_BASE_URL: ${{ steps.deploy.outputs.api-url }}
