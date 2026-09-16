@@ -37,6 +37,7 @@ import { discoveryRoutes } from './discovery.js';
 import { analyticsRoutes } from './analytics.js';
 import { feedbackRoutes } from './feedback.js';
 import { timeRoutes } from './time.js';
+import { statusAdminRoutes, statusPublicRoutes } from './status.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -63,6 +64,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await analyticsRoutes(v1);
       await feedbackRoutes(v1);
       await timeRoutes(v1);
+      await statusAdminRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },
@@ -70,6 +72,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.register(platformRoutes, { prefix: '/api/platform/v1' });
+
+  // The public status page lives at the root: its URL is printed on things,
+  // and it is the one page here that a stranger is meant to open.
+  await statusPublicRoutes(app);
 }
 
 async function identityRoutes(app: FastifyInstance): Promise<void> {

@@ -47,6 +47,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0032](0032-a-metric-is-a-structured-query.md) | A metric is a structured query, not an expression | Accepted | MOD-12 |
 | [0033](0033-a-survey-is-a-form-with-a-score.md) | A survey is a form with a score, asked once, where the person already is | Accepted | MOD-18 |
 | [0034](0034-three-kinds-of-time-and-one-of-them-is-free.md) | Three kinds of time, and one of them is free | Accepted | MOD-19 |
+| [0035](0035-the-status-page-is-a-statement-not-a-view.md) | The status page is a statement, not a view | Accepted | MOD-23 |
 
 ## Template
 

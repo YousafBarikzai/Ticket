@@ -233,6 +233,16 @@ export function registeredTransports(): string[] {
   return [...transports.keys()];
 }
 
+/**
+ * The transport for a channel, for a module whose recipients are addresses
+ * rather than users — a status-page subscriber has no account and no
+ * preferences, so the notification row and its rules do not apply, but the
+ * same SMTP configuration should.
+ */
+export function transportFor(channel: string): DeliveryTransport | undefined {
+  return transports.get(channel);
+}
+
 /** Delivers one notification on one channel, recording every attempt. */
 export async function dispatch(
   ctx: TenantContext,

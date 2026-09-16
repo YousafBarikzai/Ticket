@@ -1,0 +1,158 @@
+/// MOD-23 Status page (PH-4).
+///
+/// The public face of the service desk: what is up, what is not, what is
+/// being worked on and when the next maintenance is. Fed by major incidents
+/// and scheduled changes so the page says what the desk knows without
+/// anybody remembering to update it, and editable by hand for everything
+/// else.
+///
+/// Its tables are the desk's own rather than views over MOD-08: what the
+/// public is told is a decision, not a projection. A major incident that is
+/// not customer-facing never appears; an internal update never leaks; and the
+/// wording on the page can be softened without touching the incident record.
+
+model StatusPage {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  description String?
+  isPublic    Boolean  @default(true) @map("is_public")
+  timeZone    String   @default("Europe/London") @map("time_zone")
+  supportUrl  String?  @map("support_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  components  StatusComponent[]
+  incidents   StatusIncident[]
+  maintenance MaintenanceWindow[]
+  subscribers StatusSubscriber[]
+
+  /// One page per tenant. Its URL is /status/<tenant slug>: the tenant
+  /// directory is the only thing a stranger may look up before a tenant is
+  /// known, so the page borrows its name rather than keeping a second one
+  /// (ADR-0035).
+  @@unique([tenantId])
+  @@map("status_page")
+}
+
+/// A thing the public can see the health of. Linked to a catalogue service
+/// where one exists, which is how a major incident against that service finds
+/// the component to mark.
+model StatusComponent {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  pageId      String   @map("page_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  groupName   String?  @map("group_name")
+  order       Int      @default(0)
+  serviceId   String?  @map("service_id") @db.Uuid
+  /// operational | degraded | partial_outage | major_outage | maintenance
+  status      String   @default("operational")
+  isVisible   Boolean  @default(true) @map("is_visible")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page        StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, serviceId])
+  @@map("status_component")
+}
+
+model StatusIncident {
+  id              String    @id @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  pageId          String    @map("page_id") @db.Uuid
+  /// The MOD-08 record it mirrors, when it mirrors one.
+  majorIncidentId String?   @map("major_incident_id") @db.Uuid
+  title           String
+  /// none | minor | major | critical
+  impact          String    @default("minor")
+  /// investigating | identified | monitoring | resolved
+  status          String    @default("investigating")
+  componentIds    String[]  @default([]) @map("component_ids") @db.Uuid
+  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz(6)
+  isVisible       Boolean   @default(true) @map("is_visible")
+  createdBy       String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page            StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  updates         StatusUpdate[]
+
+  @@index([tenantId, pageId, status, startedAt(sort: Desc)])
+  @@index([tenantId, majorIncidentId])
+  @@map("status_incident")
+}
+
+/// One line on an incident's public timeline. Only what was meant for the
+/// public: a MOD-08 update whose audience is `internal` or `stakeholders`
+/// never becomes one of these.
+model StatusUpdate {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  incidentId  String   @map("incident_id") @db.Uuid
+  status      String
+  body        String
+  /// major_incident | manual
+  source      String   @default("manual")
+  /// The MOD-08 timeline entry this came from, so a redelivery is a no-op.
+  sourceRef   String?  @map("source_ref") @db.Uuid
+  postedAt    DateTime @default(now()) @map("posted_at") @db.Timestamptz(6)
+  postedBy    String?  @map("posted_by") @db.Uuid
+  /// Subscribers were told; set by the job that told them.
+  notifiedAt  DateTime? @map("notified_at") @db.Timestamptz(6)
+
+  incident    StatusIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceRef])
+  @@index([tenantId, incidentId, postedAt])
+  @@map("status_update")
+}
+
+model MaintenanceWindow {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  pageId       String    @map("page_id") @db.Uuid
+  /// The MOD-08 change it announces, when it announces one.
+  changeId     String?   @map("change_id") @db.Uuid
+  title        String
+  body         String?
+  componentIds String[]  @default([]) @map("component_ids") @db.Uuid
+  startsAt     DateTime  @map("starts_at") @db.Timestamptz(6)
+  endsAt       DateTime  @map("ends_at") @db.Timestamptz(6)
+  /// scheduled | in_progress | completed | cancelled
+  status       String    @default("scheduled")
+  createdBy    String?   @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  notifiedAt   DateTime? @map("notified_at") @db.Timestamptz(6)
+
+  page         StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, pageId, status, startsAt])
+  @@index([tenantId, changeId])
+  @@map("maintenance_window")
+}
+
+/// Somebody who asked to be told. An address, not a user: the public has no
+/// account here. Confirmed by a signed link before anything is sent, so a
+/// stranger cannot subscribe somebody else's inbox to a stream of outages.
+model StatusSubscriber {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  pageId         String    @map("page_id") @db.Uuid
+  email          String
+  confirmedAt    DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  unsubscribedAt DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  page           StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, pageId, confirmedAt])
+  @@map("status_subscriber")
+}

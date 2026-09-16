@@ -258,6 +258,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Sets the rates and the budgets: the owner is who answers for the cost.
       { key: 'time.read', scope: 'any' },
       { key: 'time.manage', scope: 'any' },
+      // Speaks for the service in public: decides what the page says about it.
+      { key: 'statuspage.read', scope: 'any' },
+      { key: 'statuspage.manage', scope: 'any' },
     ],
   },
   {
@@ -377,6 +380,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'time.log', scope: 'any' },
       { key: 'time.read', scope: 'any' },
       { key: 'time.manage', scope: 'any' },
+      { key: 'statuspage.read', scope: 'any' },
+      { key: 'statuspage.manage', scope: 'any' },
     ],
   },
 ];
