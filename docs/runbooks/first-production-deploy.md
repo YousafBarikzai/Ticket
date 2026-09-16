@@ -173,14 +173,14 @@ Variables):
 
 | Name | Value |
 |---|---|
-| `DEPLOY_DOMAIN` | your domain, e.g. `example.com`. Every hostname is derived from it |
-| `KEYCLOAK_URL` | `https://auth.<your-domain>` |
+| `DEPLOY_DOMAIN` | **optional.** Your domain, e.g. `example.com`. Set it and every hostname is derived from it and claimed as a custom domain. Leave it unset and Railway names each public service itself |
+| `KEYCLOAK_URL` | Keycloak's public URL. With a domain, `https://auth.<your-domain>`; without one, whatever Railway generated for the Keycloak service — read it off its Networking settings |
 
 **Repository secrets:**
 
 | Name | Value |
 |---|---|
-| `RAILWAY_TOKEN` | a Railway account or team token |
+| `RAILWAY_TOKEN` | a Railway account or team token. **This is the gate** — until it exists, every deploy job prints its plan and exits green |
 | `RAILWAY_PROJECT_ID` | from step 1 |
 | `KEYCLOAK_ADMIN_CLIENT_ID` | a Keycloak service account that can manage the realm |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | its secret |
@@ -190,15 +190,19 @@ Environments → production → Required reviewers). This is what makes the
 production approval real: a step in a workflow can be edited by the pull
 request that wants to deploy; an environment rule cannot.
 
-Until `DEPLOY_DOMAIN` and `RAILWAY_TOKEN` are both set, every deploy job prints
-the plan it would have run and exits green. That is why the pipeline has been
-passing while nothing was deployed.
+Until `RAILWAY_TOKEN` is set, every deploy job prints the plan it would have
+run and exits green. That is why the pipeline has been passing while nothing
+was deployed.
 
 ---
 
-## 7. DNS
+## 7. DNS — only if you set `DEPLOY_DOMAIN`
 
-CNAMEs at your DNS provider, pointed at the Railway domains the deploy creates:
+**Skip this entirely if you are using Railway's own hostnames.** Railway issues
+and renews the certificate; there is nothing to point anywhere.
+
+With a domain, add CNAMEs at your DNS provider pointed at the Railway domains
+the deploy creates:
 
 | Host | Service |
 |---|---|
@@ -224,16 +228,12 @@ DEPLOY_DOMAIN=<your-domain> pnpm exec tsx infra/scripts/railway-deploy.ts \
 It prints every service, the image it will run, the domain it will claim and
 every variable it will set. Read it. It is the only preview you get.
 
-Then, for the first run only, add `--ensure-services` so the ten services are
-created rather than hand-made:
+You do not have to run the real thing yourself. The workflow passes
+`--ensure-services`, so the ten services are created with the names the
+catalogue gives them — you never open a create-service screen, which is where
+every wrong service in this project has come from.
 
-```
-DEPLOY_DOMAIN=… RAILWAY_TOKEN=… RAILWAY_PROJECT_ID=… \
-pnpm exec tsx infra/scripts/railway-deploy.ts \
-  --environment production --tag sha-<commit> --ensure-services
-```
-
-After that, deploys are automatic:
+Deploys are automatic:
 
 - **merge to `main`** → staging
 - **publish a release** → production, behind the approval from step 6
@@ -266,6 +266,35 @@ refuses to serve — so against production it will report a sign-in failure. Tha
 is the guard working. Run it against a preview environment instead.
 
 ---
+
+## Without a domain of your own
+
+Everything works; two things differ.
+
+**Hostnames are Railway's.** They look like
+`itsm-portal-production-91bc.up.railway.app` and nobody chooses them. The
+deploy asks Railway to name each public service, reads back what it was given,
+and sets `PORTAL_ORIGIN`, `WORKBENCH_ORIGIN`, `ADMIN_ORIGIN`, `PUBLIC_BASE_URL`
+and `API_BASE_URL` from that. It reuses an existing hostname rather than asking
+for a fresh one, because a name that changed under a running environment would
+break the origin check and every redirect URI registered against the old one.
+
+**Keycloak is not deployed by this pipeline**, so the deploy cannot discover its
+hostname the way it discovers the others. Generate a domain for the Keycloak
+service in Railway, then set, by hand:
+
+- `KEYCLOAK_URL` — the GitHub repository variable, to that hostname
+- `KC_HOSTNAME` on the Keycloak service — the same value, scheme included
+- `OIDC_ISSUER` on the API and the three web applications —
+  `https://<keycloak-host>/realms/itsm`
+
+The realm's redirect URIs are *not* on that list: the deploy applies those
+after it knows the application hostnames, which is why the realm step runs
+after the deploy rather than before it.
+
+You can move to a real domain later without redeploying anything — set
+`DEPLOY_DOMAIN`, add the DNS records, and the next deploy claims the custom
+domains and rewrites the origins.
 
 ## Known sharp edges
 

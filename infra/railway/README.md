@@ -72,14 +72,21 @@ that happen once per environment, and they are deliberately not automated: each
 one either creates a credential or names a domain, and a workflow that could do
 them is a workflow that could do them to the wrong environment.
 
-1. **The GitHub settings the pipeline is gated on.** A repository variable
-   `DEPLOY_DOMAIN` (every hostname is derived from it: `help.`, `desk.`,
-   `admin.`, `api.`, `auth.`, and `<subdomain>.<environment>.<domain>` for
-   anything that is not production) and a `KEYCLOAK_URL` variable; secrets
-   `RAILWAY_TOKEN`, `RAILWAY_PROJECT_ID`, `KEYCLOAK_ADMIN_CLIENT_ID` and
-   `KEYCLOAK_ADMIN_CLIENT_SECRET`. Until `DEPLOY_DOMAIN` and `RAILWAY_TOKEN`
-   are both set, every deploy job prints the plan it would have run and exits
-   green.
+1. **The GitHub settings the pipeline is gated on.** Secrets `RAILWAY_TOKEN`,
+   `RAILWAY_PROJECT_ID`, `KEYCLOAK_ADMIN_CLIENT_ID` and
+   `KEYCLOAK_ADMIN_CLIENT_SECRET`, and a `KEYCLOAK_URL` variable. Until
+   `RAILWAY_TOKEN` is set, every deploy job prints the plan it would have run
+   and exits green.
+
+   `DEPLOY_DOMAIN` is **optional**. Set it and every hostname is derived from
+   it — `help.`, `desk.`, `admin.`, `api.`, `auth.`, and
+   `<subdomain>.<environment>.<domain>` outside production — and claimed as a
+   custom domain. Leave it unset and Railway names each public service itself;
+   the deploy asks for the name, reads back what it was given, and builds the
+   origin variables from that. It reuses a hostname that already exists rather
+   than asking for a fresh one, because a name that changed under a running
+   environment would break the origin check and every redirect URI registered
+   against the old one.
 2. **A required reviewer on the `production` GitHub environment.** This is what
    makes stage 6's manual approval real: a step in the workflow could be edited
    by the pull request that wants to deploy, and an environment rule cannot.

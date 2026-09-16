@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readCatalogue } from '../railway-deploy.js';
+import { hostsFor, readCatalogue } from '../railway-deploy.js';
 import { PLACEHOLDER, authHost, partialImportBody, readRealm, realmSettings, resolveRealm, unresolvedPlaceholders, type Realm } from '../keycloak-realm.js';
 
 /**
@@ -67,7 +67,7 @@ describe('the realm as committed', () => {
 });
 
 describe('resolving it for an environment', () => {
-  const resolved = resolveRealm(realm, catalogue, 'example.com', 'staging');
+  const resolved = resolveRealm(realm, hostsFor(catalogue, 'example.com', 'staging'), 'https://auth.staging.example.com');
 
   it('leaves no placeholder anywhere', () => {
     expect(unresolvedPlaceholders(resolved)).toEqual([]);
@@ -100,7 +100,7 @@ describe('resolving it for an environment', () => {
   });
 
   it('puts production on the bare domain', () => {
-    const production = resolveRealm(realm, catalogue, 'example.com', 'production');
+    const production = resolveRealm(realm, hostsFor(catalogue, 'example.com', 'production'), 'https://auth.example.com');
     expect(production.clients.find((client) => client.clientId === 'itsm-admin')?.redirectUris?.[0]).toBe(
       'https://admin.example.com/api/session/callback',
     );
@@ -116,12 +116,12 @@ describe('resolving it for an environment', () => {
   it('refuses a client whose application is not in the catalogue', () => {
     const stray: Realm = { ...realm, clients: [...realm.clients, { clientId: 'itsm-portal', redirectUris: [] }] };
     const withoutPortal = { ...catalogue, services: catalogue.services.filter((one) => one.name !== 'portal') };
-    expect(() => resolveRealm(stray, withoutPortal, 'example.com', 'staging')).toThrow(/no public host for portal/);
+    expect(() => resolveRealm(stray, hostsFor(withoutPortal, 'example.com', 'staging'), 'https://auth.staging.example.com')).toThrow(/no public host for portal/);
   });
 });
 
 describe('what Keycloak is actually sent', () => {
-  const resolved = resolveRealm(realm, catalogue, 'example.com', 'staging');
+  const resolved = resolveRealm(realm, hostsFor(catalogue, 'example.com', 'staging'), 'https://auth.staging.example.com');
 
   it('overwrites on a second deploy, rather than reporting success and changing nothing', () => {
     // Keycloak's default is FAIL, which makes every deploy after the first a
