@@ -45,6 +45,8 @@ export interface ServiceDefinition {
 
 export interface Catalogue {
   readonly image: { readonly registry: string; readonly repository: string };
+  /** Railway's name for the region every service instance runs in. */
+  readonly region?: string;
   readonly services: readonly ServiceDefinition[];
 }
 
@@ -134,6 +136,51 @@ export function originsFor(catalogue: Catalogue, domain: string, environment: st
   return origins;
 }
 
+/**
+ * Every variable this deploy sets on one service.
+ *
+ * `originsFor` has computed these since the pipeline was written and the deploy
+ * printed them in its dry run and then sent none of them. That is not a
+ * cosmetic omission. `WORKER_QUEUES` is the only thing distinguishing the four
+ * worker services from one another, and its default is `*` — so without it
+ * every worker consumes every family, and the split that exists to stop a burst
+ * of indexing starving the outbox (doc 03 §4) would have been four identical
+ * services with different names. `PORTAL_ORIGIN` and its siblings are what the
+ * BFF checks a request's origin against and what it builds the OIDC redirect
+ * URI from; absent, sign-in returns to the wrong host.
+ *
+ * What is deliberately *not* here: `DATABASE_URL`, `REDIS_URL`, `OIDC_ISSUER`,
+ * `SMTP_URL`, every password and every key. Those are set once per environment
+ * in Railway, by a person, and this deploy must never be able to overwrite one
+ * — which is why the upsert below sets these keys and leaves the rest alone
+ * rather than replacing the collection.
+ */
+export function variablesFor(
+  catalogue: Catalogue,
+  service: ServiceDefinition,
+  domain: string,
+  environment: string,
+): Record<string, string> {
+  const origins = originsFor(catalogue, domain, environment);
+  const own: Record<string, string> = { portal: 'PORTAL_ORIGIN', workbench: 'WORKBENCH_ORIGIN', admin: 'ADMIN_ORIGIN' };
+
+  const variables: Record<string, string> = { ...service.variables };
+
+  // Its own public URL, under whichever name that application reads.
+  const mine = own[service.name];
+  if (mine && origins[mine]) variables[mine] = origins[mine]!;
+  if (service.name === 'api' && origins.PUBLIC_BASE_URL) variables.PUBLIC_BASE_URL = origins.PUBLIC_BASE_URL;
+
+  // Where the three web applications find the API. Server components call it
+  // directly and the proxy forwards to it, so it is the same value for all
+  // three and it is the public hostname rather than an internal one: the
+  // browser never talks to it, but the OIDC redirect and the origin check are
+  // both expressed in public terms.
+  if (mine && origins.PUBLIC_BASE_URL) variables.API_BASE_URL = origins.PUBLIC_BASE_URL;
+
+  return variables;
+}
+
 interface GraphQlError {
   message: string;
 }
@@ -172,6 +219,30 @@ const REDEPLOY = `
     serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId)
   }`;
 
+/**
+ * `replace: false` is the whole safety of this call.
+ *
+ * Railway's upsert will delete every variable not named in the payload when
+ * asked to replace, and the variables not named here are the ones that matter
+ * most: the four database credentials, the Redis URL, the Keycloak issuer, the
+ * SMTP password. A deploy that could remove those is a deploy that can empty
+ * an environment on a typo.
+ */
+const SET_VARIABLES = `
+  mutation SetVariables($input: VariableCollectionUpsertInput!) {
+    variableCollectionUpsert(input: $input)
+  }`;
+
+const CREATE_DOMAIN = `
+  mutation CreateDomain($input: CustomDomainCreateInput!) {
+    customDomainCreate(input: $input) { id domain }
+  }`;
+
+const CREATE_SERVICE = `
+  mutation CreateService($input: ServiceCreateInput!) {
+    serviceCreate(input: $input) { id }
+  }`;
+
 interface ProjectShape {
   project: {
     environments: { edges: { node: { id: string; name: string } }[] };
@@ -190,6 +261,8 @@ interface Options {
   environment: string;
   tag: string;
   dryRun: boolean;
+  /** Creates services the catalogue names and the project lacks, instead of refusing. */
+  ensureServices: boolean;
 }
 
 function parseArguments(argv: readonly string[]): Options {
@@ -199,8 +272,39 @@ function parseArguments(argv: readonly string[]): Options {
   };
   const environment = value('--environment');
   const tag = value('--tag');
-  if (!environment || !tag) throw new Error('usage: railway-deploy.ts --environment <name> --tag <image-tag> [--dry-run]');
-  return { environment, tag, dryRun: argv.includes('--dry-run') };
+  if (!environment || !tag) {
+    throw new Error('usage: railway-deploy.ts --environment <name> --tag <image-tag> [--dry-run] [--ensure-services]');
+  }
+  return {
+    environment,
+    tag,
+    dryRun: argv.includes('--dry-run'),
+    ensureServices: argv.includes('--ensure-services'),
+  };
+}
+
+/**
+ * Creates a domain, and treats one that already exists as success.
+ *
+ * Every deploy after the first would otherwise fail on a domain it created
+ * itself. Matched on the message rather than a code because Railway does not
+ * give this one a code — so an unrecognised failure still throws, which is the
+ * half of this worth keeping.
+ */
+async function ensureDomain(
+  input: { projectId: string; environmentId: string; serviceId: string; domain: string; targetPort?: number },
+  token: string,
+): Promise<'created' | 'existed'> {
+  try {
+    await callApi(CREATE_DOMAIN, { input }, token);
+    return 'created';
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    if (message.includes('already exists') || message.includes('already in use') || message.includes('duplicate')) {
+      return 'existed';
+    }
+    throw error;
+  }
 }
 
 async function main(): Promise<void> {
@@ -209,19 +313,30 @@ async function main(): Promise<void> {
   const domain = process.env.DEPLOY_DOMAIN;
   if (!domain) throw new Error('DEPLOY_DOMAIN is not set; every public hostname is derived from it');
 
-  const origins = originsFor(catalogue, domain, options.environment);
   const phases = phasesOf(catalogue, options.environment);
 
   if (options.dryRun) {
     // A dry run is what makes this reviewable before an account exists. It
-    // prints the plan and touches nothing.
+    // prints the plan and touches nothing — and it prints the *whole* plan,
+    // which it did not: it used to list the origins it had computed under a
+    // heading, while the deploy below sent none of them. A dry run that shows
+    // more than the real thing does is worse than no dry run, because it is
+    // read as evidence.
     console.log(`plan for ${options.environment} at ${options.tag}`);
+    console.log(`  region: ${catalogue.region ?? '(Railway default)'}`);
     for (const [index, phase] of phases.entries()) {
-      console.log(`  phase ${index}: ${phase.map((s) => s.name).join(', ')}`);
-      for (const service of phase) console.log(`    ${service.name} <- ${imageFor(catalogue, service, options.tag)}`);
+      console.log(`  phase ${index}: ${phase.map((one) => one.name).join(', ')}`);
+      for (const service of phase) {
+        console.log(`    ${service.name} <- ${imageFor(catalogue, service, options.tag)}`);
+        const host = hostFor(service, domain, options.environment);
+        if (host) console.log(`      domain https://${host}${service.port ? ` -> :${service.port}` : ''}`);
+        for (const [name, value] of Object.entries(variablesFor(catalogue, service, domain, options.environment))) {
+          console.log(`      ${name}=${value}`);
+        }
+      }
     }
-    console.log('  origins:');
-    for (const [name, url] of Object.entries(origins)) console.log(`    ${name}=${url}`);
+    console.log('  set once per environment by a person, never by this script:');
+    console.log('    DATABASE_URL, DATABASE_URL_APP, DATABASE_URL_PLATFORM, REDIS_URL, OIDC_ISSUER, SMTP_URL, MEILISEARCH_*');
     return;
   }
 
@@ -235,14 +350,29 @@ async function main(): Promise<void> {
   if (!environmentId) throw new Error(`no Railway environment named ${options.environment} in this project`);
 
   for (const [index, phase] of phases.entries()) {
-    console.log(`phase ${index}: ${phase.map((s) => s.name).join(', ')}`);
+    console.log(`phase ${index}: ${phase.map((one) => one.name).join(', ')}`);
     await Promise.all(
       phase.map(async (service) => {
-        const serviceId = services.get(service.name);
-        // Named rather than skipped: a service missing from the project is a
-        // deploy that silently did less than it said it did, which is how a
-        // worker family stays on last month's code for a fortnight.
-        if (!serviceId) throw new Error(`no Railway service named ${service.name} in this project`);
+        let serviceId = services.get(service.name);
+
+        if (!serviceId) {
+          // Named rather than skipped: a service missing from the project is a
+          // deploy that silently did less than it said it did, which is how a
+          // worker family stays on last month's code for a fortnight.
+          //
+          // `--ensure-services` creates it instead, and that is not the same
+          // concession: creating a service the catalogue names is doing what
+          // was asked, where skipping one is doing less. Ten services made by
+          // hand is ten chances to mistype a name the deploy then refuses.
+          if (!options.ensureServices) throw new Error(`no Railway service named ${service.name} in this project`);
+          const created = await callApi<{ serviceCreate: { id: string } }>(
+            CREATE_SERVICE,
+            { input: { projectId, name: service.name } },
+            token,
+          );
+          serviceId = created.serviceCreate.id;
+          console.log(`  ${service.name} created`);
+        }
 
         await callApi(
           SET_IMAGE,
@@ -252,12 +382,38 @@ async function main(): Promise<void> {
             input: {
               source: { image: imageFor(catalogue, service, options.tag) },
               numReplicas: service.replicas,
+              // Applied, not described. The README said EU West for a release
+              // while nothing sent a region at all, and the first project
+              // stood up under this pipeline landed in US West.
+              ...(catalogue.region ? { region: catalogue.region } : {}),
               ...(service.command ? { startCommand: service.command } : {}),
               ...(service.healthcheckPath ? { healthcheckPath: service.healthcheckPath } : {}),
             },
           },
           token,
         );
+
+        // Before the redeploy, so the instance that starts already has them.
+        // A worker that came up with WORKER_QUEUES unset would consume every
+        // family for as long as it took the next deploy to correct it.
+        const variables = variablesFor(catalogue, service, domain, options.environment);
+        if (Object.keys(variables).length > 0) {
+          await callApi(
+            SET_VARIABLES,
+            { input: { projectId, environmentId, serviceId, variables, replace: false } },
+            token,
+          );
+        }
+
+        const host = hostFor(service, domain, options.environment);
+        if (host) {
+          const outcome = await ensureDomain(
+            { projectId, environmentId, serviceId, domain: host, ...(service.port ? { targetPort: service.port } : {}) },
+            token,
+          );
+          console.log(`  ${service.name} at https://${host} (${outcome})`);
+        }
+
         await callApi(REDEPLOY, { serviceId, environmentId }, token);
         console.log(`  ${service.name} -> ${imageFor(catalogue, service, options.tag)}`);
       }),

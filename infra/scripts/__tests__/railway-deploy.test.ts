@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostFor, imageFor, originsFor, phasesOf, readCatalogue, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
+import { hostFor, imageFor, originsFor, phasesOf, readCatalogue, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
 import { isPreview } from '../railway-teardown.js';
 
 /**
@@ -160,6 +160,84 @@ describe('the image path is one a registry will accept', () => {
     for (const service of catalogue.services) {
       expect(imageFor(catalogue, service, 'sha-abc1234'), service.name).toMatch(reference);
       expect(imageFor(catalogue, service, 'v1.2.3'), service.name).toMatch(reference);
+    }
+  });
+});
+
+describe('what each service is actually given', () => {
+  const domain = 'example.com';
+
+  /*
+   * These exist because the deploy computed the origins, printed them in its
+   * dry run, and sent none of them. Every assertion below is a thing that
+   * would have been wrong in the first real environment and would have looked
+   * like something else: a queue that does not drain, a sign-in that returns
+   * to the wrong host, four workers that are secretly one.
+   */
+
+  it('gives each worker the one variable that makes it different from the others', () => {
+    const queues = ['worker-events', 'worker-engine', 'worker-comms', 'worker-data'].map(
+      (name) => variablesFor(catalogue, named(name), domain, 'production').WORKER_QUEUES,
+    );
+
+    // Unset, WORKER_QUEUES defaults to `*` and every worker consumes every
+    // family — so a burst of indexing starves outbox publishing and the SLA
+    // timers, which is the exact failure doc 03 §4 splits them to avoid.
+    expect(queues).toEqual(['events', 'engine', 'comms', 'data']);
+    expect(new Set(queues).size).toBe(4);
+  });
+
+  it('tells each web application its own origin and where the API is', () => {
+    for (const [name, variable] of [
+      ['portal', 'PORTAL_ORIGIN'],
+      ['workbench', 'WORKBENCH_ORIGIN'],
+      ['admin', 'ADMIN_ORIGIN'],
+    ] as const) {
+      const variables = variablesFor(catalogue, named(name), domain, 'production');
+      // The BFF checks a request's origin against this and builds the OIDC
+      // redirect URI from it. Wrong, and sign-in returns to the wrong host.
+      expect(variables[variable], name).toBe(`https://${named(name).subdomain}.${domain}`);
+      expect(variables.API_BASE_URL, name).toBe(`https://api.${domain}`);
+    }
+  });
+
+  it('gives the API its own public base URL and no origin it does not own', () => {
+    const variables = variablesFor(catalogue, named('api'), domain, 'production');
+    expect(variables.PUBLIC_BASE_URL).toBe(`https://api.${domain}`);
+    expect(variables.PORTAL_ORIGIN).toBeUndefined();
+  });
+
+  it('carries the environment into every hostname outside production', () => {
+    const variables = variablesFor(catalogue, named('portal'), domain, 'staging');
+    expect(variables.PORTAL_ORIGIN).toBe(`https://help.staging.${domain}`);
+    expect(variables.API_BASE_URL).toBe(`https://api.staging.${domain}`);
+  });
+
+  it('never sets a credential', () => {
+    // This deploy upserts without replacing, and these are the keys a person
+    // sets once per environment. If one ever appears here, the deploy has
+    // become something that can overwrite a database password.
+    const forbidden = /^(DATABASE_URL|DATABASE_URL_APP|DATABASE_URL_PLATFORM|DATABASE_URL_READONLY|REDIS_URL|OIDC_ISSUER|SMTP_URL|MEILISEARCH_API_KEY|ANTHROPIC_API_KEY|DEV_TOKEN_SECRET)$/;
+    for (const service of catalogue.services) {
+      for (const name of Object.keys(variablesFor(catalogue, service, domain, 'production'))) {
+        expect(name, `${service.name} sets ${name}`).not.toMatch(forbidden);
+      }
+    }
+  });
+
+  it('names a region, so the environment does not land wherever Railway defaults to', () => {
+    // Decision D-01 option A and the residency commitment in doc 19. This was
+    // a sentence in a README while nothing sent a region at all, and the first
+    // project stood up under this pipeline came up in US West.
+    expect(catalogue.region).toBe('europe-west4');
+  });
+
+  it('gives every public service a port to send its domain at', () => {
+    // A custom domain with no target port is a domain Railway cannot route.
+    for (const service of catalogue.services) {
+      if (!service.public) continue;
+      expect(service.subdomain, service.name).toBeTruthy();
+      expect(Number.isInteger(service.port), service.name).toBe(true);
     }
   });
 });
