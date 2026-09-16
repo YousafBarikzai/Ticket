@@ -6,7 +6,7 @@ import { aclForTicket, indexDocument, pushToExternal } from '../service/search-s
  * the projection is rebuilt from these same events, a lost index is a replay
  * rather than a data-recovery problem (ADR-0003).
  */
-const TICKET_EVENTS = ['ticket.created', 'ticket.updated', 'ticket.status.changed'] as const;
+const TICKET_EVENTS = ['ticket.created', 'ticket.imported', 'ticket.updated', 'ticket.status.changed'] as const;
 
 for (const eventType of TICKET_EVENTS) {
   defineHandler({

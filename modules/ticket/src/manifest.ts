@@ -31,6 +31,7 @@ export const ticketManifest: ModuleManifest = registerModule({
   events: {
     publishes: [
       'ticket.created',
+      'ticket.imported',
       'ticket.updated',
       'ticket.status.changed',
       'ticket.assigned',

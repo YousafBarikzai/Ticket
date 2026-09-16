@@ -115,6 +115,28 @@ export const ticketCreated = defineEvent({
   }),
 });
 
+/**
+ * A ticket brought in from another system by a migration job (MOD-24).
+ * Deliberately not `ticket.created`: nothing that reacts to a creation — SLA
+ * timers, rules, notifications, surveys — reacts to this, and the projections
+ * that describe the record (search, reporting) do (ADR-0036).
+ */
+export const ticketImported = defineEvent({
+  type: 'ticket.imported',
+  version: 1,
+  aggregateType: 'ticket',
+  webhook: false,
+  description: 'A ticket was brought in from another system by a migration job; projections refresh, reactions do not fire.',
+  payload: z.object({
+    ...ticketRef,
+    type: z.string(),
+    status: z.string(),
+    externalRef: z.string().nullable(),
+    commentsAdded: z.number().int(),
+    importJobId: id.nullable(),
+  }),
+});
+
 export const ticketUpdated = defineEvent({
   type: 'ticket.updated',
   version: 1,
@@ -1071,6 +1093,35 @@ export const budgetThresholdReached = defineEvent({
   }),
 });
 
+// ---- MOD-24 Migration (PH-4) ----------------------------------------------
+export const importJobFinished = defineEvent({
+  type: 'import.job.finished',
+  version: 1,
+  aggregateType: 'import_job',
+  webhook: true,
+  description: 'An import job finished, completed or failed, with what it did to every row.',
+  payload: z.object({
+    jobId: id,
+    name: z.string(),
+    /** users | teams | services | tickets | comments */
+    entity: z.string(),
+    /** csv | http_json | servicenow | jira | freshservice */
+    source: z.string(),
+    /** dry_run | commit */
+    mode: z.string(),
+    /** completed | failed */
+    status: z.string(),
+    seen: z.number().int(),
+    created: z.number().int(),
+    updated: z.number().int(),
+    unchanged: z.number().int(),
+    failed: z.number().int(),
+    error: z.string().nullable(),
+    /** Whoever started it, so MOD-11 can tell them. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
 // ---- MOD-23 Status page (PH-4) --------------------------------------------
 export const statusIncidentUpdated = defineEvent({
   type: 'status.incident.updated',
@@ -1117,7 +1168,7 @@ export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
   authLoginSucceeded, authLoginFailed, sessionRevoked,
-  ticketCreated, ticketUpdated, ticketStatusChanged, ticketAssigned, ticketCommentAdded,
+  ticketCreated, ticketImported, ticketUpdated, ticketStatusChanged, ticketAssigned, ticketCommentAdded,
   ticketAttachmentAdded, ticketAttachmentScanned, ticketTaskCreated, ticketTaskCompleted,
   ticketLinked, ticketMerged,
   slaTimerStarted, slaTimerWarning, slaTimerBreached, slaTimerPaused, slaTimerResumed, slaTimerMet,
@@ -1141,6 +1192,7 @@ export const eventCatalogue = [
   surveyInvited, surveyResponded,
   timeEntryLogged, timeEntryDeleted, budgetThresholdReached,
   statusIncidentUpdated, statusMaintenanceScheduled,
+  importJobFinished,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

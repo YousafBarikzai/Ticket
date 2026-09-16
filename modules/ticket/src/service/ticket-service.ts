@@ -1253,3 +1253,201 @@ export async function createRequestFromCatalogue(
   });
   return insertTicketOn(ctx, tx, parsed, input.requesterId);
 }
+
+// ---------------------------------------------------------------------------
+// Migration (MOD-24): a ticket brought in from somewhere else.
+//
+// Not `createTicket` with the dates changed. A migrated ticket arrives with
+// its history: the status it had, when it was raised and when it was closed,
+// the comments that were made on it. And it must not set anything off — an
+// SLA clock on a ticket closed in 2021, a "your ticket was raised" email to
+// somebody who raised it in another tool, a rule that routes it to a queue.
+// So it is inserted as it was and announced as `ticket.imported`, which the
+// projections follow and the reactions ignore (ADR-0036).
+// ---------------------------------------------------------------------------
+
+export const importCommentSchema = z.object({
+  body: z.string().min(1).max(100_000),
+  bodyFormat: z.enum(['text', 'html']).default('text'),
+  visibility: z.enum(['public', 'internal']).default('public'),
+  authorId: z.string().uuid().nullable().optional(),
+  createdAt: z.coerce.date().optional(),
+  /** The source's own id for the comment, so the same one imported twice is one. */
+  externalRef: z.string().max(500).optional(),
+});
+export type ImportCommentInput = z.input<typeof importCommentSchema>;
+
+export const importTicketSchema = z.object({
+  type: z.enum(['incident', 'request', 'problem', 'change', 'task', 'question']).default('incident'),
+  title: z.string().min(1).max(500),
+  description: z.string().max(100_000).optional(),
+  descriptionFormat: z.enum(['text', 'html']).default('text'),
+  /** A canonical state; the mapping from the source's words is the caller's. */
+  status: z.string().min(1).max(40),
+  priority: z.enum(['P1', 'P2', 'P3', 'P4']).default('P3'),
+  requesterId: z.string().uuid().nullable().optional(),
+  assigneeId: z.string().uuid().nullable().optional(),
+  groupId: z.string().uuid().nullable().optional(),
+  serviceId: z.string().uuid().nullable().optional(),
+  categoryId: z.string().uuid().nullable().optional(),
+  orgId: z.string().uuid().nullable().optional(),
+  /** The source's reference, kept so people can still find "INC0012345". */
+  externalRef: z.string().min(1).max(200),
+  createdAt: z.coerce.date(),
+  resolvedAt: z.coerce.date().nullable().optional(),
+  closedAt: z.coerce.date().nullable().optional(),
+  custom: z.record(z.unknown()).default({}),
+  comments: z.array(importCommentSchema).max(1000).default([]),
+  importJobId: z.string().uuid().nullable().optional(),
+});
+export type ImportTicketInput = z.input<typeof importTicketSchema>;
+
+function requireImporter(ctx: TenantContext): void {
+  authz.require(ctx, 'ticket.create');
+  if (!ctx.permissions.has('ticket.create', 'any')) {
+    throw new ForbiddenError('ticket.create', 'importing tickets raised by other people needs tenant-wide permission');
+  }
+}
+
+async function insertImportedComment(tx: Tx, ctx: TenantContext, ticketId: string, comment: z.infer<typeof importCommentSchema>): Promise<boolean> {
+  if (comment.externalRef) {
+    const seen = await tx.ticketComment.findFirst({ where: { ticketId, externalRef: comment.externalRef }, select: { id: true } });
+    if (seen) return false;
+  }
+  await repo.insertComment(tx, {
+    id: newId(),
+    tenantId: ctx.tenantId,
+    ticketId,
+    authorId: comment.authorId ?? null,
+    authorType: comment.authorId ? 'user' : 'system',
+    visibility: comment.visibility,
+    body: comment.body,
+    bodyFormat: comment.bodyFormat,
+    channel: 'import',
+    externalRef: comment.externalRef ?? null,
+    ...(comment.createdAt ? { createdAt: comment.createdAt, updatedAt: comment.createdAt } : {}),
+    createdBy: ctx.actor.id,
+  });
+  return true;
+}
+
+async function publishImported(tx: Tx, ctx: TenantContext, ticket: repo.TicketRow, externalRef: string | null, commentsAdded: number, importJobId: string | null): Promise<void> {
+  await publish(tx, ctx, {
+    definition: events.ticketImported,
+    aggregateId: ticket.id,
+    aggregateVersion: ticket.version,
+    payload: {
+      ticketId: ticket.id,
+      number: ticket.number,
+      type: ticket.type,
+      status: ticket.status,
+      externalRef,
+      commentsAdded,
+      importJobId,
+    },
+  });
+}
+
+/** Inserts a ticket as it was elsewhere, with its comments, in one transaction. */
+export async function importTicket(ctx: TenantContext, input: ImportTicketInput): Promise<repo.TicketRow> {
+  const parsed = importTicketSchema.parse(input);
+  requireImporter(ctx);
+  if (!(parsed.status in STATES)) throw new ValidationError(`unknown ticket status: ${parsed.status}`);
+  const status = parsed.status as CanonicalState;
+  const type = parsed.type as TicketType;
+
+  return transaction(ctx, async (tx) => {
+    const duplicate = await tx.ticket.findFirst({ where: { externalRef: parsed.externalRef, deletedAt: null }, select: { number: true } });
+    if (duplicate) {
+      throw new ConflictError(`a ticket with the external reference ${parsed.externalRef} already exists (${duplicate.number})`);
+    }
+
+    const number = await nextNumber(tx, ctx, type, numberPrefix[type]);
+    const id = newId();
+    const requesterId = parsed.requesterId ?? null;
+    const lastTouched = parsed.closedAt ?? parsed.resolvedAt ?? parsed.createdAt;
+    const ticket = await repo.insertTicket(tx, {
+      id,
+      tenantId: ctx.tenantId,
+      orgId: parsed.orgId ?? ctx.organisationIds[0] ?? null,
+      number,
+      type,
+      title: parsed.title,
+      description: parsed.description ?? null,
+      descriptionFormat: parsed.descriptionFormat,
+      status,
+      statusCategory: categoryOf(status),
+      priority: parsed.priority,
+      impact: null,
+      urgency: null,
+      requesterId,
+      affectedUserId: requesterId,
+      assigneeId: parsed.assigneeId ?? null,
+      groupId: parsed.groupId ?? null,
+      serviceId: parsed.serviceId ?? null,
+      categoryId: parsed.categoryId ?? null,
+      sourceChannel: 'import',
+      channelRef: null,
+      parentId: null,
+      externalRef: parsed.externalRef,
+      custom: parsed.custom as never,
+      createdAt: parsed.createdAt,
+      updatedAt: lastTouched,
+      resolvedAt: parsed.resolvedAt ?? null,
+      closedAt: parsed.closedAt ?? null,
+      createdBy: ctx.actor.id,
+      createdByType: ctx.actor.type,
+      updatedBy: ctx.actor.id,
+    });
+
+    await repo.insertTicketEvent(tx, ctx, id, 'imported', { number, externalRef: parsed.externalRef, status });
+    if (requesterId) {
+      await tx.ticketWatcher.create({
+        data: { id: newId(), tenantId: ctx.tenantId, ticketId: id, userId: requesterId, reason: 'requester' },
+      });
+    }
+
+    let commentsAdded = 0;
+    for (const comment of parsed.comments) {
+      if (await insertImportedComment(tx, ctx, id, comment)) commentsAdded += 1;
+    }
+
+    await recordAudit(tx, ctx, {
+      action: 'ticket.imported',
+      targetType: 'ticket',
+      targetId: id,
+      after: { number, externalRef: parsed.externalRef, status, priority: parsed.priority, comments: commentsAdded, importJobId: parsed.importJobId ?? null },
+    });
+    await publishImported(tx, ctx, ticket, parsed.externalRef, commentsAdded, parsed.importJobId ?? null);
+    return ticket;
+  });
+}
+
+/**
+ * Adds comments to a ticket that was imported earlier, for sources that keep
+ * the conversation in a separate export. One event for the lot, so the
+ * projections refresh once rather than once per line.
+ */
+export async function importComments(
+  ctx: TenantContext,
+  ticketId: string,
+  comments: ImportCommentInput[],
+  importJobId: string | null = null,
+): Promise<{ added: number }> {
+  requireImporter(ctx);
+  const parsed = comments.map((comment) => importCommentSchema.parse(comment));
+  return transaction(ctx, async (tx) => {
+    const ticket = await repo.findByIdOrNumber(tx, ticketId);
+    if (!ticket) throw new NotFoundError('ticket', ticketId);
+    let added = 0;
+    for (const comment of parsed) {
+      if (await insertImportedComment(tx, ctx, ticket.id, comment)) added += 1;
+    }
+    if (added > 0) {
+      const row = await tx.ticket.findFirst({ where: { id: ticket.id }, select: { externalRef: true } });
+      await recordAudit(tx, ctx, { action: 'ticket.comments.imported', targetType: 'ticket', targetId: ticket.id, after: { added, importJobId } });
+      await publishImported(tx, ctx, ticket, row?.externalRef ?? null, added, importJobId);
+    }
+    return { added };
+  });
+}

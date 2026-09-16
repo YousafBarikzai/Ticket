@@ -20,6 +20,7 @@ export {
   type StateDefinition,
   type TransitionEffects,
 } from './domain/state-machine.js';
+export { importTicketSchema, importCommentSchema, importTicket, importComments, type ImportTicketInput, type ImportCommentInput } from './service/ticket-service.js';
 export type {
   ChannelTicketInput,
   AutomatedChange,

@@ -382,6 +382,10 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'time.manage', scope: 'any' },
       { key: 'statuspage.read', scope: 'any' },
       { key: 'statuspage.manage', scope: 'any' },
+      // Bringing another tool's data in writes users, teams, services and
+      // tickets in bulk: an administrator's act, and nobody else's.
+      { key: 'migration.read', scope: 'any' },
+      { key: 'migration.manage', scope: 'any' },
     ],
   },
 ];

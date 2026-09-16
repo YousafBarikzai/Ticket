@@ -48,6 +48,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0033](0033-a-survey-is-a-form-with-a-score.md) | A survey is a form with a score, asked once, where the person already is | Accepted | MOD-18 |
 | [0034](0034-three-kinds-of-time-and-one-of-them-is-free.md) | Three kinds of time, and one of them is free | Accepted | MOD-19 |
 | [0035](0035-the-status-page-is-a-statement-not-a-view.md) | The status page is a statement, not a view | Accepted | MOD-23 |
+| [0036](0036-an-import-is-not-a-creation.md) | An import is not a creation | Accepted | MOD-24 |
 
 ## Template
 

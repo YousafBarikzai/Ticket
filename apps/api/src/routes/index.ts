@@ -38,6 +38,7 @@ import { analyticsRoutes } from './analytics.js';
 import { feedbackRoutes } from './feedback.js';
 import { timeRoutes } from './time.js';
 import { statusAdminRoutes, statusPublicRoutes } from './status.js';
+import { importRoutes } from './import.js';
 import { platformRoutes } from './platform.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
@@ -65,6 +66,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await feedbackRoutes(v1);
       await timeRoutes(v1);
       await statusAdminRoutes(v1);
+      await importRoutes(v1);
       await adminRoutes(v1);
       await supportingRoutes(v1);
     },

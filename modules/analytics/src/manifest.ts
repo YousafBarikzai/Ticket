@@ -26,6 +26,7 @@ export const analyticsManifest: ModuleManifest = registerModule({
     publishes: ['analytics.drift.detected', 'report.generated'],
     consumes: [
       'ticket.created',
+      'ticket.imported',
       'ticket.updated',
       'ticket.status.changed',
       'ticket.assigned',

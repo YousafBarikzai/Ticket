@@ -49,6 +49,7 @@
     "@itsm/module-incident": "workspace:*",
     "@itsm/module-integrations": "workspace:*",
     "@itsm/module-knowledge": "workspace:*",
+    "@itsm/module-migration": "workspace:*",
     "@itsm/module-notifications": "workspace:*",
     "@itsm/module-problem": "workspace:*",
     "@itsm/module-rules": "workspace:*",
