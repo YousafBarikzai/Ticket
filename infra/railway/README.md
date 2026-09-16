@@ -183,9 +183,23 @@ and variable — without a token.
   over the plan. They throw on an error rather than continuing, so the first
   real deploy will say plainly if a field name is wrong — but nobody should
   read this section as a claim that they have worked once.
-- **The browser suite.** Stage 4 runs the walking skeleton against the deployed
-  preview, which is a real ticket through a real API. Playwright, Lighthouse and
-  a full-page axe audit are named in doc 16 §3 as intent and do not exist.
+- **Anything end to end against a deployed environment.** This paragraph used
+  to say stage 4 ran the walking skeleton against the deployed preview, "a real
+  ticket through a real API". It did not and could not: the walking skeleton
+  calls `bootstrapModules` and boots the platform in the runner's own process
+  against the runner's own database, so handed a deployed API's URL it stops at
+  `DATABASE_URL_APP: Required` without opening a connection to the deployment.
+  Nothing noticed, because until `RAILWAY_TOKEN` existed the step was skipped on
+  every run.
+
+  What runs there now is `post-deploy-check.ts`: every public service answers
+  its health path, and the API reports which of its own dependencies it has. A
+  real ticket through a deployed API needs a tenant, a credential and a way to
+  clean up after itself, and none of those exist yet. The walking skeleton is
+  unchanged and still worth running — `pnpm skeleton`, against a local stack,
+  where booting the platform is the point rather than the bug.
+- **The browser suite.** Playwright, Lighthouse and a full-page axe audit are
+  named in doc 16 §3 as intent and do not exist.
 - **Rollback.** Railway keeps the previous deployment, so rolling back an
   application is redeploying the previous image by hand. Migrations are
   expand-only for exactly this reason: the old image must still run against the

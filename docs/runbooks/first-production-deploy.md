@@ -56,9 +56,13 @@ which on a service with a volume means a destructive move.
 The ten pipeline services carry no volumes, and the deploy sets their region
 for you from `region` in `infra/railway/services.json`.
 
-**Environments:** create `staging` and `production` in the project. The names
-must match exactly — the deploy looks an environment up by name and refuses one
-it cannot find.
+**Environments:** `production` is the one the pipeline deploys to, and Railway
+creates it with the project. There is deliberately no `staging` — an
+environment carries its own Postgres, Redis and Keycloak, so a second one is
+three more managed services billed by the hour (`infra/railway/README.md`, "One
+environment, for now"). The name must match exactly: the deploy looks an
+environment up by name, and now lists the ones the project has when it cannot
+find the one it was asked for.
 
 ---
 
@@ -121,7 +125,10 @@ PGHOST=… PGPORT=… PGUSER=… PGPASSWORD=… \
 Four different passwords. The script refuses to run against anything but
 `local` while any of them is still `devpass`.
 
-Repeat for `staging` with its own passwords and its own database.
+One environment, so once. If a `staging` environment is added later it needs
+its own database with its own four passwords — sharing them would put the
+rehearsal and the real thing on one set of credentials, which is the reason
+there are four roles in the first place.
 
 ---
 
@@ -350,5 +357,8 @@ domains and rewrites the origins.
   expand-only so the old image still runs against the new schema.
 - **No alert rules or dashboards.** `docs/architecture/16 §4` says CI applies
   them. Nothing in this repository defines them yet.
-- **No browser suite.** The walking skeleton and the render pass are what exist.
+- **No browser suite.** The render pass and the walking skeleton are what
+  exist, and both run against a local stack. What the deploy itself checks is
+  narrower: `post-deploy-check.ts` confirms every public service answers its
+  health path and that the API reports which of its dependencies it has.
   Playwright, Lighthouse and a full-page axe audit are named as intent.
