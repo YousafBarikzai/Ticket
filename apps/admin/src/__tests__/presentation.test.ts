@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keyFor } from '../components/FieldEditor.js';
+import { keyFor } from '../keys.js';
 
 /**
  * The two pieces of arithmetic and string work this console does before

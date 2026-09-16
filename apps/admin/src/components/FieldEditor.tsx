@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ApiError } from '@itsm/sdk';
 import { Button, Checkbox, FormField, Input, Select, Textarea } from '@itsm/ui';
 import { api } from '../client/api.js';
+import { keyFor } from '../keys.js';
 
 /**
  * Adding a custom field.
@@ -43,33 +44,6 @@ const CLASSIFICATIONS = [
   { value: 'public', label: 'Everybody, including the requester in the portal' },
   { value: 'restricted', label: 'Only people holding a named permission' },
 ];
-
-/**
- * `Cost centre` → `costCentre`. Shown before saving, never applied silently.
- *
- * Returns empty when it cannot produce a key the API would accept, rather than
- * producing one that looks fine and is refused on save. The API's rule is
- * `^[a-z][a-zA-Z0-9]{0,63}$`, so a label starting with a digit — "1st line" —
- * has no camelCase form this can honestly guess: `firstLine` is an invention
- * and `stLine` is nonsense. The editor asks for a different label instead,
- * which is a question somebody can answer.
- */
-export function keyFor(label: string): string {
-  const words = label
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .split(/\s+/)
-    .filter(Boolean);
-  if (words.length === 0) return '';
-
-  const key = words
-    .map((word, index) => (index === 0 ? word : word[0]!.toUpperCase() + word.slice(1)))
-    .join('')
-    .slice(0, 64);
-
-  return /^[a-z][a-zA-Z0-9]*$/.test(key) ? key : '';
-}
 
 export function FieldEditor({ existingKeys }: { existingKeys: readonly string[] }): ReactNode {
   const router = useRouter();

@@ -35,6 +35,30 @@ export default async function OverviewPage(): Promise<ReactNode> {
       permission: 'ticket.config.manage',
     },
     {
+      href: '/catalogue',
+      title: 'What people can ask for',
+      description: 'Services and request types, and whether each is on the portal yet.',
+      permission: 'catalogue.manage',
+    },
+    {
+      href: '/rules',
+      title: 'What happens automatically',
+      description: 'Rules that watch for something happening to a ticket and do something about it.',
+      permission: 'rules.rule.manage',
+    },
+    {
+      href: '/sla',
+      title: 'What this desk promises',
+      description: 'Service level targets, business calendars, and the grid that decides a priority.',
+      permission: 'sla.policy.manage',
+    },
+    {
+      href: '/workflows',
+      title: 'What runs across several steps',
+      description: 'Published workflows, and the runs that are waiting or have failed.',
+      permission: 'workflow.manage',
+    },
+    {
       href: '/settings',
       title: 'Settings',
       description: 'Feature flags, the AI budget, and what this desk is allowed to use.',

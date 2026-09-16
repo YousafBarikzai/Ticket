@@ -501,3 +501,34 @@ function describeAnswers(answers: FormValues): string {
     .map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(', ') : String(value ?? '')}`)
     .join('\n');
 }
+
+/**
+ * Every service, including the ones nobody has published.
+ *
+ * `browse` is the requester's view: published, entitled, and shaped for a
+ * portal card. An administrator needs the opposite — the drafts, the retired
+ * ones, and the keys — because the question they are asking is "what have we
+ * got and what state is it in", not "what may I ask for".
+ *
+ * `catalogue.manage` rather than `catalogue.read`: a draft is a decision that
+ * has not been taken yet, and a requester who could list them would see a
+ * roadmap nobody meant to publish.
+ */
+export async function listServices(ctx: TenantContext) {
+  authz.require(ctx, 'catalogue.manage');
+  return transaction(ctx, (tx) => tx.service.findMany({ orderBy: [{ name: 'asc' }] }));
+}
+
+/** Every request type, drafts included, for the same reason. */
+export async function listRequestTypes(ctx: TenantContext, filter: { status?: string; serviceId?: string } = {}) {
+  authz.require(ctx, 'catalogue.manage');
+  return transaction(ctx, (tx) =>
+    tx.requestType.findMany({
+      where: {
+        ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.serviceId ? { serviceId: filter.serviceId } : {}),
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    }),
+  );
+}

@@ -4,8 +4,11 @@ import {
   catalogueService,
   formService,
   serviceSchema,
+  serviceUpdateSchema,
+  requestTypeUpdateSchema,
   requestTypeSchema,
   createFormSchema,
+  updateFormSchema,
 } from '@itsm/module-catalogue';
 import { contextOf } from '../plugins/context.js';
 
@@ -38,6 +41,51 @@ export async function catalogueRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // --- administration ------------------------------------------------------
+
+  /**
+   * The administrator's view of the catalogue, drafts included.
+   *
+   * `GET /catalogue` is the requester's: published, entitled, shaped for a
+   * portal card. These two answer the other question — what exists and what
+   * state is it in — and need `catalogue.manage` for it, because a draft is a
+   * decision nobody has taken yet.
+   *
+   * Added when the console needed them. `updateService`, `updateRequestType`
+   * and `updateForm` had been in the service layer since PH-2 with no route to
+   * reach them, so the catalogue could be created and published but never
+   * corrected.
+   */
+  app.get('/services', async (request) => {
+    const ctx = contextOf(request);
+    return { data: await catalogueService.listServices(ctx) };
+  });
+
+  app.get('/request-types', async (request) => {
+    const ctx = contextOf(request);
+    const query = z
+      .object({ status: z.enum(['draft', 'published', 'retired']).optional(), serviceId: z.string().uuid().optional() })
+      .parse(request.query);
+    return { data: await catalogueService.listRequestTypes(ctx, query) };
+  });
+
+  app.patch('/services/:key', async (request) => {
+    const ctx = contextOf(request);
+    return catalogueService.updateService(ctx, byKey.parse(request.params).key, serviceUpdateSchema.strict().parse(request.body));
+  });
+
+  app.patch('/request-types/:key', async (request) => {
+    const ctx = contextOf(request);
+    return catalogueService.updateRequestType(
+      ctx,
+      byKey.parse(request.params).key,
+      requestTypeUpdateSchema.strict().parse(request.body),
+    );
+  });
+
+  app.patch('/forms/:key', async (request) => {
+    const ctx = contextOf(request);
+    return formService.updateForm(ctx, byKey.parse(request.params).key, updateFormSchema.strict().parse(request.body));
+  });
 
   app.post('/services', async (request, reply) => {
     const ctx = contextOf(request);
