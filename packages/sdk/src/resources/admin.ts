@@ -1,5 +1,6 @@
 import type { Client } from '../client.js';
 import type { Me } from './types.js';
+import { builders, type Builders } from './builders.js';
 
 /**
  * The administration console's view of the API.
@@ -98,6 +99,16 @@ export interface PlanRow {
 export interface Admin {
   me(): Promise<Me>;
 
+  /**
+   * How this desk behaves: rules, SLAs, the catalogue and workflows.
+   *
+   * A third namespace rather than more of `tenant` because it answers a
+   * different question. `tenant.*` is who may use the desk and what it
+   * collects; `configure.*` is what it does on its own. Both are tenant-scoped
+   * and neither is the platform surface below.
+   */
+  readonly configure: Builders;
+
   /** What an administrator of one desk may do. */
   readonly tenant: {
     users(search?: string): Promise<UserRow[]>;
@@ -131,6 +142,8 @@ const unwrap = <T>(body: { data: T }): T => body.data;
 export function admin(client: Client): Admin {
   return {
     me: () => client.request<Me>('/api/v1/me'),
+
+    configure: builders(client),
 
     tenant: {
       users: (search) =>

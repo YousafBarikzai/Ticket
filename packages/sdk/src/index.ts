@@ -15,6 +15,26 @@ export {
   type UserRow,
 } from './resources/admin.js';
 export {
+  builders,
+  type Builders,
+  type CalendarRow,
+  type Catalogue,
+  type FormRow,
+  type RequestTypeRow,
+  type RuleFacts,
+  type RuleRow,
+  type RuleTestResult,
+  type Rules,
+  type ServiceRow,
+  type Sla,
+  type SlaPolicyRow,
+  type SlaTargetRow,
+  type WorkflowRow,
+  type WorkflowRunRow,
+  type WorkflowValidation,
+  type Workflows,
+} from './resources/builders.js';
+export {
   portal,
   queueable,
   type QueueableRequest,
