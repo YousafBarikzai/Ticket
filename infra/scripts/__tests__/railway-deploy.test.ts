@@ -135,3 +135,31 @@ describe('tearing a preview down', () => {
     }
   });
 });
+
+describe('the image path is one a registry will accept', () => {
+  it('is entirely lowercase', () => {
+    // What actually broke the first run of this pipeline. `github.repository`
+    // is `Owner/Repo` with the case the owner typed, and an OCI repository
+    // name must be lowercase — `invalid tag "ghcr.io/YousafBarikzai/Ticket/api:
+    // sha-18fa925": repository name must be lowercase`, on every one of the six
+    // image jobs, before a layer was built.
+    expect(catalogue.image.registry).toBe(catalogue.image.registry.toLowerCase());
+    expect(catalogue.image.repository).toBe(catalogue.image.repository.toLowerCase());
+    for (const service of catalogue.services) {
+      const reference = imageFor(catalogue, service, 'sha-abc1234');
+      expect(reference, service.name).toBe(reference.toLowerCase());
+    }
+  });
+
+  it('is a reference a registry can parse at all', () => {
+    // host[:port]/path/segments:tag, each segment lowercase alphanumerics with
+    // separators between them. Narrower than the OCI grammar on purpose: this
+    // is the shape this pipeline produces, and anything else is a mistake
+    // rather than an unusual choice.
+    const reference = /^[a-z0-9.-]+(:\d+)?(\/[a-z0-9]+([._-][a-z0-9]+)*)+:[A-Za-z0-9][\w.-]*$/;
+    for (const service of catalogue.services) {
+      expect(imageFor(catalogue, service, 'sha-abc1234'), service.name).toMatch(reference);
+      expect(imageFor(catalogue, service, 'v1.2.3'), service.name).toMatch(reference);
+    }
+  });
+});

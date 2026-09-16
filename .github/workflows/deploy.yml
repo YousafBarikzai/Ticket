@@ -31,7 +31,6 @@ permissions:
 
 env:
   NODE_VERSION: '22'
-  REGISTRY: ghcr.io
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -48,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.value }}
+      image-base: ${{ steps.image.outputs.base }}
     strategy:
       # One job per target rather than one job building six: they share every
       # early layer through the registry cache, and a failure names the image.
@@ -66,11 +66,35 @@ jobs:
             echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Where the images go, taken from the catalogue the deploy reads rather
+      # than spelled a second time here.
+      #
+      # Two faults in one step. `github.repository` is `Owner/Repo` with the
+      # case the owner typed, and an OCI repository name must be lowercase — so
+      # the obvious `${{ github.repository }}` fails every build with "repository
+      # name must be lowercase". And a path written once in this file and once
+      # in services.json is two strings that must agree, where disagreeing means
+      # CI pushes to one place and the deploy pulls from another, each reporting
+      # success. So the path comes from the catalogue, and this refuses to build
+      # at all if the catalogue does not name this repository.
+      - name: Where the images go
+        id: image
+        run: |
+          registry=$(jq -r .image.registry infra/railway/services.json)
+          repository=$(jq -r .image.repository infra/railway/services.json)
+          expected=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          if [ "${repository}" != "${expected}" ]; then
+            echo "::error::infra/railway/services.json names ${repository}, but this is ${expected}. CI would push where the deploy does not look."
+            exit 1
+          fi
+          echo "registry=${registry}" >> "$GITHUB_OUTPUT"
+          echo "base=${registry}/${repository}" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ steps.image.outputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -87,7 +111,7 @@ jobs:
           target: ${{ matrix.target }}
           load: true
           push: false
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+          tags: ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
@@ -96,7 +120,7 @@ jobs:
       - name: Scan ${{ matrix.target }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+          image-ref: ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
           severity: CRITICAL,HIGH
           exit-code: '1'
           ignore-unfixed: true
@@ -104,11 +128,11 @@ jobs:
       - name: Software bill of materials
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+          image: ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
           artifact-name: sbom-${{ matrix.target }}.spdx.json
 
       - name: Push ${{ matrix.target }}
-        run: docker push ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+        run: docker push ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
 
   # ---------------------------------------------------------------------------
   # Stage 4 · Preview (PR open/update)
