@@ -7,6 +7,9 @@ model User {
   email         String
   displayName   String    @map("display_name")
   idpSubject    String?   @map("idp_subject")
+  /// The identity provider's own id for this person, as SCIM sends it. Not
+  /// the OIDC subject: Entra sends a different value in each.
+  scimExternalId String?  @map("scim_external_id")
   status        String    @default("active")
   managerId     String?   @map("manager_id") @db.Uuid
   locale        String    @default("en-GB")
@@ -47,6 +50,8 @@ model Team {
   emailAlias  String?   @map("email_alias")
   managerId   String?   @map("manager_id") @db.Uuid
   calendarId  String?   @map("calendar_id") @db.Uuid
+  /// Set when an identity provider's group owns this team through SCIM.
+  scimExternalId String? @map("scim_external_id")
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy   String?   @map("created_by") @db.Uuid
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -144,6 +149,9 @@ model RoleAssignment {
   validTo   DateTime? @map("valid_to") @db.Timestamptz(6)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy String?   @map("created_by") @db.Uuid
+  /// The team (an identity provider's group) whose SCIM role mapping granted
+  /// this. Leaving the group revokes it; an assignment made by hand has none.
+  viaScimTeamId String? @map("via_scim_team_id") @db.Uuid
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -205,4 +213,37 @@ model Delegate {
   @@unique([principalId, delegateId, capability])
   @@index([tenantId, delegateId])
   @@map("delegate")
+}
+
+/// The SCIM bearer token, hashed. One current row per tenant; a rotated one
+/// keeps an expiry for the overlap; a revoked one keeps the date.
+model ScimToken {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  tokenHash  String    @map("token_hash")
+  /// The last four characters, so an administrator can tell which is which.
+  hint       String
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, tokenHash])
+  @@index([tenantId, revokedAt])
+  @@map("scim_token")
+}
+
+/// A provider group's name to a platform role: joining the group grants
+/// it, leaving the group revokes it. The tenant's decision, made once.
+model ScimRoleMapping {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  groupName String   @map("group_name")
+  roleKey   String   @map("role_key")
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, groupName, roleKey])
+  @@map("scim_role_mapping")
 }

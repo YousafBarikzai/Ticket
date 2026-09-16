@@ -386,6 +386,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // tickets in bulk: an administrator's act, and nobody else's.
       { key: 'migration.read', scope: 'any' },
       { key: 'migration.manage', scope: 'any' },
+      // Hands the user list to an identity provider: an administrator's act.
+      { key: 'identity.scim.manage', scope: 'any' },
     ],
   },
 ];
