@@ -163,7 +163,12 @@ jobs:
 
       - name: Is there anywhere to deploy to?
         id: gate
-        run: echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Say what would have happened
         if: steps.gate.outputs.ready != 'true'
@@ -188,8 +193,15 @@ jobs:
       # After the deploy, not before it. The realm's redirect URIs are made of
       # the applications' hostnames, and without a domain of our own those do
       # not exist until the deploy has asked Railway to name them.
+      - name: Say the realm was skipped
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
+        run: |
+          echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
+          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
+
       - name: Apply the realm for this preview
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm == 'true'
         run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment pr-${{ github.event.number }} --hosts '${{ steps.deploy.outputs.hosts }}' --apply
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
@@ -232,7 +244,12 @@ jobs:
       # parse either.
       - name: Is there anything to tear down?
         id: gate
-        run: echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Delete the environment
         if: steps.gate.outputs.ready == 'true'
@@ -263,7 +280,12 @@ jobs:
 
       - name: Is there anywhere to deploy to?
         id: gate
-        run: echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Say what would have happened
         if: steps.gate.outputs.ready != 'true'
@@ -286,8 +308,15 @@ jobs:
       # not exist until the deploy has asked Railway to name them. Running this
       # first would have written redirect URIs for hosts that did not exist yet
       # — which fails as "invalid redirect_uri" at sign-in, a long way from here.
+      - name: Say the realm was skipped
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
+        run: |
+          echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
+          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
+
       - name: Apply the realm for staging
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm == 'true'
         run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment staging --hosts '${{ steps.deploy.outputs.hosts }}' --apply
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
@@ -326,7 +355,12 @@ jobs:
 
       - name: Is there anywhere to deploy to?
         id: gate
-        run: echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Both computed here rather than in an `if:`. The `secrets` context
+          # is not available to a step-level `if:`, and written there it is not
+          # a wrong answer — it is a workflow file GitHub cannot parse at all.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Say what would have happened
         if: steps.gate.outputs.ready != 'true'
@@ -349,8 +383,15 @@ jobs:
       # not exist until the deploy has asked Railway to name them. Running this
       # first would have written redirect URIs for hosts that did not exist yet
       # — which fails as "invalid redirect_uri" at sign-in, a long way from here.
+      - name: Say the realm was skipped
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm != 'true'
+        run: |
+          echo "::notice::KEYCLOAK_URL or KEYCLOAK_ADMIN_CLIENT_SECRET is not set, so the realm was not applied."
+          echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
+          echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
+
       - name: Apply the realm for production
-        if: steps.gate.outputs.ready == 'true'
+        if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm == 'true'
         run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment production --hosts '${{ steps.deploy.outputs.hosts }}' --apply
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}

@@ -267,6 +267,31 @@ is the guard working. Run it against a preview environment instead.
 
 ---
 
+## Turning sign-in on
+
+The deploy applies the Keycloak realm — the clients, the redirect URIs and the
+three claims the API refuses a token without — but only once it has an admin
+client to do it with. Without one it deploys everything, says in the log that
+it skipped the realm, and carries on. That is deliberate: the applications
+running and nobody able to sign in is a better first deploy than a red one.
+
+To turn it on:
+
+1. Open Keycloak's admin console at its own hostname and sign in with the
+   bootstrap admin you set when you created the service.
+2. In the **master** realm, create a client — `itsm-pipeline` will do. Turn
+   **Client authentication** on, turn every flow off except **Service accounts
+   roles**, and save.
+3. On that client, **Service accounts roles** → assign `realm-admin` from
+   `realm-management`. It has to be able to create a realm and import clients.
+4. **Credentials** tab → copy the client secret.
+5. In GitHub: `KEYCLOAK_ADMIN_CLIENT_ID` = `itsm-pipeline` and
+   `KEYCLOAK_ADMIN_CLIENT_SECRET` = that secret, both as **secrets**; and
+   `KEYCLOAK_URL` = Keycloak's public URL as a **variable**.
+
+The next deploy applies the realm and sign-in starts working. Nothing else has
+to change, and no application is redeployed for it.
+
 ## Without a domain of your own
 
 Everything works; two things differ.
