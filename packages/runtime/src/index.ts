@@ -19,7 +19,7 @@ import {
 } from '@itsm/platform';
 
 import { identityManifest, seedSystemRoles } from '@itsm/module-identity';
-import { tenancyManifest, registerSeedStep } from '@itsm/module-tenancy';
+import { tenancyManifest, registerSeedStep, seedPlans } from '@itsm/module-tenancy';
 import { ticketManifest } from '@itsm/module-ticket';
 import { securityManifest, seedClassifications, registerDefaultClassifications } from '@itsm/module-security';
 import { integrationsManifest, registerCredentialStore } from '@itsm/module-integrations';
@@ -96,6 +96,13 @@ export function bootstrapModules(): BootstrapResult {
   // Masking rules are in-process state, so they are registered at boot rather
   // than read from the database on every serialisation.
   registerDefaultClassifications();
+
+  // Plans are the deployment's, not a tenant's, so they are written once at
+  // boot rather than by a per-tenant seed step. Idempotent, and it never
+  // edits a plan an operator has tuned.
+  void seedPlans().catch((error: unknown) => {
+    logger.error('the default plans could not be seeded', { error: (error as Error).message });
+  });
 
   // Credential resolution, in order. The encrypted per-tenant store first, so a
   // tenant's own credential wins over a deployment-wide one of the same name;

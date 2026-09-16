@@ -705,6 +705,9 @@ importers:
       '@itsm/expr':
         specifier: workspace:*
         version: link:../../packages/expr
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
       '@itsm/platform':
         specifier: workspace:*
         version: link:../../packages/platform

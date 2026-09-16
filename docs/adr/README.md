@@ -50,6 +50,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0035](0035-the-status-page-is-a-statement-not-a-view.md) | The status page is a statement, not a view | Accepted | MOD-23 |
 | [0036](0036-an-import-is-not-a-creation.md) | An import is not a creation | Accepted | MOD-24 |
 | [0037](0037-the-provider-owns-the-people-the-tenant-owns-the-access.md) | The provider owns the people; the tenant owns the access | Accepted | MOD-01 |
+| [0038](0038-a-limit-is-a-cached-verdict-never-a-count.md) | A limit is a cached verdict, never a count | Accepted | MOD-21 |
 
 ## Template
 

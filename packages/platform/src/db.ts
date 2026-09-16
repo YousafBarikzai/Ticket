@@ -24,7 +24,7 @@ import { loadConfig } from './config.js';
  * extension would still try to filter by a column that does not exist, which is
  * what this entry prevents.
  */
-export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegistry', 'DimDate']);
+export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegistry', 'DimDate', 'Plan', 'PlanLimit']);
 
 /** Models that carry tenant_id but are readable by the platform role pre-context. */
 export const DIRECTORY_MODELS = new Set(['TenantDomain', 'ChannelDirectory']);

@@ -851,6 +851,37 @@ said from the start, and what the SCIM-then-login test exercises.
 
 ---
 
+### 2.18 Plans, limits and metering (MOD-21)
+
+**A limit is a cached verdict, never a count** (ADR-0038). The request path
+reads one word per tenant per meter, cached for a minute; the counting
+happens as events land and in a nightly rebuild from the rows beneath each
+figure. It fails open: a limit is a commercial control, and refusing every
+ticket in a company because the cache restarted is the worse outcome.
+
+**Four meters, two shapes.** `agents` and `storage` are live figures
+re-measured from the source rows; `tickets` and `api_calls` are counted per
+calendar month, with the period spelled out as a key rather than left as
+nullable dates. `api_calls` is the one meter that cannot be rebuilt — no
+row remembers a request — and the function that rebuilds the others returns
+null for it rather than inventing a figure. A migration's history does not
+move the ticket meter.
+
+**A hard limit stops the act that grows the meter and nothing else**, with
+**402** rather than 403: the caller is permitted and the obstacle is
+commercial. Reading, commenting, resolving and closing are never refused,
+and the message says so as well as naming the plan and the limit. The
+socket is a platform primitive (`assertWithinLimit`) that MOD-21 plugs into
+at boot, so MOD-04 refuses a ticket without depending on licensing.
+
+**Plans are the deployment's; one threshold is the tenant's.** Plans carry
+no `tenant_id`, are written only through the platform console, and are read
+by every tenant. An administrator may move its own warning threshold
+anywhere below the hard line, and is refused above it. No route anywhere
+takes a hard limit from a tenant.
+
+---
+
 ## 3. What remains in Phase 4
 
 | Module | Why it is not done |
@@ -859,7 +890,7 @@ said from the start, and what the SCIM-then-login test exercises.
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
 | **MOD-23 static export** | The page is served by the API (ADR-0035). The edge-hosted export that survives an API outage is a job that renders the same JSON to a file, and waits on a hosting account (OD-06). |
-| Metering and plan limits | Not started; plans and limits were pencilled for PH-3 and never built, so this carries those too. |
+| **MOD-22 ESM packs** | Not started. Installable packs of services, forms and workflows for HR, facilities and finance desks. |
 
 ---
 
@@ -892,6 +923,9 @@ said from the start, and what the SCIM-then-login test exercises.
 | The commit deleted the file the re-run needed | MOD-24's first draft removed an uploaded CSV once a commit had read it, on the reasoning that the commit is the last reader. It is not: the module's own promise is that a commit run again changes nothing, and the integration test that proves the promise was the one that could not read the file. The file now lives its week and the sweep removes it; the test that found this is the one that asserts the second commit's counts are all `unchanged`. |
 | JIT provisioning was written in Phase 1 and never called | `provisionFromToken` existed, was documented in doc 09, and had no caller: the context plugin resolved the actor by the token's user id and answered "this account no longer exists" to anybody the platform had not met. Every test signed in with a token that named an existing id, so nothing noticed. Found reading the plugin to add the SCIM branch; the fix is four lines and a test that logs in as a subject the platform has never seen. A function nothing calls is a promise the documentation is making on the code's behalf. The first live run then found the second half: a provider's token names its *subject*, which is not one of our ids, and looking that up as one is a database error rather than a miss — a 500 where the fallback should have run. The plugin now asks the database only for something shaped like an id. |
 | A hand-written migration named the model, not the table | The `User` model lives in `app_user_account`, because `user` is a reserved word in PostgreSQL and the Phase 1 schema said so; the SCIM migration altered `"user"` and the migrate step failed before a test ran. Found by CI on the first run, which is what a migrate step in CI is for. A hand-written migration copies its table names from `@@map`, never from the model. |
+| An accumulating handler, again, one ADR later | MOD-21's ticket meter moved by a delta on each `ticket.created`, which is the shape ADR-0031 was written about: delivery is at least once, so a redelivery counts the same ticket again, and the integration suite found a figure five higher than the tickets that existed. The same trap MOD-12's comment count fell into, reintroduced by somebody who had read the ADR — because "add one when it happens" is what counting *sounds* like. Every meter now re-measures from the rows that define it, and the only accumulator left is the API-call buffer, which is a counter rather than an event and is drained exactly once. Worth its own row rather than a footnote on ADR-0031: the rule needs to be applied at the moment a handler is written, and a second occurrence means the first telling was not enough. |
+| The isolation suite caught a cache key the design had not thought about | The API-call buffer was one global Redis hash with a field per tenant, which reads as tidy and is the one key shape the platform refuses: it cannot be dropped when a tenant is purged, and it is one careless `hgetall` away from crossing a boundary. Nothing in MOD-21's own tests would ever have looked; the isolation suite scans the whole keyspace for anything not prefixed with a tenant, and named it on the first live run. Now one key per tenant, found by a scan over the prefix. The suite paid for itself again, and this is the argument for a test that asserts a *property of the system* rather than a behaviour of a feature. |
+| A test whose measurement changed what it measured | The API-call assertion read the meter through `/api/v1/usage` — itself an API call, and therefore counted. "Flush twice, expect nothing the second time" could never be true, and the failure looked like a bug in the flush. It is now read from the database, and the assertion is the invariant that can actually be proved: the meter grows by exactly what the flush took out of the buffer. A test that perturbs its own subject is worse than no test, because it fails for a reason that is not the code's. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
@@ -900,7 +934,7 @@ said from the start, and what the SCIM-then-login test exercises.
 
 | Check | Result |
 |---|---|
-| Unit tests | 876 passing, 548 of them over the modules |
+| Unit tests | 896 passing, 564 of them over the modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -929,10 +963,11 @@ said from the start, and what the SCIM-then-login test exercises.
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
 | — time pricing, periods and thresholds | 12, including that one entry crossing both budget lines reports both and a decrement reports neither |
 | — the MOD-11 listener list | 2, proving the boot-time check refuses a rule for an event nobody listens for and names the list to extend |
+| — plan limits and the meters | 20, including that the line is reached rather than passed (five agents on a five-agent plan is the sixth refused), that a nightly rebuild announces nothing twice, that a live meter's period is a value and not a null, and that the platform's socket fails open when the checker itself fails |
 | — SCIM as providers speak it | 15, including the capitalised op, the string boolean, the pathless PATCH, the member removal by selector, and the filter that is refused rather than ignored |
 | — import mappings, presets and paging | 26, including that a status the map does not name is a failed row and not a guess, that every vendor preset passes its entity's checks, and that each paging strategy stops when it should and never before |
 | — the status page vocabulary, allowance and rendering | 22, including that maintenance loses to anything actually broken, that the sweep never revives a cancelled window, that a refused subscribe attempt does not count against the person behind the script, and that a title of `<script>` renders as text |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), a 19-test SCIM suite (the door opening only to the token and in the SCIM error shape when it does not, a user created and found by the provider's filter, adopted when it already exists, deactivated with its session revoked and brought back, a group becoming a team whose members hold the mapped role and lose it on leaving, a hand-granted role left alone, a rename following the map and the map re-applied when it changes, a first login landing on the SCIM-made account and refused once SCIM deactivates it, and a rotated token overlapping while a revoked one does not), a 13-test migration suite (teams and users from CSV with a dry run that writes nothing and a commit that lands the good rows and reports the bad one, the same commit again doubling nothing, tickets from a ServiceNow-shaped API arriving resolved and dated when raised with their references resolved, no SLA clock and no email, present in search and in the reporting facts, and a journal export landing on the tickets it belongs to), a 22-test status-page suite (a customer-facing major incident marking its service's component and an internal one never appearing, an internal update kept off the page beside a public one shown, resolution applied once from two events, a scheduled change becoming a notice that moves rather than multiplies, the sweep marking the component under maintenance, a subscriber confirmed by link, told once and not again after unsubscribing, and a private page answering nothing either way), nine permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), a 16-test metering suite (a tenant with no plan refusing nothing, agents counted as the people who work the desk and not the people who ask, a migration's history not spending the month's allowance, a tampered figure corrected by the rebuild, a warning that arrives once and reaches the administrators, a refusal that names the plan while comments and transitions still work, an upgrade taking effect at once, the requester role never refused, a warning threshold brought forward and refused above the hard line, and API calls buffered then flushed exactly once), a 19-test SCIM suite (the door opening only to the token and in the SCIM error shape when it does not, a user created and found by the provider's filter, adopted when it already exists, deactivated with its session revoked and brought back, a group becoming a team whose members hold the mapped role and lose it on leaving, a hand-granted role left alone, a rename following the map and the map re-applied when it changes, a first login landing on the SCIM-made account and refused once SCIM deactivates it, and a rotated token overlapping while a revoked one does not), a 13-test migration suite (teams and users from CSV with a dry run that writes nothing and a commit that lands the good rows and reports the bad one, the same commit again doubling nothing, tickets from a ServiceNow-shaped API arriving resolved and dated when raised with their references resolved, no SLA clock and no email, present in search and in the reporting facts, and a journal export landing on the tickets it belongs to), a 22-test status-page suite (a customer-facing major incident marking its service's component and an internal one never appearing, an internal update kept off the page beside a public one shown, resolution applied once from two events, a scheduled change becoming a notice that moves rather than multiplies, the sweep marking the component under maintenance, a subscriber confirmed by link, told once and not again after unsubscribing, and a private page answering nothing either way), ten permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
 
 The rota tests are the highest-value read after the address guard. A night shift

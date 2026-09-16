@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { createHash } from 'node:crypto';
 import { RateLimitedError, ValidationError, cache, loadConfig, tenantKey, logger } from '@itsm/platform';
+import { bumpApiCalls } from '@itsm/module-tenancy';
 
 /**
  * Rate limiting and idempotency (specification §7).
@@ -22,6 +23,18 @@ function budgetFor(url: string, base: number): { limit: number; bucket: string }
 
 export const guardsPlugin = fp(async (app: FastifyInstance) => {
   const config = loadConfig();
+
+  /**
+   * Counts a tenant's API calls (MOD-21). On `onResponse`, so a request that
+   * was refused by the rate limiter or by authentication is not charged for,
+   * and in the cache rather than the database: one increment, no await on
+   * the response path that matters (ADR-0038).
+   */
+  app.addHook('onResponse', async (request, reply) => {
+    const ctx = request.tenantContext;
+    if (!ctx || reply.statusCode === 401 || reply.statusCode === 429) return;
+    await bumpApiCalls(ctx.tenantId);
+  });
 
   app.addHook('preHandler', async (request, reply) => {
     const ctx = request.tenantContext;
