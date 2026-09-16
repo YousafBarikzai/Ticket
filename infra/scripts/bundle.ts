@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 /**
@@ -33,6 +33,16 @@ const workspaceOnly = {
 const targets = [
   { entry: 'apps/api/src/main.ts', out: 'dist/api.js' },
   { entry: 'apps/worker/src/main.ts', out: 'dist/worker.js' },
+  // The migration runner is a deployable too. It used to be shipped as its own
+  // image built `FROM build`, which meant the one thing that runs with
+  // `app_owner` carried the whole toolchain — pnpm, its bundled `tar`, and
+  // esbuild's Go binary, two CRITICAL advisories between them. Bundled, it runs
+  // on the same runtime base as everything else.
+  { entry: 'infra/scripts/migrate.ts', out: 'dist/migrate.js' },
+  // The seed runs in preview environments, from the same image as the
+  // migration (services.json, phase 1). It is bundled for the same reason: the
+  // image it runs in has no package manager to run `pnpm seed` with.
+  { entry: 'infra/scripts/seed.ts', out: 'dist/seed.js' },
 ];
 
 await rm(resolve(root, 'dist'), { recursive: true, force: true });
@@ -62,6 +72,30 @@ for (const target of targets) {
   });
 
   if (result.errors.length > 0) process.exit(1);
+
+  /**
+   * An entry-point guard that names a `.ts` file is a bundle that does nothing.
+   *
+   * Several scripts here end with `if (process.argv[1]?.endsWith('x.ts'))` so
+   * that importing them from a test does not run them. Bundled, `process.argv[1]`
+   * is `dist/x.js`, the guard is false, and the whole script is skipped — it
+   * prints nothing, writes nothing and exits 0. `dist/seed.js` did exactly that:
+   * a preview environment would have come up as an empty service desk, with a
+   * green deploy and no error anywhere to explain it.
+   *
+   * Cheaper to refuse here than to find in an environment. A guard that has to
+   * survive bundling matches both extensions.
+   */
+  const bundled = await readFile(resolve(root, target.out), 'utf8');
+  const guard = /endsWith\((['"])[^'"]*\.ts\1\)/.exec(bundled);
+  if (guard) {
+    console.error(
+      `${target.out} contains an entry-point guard on a .ts path (${guard[0]}). ` +
+        'Bundled, that guard is always false and the script silently does nothing. ' +
+        'Match both extensions instead, e.g. /name\\.(ts|js)$/.test(process.argv[1] ?? \'\').',
+    );
+    process.exit(1);
+  }
 }
 
 console.log(`bundled ${targets.length} deployable(s) into dist/`);

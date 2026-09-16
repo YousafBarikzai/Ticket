@@ -89,14 +89,25 @@ FROM runtime AS api
 EXPOSE 3000
 CMD ["node", "dist/api.js"]
 
-# Migrations run from their own image, not from the application's.
+# Migrations run from their own image, on the same runtime base as the rest.
 #
-# `db:migrate` needs the package manager and the TypeScript runner, which is
-# exactly what the runtime image is built without. Running them from the build
-# stage keeps the deploy step honest — it runs the same migration script a
-# developer does — without putting that toolchain next to the running service.
-FROM build AS migrate
-CMD ["pnpm", "db:migrate"]
+# This was `FROM build` until the pipeline started scanning every image rather
+# than only the API's. The migration image is the one thing here that runs with
+# `app_owner` — the credential that owns every table — and building it on the
+# toolchain stage gave it pnpm, pnpm's bundled `tar` and esbuild's Go binary:
+# two CRITICAL advisories in code it never executes. The same argument this
+# file already makes twice, for npm and for pnpm, one image short of the one
+# that mattered most.
+#
+# It needed the toolchain because `db:migrate` spawned `npx` and `tsx`. It no
+# longer does either: `infra/scripts/migrate.ts` is bundled to `dist/migrate.js`
+# like the API and the worker, resolves the Prisma CLI through Node's own
+# resolver, and skips the schema assembly in production — where the committed
+# schema has already been asserted to match its fragments by the build stage
+# above, so re-deriving it would replace a verified file with an unverified one.
+FROM runtime AS migrate
+HEALTHCHECK NONE
+CMD ["node", "dist/migrate.js"]
 
 FROM runtime AS worker
 # The worker has no HTTP surface, so it carries no health check of its own; the

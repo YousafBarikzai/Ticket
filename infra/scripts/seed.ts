@@ -138,7 +138,11 @@ export async function seed(): Promise<{ acme: SeededTenant; beta: SeededTenant }
   return { acme, beta };
 }
 
-const isEntryPoint = process.argv[1]?.endsWith('seed.ts');
+// `.ts` or `.js`: this script is also bundled to `dist/seed.js` and run from
+// the migration image in preview environments. Checking for the `.ts` alone
+// made the bundle a no-op that exited 0 — it seeded nothing, reported success,
+// and a preview would have come up as an empty service desk with no clue why.
+const isEntryPoint = /seed\.(ts|js)$/.test(process.argv[1] ?? '');
 if (isEntryPoint) {
   try {
     const result = await seed();

@@ -40,8 +40,8 @@
       "environments": [
         "preview"
       ],
-      "command": "pnpm seed",
-      "$comment": "Preview only. A production environment that seeded itself would invent two tenants nobody asked for; a preview that did not would be an empty service desk nobody can click on."
+      "command": "node dist/seed.js",
+      "$comment": "Preview only. A production environment that seeded itself would invent two tenants nobody asked for; a preview that did not would be an empty service desk nobody can click on. `node dist/seed.js` and not `pnpm seed`: it runs in the migration image, which carries no package manager."
     },
     {
       "name": "worker-events",
