@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostFor, hostsFor, imageFor, phasesOf, readCatalogue, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
+import { credentialsFrom, explainRefusal, faultIn, hostFor, hostsFor, imageFor, phasesOf, readCatalogue, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
 import { isPreview } from '../railway-teardown.js';
 
 /**
@@ -283,5 +283,65 @@ describe('a deployment with no domain of its own', () => {
       WORKER_QUEUES: 'events',
       OTEL_SERVICE_NAME: 'itsm-worker-events',
     });
+  });
+});
+
+describe('the credentials, checked before the first call', () => {
+  const GOOD = '0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9';
+
+  /*
+   * This block exists because of one run.
+   *
+   * The first deploy of this pipeline against a real account failed on its
+   * first call with `Railway API refused the call: Project not found`, and
+   * that was the entire log. Four words, no indication whether the id was
+   * wrong, the token was scoped elsewhere, or a newline had ridden along on a
+   * paste. Two of those three are now caught here, before any network call,
+   * and the third is explained rather than reported.
+   */
+
+  it('accepts a project id and strips what a paste brings with it', () => {
+    expect(credentialsFrom({ RAILWAY_TOKEN: ' tok ', RAILWAY_PROJECT_ID: `${GOOD}\n` })).toEqual({
+      token: 'tok',
+      projectId: GOOD,
+    });
+  });
+
+  it('refuses the whole URL, the query string and a second path segment', () => {
+    expect(faultIn(`https://railway.com/project/${GOOD}`)).toMatch(/whole URL/);
+    expect(faultIn(`${GOOD}?environmentId=${GOOD}`)).toMatch(/query string/);
+    expect(faultIn(`${GOOD}/service/${GOOD}`)).toMatch(/more of the path/);
+    expect(faultIn(GOOD)).toBeNull();
+  });
+
+  it('names the fault without printing the value, because a log is not private', () => {
+    // GitHub masks a secret's exact text and nothing else, so a malformed id
+    // echoed back is a malformed id published. Every message is about the
+    // value rather than made of it.
+    const secret = `${GOOD}?environmentId=deadbeef-0000-0000-0000-000000000000`;
+    const fault = faultIn(secret)!;
+    expect(fault).not.toContain(secret);
+    expect(fault).not.toContain('deadbeef');
+    expect(fault).toContain('characters');
+  });
+
+  it('still insists both are present', () => {
+    expect(() => credentialsFrom({ RAILWAY_PROJECT_ID: GOOD })).toThrow(/must both be set/);
+    expect(() => credentialsFrom({ RAILWAY_TOKEN: 'tok' })).toThrow(/must both be set/);
+    // A value that is only whitespace is absent, not present and blank.
+    expect(() => credentialsFrom({ RAILWAY_TOKEN: '  ', RAILWAY_PROJECT_ID: GOOD })).toThrow(/must both be set/);
+  });
+
+  it('explains Project not found as the two things it actually means', () => {
+    const explained = explainRefusal('Railway API refused the call: Project not found');
+    expect(explained).toContain('Project not found');
+    expect(explained).toMatch(/workspace/);
+    expect(explained).toMatch(/railway\.com\/project/);
+  });
+
+  it('leaves every other refusal exactly as Railway worded it', () => {
+    // A guess bolted onto an error nobody has diagnosed is how a wrong cause
+    // becomes the first thing the next person reads.
+    expect(explainRefusal('Not Authorized')).toBe('Not Authorized');
   });
 });
