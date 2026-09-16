@@ -181,9 +181,25 @@ Variables):
 | Name | Value |
 |---|---|
 | `RAILWAY_TOKEN` | a Railway account or team token. **This is the gate** — until it exists, every deploy job prints its plan and exits green |
-| `RAILWAY_PROJECT_ID` | from step 1 |
+| `RAILWAY_PROJECT_ID` | from step 1, and see below |
 | `KEYCLOAK_ADMIN_CLIENT_ID` | a Keycloak service account that can manage the realm |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | its secret |
+
+**Two ways to get `RAILWAY_PROJECT_ID` wrong**, both of which the first real
+deploy of this pipeline found:
+
+- **The value.** It is the id alone — `railway.com/project/`**`<id>`** — with
+  nothing after it. Click into an environment first and Railway appends
+  `?environmentId=…`; select the address bar and you copy that too. The deploy
+  now refuses a value that is not a bare id, and says which of those it looks
+  like, before it opens a connection.
+- **The token's reach.** A token created under Account Settings → Tokens
+  belongs to the workspace picked beside its name and reaches only the projects
+  in that workspace. A project in another one is, to that token, a project that
+  does not exist.
+
+Railway answers both with the same four words — `Project not found` — so the
+deploy now prints both possibilities whenever it sees them.
 
 **A required reviewer on the `production` environment** (Settings →
 Environments → production → Required reviewers). This is what makes the

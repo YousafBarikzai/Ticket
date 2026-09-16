@@ -357,6 +357,78 @@ async function generatedHost(
   return created.serviceDomainCreate.domain;
 }
 
+/**
+ * A Railway project id, as it appears in the address bar.
+ *
+ * `railway.com/project/<this>`, and nothing after it: not the `?environmentId=`
+ * Railway appends once you click into an environment, not a second path
+ * segment, not the whole URL.
+ */
+const PROJECT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Says what is wrong with an id **without printing it.**
+ *
+ * The value arrives from a GitHub secret. GitHub masks a secret's exact text in
+ * a log and nothing else, so echoing a malformed one — which by definition is
+ * not the exact text — would publish it. Every trait below is a property of the
+ * value rather than the value, which is enough to recognise the mistake and not
+ * enough to be the mistake.
+ */
+export function faultIn(projectId: string): string | null {
+  if (PROJECT_ID.test(projectId)) return null;
+  const traits: string[] = [`it is ${projectId.length} characters where a project id is 36`];
+  if (/^https?:/i.test(projectId)) traits.push('it starts with http, so it is the whole URL rather than the id');
+  if (projectId.includes('?')) traits.push("it contains '?', so the query string was copied with it");
+  if (projectId.includes('/')) traits.push("it contains '/', so more of the path was copied than the id");
+  if (/\s/.test(projectId)) traits.push('it contains a space or a newline');
+  return `RAILWAY_PROJECT_ID is not a Railway project id: ${traits.join(', ')}.
+It is the part of railway.com/project/<id> before any '?' or '/', and looks
+like 0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9.`;
+}
+
+/**
+ * Both credentials, trimmed and checked before the first call.
+ *
+ * `trim` is not defensive programming for its own sake: a value pasted into
+ * GitHub's secret box with a trailing newline is stored with it, and an id with
+ * a newline on the end is answered by Railway with the same `Project not found`
+ * as an id that is simply wrong. The two faults are indistinguishable in a log
+ * and one of them is invisible on the screen where it is made.
+ */
+export function credentialsFrom(env: NodeJS.ProcessEnv): { token: string; projectId: string } {
+  const token = env.RAILWAY_TOKEN?.trim();
+  const projectId = env.RAILWAY_PROJECT_ID?.trim();
+  if (!token || !projectId) throw new Error('RAILWAY_TOKEN and RAILWAY_PROJECT_ID must both be set');
+  const fault = faultIn(projectId);
+  if (fault) throw new Error(fault);
+  return { token, projectId };
+}
+
+/**
+ * What `Project not found` actually means, which is not what it says.
+ *
+ * Railway answers it both when no project has that id and when the project
+ * exists but this token cannot see it — a token is scoped to one workspace, so
+ * a project in another is indistinguishable from a project that never existed.
+ * The message names both, because the first real deploy of this pipeline failed
+ * on it and the log said four words.
+ */
+export function explainRefusal(message: string): string {
+  if (!/project not found/i.test(message)) return message;
+  return `${message}
+
+Railway says this when the id names no project *and* when the token cannot see
+the one it names. Both are worth checking:
+
+  - The id. Open the project in Railway; the address bar reads
+    railway.com/project/<id>. Copy only the id, with no '?' or '/' after it.
+  - The token's workspace. A token created under Account Settings -> Tokens
+    belongs to the workspace picked beside its name, and reaches only the
+    projects in that workspace. If the project sits in a different one, the
+    token is the thing to replace, not the id.`;
+}
+
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
   const catalogue = readCatalogue();
@@ -397,14 +469,26 @@ async function main(): Promise<void> {
     return;
   }
 
-  const token = process.env.RAILWAY_TOKEN;
-  const projectId = process.env.RAILWAY_PROJECT_ID;
-  if (!token || !projectId) throw new Error('RAILWAY_TOKEN and RAILWAY_PROJECT_ID must both be set');
+  const { token, projectId } = credentialsFrom(process.env);
 
-  const { project } = await callApi<ProjectShape>(ENVIRONMENT_QUERY, { projectId }, token);
+  const { project } = await callApi<ProjectShape>(ENVIRONMENT_QUERY, { projectId }, token).catch(
+    (error: unknown) => {
+      throw new Error(explainRefusal(error instanceof Error ? error.message : String(error)));
+    },
+  );
   const { environments, services } = idsFrom(project);
   const environmentId = environments.get(options.environment);
-  if (!environmentId) throw new Error(`no Railway environment named ${options.environment} in this project`);
+  if (!environmentId) {
+    // The names it does have, because the alternative is guessing at a project
+    // you cannot see. A Railway project starts with one environment called
+    // `production`, and this pipeline deploys `main` to `staging` — so the
+    // first deploy into a fresh project fails here, and the fix is a name.
+    const existing = [...environments.keys()].sort();
+    throw new Error(
+      `no Railway environment named ${options.environment} in this project. It has: ${existing.join(', ') || '(none)'}.
+Create one named exactly ${options.environment} in Railway, or deploy to one of the above.`,
+    );
+  }
 
   /*
    * Filled as the deploy goes, phase by phase.
