@@ -43,6 +43,7 @@ import { timeManifest, seedTimeDefaults } from '@itsm/module-time';
 import { statusPageManifest, seedStatusDefaults } from '@itsm/module-statuspage';
 import { migrationManifest } from '@itsm/module-migration';
 import { esmManifest } from '@itsm/module-esm';
+import { aiManifest, registerAiProvider, seedAiDatasets, seedAiPrompts, stubProvider } from '@itsm/module-ai';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -76,6 +77,7 @@ export const ALL_MODULES: ModuleManifest[] = [
   statusPageManifest,
   migrationManifest,
   esmManifest,
+  aiManifest,
   analyticsManifest,
   adminManifest,
 ];
@@ -112,6 +114,22 @@ export function bootstrapModules(): BootstrapResult {
   // and what the pre-tenant inbound path uses.
   registerCredentialStore(registerSecretResolver);
   registerSecretResolver('environment', environmentResolver);
+
+  // Prompts and evaluation datasets are the deployment's, like plans: written
+  // once at boot rather than per tenant, and never over an operator's edit.
+  void seedAiPrompts()
+    .then(() => seedAiDatasets())
+    .catch((error: unknown) => {
+      logger.error('the AI prompts could not be seeded', { error: (error as Error).message });
+    });
+
+  // The stub provider answers without a model. Registered only outside
+  // production, for exactly the reason the development email transport is:
+  // in production its presence would turn "no provider has been chosen yet"
+  // (OD-04) from a refusal somebody fixes into answers somebody believes.
+  if (process.env.NODE_ENV !== 'production') {
+    registerAiProvider(stubProvider());
+  }
 
   // The development email transport verifies nothing, so it is registered only
   // outside production. In production its presence would turn "no provider is

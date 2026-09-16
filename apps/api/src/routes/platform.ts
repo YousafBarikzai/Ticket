@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ForbiddenError, NotFoundError, metrics, modules, systemContext, withContext } from '@itsm/platform';
 import { describeMeter, planService, tenantService, usageService } from '@itsm/module-tenancy';
+import { evalService, formatMicros, promptService } from '@itsm/module-ai';
 import { contextOf } from '../plugins/context.js';
 
 /**
@@ -123,6 +124,88 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
       })),
     };
   });
+
+  // ---- MOD-09 prompts and evaluations ---------------------------------------
+  //
+  // Here rather than on the tenant API because prompts are the deployment's: a
+  // tenant that could rewrite its own prompt could rewrite its way past every
+  // threshold the release gate depends on (ADR-0040).
+
+  const promptKey = z.object({ key: z.string().min(1).max(60) });
+  const promptVersion = z.object({ key: z.string().min(1).max(60), version: z.coerce.number().int().min(1) });
+
+  app.get('/ai/prompts', async () => {
+    const prompts = await promptService.listPrompts();
+    return {
+      data: prompts.map((prompt) => ({
+        key: prompt.key,
+        capability: prompt.capability,
+        name: prompt.name,
+        currentVersion: prompt.currentVersion,
+        versions: prompt.versions.map((version) => ({
+          version: version.version,
+          status: version.status,
+          score: version.score,
+          evaluatedAt: version.evaluatedAt?.toISOString() ?? null,
+          changeNote: version.changeNote,
+        })),
+      })),
+    };
+  });
+
+  app.get('/ai/prompts/:key', async (request) => {
+    const { key } = promptKey.parse(request.params);
+    return promptService.getPrompt(key);
+  });
+
+  app.post('/ai/prompts/:key/versions', async (request, reply) => {
+    const ctx = contextOf(request);
+    const { key } = promptKey.parse(request.params);
+    const created = await promptService.savePromptVersion(ctx, key, promptService.promptVersionSchema.parse(request.body));
+    reply.code(201);
+    return { key, version: created.version, status: created.status };
+  });
+
+  /** Runs the version against its dataset. Costs money, and says how much. */
+  app.post('/ai/prompts/:key/versions/:version/evaluate', async (request) => {
+    const ctx = contextOf(request);
+    const { key, version } = promptVersion.parse(request.params);
+    const run = await evalService.runEvaluation(ctx, key, version);
+    return {
+      key,
+      version,
+      score: run.score,
+      threshold: run.threshold,
+      passed: run.passed,
+      cost: formatMicros(run.costMicros),
+      cases: run.cases,
+    };
+  });
+
+  app.post('/ai/prompts/:key/versions/:version/promote', async (request) => {
+    const ctx = contextOf(request);
+    const { key, version } = promptVersion.parse(request.params);
+    return promptService.promotePrompt(ctx, key, version);
+  });
+
+  app.get('/ai/prompts/:key/runs', async (request) => {
+    const { key } = promptKey.parse(request.params);
+    const runs = await evalService.listRuns(key);
+    return {
+      data: runs.map((run) => ({
+        id: run.id,
+        datasetKey: run.datasetKey,
+        model: run.model,
+        score: run.score,
+        threshold: run.threshold,
+        passed: run.passed,
+        cost: formatMicros(run.costMicros),
+        createdAt: run.createdAt.toISOString(),
+      })),
+    };
+  });
+
+  app.get('/ai/datasets', async () => ({ data: await evalService.listDatasets() }));
 
   app.get('/metrics-snapshot', async () => metrics.snapshot());
 }

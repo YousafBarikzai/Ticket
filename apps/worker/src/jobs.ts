@@ -22,6 +22,7 @@ import { invitationService } from '@itsm/module-feedback';
 import { budgetService } from '@itsm/module-time';
 import { incidentService as statusIncidentService } from '@itsm/module-statuspage';
 import { sweepFiles } from '@itsm/module-migration';
+import { sweepPrompts } from '@itsm/module-ai';
 import { flushApiCalls, tenantsAwaitingFlush } from '@itsm/module-tenancy';
 import type { EventEnvelope } from '@itsm/contracts';
 
@@ -208,6 +209,16 @@ defineJob('retention', 'usage.flush', async () => {
   }
   const flushed = await flushApiCalls((tenantId) => contexts.get(tenantId) ?? null);
   if (flushed > 0) logger.debug('api calls metered', { flushed, tenants: contexts.size });
+});
+
+defineJob('retention', 'ai.retention.sweep', async () => {
+  for (const tenant of await activeTenants()) {
+    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    await withContext(ctx, async () => {
+      const { cleared } = await sweepPrompts(ctx);
+      if (cleared > 0) logger.debug('AI prompts and completions swept', { tenantId: tenant.id, cleared });
+    });
+  }
 });
 
 defineJob('retention', 'import.file.sweep', async () => {

@@ -24,7 +24,22 @@ import { loadConfig } from './config.js';
  * extension would still try to filter by a column that does not exist, which is
  * what this entry prevents.
  */
-export const PLATFORM_MODELS = new Set(['Tenant', 'TenantGrant', 'ConsumerRegistry', 'DimDate', 'Plan', 'PlanLimit']);
+export const PLATFORM_MODELS = new Set([
+  'Tenant',
+  'TenantGrant',
+  'ConsumerRegistry',
+  'DimDate',
+  'Plan',
+  'PlanLimit',
+  // MOD-09's prompts and evaluations are the deployment's: one set of rows
+  // every tenant reads, so there is no tenant to attach isolation to and no
+  // tenant that may edit one (ADR-0040).
+  'AiPrompt',
+  'AiPromptVersion',
+  'AiEvalDataset',
+  'AiEvalCase',
+  'AiEvalRun',
+]);
 
 /** Models that carry tenant_id but are readable by the platform role pre-context. */
 export const DIRECTORY_MODELS = new Set(['TenantDomain', 'ChannelDirectory']);
