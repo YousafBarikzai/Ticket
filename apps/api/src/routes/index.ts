@@ -8,8 +8,11 @@ import {
   permissionRegistry,
   subscribeTopics,
   topicForEntity,
+  topicForGroup,
   topicForUser,
+  type TenantContext,
 } from '@itsm/platform';
+import { ticketService } from '@itsm/module-ticket';
 import { userService } from '@itsm/module-identity';
 import { auditService } from '@itsm/module-security';
 import { notificationService } from '@itsm/module-notifications';
@@ -92,6 +95,52 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // SCIM, for identity providers: its own prefix, its own token, its own
   // error shape (RFC 7644).
   app.register(scimRoutes, { prefix: '/scim/v2' });
+}
+
+/**
+ * Turns one requested topic into a Redis channel, or refuses it.
+ *
+ * Refuses rather than silently skipping. A client asking for a topic it may
+ * not watch has a bug, and a stream that quietly subscribes to fewer topics
+ * than were asked for is a screen that looks live and is not — which is
+ * exactly the failure mode this codebase keeps finding in things that were
+ * described but never exercised.
+ *
+ * The authorisation is the module's, not this route's: `getTicket` throws if
+ * the person cannot see the ticket, which is the same answer they would get
+ * from the REST endpoint they are about to refetch from.
+ */
+async function authorisedTopic(ctx: TenantContext, requested: string): Promise<string> {
+  const separator = requested.indexOf(':');
+  const kind = separator === -1 ? '' : requested.slice(0, separator);
+  const id = separator === -1 ? '' : requested.slice(separator + 1);
+  if (!kind || !id) throw new ValidationError(`"${requested}" is not a topic; use "kind:id"`);
+
+  switch (kind) {
+    case 'ticket':
+      // Throws NotFoundError or ForbiddenError, which is the right answer to
+      // "may I watch this" as well as to "may I read this".
+      await ticketService.getTicket(ctx, id);
+      return topicForEntity(ctx.tenantId, 'ticket', id);
+
+    case 'group':
+      // A queue. Yours if you are in the team, or anybody's if your ticket
+      // read scope is already `any` — in which case the topic tells you
+      // nothing you could not list.
+      if (ctx.teamIds.includes(id) || authz.effectiveScope(ctx, 'ticket.read') === 'any') {
+        return topicForGroup(ctx.tenantId, id);
+      }
+      throw new ForbiddenError('ticket.read', 'that is not one of your queues');
+
+    case 'user':
+      // Always your own. Somebody else's is refused rather than quietly
+      // swapped for yours, so a client with the wrong id is told.
+      if (id !== ctx.actor.id) throw new ForbiddenError('identity.user.read', 'you can only watch your own activity');
+      return topicForUser(ctx.tenantId, id);
+
+    default:
+      throw new ValidationError(`"${kind}" is not a topic that can be watched`);
+  }
 }
 
 async function identityRoutes(app: FastifyInstance): Promise<void> {
@@ -513,16 +562,21 @@ async function supportingRoutes(app: FastifyInstance): Promise<void> {
    * Server-sent events (ADR-0015). The stream carries only change notices;
    * clients refetch through the API, so nothing permission-sensitive travels
    * over the channel.
+   *
+   * What does travel over it is the *timing* of a change, and the fact that a
+   * given id exists — which is why every requested topic is authorised before
+   * it is subscribed. Until it was, any signed-in person could ask for
+   * `ticket:<any id in their tenant>` and learn, live, whenever somebody else
+   * touched a ticket they could not open.
    */
   app.get('/events/stream', async (request, reply) => {
     const ctx = contextOf(request);
-    const query = z.object({ topics: z.string().max(2000).optional() }).parse(request.query);
+    const query = z.object({ topics: z.string().max(2000).optional() }).strict().parse(request.query);
 
     const requested = (query.topics ?? '').split(',').filter(Boolean);
     const topics = [topicForUser(ctx.tenantId, ctx.actor.id ?? 'anonymous')];
     for (const topic of requested.slice(0, 20)) {
-      const [entity, id] = topic.split(':');
-      if (entity && id) topics.push(topicForEntity(ctx.tenantId, entity, id));
+      topics.push(await authorisedTopic(ctx, topic));
     }
 
     reply.raw.writeHead(200, {

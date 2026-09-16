@@ -82,6 +82,11 @@ const FORWARD_REQUEST = new Set([
   'if-match',
   'if-none-match',
   'idempotency-key',
+  // What a browser sends when an `EventSource` reconnects. Dropping it made
+  // every reconnection look like a first connection, which is survivable —
+  // the client refetches — but it throws away the only thing that could ever
+  // make a resume possible.
+  'last-event-id',
   'prefer',
 ]);
 

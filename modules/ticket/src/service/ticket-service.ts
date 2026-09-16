@@ -20,6 +20,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   publishNotice,
   topicForEntity,
+  topicForGroup,
   topicForUser,
   getSetting,
   enqueue,
@@ -824,6 +825,11 @@ async function notifyChange(ctx: TenantContext, ticket: repo.TicketRow, action: 
   const topics = [topicForEntity(ctx.tenantId, 'ticket', ticket.id)];
   if (ticket.requesterId) topics.push(topicForUser(ctx.tenantId, ticket.requesterId));
   if (ticket.assigneeId) topics.push(topicForUser(ctx.tenantId, ticket.assigneeId));
+  // The group as well, so a queue learns about a ticket nobody in front of it
+  // has opened yet. An assignment that moves a ticket between groups notifies
+  // the one it landed in; the one it left finds out by the refetch the notice
+  // triggers, which is the same request it would have made anyway.
+  if (ticket.groupId) topics.push(topicForGroup(ctx.tenantId, ticket.groupId));
   await publishNotice(ctx, topics, { entity: 'ticket', id: ticket.id, version: ticket.version, action });
 }
 
