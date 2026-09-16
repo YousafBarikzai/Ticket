@@ -303,7 +303,12 @@ export interface Workflows {
   rollback(key: string, toVersion: number): Promise<unknown>;
   /** A dry run: walks the graph against a sample context and writes nothing. */
   test(key: string, context: Record<string, unknown>): Promise<unknown>;
-  runs(filter?: { status?: string; definitionKey?: string }): Promise<WorkflowRunRow[]>;
+  /**
+   * `status`, `ticketId` and `limit` — what the route actually accepts. Its
+   * query schema is not strict, so an invented filter would be dropped in
+   * silence and the screen would offer a control that does nothing.
+   */
+  runs(filter?: { status?: string; ticketId?: string; limit?: number }): Promise<WorkflowRunRow[]>;
   run(id: string): Promise<WorkflowRunRow & { steps?: unknown[] }>;
   retry(id: string): Promise<unknown>;
   skip(id: string, reason: string): Promise<unknown>;
@@ -331,7 +336,8 @@ function workflows(client: Client): Workflows {
     runs: (filter = {}) => {
       const query = new URLSearchParams();
       if (filter.status) query.set('status', filter.status);
-      if (filter.definitionKey) query.set('definitionKey', filter.definitionKey);
+      if (filter.ticketId) query.set('ticketId', filter.ticketId);
+      if (filter.limit !== undefined) query.set('limit', String(filter.limit));
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
       return client.request<{ data: WorkflowRunRow[] }>(`/api/v1/workflow-runs${suffix}`).then(unwrap);
     },
