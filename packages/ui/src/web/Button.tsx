@@ -1,3 +1,5 @@
+'use client';
+
 import type { ComponentPropsWithRef, MouseEvent, ReactNode } from 'react';
 import { cx } from './cx.js';
 import { VisuallyHidden } from './VisuallyHidden.js';

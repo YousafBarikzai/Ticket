@@ -89,6 +89,24 @@ export class DependencyUnavailableError extends DomainError {
   }
 }
 
+/**
+ * The tenant is over a hard limit on its plan, and the act asked for is the
+ * one that would grow the meter. 402 rather than 403: the caller is
+ * permitted, and what stands in the way is commercial, not a permission —
+ * a client that retries after an upgrade is doing the right thing, and one
+ * that retries after a 403 is not.
+ */
+export class LimitReachedError extends DomainError {
+  readonly status = 402;
+  readonly code = 'limit_reached';
+  constructor(
+    readonly meter: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export class TenantSuspendedError extends DomainError {
   readonly status = 403;
   readonly code = 'tenant_suspended';

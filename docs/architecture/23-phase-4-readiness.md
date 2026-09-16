@@ -1,10 +1,17 @@
 # 23 · Phase 4 readiness and delivery record
 
-**Status: in progress.** Phase 4 is the largest in the plan — roughly a dozen
-modules — and is being delivered one module per pull request rather than as a
-single drop. This document grows with it, in the same shape as
-[20](20-phase-1-readiness.md), [21](21-phase-2-readiness.md) and
-[22](22-phase-3-readiness.md).
+**Status: delivered, pending a provider and a pipeline.** Every module Phase 4
+scopes is built, tested and green, delivered one module per pull request rather
+than as a single drop. What is not here is named in [§3](#3-what-did-not-ship-and-why)
+and waits on decisions and accounts rather than on code. This document records
+what was built, what it cost, what it found and what remains — in the same
+shape as [20](20-phase-1-readiness.md), [21](21-phase-2-readiness.md) and
+[22](22-phase-3-readiness.md), so the four read as one delivery history.
+
+At the time of writing: **27 modules, 183 tables, 366 endpoints, 92 event
+types**, **40 accepted decision records**, **27 hand-written migrations**, and
+**963 unit tests** alongside 27 integration suites, the isolation suite and the
+permission matrix.
 
 ---
 
@@ -746,14 +753,248 @@ dashboard.
 
 ---
 
-## 3. What remains in Phase 4
+### 2.15 Status page (MOD-23)
+
+**The page is a statement, not a view** (ADR-0035). Its incidents, updates
+and maintenance windows are the module's own rows, written by its handlers
+from what MOD-08 publishes and by its API from what an operator types, and
+read by the public page and nothing else. What the public is told is decided
+once, in the handlers: a major incident appears only if it was declared
+customer-facing; a timeline entry only if its audience is `public`; a
+scheduled change only if it touches a service the page lists. The page has
+its own five words for an incident and four for a component, mapped from the
+desk's, so an internal state it was not designed to explain cannot leak by
+being new.
+
+**Every handler reads the row, not the payload**, carries the MOD-08 entry
+it came from, and is idempotent from either direction: the same declaration
+delivered twice opens nothing twice, an update that arrives before its
+declaration opens the incident rather than being dropped, and resolution —
+which arrives as both a public "resolved" update and an
+`incident.major.resolved` event, in no particular order — is applied once.
+
+**The tenant directory is the only pre-tenant lookup.** The page lives at
+`/status/<tenant slug>` (or at `/status` on a mapped host). The public request
+resolves the slug through MOD-21 and reads the page *as that tenant*, through
+a context with no permissions that the database confines like any other. No
+MOD-23 table joins the platform allowlist. The API serves the page — HTML to a
+browser, JSON to anything else, cacheable for thirty seconds; the static
+export in document 03 remains the end state and waits on OD-06.
+
+**Subscribers are addresses**, confirmed by a signed link before anything is
+sent, told through a job after the transaction that wrote the line, with the
+row marked before the first email so a retried job sends nothing twice. The
+subscribe endpoint says the same thing whatever the truth about the address
+or the page, and is rationed per address and per client, in process.
+
+**Components follow what touches them.** Each is recomputed as the worst of
+every open incident over it, or maintenance if a window is live over it, or
+operational — recomputed rather than nudged, so nothing is left red by an
+incident resolved through another door. A five-minute sweep moves windows
+through scheduled, in progress and completed by the clock and never revives
+one somebody cancelled.
+
+---
+
+### 2.16 Migration (MOD-24)
+
+**An import is not a creation** (ADR-0036). MOD-04 grows `importTicket` and
+`importComments`, which insert a ticket with the status and dates it had
+and publish `ticket.imported` rather than `ticket.created`: search and
+reporting follow it, and no SLA clock, rule, notification or survey fires
+for a ticket closed in 2021. Users, teams and services go through the
+existing services, which react to nothing already.
+
+**Every row is remembered** in a link table from the source's identifier to
+ours, per entity, so a re-run is a delta, a dry run followed by a commit
+doubles nothing, and a ticket row's `caller_id` finds the user a previous
+job created. References resolve through the link first, then by natural
+key; a requester nobody has, named by an email, becomes an external user
+with a warning on the row.
+
+**Nothing is guessed.** A status the value map does not name, a date in an
+unknown form, a field the entity does not have: the first two are failed
+rows, the third a mapping refused when it is saved. A row with only warnings
+is imported, and the warning is on the record.
+
+**Dry run first, and the records are the report.** The same code as a
+commit with the writes turned off, references resolved so a wrong mapping
+shows on every row of the preview; a commit is the same job again, for real.
+Every row's outcome and problems are an `import_record`; the totals are on
+the job; the person who started it is told through MOD-11.
+
+**Sources.** A CSV upload (its own body limit, kept in a bounded table for a
+week), a generic JSON endpoint through the gateway, and three named
+adapters — ServiceNow, Jira Service Management, Freshservice — that are the
+generic source with the boxes filled in: path, records path, paging
+strategy (offset, page, link), the vendor's status and priority words. The
+CSV reader and dotted-path reader moved from MOD-10 into the platform
+package; MOD-10 re-exports them.
+
+---
+
+### 2.17 SCIM provisioning (MOD-01)
+
+**The provider owns the people; the tenant owns the access** (ADR-0037).
+`/scim/v2/Users` and `/scim/v2/Groups`, in the shapes Entra ID and Okta
+send: a user is created, found by the one-equality filter providers use,
+adopted when an account already exists, deactivated with every session
+revoked, and brought back; a group is a team whose membership is kept in
+step and which is retired, not deleted, when the group goes. A
+tenant-configured map from group name to role grants and revokes roles as
+membership changes, remembering which team granted what so a role an
+administrator gave by hand is never the provider's to take.
+
+**One token per tenant**, issued by an administrator, shown once, hashed,
+carrying the tenant's slug so the request resolves through the directory
+and then as that tenant; rotation overlaps for a day, revocation stops
+everything. SCIM requests run with the permissions people and teams need
+and nothing else; no session token opens the endpoint. Errors are SCIM
+errors with a `scimType`, on their own handler.
+
+**JIT is wired.** The API now provisions on a first login whose token
+names nobody the platform knows, linking by email first — what doc 09
+said from the start, and what the SCIM-then-login test exercises.
+
+---
+
+### 2.18 Plans, limits and metering (MOD-21)
+
+**A limit is a cached verdict, never a count** (ADR-0038). The request path
+reads one word per tenant per meter, cached for a minute; the counting
+happens as events land and in a nightly rebuild from the rows beneath each
+figure. It fails open: a limit is a commercial control, and refusing every
+ticket in a company because the cache restarted is the worse outcome.
+
+**Four meters, two shapes.** `agents` and `storage` are live figures
+re-measured from the source rows; `tickets` and `api_calls` are counted per
+calendar month, with the period spelled out as a key rather than left as
+nullable dates. `api_calls` is the one meter that cannot be rebuilt — no
+row remembers a request — and the function that rebuilds the others returns
+null for it rather than inventing a figure. A migration's history does not
+move the ticket meter.
+
+**A hard limit stops the act that grows the meter and nothing else**, with
+**402** rather than 403: the caller is permitted and the obstacle is
+commercial. Reading, commenting, resolving and closing are never refused,
+and the message says so as well as naming the plan and the limit. The
+socket is a platform primitive (`assertWithinLimit`) that MOD-21 plugs into
+at boot, so MOD-04 refuses a ticket without depending on licensing.
+
+**Plans are the deployment's; one threshold is the tenant's.** Plans carry
+no `tenant_id`, are written only through the platform console, and are read
+by every tenant. An administrator may move its own warning threshold
+anywhere below the hard line, and is refused above it. No route anywhere
+takes a hard limit from a tenant.
+
+### 2.19 Enterprise service management packs (MOD-22)
+
+**A pack is a copy, not a connection** (ADR-0039). Installing writes the
+tenant's own service, forms, request types, workflow, SLA policy and article
+through the modules that own each of them, so what a desk ends up with is
+ordinary configuration: the same validation, the same audit rows, the same
+`catalogue.item.published` event. Nothing about MOD-22 is consulted when a
+request is raised.
+
+**Four desks ship**: HR, facilities, finance and legal. Each carries the
+services it offers, the forms behind them, a fulfilment checklist as a
+workflow, an SLA policy and a starter article — and each lists what it
+deliberately leaves for the desk to do, because a pack cannot know a
+tenant's teams, calendars or authority matrix.
+
+**An edit is a hash that no longer matches.** Every installed item records
+the SHA-256 of the shipped definition it came from, over a shape both sides
+are normalised into by one function. A newer version of a pack is therefore
+a diff with eight states, and the one that matters is the difference between
+*update* (the pack moved, this copy is untouched, safe to take) and
+*conflict* (both moved, so taking it destroys somebody's work). Nothing
+moves that was not named; a refused item is not offered again until the pack
+moves past the version that was refused; an item the pack stops shipping is
+reported and never withdrawn.
+
+**Packs are written with the deployment, never uploaded.** They live in
+`modules/esm/src/packs`, and the unit suite puts every one through the
+checks the modules apply at install — form documents, workflow graphs, and
+the references between items. An uploaded workflow would be a code path
+wearing a configuration surface.
+
+**An install is resumable rather than atomic**, because each owning module
+opens its own transaction. Items are recorded as they land, the run stops at
+the first failure, and running it again continues from where it stopped. A
+key that already belongs to somebody else is refused before anything is
+written.
+
+**MOD-05, MOD-06 and MOD-07 gained the update paths they never had.** A
+service, a catalogue item, a form document, a workflow's label and an SLA
+policy's own fields could all be created and never changed. The SLA matcher
+also reads the service by key, so a policy says `ticket.serviceKey eq 'hr'`
+rather than pasting a UUID.
+
+---
+
+### 2.20 The governed AI service (MOD-09 AI)
+
+**The provider is a socket, and the governance is the product** (ADR-0040).
+Everything except the model call is built: the prompt registry, the
+evaluation runner and its thresholds, per-tenant budgets, tenant and
+per-capability kill switches, the context assembler, the evidence list, the
+suggestion lifecycle and every refusal. Behind the socket is a stub that
+answers deterministically and is priced like a mid-sized model. **Closing
+OD-04 is one adapter and one `registerAiProvider` call.**
+
+**Nothing is registered in production.** A deployment with no provider
+refuses every capability that calls a model, naming OD-04. The stub is
+registered only outside production — the same bargain the email module
+struck with its development transport, because in production a stub turns
+"no provider has been chosen yet" into answers somebody believes.
+
+**Four capabilities.** Draft a reply, summarise a ticket for a handover,
+draft an article from a resolved ticket, and find similar tickets and known
+errors. The last calls no model, so it costs nothing, answers immediately
+and stays available when the budget has run out — which will probably make
+it the one most desks actually use.
+
+**Everything that reads runs as the person who asked.** A job reaches the
+worker with the asker's id and the worker's system permissions; retrieval on
+that context would search the whole tenant for somebody entitled to a
+fraction of it, and every permission check would have passed. The worker
+rebuilds the asker's context from their roles first, and a job whose asker
+has been deactivated is refused. Everything that writes runs as the AI, on
+that person's behalf, so the audit row names both.
+
+**An answer with nothing behind it is refused.** `reply-draft` declines when
+retrieval found nothing rather than inventing something that reads exactly
+like a good answer. The refusal says what is missing: the knowledge base.
+
+**A version is promoted by its evaluation, except the one that ships.** A
+new version needs a run at or above its dataset's threshold, and the refusal
+names both figures. The shipped version is promoted by release, and the unit
+suite gives that teeth by running every shipped prompt against its own
+dataset. Be precise about what that proves: against a stub it proves the
+machinery, not the quality of a prompt, and no score from it should be
+quoted as though it did.
+
+**The AI budget is deliberately not one of MOD-21's meters.** A plan limit
+is what the tenant bought; this is what the tenant chose to spend, and the
+check happens before a call whose cost is not known until afterwards. What
+is shared is the 402. The spend is a **sum of the jobs**, recomputed
+whenever one finishes, so a retry cannot inflate it.
+
+---
+
+---
+
+## 3. What did not ship, and why
+
+Everything here waits on a decision, an account or a system outside this
+repository. None of it waits on code that could have been written.
 
 | Module | Why it is not done |
 |---|---|
-| **MOD-09 AI service** | **OD-04 is deliberately deferred**: the gateway, budgets, prompt registry, evals and kill switch are to be built against a stub provider, and nothing reaches a real model until a provider is chosen. Scope is agent-facing suggestions — an agent accepts or rejects, and no AI output reaches a requester unreviewed. |
+| **MOD-09 AI: the model itself** | The service is built (§2.20); what is missing is a provider, which is **OD-04**. Also waiting behind it: the pgvector half of hybrid retrieval, because embeddings from a stub would be noise, and the requester-facing virtual agent, which stays unbuilt because ADR-0006's line — a person reviews before anything reaches a requester — is the line this phase keeps. |
 | **Voice call control** | E3 delivers voice as a completed-call webhook. Live IVR, menus and transfers need a media session driven by provider markup while somebody is on the line, which cannot be exercised against anything in this repository — the MOD-10-E2 reasoning, applied again. |
 | **Teams as a registered bot** | E2 uses the outgoing-webhook form. The Bot Framework path needs Azure AD JWT validation, which belongs next to the platform's existing JWKS verifier rather than duplicated in a module. |
-| MOD-23, MOD-24, SCIM, metering | Not started. |
+| **MOD-23 static export** | The page is served by the API (ADR-0035). The edge-hosted export that survives an API outage is a job that renders the same JSON to a file, and waits on a hosting account (OD-06). |
 
 ---
 
@@ -773,21 +1014,42 @@ dashboard.
 | Every survey link answered 414 | The signed token rides in the URL path and is about three hundred characters; Fastify refuses a path parameter longer than a hundred by default, before any handler runs. Five of the seven failures in the survey suite's first live run were this one number, and no unit test could have seen it: the token, the route and the limit are three different layers that only meet in a running server. The limit is now two kilobytes, which is what browsers and mail clients carry without complaint. The other two failures were the suite's own ordering — a test that re-publishes the survey as 0–10 ran before the thread tests, which then found no buttons (eleven is a keyboard) and a "4" worth 40; it now runs last, and says why. |
 | A reply in the desk's own thread was "not addressed" | The chat guard accepts a message only when it is a direct message or mentions the bot — the right rule for a busy channel the desk was merely invited to. It was also applied to a reply *inside a thread the desk itself opened*, so a "4" typed under a survey question on Slack would have been dropped as `not_addressed` before anything looked at it, and the survey would have waited for an @ nobody would think to type. Found reading the guard while writing the fake message for the thread test, not by the test. `acceptInbound` now looks the thread up where it has a transaction and tells the guard, which stays a pure function; the busy-channel rule is unchanged everywhere else and a unit test pins both halves. |
 | The platform's `fingerprint` is eight hex characters | Written for showing a credential's identity in a log, it is the last eight characters of a SHA-256. MOD-18's first draft used it to bind a survey link to its invitation row — a 32-bit "hash" of a secret, in a column named `token_hash`. Nothing would have broken: the link is HMAC-signed and the check is a second factor. But a column named for a hash that holds a fingerprint is how the next person reasons wrongly about what the database can prove. The full digest now lives next to the short form, and each says what the other is for. |
-| A notification rule for an event MOD-11 does not listen to never fires, silently | MOD-11 registers a handler per event type from a six-entry list, and its rule table accepts a rule for any event type at all. A rule for `report.generated` was seeded, validated, listed in the admin console and would have sent nothing, because no handler ever called `notifyForEvent` for it. The integration test that asks "where is the lead's notification" is what found it; the fix is one more entry, and the comment on the list now says what the list is. Handlers are registered at import and rules are read per tenant at run time, so the list cannot be derived from the rules — the third hand-maintained list this phase, and the first that cannot be replaced by a derivation. Worth a registry check at boot: every seeded rule's event type must be in the list. Not done in this change. |
+| A notification rule for an event MOD-11 does not listen to never fires, silently | MOD-11 registers a handler per event type from a six-entry list, and its rule table accepts a rule for any event type at all. A rule for `report.generated` was seeded, validated, listed in the admin console and would have sent nothing, because no handler ever called `notifyForEvent` for it. The integration test that asks "where is the lead's notification" is what found it; the fix is one more entry, and the comment on the list now says what the list is. Handlers are registered at import and rules are read per tenant at run time, so the list cannot be derived from the rules — the third hand-maintained list this phase, and the first that cannot be replaced by a derivation. Now checked at boot: `registerNotificationPack` and the default rules are held to the list when the module loads, so a rule for an event MOD-11 does not listen for stops the process with the name of the list to extend, rather than shipping. |
 | The CSV writer defused negative numbers | The formula guard prefixes anything beginning with `=`, `+`, `-` or `@` with a quote, so a spreadsheet shows it as text rather than running it. Written first over `String(value)`, which meant a margin of −30 minutes came out as `'-30` — text, in the one column that exists to be summed. Caught by a unit test whose name said the opposite of what its assertion did; reading the two together was the finding. A number is the platform's, not a person's, and is now written as a number. |
 | Three test bugs in the time suite, found only against the live server | `pending` is a status *category*; the ticket states are `pending_requester`, `pending_third_party` and `pending_approval`, so the elapsed-time test's transition was refused with a 422 the unit tests could not see. And `[100, 80].sort()` is `[100, 80]`: JavaScript sorts numbers as strings unless told otherwise, so a test that meant "in ascending order" asserted the opposite and passed in the author's head. And the elapsed-time test expected two working stints where the module records three: `new` is category `open`, so the time between assignment and first pick-up is working time by the module's own rule, and the test had the rule wrong. All three in the test, none in the module; all the kind of thing a live run finds in its first three minutes. |
 | An accumulating projector cannot be replayed | E1a's comment count was "the old count plus one" on every `ticket.comment.added`, which is right until an event is delivered twice past the inbox — a replay, precisely. E1b needed a replay to make the spec's `analytics:rebuild` real, and the first design was "delete the facts, then replay", which works and is a hard-delete on a reporting table in a command anybody with `analytics.admin` can run. The better fix was upstream: read the count from `ticket_comment` like every other field, so replay is idempotent by construction and deletes nothing. The projector is now a pure function of the source rows, which is what ADR-0031 already claimed. |
 | The worker scheduled four jobs by hand, and the manifests declared five | `registerSchedules` in `apps/worker` was a list of four cron entries copied from module manifests. MOD-04's manifest declares `ticket.autoClose` hourly; nothing scheduled it, and nothing implements it either, so the manifest has been promising a job that does not exist since Phase 1. Found because MOD-12 needed two schedules and adding two more lines would have repeated the mistake. The list is now derived from the manifests at boot and skips any declared job with no registered handler, saying so in the log. That is the same shape as three earlier rows: a declaration copied into a second place drifts, and the fix is to have one place. |
 | A unique index over nullable columns does not enforce uniqueness | The rollup's natural key is `(tenant, date, team, service, priority)` where the last three are null for "all". PostgreSQL treats NULLs in a unique index as distinct from one another, so `(t, d, NULL, NULL, NULL)` never conflicts with itself: the "all" row would have inserted a fresh duplicate on every upsert and every headline total would have climbed with every event. Caught reading the schema back before the migration was written, not by a test — the unit tests could not see it because no row ever reaches a database there. The row's identity is now a spelled-out grouping key (`all`, `team:<id>|priority:P1`) with a constraint that it is non-empty; the nullable columns stay for filtering. |
+| A dependency named a module that does not exist | MOD-23's first manifest depended on `MOD-08`, which is the specification's name for a practice and nobody's module id: the incident, problem and change modules are `MOD-08-E1`, `-E2` and `-E3`. `validateRegistry` would have logged it at boot and carried on. Found by reading the id list before the first typecheck; the fix is the three real ids, and the reminder is that a manifest's `dependsOn` is checked against what is registered, not against the document it was copied from. |
+| A public page nearly ran on the platform role | The first draft of MOD-23's slug lookup read `status_page` through `platformDb()`, because a public request has no tenant to read as. That read returns nothing — the table is isolated like every other — and the honest fix was to allowlist it, which is a public endpoint running on the role that sees every tenant. The better fix was to drop the page's own slug and use the tenant's: the directory is the one pre-tenant lookup the platform already permits, and everything after it reads as that tenant (ADR-0035). One fewer table on the allowlist, and nothing to enumerate. |
+| The context plugin let `/status/` through, but not `/status` | The unauthenticated-path rule was a prefix match on `/status/`, written when the page had only a slug form. The host-resolved form has no slug and no trailing slash, and would have answered 401 on a tenant's own domain — the one URL a customer is most likely to be given. One more clause, and the comment on the rule now says what both forms are. |
+| Uploads had a front door and no back room | ADR-0016 presigns uploads to object storage and nothing in the repository reads an object back; MOD-24 needed to read a CSV the administrator uploaded. Rather than build a read path against a store that has no account yet (OD-06), the file goes into a bounded table with its own body limit and a seven-day life. Small, honest, and the first thing to replace when object storage is real. |
+| The commit deleted the file the re-run needed | MOD-24's first draft removed an uploaded CSV once a commit had read it, on the reasoning that the commit is the last reader. It is not: the module's own promise is that a commit run again changes nothing, and the integration test that proves the promise was the one that could not read the file. The file now lives its week and the sweep removes it; the test that found this is the one that asserts the second commit's counts are all `unchanged`. |
+| JIT provisioning was written in Phase 1 and never called | `provisionFromToken` existed, was documented in doc 09, and had no caller: the context plugin resolved the actor by the token's user id and answered "this account no longer exists" to anybody the platform had not met. Every test signed in with a token that named an existing id, so nothing noticed. Found reading the plugin to add the SCIM branch; the fix is four lines and a test that logs in as a subject the platform has never seen. A function nothing calls is a promise the documentation is making on the code's behalf. The first live run then found the second half: a provider's token names its *subject*, which is not one of our ids, and looking that up as one is a database error rather than a miss — a 500 where the fallback should have run. The plugin now asks the database only for something shaped like an id. |
+| A hand-written migration named the model, not the table | The `User` model lives in `app_user_account`, because `user` is a reserved word in PostgreSQL and the Phase 1 schema said so; the SCIM migration altered `"user"` and the migrate step failed before a test ran. Found by CI on the first run, which is what a migrate step in CI is for. A hand-written migration copies its table names from `@@map`, never from the model. |
+| An accumulating handler, again, one ADR later | MOD-21's ticket meter moved by a delta on each `ticket.created`, which is the shape ADR-0031 was written about: delivery is at least once, so a redelivery counts the same ticket again, and the integration suite found a figure five higher than the tickets that existed. The same trap MOD-12's comment count fell into, reintroduced by somebody who had read the ADR — because "add one when it happens" is what counting *sounds* like. Every meter now re-measures from the rows that define it, and the only accumulator left is the API-call buffer, which is a counter rather than an event and is drained exactly once. Worth its own row rather than a footnote on ADR-0031: the rule needs to be applied at the moment a handler is written, and a second occurrence means the first telling was not enough. |
+| The isolation suite caught a cache key the design had not thought about | The API-call buffer was one global Redis hash with a field per tenant, which reads as tidy and is the one key shape the platform refuses: it cannot be dropped when a tenant is purged, and it is one careless `hgetall` away from crossing a boundary. Nothing in MOD-21's own tests would ever have looked; the isolation suite scans the whole keyspace for anything not prefixed with a tenant, and named it on the first live run. Now one key per tenant, found by a scan over the prefix. The suite paid for itself again, and this is the argument for a test that asserts a *property of the system* rather than a behaviour of a feature. |
+| A test whose measurement changed what it measured | The API-call assertion read the meter through `/api/v1/usage` — itself an API call, and therefore counted. "Flush twice, expect nothing the second time" could never be true, and the failure looked like a bug in the flush. It is now read from the database, and the assertion is the invariant that can actually be proved: the meter grows by exactly what the flush took out of the buffer. A test that perturbs its own subject is worse than no test, because it fails for a reason that is not the code's. |
+| A classification this document promised and the registry cannot express | Doc 09 has said since Phase 1 that the classification registry seeds `restricted` for HR ticket types under MOD-22. The registry classifies a *field of an entity*; "an HR request type is restricted" is neither, so there was never anything MOD-22 could seed. Nobody noticed because the module did not exist to disagree with it. The claim is now removed and the gap recorded in its place, and the HR pack names the decision as a next step for the desk rather than implying the platform has made it. Third time this phase that a document has promised behaviour on the code's behalf — after the JIT provisioner nothing called and the hourly job nothing scheduled — and the pattern is the same: the promise is only tested when something finally tries to rely on it. |
+| Deactivating a person left their permissions in the cache | `deactivateUser` revokes sessions, revokes API keys and deletes every role assignment — and never dropped the cached permission set, where `reactivateUser` two functions below it always had. Nothing had noticed in three phases because every caller resolves an actor from a *request*, and a revoked session fails at the door first. Background work that resolves an actor by id has no door, and MOD-09's suggestion worker is the first of it: a queued job for somebody deactivated a minute earlier ran happily on their old rights. Found by the integration test written to prove the opposite. One line, and the general shape is worth keeping: **a cache is only as safe as the least-used path that reads it**, and adding the first such path is when the gap appears. |
+| A real cost displayed as nothing | One completion costs a fraction of a penny, and `formatMicros` rendered every figure as pounds — so every job in the console read `£0.00` and the platform looked free. It is not free, it is cheap, and the difference is the entire reason the budget exists. The formatter now shows pence with decimals below a pound (`0.054p`) and pounds above it, and says `<0.001p` rather than rounding a real cost to nothing. Caught by an integration assertion that the cost is not `£0.00`, which failed for a much better reason than the one it was written for. |
+| An agent can read an internal article and cannot find one | MOD-09 gives an `internal` article an ACL that is neither tenant-wide nor everyone's, so only a caller whose `search.query` scope is `any` retrieves it — and the agent role holds `knowledge.read` at `any` but `search.query` at `team`. An agent could therefore open an internal article by key and never see one in a result list, which also meant `reply-draft` could not ground a reply on internal knowledge for an ordinary agent. Both halves were deliberate where they were written and inconsistent together; grounding is what made it visible. **Now closed**: the agent role searches tenant-wide. What that widens beyond articles is small — a ticket's search ACL is already tenant-wide at team scope or above — and it does not touch the read path, where each service still checks its own permission. A knowledge base that is readable and not findable is most of the way to not existing. |
+| A background job inherits the worker's permissions, not the asker's | The AI worker rebuilds a job's context from the actor id in the envelope — and the platform's job runner supplies the *system* permission set alongside it. Retrieval running on that context would have searched everything in the tenant and put it in front of whoever asked, and every permission check in the assembler would have passed, because the checks are real and the actor was not. "The AI never sees more than the actor" is only true if the actor is the actor. Found reading the job runner while wiring the queue, not by a test; the fix is five lines that resolve the asker's roles before anything is assembled, and the integration suite pins it by deactivating the asker between the request and the run. Worth stating generally, because every module that queues work on a person's behalf has the same shape available to it: **a job carries an identity, and identity is not authority.** |
+| A budget that looks like a meter and is not | MOD-21's meters were the obvious home for AI spend, and folding it in would have been wrong in three ways: a plan limit is what a tenant *bought* and this is what it *chose to spend*; a meter is checked against a figure that is already true and this is checked before a call whose cost is unknown until afterwards; and the meters are the platform's commercial control where this is the tenant's own. One number with two owners is an argument waiting to happen. What is reused is the refusal — `LimitReachedError` and its 402 — which is the part that actually wanted sharing. |
+| Building the stub first made the honest limits visible | Two things were going to be written the day OD-04 closed and would have been written badly: what happens with no provider at all, and what an evaluation score means. With a stub in place both had to be answered immediately. The first became a loud refusal naming the decision rather than a silent default. The second became a sentence in the ADR, in the delivery record and in the test file itself: against a stub an evaluation proves the machinery, not the prompt, and nobody should quote the figure. Neither answer is clever; both would have been skipped under demo pressure. |
+| A vocabulary copied from memory instead of from the module that owns it | MOD-22's pack schema declares the audience an article may carry, and the first draft listed `public` and `agent` — neither of which exists — and left out `tenant`, which does. It parsed happily, because the list was checked against itself. Every shipped pack happens to use `internal`, so nothing hit it; the first pack anybody wrote with `audience: 'public'` would have installed four items and then failed on the fifth with a schema error naming a field the author had every reason to think was valid. Found while writing MOD-09's suggestion tests, where the same three words had to be got right for a different reason. Now asserted against `AUDIENCES` from the module that owns it, which is the only version of this check that cannot drift. |
+| A module that could create and never change | MOD-22 needed to bring a newer version of a pack's service across, and found that MOD-05 has no way to edit a service at all: `createService`, `createRequestType`, `createForm` and `createPolicy` have been there since Phase 2, and not one update between them. Nothing was broken, because nothing had asked — an administrator who wanted to rename a service had no route either. Four small functions and one workflow rename later, the gap is closed. The lesson is not about packs: a module whose tests only ever create is a module whose update path nobody has read, and the omission survives every review because there is nothing to look at. |
+| An identifier a pack cannot know, in a column it has to match on | A pack's SLA policy has to say "this applies to the HR desk", and the SLA matcher's context carried only `ticket.serviceId`. A pack ships no identifiers, so the choices were to substitute the id at install — which makes the installed policy differ from the shipped one, so the diff reports it as edited for ever — or to add the key. Adding the key is one indexed read in the matcher and it is what a hand-written policy wanted in the first place: nobody reading a policy a year later can tell what `9f2c…` was. The general shape is worth naming, because it recurs wherever content is written somewhere that does not know the tenant: **match on the thing a person would write down**. |
+| A sort that decides whether a comparison is true | The pack diff compares an SLA policy by hashing its targets, and the database hands targets back sorted by priority and then type while a pack is written P1, P2, P3, P4. The two orders differ the moment a policy has more than one target type, so every shipped policy would have read as edited and the pack could never have improved one. Caught reading the reader and the shaper side by side rather than by a test, and pinned by one afterwards. The fix sorts inside the shared normalisation, bytewise rather than by `localeCompare` — the audit chain's locale-dependent ordering is already a recorded finding on this page, and repeating it in a second place would have been the same mistake twice. |
 | An SSRF guard makes its own gateway hard to test | A local test server is on a refused address, so there is no hermetic way to exercise a real successful call. Resolved by injecting `fetch`, the resolver and the **log sink**, which also bought the most valuable assertion in the module: the credential goes out on the wire and is nowhere in what was written down. |
 
 ---
 
-## 5. Verification so far
+## 5. Verification
 
 | Check | Result |
 |---|---|
-| Unit tests | 811 passing, 483 of them over the eleven modules |
+| Unit tests | 963 passing, 631 of them over the modules |
 | — the address guard | 14, each naming the attack or operational failure it prevents |
 | — envelope encryption | 13, covering rotation, tampering and the absence of a key |
 | — the gateway end to end | 14, with `fetch`, the resolver and the log sink injected; three of them over the signed path |
@@ -811,15 +1073,113 @@ dashboard.
 | — the rollup arithmetic | 19, written so that a create-then-withdraw cycle must sum to zero and a team change must leave the headline total alone |
 | — durations and ISO weeks | 10, including the year boundary where 1 January belongs to the previous ISO year |
 | — the metric catalogue and query builder | 21, reading the generated SQL as text: catalogue columns quoted, user values as parameters, and every way a filter or a rollup plan is refused |
+| — the shipped ESM packs | 16, putting every pack through the checks the modules apply at install: form documents, workflow graphs, the references between items, and the article audiences checked against MOD-09's own list |
+| — the pack diff | 10, one per state, including that a refused version is not offered again and a withdrawn item is never deleted |
+| — the AI budget arithmetic | 17, including that a fraction of a penny rounds up, that a line is announced once, that a warning above the cap is refused, and that one call's cost never renders as nothing |
+| — parsing a completion | 9, most of them refusals: a parser that salvages what it can produces a suggestion that looks complete and is not |
+| — scoring an evaluation case | 7, including that an unparseable answer scores zero rather than being skipped |
+| — the shipped prompts | 8, putting every one through the checks a promotion makes: the paths it reads, the grounding instruction, and its own dataset's threshold |
 | — ranges, schedules, the trend line and CSV | 21, including the same 08:00 on both sides of daylight saving and the formula guard that leaves numbers alone |
 | — survey documents, scoring and throttling | 19, including the scale that would have reported a 7 as 150 % and the button row that refuses to be a keyboard |
 | — signed links | 4, including that a tampered payload is a bad signature whatever its expiry says |
 | — time pricing, periods and thresholds | 12, including that one entry crossing both budget lines reports both and a decrement reports neither |
-| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), five permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
+| — the MOD-11 listener list | 2, proving the boot-time check refuses a rule for an event nobody listens for and names the list to extend |
+| — plan limits and the meters | 20, including that the line is reached rather than passed (five agents on a five-agent plan is the sixth refused), that a nightly rebuild announces nothing twice, that a live meter's period is a value and not a null, and that the platform's socket fails open when the checker itself fails |
+| — SCIM as providers speak it | 15, including the capitalised op, the string boolean, the pathless PATCH, the member removal by selector, and the filter that is refused rather than ignored |
+| — import mappings, presets and paging | 26, including that a status the map does not name is a failed row and not a guess, that every vendor preset passes its entity's checks, and that each paging strategy stops when it should and never before |
+| — the status page vocabulary, allowance and rendering | 22, including that maintenance loses to anything actually broken, that the sweep never revives a cancelled window, that a refused subscribe attempt does not count against the person behind the script, and that a title of `<script>` renders as text |
+| Integration, isolation and permissions | extended by 22 workload tests, a 23-test CMDB suite, a 22-test discovery suite, a 13-test projection suite (redelivery, team moves, rebuild-equals-incremental, drift), an 18-test reporting suite (rollup-equals-scan, personal dashboards invisible to others, a scheduled report reaching exactly the person named, replay leaving the facts unchanged), a 15-test survey suite (one ask per resolution, the link working with no session, a tampered link refused, the throttle, the self-resolver not asked, a new version leaving old answers alone, and in a Slack thread the requester's typed reply accepted and a stranger's button refused), a 15-test time-and-cost suite (the rate frozen on the entry after it changes, one timer per person, elapsed time recorded as its own free kind, a budget crossing both lines once each and withdrawing spend on deletion, and the kinds kept apart in the metrics), a 16-test metering suite (a tenant with no plan refusing nothing, agents counted as the people who work the desk and not the people who ask, a migration's history not spending the month's allowance, a tampered figure corrected by the rebuild, a warning that arrives once and reaches the administrators, a refusal that names the plan while comments and transitions still work, an upgrade taking effect at once, the requester role never refused, a warning threshold brought forward and refused above the hard line, and API calls buffered then flushed exactly once), a 19-test SCIM suite (the door opening only to the token and in the SCIM error shape when it does not, a user created and found by the provider's filter, adopted when it already exists, deactivated with its session revoked and brought back, a group becoming a team whose members hold the mapped role and lose it on leaving, a hand-granted role left alone, a rename following the map and the map re-applied when it changes, a first login landing on the SCIM-made account and refused once SCIM deactivates it, and a rotated token overlapping while a revoked one does not), a 13-test migration suite (teams and users from CSV with a dry run that writes nothing and a commit that lands the good rows and reports the bad one, the same commit again doubling nothing, tickets from a ServiceNow-shaped API arriving resolved and dated when raised with their references resolved, no SLA clock and no email, present in search and in the reporting facts, and a journal export landing on the tickets it belongs to), a 22-test status-page suite (a customer-facing major incident marking its service's component and an internal one never appearing, an internal update kept off the page beside a public one shown, resolution applied once from two events, a scheduled change becoming a notice that moves rather than multiplies, the sweep marking the component under maintenance, a subscriber confirmed by link, told once and not again after unsubscribing, and a private page answering nothing either way), ten permission-matrix entries and five register-write assertions, against live PostgreSQL, Redis and Meilisearch |
 | Module contract | clean, including the new single-egress rule |
+| The walking skeleton | **59 assertions**, 15 of them added this phase: an outage reaching the public status page on its own, an incident that cannot be closed before its review, a blackout that refuses rather than warns, the register answering what else breaks, time against a ticket, a survey asked by a status change nobody told it about, a rebuilt reporting figure, a desk stood up in one act, an AI that declines to invent a reply, and another tenant seeing none of it |
+| — and the gap in it | the skeleton drives a real API and a real worker over HTTP, which CI does not start, so it is run by hand against a live stack. A new integration suite reads it, extracts all 56 endpoints it calls and asserts each one is mounted — which catches a renamed route between live runs. A changed request or response shape still needs the live run, and §7 records that as the open item it is |
 
 The rota tests are the highest-value read after the address guard. A night shift
 over 29–30 March is seven hours and the same shift over 25–26 October is nine;
 counted in milliseconds both would be eight, and everybody would go home an hour
 early once a year. Each test names the silence it prevents rather than the line
 it covers.
+
+---
+
+## 6. The Phase 4 release gate
+
+Doc 18 sets the quality attributes and doc 13 §5 sets an extra gate for the AI
+features specifically. Read together, item by item, on the state of the
+repository rather than on intent. **Met by a stub** is called out separately
+from **met**, because the difference is the whole argument of ADR-0040 and
+collapsing the two is how a gate stops meaning anything.
+
+| Gate | State | What it rests on |
+|---|---|---|
+| Modules own their data; no direct cross-module table access | **Met** | `infra/scripts/check-boundaries.ts`, eight rules, run in CI stage 1. Cross-module *reads* through the owning module's service are the contract; the one place this phase read another module's rows directly is MOD-22's edit detection, and it says why in the file. |
+| Outbound calls go through the integration gateway | **Met** | Module-contract rule 6, with a named allow-list rather than a pattern, so adding an exception is a deliberate edit. |
+| The AI never sees more than the actor | **Met** | The context assembler reads through MOD-04's timeline, MOD-09's ACL-filtered search and MOD-08-E2's own permission check, then masks through the classification registry. The worker rebuilds the asking person's context from their roles; a job whose asker is deactivated is refused. |
+| AI kill switch effective ≤ 10 s | **Met, by invalidation rather than by expiry** | The flag cache TTL is 600 s, not 10; what makes the switch immediate is that `setFlag` drops the cached value in Redis, which every node reads. Worth stating precisely: the guarantee comes from the invalidation path, so a flag changed by any route that forgets to invalidate would take ten minutes. Every writer currently invalidates. |
+| Every AI output is explainable: evidence, prompt version, model | **Met in the data; not in an interface** | `ai_suggestion` stores the evidence list with a reference a person can open, the confidence band, the prompt key and version, the model and the token counts, and the API returns them beside every suggestion. `AiSuggestionCard` in `packages/ui` is not built: nothing renders it yet. |
+| Suggestions are advisory; a person overrides | **Met** | Nothing this module produces is applied. The outcome route records what the person did, once. |
+| Every AI job, suggestion and outcome is audited | **Met** | Written by the `ai` actor with the requesting person as `on_behalf_of`, into the hash-chained audit trail. |
+| A prompt cannot be promoted below its threshold | **Met, by a stub** | The gate is real and refuses, naming the score and the threshold. What it scores is a stub's answers, so it demonstrates the machinery and not the quality of a prompt. Becomes a real gate with no code change when OD-04 closes. |
+| Per-tenant AI budget with alert thresholds | **Met** | Warning line, hard line at 402, announced once per period, spend rebuilt from the jobs. |
+| Prompts and completions retained no longer than the tenant's window | **Met** | A daily sweep clears the text and keeps the job, its cost and its outcome. |
+| Configuration without deployment | **Met** | Settings, flags, versioned definitions and rollback, plus — new this phase — SLA policies, dashboards, surveys, status pages, import mappings and ESM packs, all writable through the API. |
+| Breaking contract changes need a new version | **Partly met** | Event definitions carry a `version` and the catalogue is one file. There is no OpenAPI diff gate in CI, so a breaking REST change is caught by review rather than mechanically. |
+| Feature flags expire | **Not met** | Manifests carry `owner` and `expires`, and nothing lints them. Phase 4 added five flags, all `permanent` by intent — a kill switch lives as long as the thing it switches off — so nothing is currently overdue, which is exactly when the missing lint is cheapest to add. |
+| Add a channel without touching ticket core | **Met** | Four adapters arrived this phase on the framework PH-2 built; `modules/ticket` was not opened for any of them. |
+| Five languages by PH-4 | **Not met** | No localisation work happened in this phase at all. `packages/i18n` exists from PH-1; the strings added by thirteen modules are English in the source. |
+| WCAG 2.2 AA on every surface | **Not verified** | No axe run, no manual audit, and most of what this phase added has no interface yet. |
+| Twelve core journeys automated in Playwright | **Not met** | CI stage 4 runs against preview environments, which need the hosting accounts (OD-06). The walking skeleton is the substitute and is not itself run by CI (§7). |
+| Penetration test before PH-4 | **Not done** | An external engagement, not a repository change. |
+| Extraction without rewrite | **Deferred to PH-5** | The module contract that makes it possible is enforced; the load and failure test that proves it is the PH-5 gate. |
+
+The honest summary: **every gate that is a property of the code is met, and
+every gate that needs a person, an account or an external engagement is not.**
+That split is not a coincidence — it is what four phases of building against
+stubs and sockets produces — but it does mean the phase cannot be called
+released without the four rows above being worked by somebody.
+
+---
+
+## 7. Open decisions, in one place
+
+Scattered across doc 19, this document and the findings table above. Collected
+here so that what is waiting on a judgement can be seen at once, with what it
+blocks and what the platform does in the meantime.
+
+| # | Decision | Blocks | What happens until it is made |
+|---|---|---|---|
+| **OD-04** | Which model provider, and in which region | The AI features producing real answers; the pgvector half of retrieval; the virtual agent | Every capability that calls a model is refused in production, naming the decision. The stub answers outside production. Closing this is one adapter and one `registerAiProvider` call (ADR-0040). |
+| **OD-06** | Product name, domain and hosting accounts | CI stages 4–6, preview environments, the twelve Playwright journeys, MOD-23's static export, object storage for attachments | Uploads live in a bounded table with a seven-day life; the status page is served by the API; the walking skeleton is run by hand. |
+| **OD-05** | Commercial model | Nothing, now | MOD-21 meters agents, tickets, storage and API calls, and plans are written through the platform console. Whatever is sold can be expressed in those; the decision is about price, not about plumbing. |
+| **OD-07** | Whether time tracking is on by default | Nothing | MOD-19 is optional per tenant and off unless enabled. |
+| — | The audit chain's ordering is locale-dependent | Nothing today; a reproducibility risk across Node builds with different ICU data | `packages/platform/src/audit.ts` sorts with `localeCompare` where the shared canonical helper sorts by code point. Changing it rewrites historical hashes, so it needs a hash version on the row and a verifier that understands both. Recorded since MOD-10-E2; nothing has made it urgent. |
+| — | `DATABASE_URL_READONLY` in production | Analytical reads competing with the ticket somebody is saving | Unset, so the read-only pool falls back to the application pool with the statement timeout still applied. Correct in development; wrong under load. |
+| — | `prepare-database.sh` per environment | A first deploy | It creates roles, the database and the extensions, and it is written for a local stack and CI. A production run needs the same script with managed-service conventions. |
+| — | SCIM-made teams land in the tenant's first organisation | A tenant with provider groups across several organisations | There is no setting for it. Nobody has asked; it is a one-line gap that becomes a data-modelling conversation the moment somebody does. |
+| — | The walking skeleton is not run by CI | Nothing directly; it is the only proof the modules work *together* | Extended by hand and run against a live stack by a person. A new integration test now asserts every endpoint it calls is mounted, which catches a renamed route; a changed request or response shape still needs the live run. |
+| — | Agents now search tenant-wide | — **closed in this pass** | The agent role's `search.query` scope moved from `team` to `any`, because an agent could open an internal knowledge article by key and never find one in a result list. The read path is unchanged: finding a record still does not mean being served it. |
+
+---
+
+## 8. What Phase 5 inherits
+
+- **A platform with no interface for most of what it does.** Thirteen modules
+  arrived this phase; `packages/ui` gained nothing. Every one of them is
+  reachable only through the API. That is a deliberate order — the contract
+  first, the screens after — and it is now the largest single piece of
+  outstanding work.
+- **Two sockets waiting for their implementations.** The AI provider (OD-04)
+  and object storage (OD-06). Both refuse loudly rather than degrade quietly,
+  which is the property to preserve when they are filled.
+- **A metering and plan framework with nothing charging against it.** MOD-21
+  measures four meters and enforces plan limits; `Invoice`, `Subscription` and
+  the `BillingProvider` interface are PH-5.
+- **A governed AI service with no tool gateway.** Suggestions are advisory by
+  design and will stay that way; agentic *actions* — password reset, device
+  diagnostics, remediation — are the PH-5 piece, and they inherit the
+  permission, dry-run and evidence model rather than inventing one.
+- **Eight findings about the same mistake.** Read §4 before adding a
+  projector, a cache, a hand-maintained list or a background job: an
+  accumulating handler, a cache nothing invalidates, a list copied into a
+  second place and a job that runs on the wrong identity each appear more than
+  once, which is the argument for checking them at the moment code is written
+  rather than trusting them to memory.

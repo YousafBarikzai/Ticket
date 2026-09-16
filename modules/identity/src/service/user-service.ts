@@ -5,6 +5,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  assertWithinLimit,
   authz,
   newId,
   publish,
@@ -14,6 +15,7 @@ import {
   invalidatePermissions,
 } from '@itsm/platform';
 import { events } from '@itsm/contracts';
+import { denySession, denySessions } from './session-denylist.js';
 
 /** MOD-01 user, team and role administration, plus just-in-time provisioning. */
 
@@ -44,9 +46,9 @@ export const createUserSchema = z.object({
 /** The caller supplies what they know; the schema fills in the defaults. */
 export type CreateUserInput = z.input<typeof createUserSchema>;
 
-export async function createUser(ctx: TenantContext, input: CreateUserInput, source: 'admin' | 'jit' | 'import' | 'seed' = 'admin') {
+export async function createUser(ctx: TenantContext, input: CreateUserInput, source: 'admin' | 'jit' | 'import' | 'seed' | 'scim' = 'admin') {
   const parsed = createUserSchema.parse(input);
-  if (source === 'admin') authz.require(ctx, 'identity.user.manage');
+  if (source === 'admin' || source === 'scim') authz.require(ctx, 'identity.user.manage');
 
   return transaction(ctx, async (tx) => {
     const email = parsed.email.toLowerCase();
@@ -212,6 +214,12 @@ export async function deactivateUser(ctx: TenantContext, id: string, reason?: st
       data: { status: 'inactive', updatedBy: ctx.actor.id, version: { increment: 1 } },
     });
     // Access ends immediately: sessions, keys and assignments all go at once.
+    // The denylist first, for the same reason `revokeSession` does it first —
+    // and this is where it mattered most. Marking `revoked_at` on a row that
+    // nothing reads at request time left a deactivated person's token working
+    // until it expired.
+    const live = await tx.session.findMany({ where: { userId: id, revokedAt: null } });
+    await denySessions(live.map((session) => ({ sid: session.sid, expiresAt: session.expiresAt })));
     await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     await tx.apiKey.updateMany({ where: { serviceUserId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     await tx.roleAssignment.deleteMany({ where: { userId: id } });
@@ -229,8 +237,84 @@ export async function deactivateUser(ctx: TenantContext, id: string, reason?: st
       aggregateId: id,
       payload: { userId: id, reason: reason ?? null },
     });
+    // The resolved permission set is cached per user, and deactivation left it
+    // there — `reactivateUser` invalidated and this did not. Nothing noticed
+    // because every other caller resolves an actor from a request, and a
+    // revoked session fails at the door first. Background work that resolves
+    // an actor by id has no door: MOD-09's suggestion worker was the first,
+    // and it would have run a deactivated person's job on their old rights
+    // until the cache expired.
+    await invalidatePermissions(ctx.tenantId, id);
     return updated;
   });
+}
+
+/**
+ * Brings a deactivated user back. Sessions and keys are not restored — they
+ * were revoked, and a person who is back signs in again — and role
+ * assignments are not either: whoever reactivates decides what they get, or
+ * SCIM does from their groups.
+ */
+export async function reactivateUser(ctx: TenantContext, id: string): Promise<boolean> {
+  authz.require(ctx, 'identity.user.manage');
+  return transaction(ctx, async (tx) => {
+    const user = await tx.user.findFirst({ where: { id, deletedAt: null } });
+    if (!user) throw new NotFoundError('user', id);
+    if (user.status === 'active') return false;
+    await tx.user.update({ where: { id }, data: { status: 'active', updatedBy: ctx.actor.id, version: { increment: 1 } } });
+    await recordAudit(tx, ctx, { action: 'user.reactivated', targetType: 'user', targetId: id, before: { status: user.status }, after: { status: 'active' } });
+    await publish(tx, ctx, { definition: events.userUpdated, aggregateId: id, payload: { userId: id, changed: ['status'] } });
+    await invalidatePermissions(ctx.tenantId, id);
+    return true;
+  });
+}
+
+/**
+ * The grant itself, on a caller's transaction, for the SCIM reconciler that
+ * grants and revokes several in one go. The caller has checked the
+ * permission; this writes the row, the audit line and the event exactly as
+ * `assignRole` does.
+ */
+export async function grantRoleOn(
+  tx: Tx,
+  ctx: TenantContext,
+  input: { userId: string; roleKey: string; viaScimTeamId?: string | null },
+) {
+  const role = await tx.role.findFirst({ where: { key: input.roleKey } });
+  if (!role) throw new NotFoundError('role', input.roleKey);
+  const existing = await tx.roleAssignment.findFirst({ where: { userId: input.userId, roleId: role.id, scopeType: null, scopeId: null } });
+  if (existing) {
+    if (input.viaScimTeamId && !existing.viaScimTeamId) {
+      // Held by hand already; SCIM does not take it over, so leaving the
+      // group later will not remove something an administrator granted.
+      return existing;
+    }
+    return existing;
+  }
+  const assignment = await tx.roleAssignment.create({
+    data: { id: newId(), tenantId: ctx.tenantId, userId: input.userId, roleId: role.id, viaScimTeamId: input.viaScimTeamId ?? null, createdBy: ctx.actor.id },
+  });
+  await recordAudit(tx, ctx, {
+    action: 'role.assignment.granted',
+    targetType: 'user',
+    targetId: input.userId,
+    after: { roleKey: input.roleKey, scopeType: null, scopeId: null, viaScimTeamId: input.viaScimTeamId ?? null },
+  });
+  await publish(tx, ctx, { definition: events.roleAssignmentChanged, aggregateId: input.userId, payload: { userId: input.userId, roleId: role.id, action: 'granted' } });
+  await invalidatePermissions(ctx.tenantId, input.userId);
+  return assignment;
+}
+
+export async function revokeAssignmentOn(tx: Tx, ctx: TenantContext, assignment: { id: string; userId: string; roleId: string; scopeType: string | null; scopeId: string | null }) {
+  await tx.roleAssignment.delete({ where: { id: assignment.id } });
+  await recordAudit(tx, ctx, {
+    action: 'role.assignment.revoked',
+    targetType: 'user',
+    targetId: assignment.userId,
+    before: { roleId: assignment.roleId, scopeType: assignment.scopeType, scopeId: assignment.scopeId },
+  });
+  await publish(tx, ctx, { definition: events.roleAssignmentChanged, aggregateId: assignment.userId, payload: { userId: assignment.userId, roleId: assignment.roleId, action: 'revoked' } });
+  await invalidatePermissions(ctx.tenantId, assignment.userId);
 }
 
 export async function assignRole(
@@ -238,6 +322,10 @@ export async function assignRole(
   input: { userId: string; roleKey: string; scopeType?: 'organisation' | 'team' | 'service'; scopeId?: string; validTo?: Date },
 ) {
   authz.require(ctx, 'identity.role.manage');
+  // The agent meter counts people holding a role that works the desk, so
+  // the act that grows it is this one — not creating a user, because a
+  // requester is not an agent and a tenant must always be able to add one.
+  if (input.roleKey !== 'requester') await assertWithinLimit(ctx, 'agents');
   return transaction(ctx, async (tx) => {
     const [user, role] = await Promise.all([
       tx.user.findFirst({ where: { id: input.userId, deletedAt: null } }),
@@ -342,6 +430,18 @@ export async function recordSession(
   ctx: TenantContext,
   input: { userId: string; sid: string; expiresAt: Date; ip?: string; userAgent?: string; device?: string },
 ) {
+  // The same check `revokeSession` makes, and deliberately the same expression.
+  // With the `own` scope every role carries, this passes for your own session
+  // and refuses somebody else's; only the `any` scope an administrator holds
+  // records a session on another person's behalf. `authz.require` would not do:
+  // every role has the key, so only the scope distinguishes the two.
+  authz.requireVisible(
+    ctx,
+    'identity.session.manage',
+    { aggregate: 'user', record: { id: input.userId, primaryOrgId: null, managerId: null } },
+    'session',
+  );
+
   return transaction(ctx, async (tx) => {
     const existing = await tx.session.findFirst({ where: { sid: input.sid } });
     if (existing) {
@@ -379,6 +479,13 @@ export async function revokeSession(ctx: TenantContext, sessionId: string) {
       'session',
     );
     if (session.revokedAt) return session;
+
+    // Before the update, deliberately. A rollback then leaves a deny entry for
+    // a session that was not revoked after all — somebody signed out who did
+    // not need to be, which is the safe direction. The other order commits a
+    // revocation that never takes effect, and the token carries on working
+    // until it expires.
+    await denySession(session.sid, session.expiresAt);
 
     const updated = await tx.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
     await recordAudit(tx, ctx, { action: 'session.revoked', targetType: 'session', targetId: sessionId, after: { revoked: true } });

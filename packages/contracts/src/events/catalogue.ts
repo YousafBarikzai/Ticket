@@ -115,6 +115,28 @@ export const ticketCreated = defineEvent({
   }),
 });
 
+/**
+ * A ticket brought in from another system by a migration job (MOD-24).
+ * Deliberately not `ticket.created`: nothing that reacts to a creation — SLA
+ * timers, rules, notifications, surveys — reacts to this, and the projections
+ * that describe the record (search, reporting) do (ADR-0036).
+ */
+export const ticketImported = defineEvent({
+  type: 'ticket.imported',
+  version: 1,
+  aggregateType: 'ticket',
+  webhook: false,
+  description: 'A ticket was brought in from another system by a migration job; projections refresh, reactions do not fire.',
+  payload: z.object({
+    ...ticketRef,
+    type: z.string(),
+    status: z.string(),
+    externalRef: z.string().nullable(),
+    commentsAdded: z.number().int(),
+    importJobId: id.nullable(),
+  }),
+});
+
 export const ticketUpdated = defineEvent({
   type: 'ticket.updated',
   version: 1,
@@ -1071,11 +1093,189 @@ export const budgetThresholdReached = defineEvent({
   }),
 });
 
+// ---- MOD-21 Plans, limits and metering (PH-4) ------------------------------
+export const usageLimitReached = defineEvent({
+  type: 'usage.limit.reached',
+  version: 1,
+  aggregateType: 'usage_meter',
+  webhook: true,
+  description: 'A tenant crossed the warning or the hard line on one of its plan limits.',
+  payload: z.object({
+    meter: z.string(),
+    /** warned | blocked */
+    threshold: z.string(),
+    planKey: z.string(),
+    value: z.number(),
+    limit: z.number(),
+    /** The period it counts over, or null for a live figure like agents. */
+    periodStart: z.string().nullable(),
+    /** Whoever the tenant's administrators are, so MOD-11 can tell them. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+export const planChanged = defineEvent({
+  type: 'plan.changed',
+  version: 1,
+  aggregateType: 'tenant',
+  webhook: true,
+  description: 'A tenant was moved onto a different plan.',
+  payload: z.object({ tenantId: id, fromPlanKey: z.string().nullable(), toPlanKey: z.string() }),
+});
+
+// ---- MOD-24 Migration (PH-4) ----------------------------------------------
+export const importJobFinished = defineEvent({
+  type: 'import.job.finished',
+  version: 1,
+  aggregateType: 'import_job',
+  webhook: true,
+  description: 'An import job finished, completed or failed, with what it did to every row.',
+  payload: z.object({
+    jobId: id,
+    name: z.string(),
+    /** users | teams | services | tickets | comments */
+    entity: z.string(),
+    /** csv | http_json | servicenow | jira | freshservice */
+    source: z.string(),
+    /** dry_run | commit */
+    mode: z.string(),
+    /** completed | failed */
+    status: z.string(),
+    seen: z.number().int(),
+    created: z.number().int(),
+    updated: z.number().int(),
+    unchanged: z.number().int(),
+    failed: z.number().int(),
+    error: z.string().nullable(),
+    /** Whoever started it, so MOD-11 can tell them. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+// ---- MOD-23 Status page (PH-4) --------------------------------------------
+export const statusIncidentUpdated = defineEvent({
+  type: 'status.incident.updated',
+  version: 1,
+  aggregateType: 'status_incident',
+  webhook: true,
+  description: 'Something on the public status page changed: an incident opened, moved, or was resolved.',
+  payload: z.object({
+    incidentId: id,
+    pageSlug: z.string(),
+    title: z.string(),
+    /** investigating | identified | monitoring | resolved */
+    status: z.string(),
+    /** none | minor | major | critical */
+    impact: z.string(),
+    componentKeys: z.array(z.string()),
+    body: z.string(),
+    /** major_incident | manual */
+    source: z.string(),
+  }),
+});
+
+export const statusMaintenanceScheduled = defineEvent({
+  type: 'status.maintenance.scheduled',
+  version: 1,
+  aggregateType: 'maintenance_window',
+  webhook: true,
+  description: 'A maintenance window was announced, moved, started, finished or cancelled on the public status page.',
+  payload: z.object({
+    maintenanceId: id,
+    pageSlug: z.string(),
+    title: z.string(),
+    /** scheduled | in_progress | completed | cancelled */
+    status: z.string(),
+    componentKeys: z.array(z.string()),
+    startsAt: z.string(),
+    endsAt: z.string(),
+    /** change | manual */
+    source: z.string(),
+  }),
+});
+
+// ---- MOD-22 ESM packs (PH-4) -----------------------------------------------
+export const packInstalled = defineEvent({
+  type: 'pack.installed',
+  version: 1,
+  aggregateType: 'pack_installation',
+  webhook: true,
+  description: 'A tenant installed an enterprise service management pack, standing a desk up from shipped content.',
+  payload: z.object({
+    packKey: z.string(),
+    packVersion: z.number().int(),
+    name: z.string(),
+    desk: z.string(),
+    /** How many services, forms, request types, workflows, policies and articles landed. */
+    items: z.number().int(),
+    /** What the desk still has to do itself. */
+    nextSteps: z.array(z.string()),
+    /** Whoever installed it, so MOD-11 can tell them. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+export const packUpgraded = defineEvent({
+  type: 'pack.upgraded',
+  version: 1,
+  aggregateType: 'pack_installation',
+  webhook: true,
+  description: 'A tenant took, or declined, some part of a newer version of a pack it had installed.',
+  payload: z.object({
+    packKey: z.string(),
+    fromVersion: z.number().int(),
+    toVersion: z.number().int(),
+    taken: z.array(z.string()),
+    declined: z.array(z.string()),
+    /** Still waiting for a decision after this round. */
+    outstanding: z.number().int(),
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+// ---- MOD-09 AI capability service (PH-4) ------------------------------------
+export const aiSuggestionCreated = defineEvent({
+  type: 'ai.suggestion.created',
+  version: 1,
+  aggregateType: 'ai_suggestion',
+  webhook: true,
+  description: 'The AI service produced a suggestion for a person to accept, edit or reject. Advisory: nothing has been applied.',
+  payload: z.object({
+    suggestionId: id,
+    jobId: id,
+    /** reply-draft | ticket-summary | article-draft | similar-work */
+    capability: z.string(),
+    subjectType: z.string(),
+    subjectId: id,
+    /** low | medium | high, banded rather than a figure nobody calibrated. */
+    confidence: z.string(),
+    evidenceCount: z.number().int(),
+    /** Whoever asked for it: the person the suggestion is shown to. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
+export const aiBudgetThreshold = defineEvent({
+  type: 'ai.budget.threshold',
+  version: 1,
+  aggregateType: 'ai_budget',
+  webhook: true,
+  description: 'A tenant crossed the warning or the hard line on its own monthly AI budget.',
+  payload: z.object({
+    /** warned | blocked */
+    threshold: z.string(),
+    periodKey: z.string(),
+    spentPence: z.number().int(),
+    limitPence: z.number().int(),
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
   authLoginSucceeded, authLoginFailed, sessionRevoked,
-  ticketCreated, ticketUpdated, ticketStatusChanged, ticketAssigned, ticketCommentAdded,
+  ticketCreated, ticketImported, ticketUpdated, ticketStatusChanged, ticketAssigned, ticketCommentAdded,
   ticketAttachmentAdded, ticketAttachmentScanned, ticketTaskCreated, ticketTaskCompleted,
   ticketLinked, ticketMerged,
   slaTimerStarted, slaTimerWarning, slaTimerBreached, slaTimerPaused, slaTimerResumed, slaTimerMet,
@@ -1098,6 +1298,11 @@ export const eventCatalogue = [
   analyticsDriftDetected, reportGenerated,
   surveyInvited, surveyResponded,
   timeEntryLogged, timeEntryDeleted, budgetThresholdReached,
+  statusIncidentUpdated, statusMaintenanceScheduled,
+  importJobFinished,
+  usageLimitReached, planChanged,
+  packInstalled, packUpgraded,
+  aiSuggestionCreated, aiBudgetThreshold,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

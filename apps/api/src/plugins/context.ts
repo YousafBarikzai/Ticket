@@ -1,20 +1,21 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import {
-  EMPTY_PERMISSIONS,
-  SYSTEM_PERMISSIONS,
-  TenantSuspendedError,
-  UnauthorisedError,
   buildPermissionSet,
   createContext,
+  EMPTY_PERMISSIONS,
   enterContext,
   loadConfig,
   logger,
   newCorrelationId,
+  SYSTEM_PERMISSIONS,
+  tenantFacts,
+  TenantSuspendedError,
+  UnauthorisedError,
   withContext,
   type TenantContext,
 } from '@itsm/platform';
-import { resolveActor } from '@itsm/module-identity';
+import { resolveActor, scimTokenService, userService } from '@itsm/module-identity';
 import { tenantService } from '@itsm/module-tenancy';
 import { verifyAccessToken, type VerifiedToken } from '../auth/verify.js';
 
@@ -35,14 +36,29 @@ declare module 'fastify' {
   }
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Routes that must work before a caller has a tenant or a session. */
-const UNAUTHENTICATED_PATHS = new Set(['/health/live', '/health/ready', '/api/openapi.json', '/api/docs', '/metrics']);
+const UNAUTHENTICATED_PATHS = new Set([
+  '/health/live',
+  '/health/ready',
+  '/api/openapi.json',
+  '/api/docs',
+  '/metrics',
+  // The development sign-in, which by definition has no token to present. The
+  // route is registered only when there is no identity provider and the
+  // environment is not production (routes/auth.ts), so in a deployment this
+  // entry names a path that answers 404.
+  '/api/v1/auth/dev-session',
+]);
 
 function isUnauthenticated(request: FastifyRequest): boolean {
   const url = request.url.split('?')[0] ?? '';
   if (UNAUTHENTICATED_PATHS.has(url)) return true;
   // Signed-token endpoints carry their own proof and have no session.
-  if (url.startsWith('/api/v1/public/') || url.startsWith('/status/')) return true;
+  if (url.startsWith('/api/v1/public/')) return true;
+  // The public status page, by slug or on a mapped host (MOD-23).
+  if (url === '/status' || url.startsWith('/status/')) return true;
   // A provider webhook has no token to present: it proves itself with a
   // signature over the body, checked by the channel's transport before the
   // payload is looked at. Matched exactly rather than by prefix, so the rest of
@@ -74,6 +90,25 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
     const header = request.headers.authorization;
     if (!header) throw new UnauthorisedError('an access token is required');
 
+    // SCIM carries its own token, per tenant, issued by an administrator; the
+    // tenant is inside it, resolved through the directory like every other
+    // pre-tenant request (ADR-0035). Nothing under /scim/v2 accepts a session.
+    if ((request.url.split('?')[0] ?? '').startsWith('/scim/v2')) {
+      if (!header.startsWith('Bearer ')) throw new UnauthorisedError('a SCIM bearer token is required');
+      const scim = await scimTokenService.authenticate(header.slice('Bearer '.length).trim());
+      request.tenantContext = createContext({
+        tenantId: scim.tenantId,
+        region: scim.region,
+        correlationId: request.correlationId,
+        ip: request.ip,
+        userAgent: request.headers['user-agent'],
+        actor: { type: 'integration', id: null, displayName: 'scim' },
+        permissions: scim.permissions,
+      });
+      enterContext(request.tenantContext);
+      return;
+    }
+
     const token = await verifyAccessToken(header);
     request.token = token;
 
@@ -93,7 +128,10 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
 
     const base = {
       tenantId: tenant.id,
-      region: tenant.region,
+      // Through `tenantFacts` rather than field by field: every context built
+      // from a tenant row gets the same set, so a policy that exists here
+      // cannot be quietly missing in the worker.
+      ...tenantFacts(tenant),
       correlationId: request.correlationId,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
@@ -119,7 +157,23 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
       permissions: SYSTEM_PERMISSIONS,
     });
 
-    const actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, token.userId!));
+    // A token from the identity provider names its subject, which is not one
+    // of our ids; looking that up as one would be a database error, not a miss.
+    const namesOurId = UUID.test(token.userId ?? '');
+    let actor = namesOurId ? await withContext(bootstrapContext, () => resolveActor(bootstrapContext, token.userId!)) : null;
+    if (!actor && token.email && token.userId === token.subject) {
+      // First login through the identity provider: the token names nobody the
+      // platform knows yet. Provision just in time, or link an account that
+      // SCIM or an import already made for this address (doc 09 §JIT).
+      const provisioned = await withContext(bootstrapContext, () =>
+        userService.provisionFromToken(bootstrapContext, { sub: token.subject, email: token.email!, ...(token.name ? { name: token.name } : {}) }),
+      ).catch((error: unknown) => {
+        // A deactivated account presenting a fresh token is refused, not a
+        // validation problem: the answer to "may I come in" is no.
+        throw new UnauthorisedError(error instanceof Error ? error.message : 'this account is not active');
+      });
+      actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, provisioned.userId));
+    }
     if (!actor) throw new UnauthorisedError('this account no longer exists');
     if (actor.status !== 'active') throw new UnauthorisedError('this account is not active');
 

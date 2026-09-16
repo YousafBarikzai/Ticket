@@ -22,7 +22,7 @@ import { refreshTimeFact } from '../service/time-projector.js';
 const consumer = 'analytics';
 const moduleId = 'MOD-12';
 
-for (const eventType of ['ticket.created', 'ticket.updated', 'ticket.status.changed', 'ticket.assigned', 'ticket.comment.added']) {
+for (const eventType of ['ticket.created', 'ticket.imported', 'ticket.updated', 'ticket.status.changed', 'ticket.assigned', 'ticket.comment.added']) {
   defineHandler({
     consumer,
     moduleId,

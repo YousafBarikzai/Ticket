@@ -5,7 +5,7 @@
 | Component | Package | Responsibility |
 |---|---|---|
 | `business-time` | `packages/business-time` | Pure functions: add business duration to an instant under a calendar (hours, exceptions, time zone, DST), elapsed business time between instants, remaining time; 100 % branch coverage; no I/O. |
-| Policy matcher | `modules/sla/service` | Selects the most specific `sla_policy` for a ticket using the expression language over ticket, service, organisation, location, priority, requester tier and channel; records the explanation. |
+| Policy matcher | `modules/sla/service` | Selects the most specific `sla_policy` for a ticket using the expression language over ticket, service, organisation, location, priority, requester tier and channel; records the explanation. The service is readable as `ticket.serviceKey` as well as `ticket.serviceId`, so a policy written by a person — or shipped in an ESM pack, which cannot know a tenant's identifiers — names the service rather than pasting a UUID. |
 | Timer service | `modules/sla/service` | Starts, pauses, resumes, recomputes, meets, breaches and cancels `sla_timer` rows in response to ticket events. |
 | Scheduler | `modules/sla/jobs` | Minute tick per partition; finds due warnings and breaches; emits events and enqueues actions. |
 | Escalation | `modules/sla/service` | Applies `escalation_rule` steps: notifications (MOD-11), reassignment (MOD-20), workflow start (MOD-06). |

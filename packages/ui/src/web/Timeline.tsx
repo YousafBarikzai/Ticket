@@ -1,3 +1,5 @@
+'use client';
+
 import { useMemo, type ReactNode } from 'react';
 import { cx } from './cx.js';
 import type { IntentName } from '../tokens/tokens.js';

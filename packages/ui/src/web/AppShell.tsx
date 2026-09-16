@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, type ReactNode } from 'react';
 import { cx } from './cx.js';
 import { useStableId } from '../a11y/ids.js';

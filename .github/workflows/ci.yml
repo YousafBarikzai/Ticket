@@ -52,8 +52,42 @@ jobs:
       - name: Module contract
         run: pnpm lint:boundaries
 
+      # The workflows themselves, checked by something other than the run that
+      # would have used them.
+      #
+      # A workflow file with an invalid expression does not fail a job — it
+      # fails to parse, so there are no jobs: a run named after the file, no
+      # logs to read, and `on:` filters that do not apply because they are in
+      # the part that did not parse. deploy.yml shipped with `secrets` in a
+      # step's `if:`, which is valid YAML and not a valid context there, and
+      # nothing in this pipeline could have said so. This runs in a second and
+      # makes that whole class unreachable.
+      #
+      # Pinned to a release rather than a floating action: a linter that gates
+      # every push is a linter whose version should change when somebody
+      # decides it does.
+      - name: Workflow files
+        run: |
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz" \
+            | tar xz actionlint
+          ./actionlint -no-color
+
       - name: Typecheck
         run: pnpm exec tsc --noEmit -p tsconfig.json
+
+      # The root project is server-side TypeScript and deliberately has no DOM
+      # library, so it does not cover `.tsx`. These three workspaces are the
+      # ones it excludes, and running them here is what puts the design system's
+      # components and the two applications' pages in front of a compiler in CI
+      # at all, rather than only on whoever last ran it locally.
+      #
+      # Named rather than `turbo run typecheck` across the whole repository: the
+      # other 37 workspaces are already covered by the root project one step up,
+      # and checking them twice is several minutes of CI to learn nothing. If a
+      # fourth workspace grows a `.tsx`, it belongs on this list — the root
+      # tsconfig's `exclude` is the list to keep it in step with.
+      - name: Typecheck the workspaces the root project excludes
+        run: pnpm exec turbo run typecheck --filter=@itsm/ui --filter=@itsm/workbench --filter=@itsm/portal --filter=@itsm/admin
 
       - name: Unit tests
         run: pnpm exec vitest run --project unit

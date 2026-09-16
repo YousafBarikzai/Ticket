@@ -487,6 +487,110 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'see the status page as an operator',
+    path: () => '/api/v1/status-page',
+    // Subscriber addresses and hidden incidents: the service owner's and the
+    // administrator's, and neither a lead nor an agent is either.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'open an incident on the status page',
+    method: 'POST',
+    path: () => '/api/v1/status-page/incidents',
+    body: () => ({ title: 'Matrix incident', impact: 'minor', body: 'Looking into it.' }),
+    // A statement to the public, so it is made by whoever answers for the
+    // service, not by whoever noticed.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'start an import',
+    method: 'POST',
+    path: () => '/api/v1/import/jobs',
+    body: () => ({ name: 'Matrix', entity: 'users', source: 'csv', config: {}, mapping: { externalKeyFrom: 'id', fields: { email: 'email', displayName: 'name' } } }),
+    // Writes users, teams, services and tickets in bulk: an administrator's
+    // act. The administrator gets 422 because no file was uploaded, which is
+    // the line being drawn: refused on permission first, on content second.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 422 },
+  },
+  {
+    what: 'rotate the SCIM token',
+    method: 'POST',
+    path: () => '/api/v1/scim/token',
+    body: () => ({}),
+    // Whoever holds the token can create and deactivate every user: only an
+    // administrator issues one.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'see what this tenant is using against its plan',
+    path: () => '/api/v1/usage',
+    // What the desk costs is the administrator's business, not an agent's.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'ask the AI service for a suggestion',
+    method: 'POST',
+    path: () => '/api/v1/ai/suggest',
+    body: (t) => ({ capability: 'similar-work', ticketId: t.ticketIds[0] }),
+    // Agent-facing by design (ADR-0006): a person reads the evidence and
+    // decides, so a requester never asks and never sees one. The agent in the
+    // other team gets 404 rather than 403 — they may not know this ticket
+    // exists, and a suggestion must not be the thing that tells them.
+    allowed: ['agent', 'lead', 'admin'],
+    deniedStatus: { requester: 403, otherAgent: 404 },
+  },
+  {
+    what: 'see what this tenant is spending on AI',
+    path: () => '/api/v1/ai/budget',
+    // Every agent holds `ai.read`, including one in another team: the budget
+    // is the tenant's, not a team's, and an agent who is about to be refused
+    // should be able to see why. Setting it is the administrator's, below.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'set this tenant\u2019s AI budget',
+    method: 'PUT',
+    path: () => '/api/v1/ai/budget',
+    body: () => ({ limitPence: 5000, warnPence: 4000 }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'write a prompt version',
+    method: 'POST',
+    path: () => '/api/platform/v1/ai/prompts/reply-draft/versions',
+    body: () => ({ systemPrompt: 'You draft replies. Answer only from what you are given.', template: 'Title: {{ticket.title}}' }),
+    // Prompts are the deployment's. No tenant role holds the permission, and
+    // the platform prefix refuses everybody here before the service does.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 403 },
+  },
+  {
+    what: 'see the packs this deployment ships',
+    path: () => '/api/v1/packs',
+    // Which desks could be stood up is a configuration question, and the
+    // catalogue an agent works from is downstream of the answer.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'install a pack',
+    method: 'POST',
+    path: () => '/api/v1/packs/facilities/install',
+    body: () => ({}),
+    // Writes services, forms, workflows and an SLA policy in one act. The
+    // administrator gets 201 because it genuinely installs, which is the line
+    // being drawn: everybody else is refused before anything is written.
+    allowed: [],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 201 },
+  },
+  {
     what: 'see which contracts need a decision',
     path: () => '/api/v1/contracts-attention',
     // An agent needs the supplier's support number when something breaks.

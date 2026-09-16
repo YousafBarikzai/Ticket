@@ -1,0 +1,162 @@
+{
+  "$comment": [
+    "The deployable services and the order they are deployed in (docs/architecture/16 \u00a71, \u00a74).",
+    "",
+    "One catalogue rather than a railway.json per service. Railway's config-as-code is read",
+    "when Railway builds from the repository; these services run images CI built, scanned and",
+    "pushed, so a railway.json sitting here would be a file nothing reads \u2014 and this codebase",
+    "has found that bug four times already. infra/scripts/railway-deploy.ts applies these",
+    "settings through the Railway API instead, which is a thing that happens rather than a",
+    "thing that is described.",
+    "",
+    "`phase` is the deployment order from doc 16 \u00a74 and is not cosmetic: workers are deployed",
+    "before the API so new consumers exist before new events do, and the web applications last",
+    "because they are the only ones a person is looking at while it happens.",
+    "",
+    "`environments` restricts a service to the environments that should run it. Absent means every environment, which is what all but the seed want."
+  ],
+  "image": {
+    "registry": "ghcr.io",
+    "repository": "yousafbarikzai/ticket",
+    "$comment": "One repository, one tag per commit, one image per Dockerfile target: ghcr.io/<repo>/<target>:sha-<commit>."
+  },
+  "services": [
+    {
+      "name": "migrate",
+      "target": "migrate",
+      "phase": 0,
+      "kind": "job",
+      "public": false,
+      "replicas": 1,
+      "$comment": "Runs to completion before anything else starts. Expand-only (doc 16 \u00a74), as app_owner."
+    },
+    {
+      "name": "seed",
+      "target": "migrate",
+      "phase": 1,
+      "kind": "job",
+      "public": false,
+      "replicas": 1,
+      "environments": [
+        "preview"
+      ],
+      "command": "node dist/seed.js",
+      "$comment": "Preview only. A production environment that seeded itself would invent two tenants nobody asked for; a preview that did not would be an empty service desk nobody can click on. `node dist/seed.js` and not `pnpm seed`: it runs in the migration image, which carries no package manager."
+    },
+    {
+      "name": "worker-events",
+      "target": "worker",
+      "phase": 2,
+      "kind": "service",
+      "public": false,
+      "replicas": 2,
+      "variables": {
+        "WORKER_QUEUES": "events",
+        "OTEL_SERVICE_NAME": "itsm-worker-events"
+      }
+    },
+    {
+      "name": "worker-engine",
+      "target": "worker",
+      "phase": 2,
+      "kind": "service",
+      "public": false,
+      "replicas": 2,
+      "variables": {
+        "WORKER_QUEUES": "engine",
+        "OTEL_SERVICE_NAME": "itsm-worker-engine"
+      }
+    },
+    {
+      "name": "worker-comms",
+      "target": "worker",
+      "phase": 2,
+      "kind": "service",
+      "public": false,
+      "replicas": 2,
+      "variables": {
+        "WORKER_QUEUES": "comms",
+        "OTEL_SERVICE_NAME": "itsm-worker-comms"
+      }
+    },
+    {
+      "name": "worker-data",
+      "target": "worker",
+      "phase": 2,
+      "kind": "service",
+      "public": false,
+      "replicas": 1,
+      "variables": {
+        "WORKER_QUEUES": "data",
+        "OTEL_SERVICE_NAME": "itsm-worker-data"
+      }
+    },
+    {
+      "name": "api",
+      "target": "api",
+      "phase": 3,
+      "kind": "service",
+      "public": true,
+      "subdomain": "api",
+      "port": 3000,
+      "healthcheckPath": "/health/live",
+      "replicas": 2,
+      "variables": {
+        "OTEL_SERVICE_NAME": "itsm-api"
+      }
+    },
+    {
+      "name": "portal",
+      "target": "portal",
+      "phase": 4,
+      "kind": "service",
+      "public": true,
+      "subdomain": "help",
+      "port": 3200,
+      "healthcheckPath": "/api/health",
+      "replicas": 2,
+      "variables": {
+        "OTEL_SERVICE_NAME": "itsm-portal"
+      }
+    },
+    {
+      "name": "workbench",
+      "target": "workbench",
+      "phase": 4,
+      "kind": "service",
+      "public": true,
+      "subdomain": "desk",
+      "port": 3100,
+      "healthcheckPath": "/api/health",
+      "replicas": 2,
+      "variables": {
+        "OTEL_SERVICE_NAME": "itsm-workbench"
+      }
+    },
+    {
+      "name": "admin",
+      "target": "admin",
+      "phase": 4,
+      "kind": "service",
+      "public": true,
+      "subdomain": "admin",
+      "port": 3300,
+      "healthcheckPath": "/api/health",
+      "replicas": 1,
+      "variables": {
+        "OTEL_SERVICE_NAME": "itsm-admin"
+      },
+      "$comment": "One replica: the console is used by a handful of people and a second instance buys nothing but a second thing to roll back."
+    }
+  ],
+  "managed": {
+    "$comment": "Provisioned once from Railway's own catalogue rather than deployed by this pipeline. Listed so the layout is complete and nobody concludes they were forgotten.",
+    "services": [
+      "postgres",
+      "postgres-keycloak",
+      "redis",
+      "keycloak",
+      "meilisearch"
+    ]
+  }
+}

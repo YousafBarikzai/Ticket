@@ -2,9 +2,26 @@
 export { catalogueManifest } from './manifest.js';
 export * as catalogueService from './service/catalogue-service.js';
 export * as formService from './service/form-service.js';
-export { browse, openRequest, submitRequest, serviceSchema, requestTypeSchema } from './service/catalogue-service.js';
 export {
+  browse,
+  openRequest,
+  submitRequest,
+  createService,
+  createRequestType,
+  publishRequestType,
+  updateService,
+  updateRequestType,
+  serviceSchema,
+  requestTypeSchema,
+  serviceUpdateSchema,
+  requestTypeUpdateSchema,
+} from './service/catalogue-service.js';
+export {
+  createForm,
+  publishForm,
+  updateForm,
   createFormSchema,
+  updateFormSchema,
   formDocumentSchema,
   validateSubmission,
   assertDocumentIsCoherent,

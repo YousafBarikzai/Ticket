@@ -172,6 +172,37 @@ const EGRESS_ALLOWED = [
   // exists. The gateway needs one to log against, so this is a genuine
   // exception rather than an unconverted caller.
   'apps/api/src/auth/verify.ts',
+  // The backend-for-frontend. Its whole job is to make one request per incoming
+  // request — to this deployment's own API, or to the identity provider it is
+  // configured with — on behalf of a browser that has no token (doc 08 §9).
+  // Routing that through the integration gateway would put the
+  // tenant-configured egress policy in front of a call that has no tenant yet,
+  // and give every page load a circuit breaker it shares with a supplier's
+  // webhook.
+  'packages/bff/',
+  // The browser-side SDK client in each application. Its base URL is
+  // `/api/proxy` — a relative path on the app's own origin — so this is not
+  // egress at all: the request goes to the BFF, which is the entry above.
+  // Listed per application rather than matched by pattern, so a third app
+  // reaching for `fetch` somewhere else is still a deliberate edit.
+  'apps/workbench/src/client/',
+  'apps/portal/src/client/',
+  'apps/admin/src/client/',
+  // The AI model provider (ADR-0042). The destination is fixed by the adapter
+  // and configured by an operator, like Meilisearch and the OIDC issuer — but
+  // the deciding reason is the body: the gateway records request and response
+  // bodies to `integration_log` after redacting credentials, and a prompt
+  // carries ticket content. Putting one through the gateway would copy
+  // somebody's name, their machine and what they told the service desk into a
+  // second table with a different retention policy. The gateway's other
+  // services — a hard timeout, a bounded read, errors classified into
+  // retryable and not — are reproduced in the adapter instead.
+  'modules/ai/src/providers/anthropic.ts',
+  // The offline layer. Everything it fetches is a relative path on the
+  // application's own origin — the BFF's proxy — so this is not egress either,
+  // and a service worker could not reach the gateway if it wanted to: it runs
+  // in the browser, where `modules/` does not exist.
+  'packages/pwa/',
 ];
 
 const FETCH_PATTERN = /(?:^|[^.\w])fetch\s*\(/;

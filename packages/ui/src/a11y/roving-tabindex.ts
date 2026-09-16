@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Roving tabindex.
  *

@@ -1,0 +1,437 @@
+/*
+ * The portal's own layout.
+ *
+ * Arrangement only: colour, spacing, type and radii come from the design
+ * system's custom properties, which is what keeps this app in step with the
+ * workbench when a token changes. Logical properties throughout, so the
+ * right-to-left locales mirror rather than needing a second stylesheet.
+ *
+ * One measurement runs through everything here: `65ch`. The portal is read,
+ * not scanned — a person is trying to understand what is happening to their
+ * request — and a line longer than about seventy characters is where the eye
+ * starts losing its place on the return sweep.
+ */
+
+.itsm-Page {
+  margin-inline: auto;
+  max-inline-size: 65ch;
+  padding-inline: var(--itsm-space-md);
+}
+
+.itsm-Page__heading {
+  font-size: var(--itsm-font-size-2xl);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin-block: var(--itsm-space-sm) var(--itsm-space-2xs);
+}
+
+.itsm-Page__lede {
+  color: var(--itsm-colour-text-secondary);
+  margin-block-end: var(--itsm-space-lg);
+}
+
+.itsm-Page__footnote {
+  margin-block-start: var(--itsm-space-lg);
+}
+
+/* ---- Home --------------------------------------------------------------- */
+
+.itsm-Home {
+  margin-inline: auto;
+  max-inline-size: 65ch;
+  padding-inline: var(--itsm-space-md);
+}
+
+.itsm-Home__heading {
+  font-size: var(--itsm-font-size-3xl);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin-block: var(--itsm-space-lg) var(--itsm-space-md);
+}
+
+/*
+ * The two things somebody came to do, side by side on anything wider than a
+ * phone and stacked below it — in that order, because "something is broken"
+ * is the more urgent of the two and should be first on the small screen.
+ */
+.itsm-Home__actions {
+  display: grid;
+  gap: var(--itsm-space-sm);
+  grid-template-columns: 1fr;
+  margin-block-end: var(--itsm-space-xl);
+}
+
+@media (min-width: 40rem) {
+  .itsm-Home__actions {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.itsm-Home__cta {
+  display: inline-block;
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.itsm-Home__waiting,
+.itsm-Home__recent {
+  margin-block-end: var(--itsm-space-xl);
+}
+
+.itsm-Home__waiting h2,
+.itsm-Home__recent h2 {
+  font-size: var(--itsm-font-size-lg);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.itsm-Home__waiting ul,
+.itsm-Home__recent ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Home__waiting li,
+.itsm-Home__recent li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Home__meta,
+.itsm-Home__empty {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-font-size-sm);
+}
+
+/* ---- Catalogue ---------------------------------------------------------- */
+
+.itsm-Catalogue__group {
+  margin-block-end: var(--itsm-space-lg);
+}
+
+.itsm-Catalogue__items {
+  display: grid;
+  gap: var(--itsm-space-sm);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 40rem) {
+  .itsm-Catalogue__items {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ---- Tickets ------------------------------------------------------------ */
+
+.itsm-Tickets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Tickets__row {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-md);
+  padding: var(--itsm-space-sm);
+}
+
+/*
+ * The one row on the page that is somebody's to act on. The border says so as
+ * well as the badge and the sentence, because a person scanning for "which of
+ * these is mine to do" reads the shape before the words.
+ */
+.itsm-Tickets__row[data-needs-you='true'] {
+  border-color: var(--itsm-colour-warning-border);
+  border-inline-start-width: var(--itsm-border-thick);
+}
+
+.itsm-Tickets__title {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.itsm-Tickets__meta {
+  align-items: baseline;
+  color: var(--itsm-colour-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--itsm-font-size-sm);
+  gap: var(--itsm-space-2xs);
+  margin-block: var(--itsm-space-3xs);
+}
+
+.itsm-Tickets__number {
+  font-family: var(--itsm-font-family-mono);
+}
+
+.itsm-Tickets__detail {
+  margin: 0;
+}
+
+/* ---- One ticket --------------------------------------------------------- */
+
+.itsm-Ticket__raised {
+  background: var(--itsm-colour-success-subtle);
+  border-radius: var(--itsm-radius-md);
+  color: var(--itsm-colour-success-subtleText);
+  padding: var(--itsm-space-sm);
+}
+
+.itsm-Ticket__number {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-font-size-sm);
+  margin-block-end: 0;
+}
+
+.itsm-Ticket__state {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Ticket__description {
+  border-inline-start: var(--itsm-border-thick) solid var(--itsm-colour-border-subtle);
+  color: var(--itsm-colour-text-secondary);
+  margin-block: var(--itsm-space-md);
+  padding-inline-start: var(--itsm-space-sm);
+  white-space: pre-wrap;
+}
+
+.itsm-Ticket__historyHeading,
+.itsm-Article h2 {
+  font-size: var(--itsm-font-size-lg);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin-block-start: var(--itsm-space-xl);
+}
+
+/* ---- Forms and replies -------------------------------------------------- */
+
+.itsm-Report,
+.itsm-Request,
+.itsm-Reply,
+.itsm-Decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.itsm-Reply {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  margin-block-start: var(--itsm-space-lg);
+  padding-block-start: var(--itsm-space-md);
+}
+
+.itsm-Reply__actions,
+.itsm-Decision__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Reply__closed,
+.itsm-Request__noForm {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.itsm-Report__error,
+.itsm-Request__error,
+.itsm-Reply__error,
+.itsm-Decision__error {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+/* ---- Approvals ---------------------------------------------------------- */
+
+.itsm-Approvals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Approvals__row {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-md);
+  padding: var(--itsm-space-sm);
+}
+
+.itsm-Approvals__what {
+  font-size: var(--itsm-font-size-md);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin: 0;
+}
+
+.itsm-Approvals__meta {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-font-size-sm);
+}
+
+/* ---- Search and articles ------------------------------------------------ */
+
+.itsm-Search {
+  align-items: flex-end;
+  display: flex;
+  gap: var(--itsm-space-2xs);
+  margin-block-end: var(--itsm-space-lg);
+}
+
+.itsm-Search > .itsm-Field {
+  flex: 1;
+}
+
+.itsm-Search__degraded {
+  background: var(--itsm-colour-warning-subtle);
+  border-radius: var(--itsm-radius-md);
+  color: var(--itsm-colour-warning-subtleText);
+  padding: var(--itsm-space-xs);
+}
+
+.itsm-Search__results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Search__snippet {
+  color: var(--itsm-colour-text-secondary);
+  margin: 0;
+}
+
+.itsm-Article__escape {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  color: var(--itsm-colour-text-secondary);
+  margin-block-start: var(--itsm-space-xl);
+  padding-block-start: var(--itsm-space-md);
+}
+
+.itsm-Feedback {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+  margin-block-start: var(--itsm-space-lg);
+}
+
+.itsm-Feedback textarea {
+  flex-basis: 100%;
+}
+
+/* ---- Sign in ------------------------------------------------------------ */
+
+.itsm-SignIn {
+  margin: var(--itsm-space-3xl) auto;
+  max-inline-size: 26rem;
+  padding-inline: var(--itsm-space-md);
+}
+
+.itsm-SignIn__heading {
+  font-size: var(--itsm-font-size-2xl);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.itsm-SignIn__note {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.itsm-SignIn__error {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.itsm-SignIn__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-SignIn__form label {
+  font-weight: var(--itsm-font-weight-medium);
+  margin-block-start: var(--itsm-space-xs);
+}
+
+/* ---- Shell extras ------------------------------------------------------- */
+
+.itsm-AppShell__tenant {
+  color: var(--itsm-colour-text-muted);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+.itsm-AppShell__who {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-AppShell__signout {
+  display: inline;
+}
+
+/* ---- Offline and the outbox (doc 14 §5) --------------------------------- */
+
+.itsm-Outbox {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-warning-border);
+  border-radius: var(--itsm-radius-md);
+  background: var(--itsm-colour-warning-subtle);
+  color: var(--itsm-colour-warning-subtleText);
+  margin-block-end: var(--itsm-space-md);
+  padding: var(--itsm-space-sm);
+}
+
+.itsm-Outbox__offline,
+.itsm-Outbox__pending {
+  margin: 0;
+}
+
+.itsm-Outbox__pending {
+  margin-block-start: var(--itsm-space-2xs);
+}
+
+.itsm-Outbox__heading {
+  font-size: var(--itsm-font-size-md);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin-block: var(--itsm-space-sm) var(--itsm-space-2xs);
+}
+
+.itsm-Outbox__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Outbox__item {
+  display: grid;
+  gap: var(--itsm-space-3xs);
+}
+
+.itsm-Outbox__what {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.itsm-Outbox__why {
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-Outbox__actions {
+  display: flex;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Report__queued,
+.itsm-Reply__queued,
+.itsm-Decision__queued {
+  background: var(--itsm-colour-info-subtle);
+  border-radius: var(--itsm-radius-md);
+  color: var(--itsm-colour-info-subtleText);
+  padding: var(--itsm-space-sm);
+}

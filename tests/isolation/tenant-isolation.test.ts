@@ -411,6 +411,13 @@ describe('caches and keys', () => {
       cursor = next;
       for (const key of keys) {
         if (key.startsWith('bull:') || key.startsWith('jwks:') || key.startsWith('platform:')) continue;
+        // The session denylist is deliberately global. A `sid` comes from the
+        // identity provider and is unique across every tenant, and the token
+        // verifier has to consult the list *before* it knows which tenant the
+        // token names — a tenant-prefixed key could not be read at that point
+        // in the request. It holds no tenant data: the key is the session
+        // identifier and the value is the string "1".
+        if (key.startsWith('sess:deny:')) continue;
         if (!key.startsWith('t:')) suspicious.push(key);
       }
     } while (cursor !== '0');

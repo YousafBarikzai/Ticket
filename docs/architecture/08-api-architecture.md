@@ -76,7 +76,8 @@ The specification's Part 7 standards apply verbatim. Implementation notes:
 | Filtering and sorting | `filter[field]=v1,v2`, `filter[field][op]=…` for `gt/lt/contains/isNull`, `sort=-createdAt,priority`; compiled to the expression language then to Prisma; only fields declared filterable in the route metadata are accepted. Saved views serialise to this grammar. |
 | Field selection and expansion | `fields=` and `expand=` as above. |
 | Idempotency | Required for creating `POST`s from integrations (enforced for API keys and OAuth clients; optional for user tokens); 24 h; body-hash mismatch → `422`. |
-| Concurrency | `If-Match: "<version>"` is required on `PATCH`/`PUT` (missing → `428 Precondition Required`); a stale version → `409 Conflict` whose body includes the current representation for the merge UI. |
+| Concurrency | `If-Match: "<version>"` is required on `PATCH`/`PUT` (missing → `428 Precondition Required`); a stale version → `409 Conflict` whose body includes the current representation for the merge UI. `POST /tickets/:id/assign` reads it when it is offered and does not require it, because a queue screen claims from a list it read a minute ago (ADR-0044). |
+| Unknown request fields | Refused, not stripped: every body parsed by a route under `/api/v1` is `.strict()`, so an unrecognised key is a `422` naming the key rather than a `201` for a resource missing the field the client believed it sent (ADR-0044). The module-level schemas stay permissive — an internal caller with an extra key is a build-time type error, not a production failure. |
 | Errors | RFC 9457 with `errors[]` (`{ field, code, message }`) and `correlationId`. |
 | Rate limiting | Token bucket per tenant and per token in Redis; defaults 600 req/min per user token, 1 200 per integration; bulk and search endpoints have separate buckets. |
 | Bulk | `POST /tickets:bulk` up to 200 operations; ≤ 50 executed inline with per-item results, > 50 returns `202` with a job URL (`/jobs/{id}`). |
@@ -86,16 +87,18 @@ The specification's Part 7 standards apply verbatim. Implementation notes:
 
 ## 6. Realtime: server-sent events (ADR-0015)
 
-- `GET /api/v1/events/stream?topics=ticket:{id},inbox,queue:{viewId}` opens an SSE stream (`text/event-stream`), authenticated by bearer token (query-string token exchange for browsers that cannot set headers on `EventSource`; the exchanged token is single-use and short-lived).
+- `GET /api/v1/events/stream?topics=ticket:{id},group:{teamId},user:{userId}` opens an SSE stream (`text/event-stream`), authenticated by bearer token — or, from a web application, by the session cookie the BFF exchanges for one, which is how both applications reach it.
+- **Every requested topic is authorised before it is subscribed (ADR-0045).** `ticket:` needs whatever `getTicket` needs; `group:` needs team membership or a `ticket.read` scope of `any`; `user:` is only ever your own. A topic that is refused refuses the stream, rather than being skipped — a stream carrying fewer topics than were asked for is a screen that looks live and is not. The notice carries no content, but the timing of a change and the existence of an id do, which is why "clients refetch" is not on its own a sufficient argument.
 - The API instance subscribes to Redis pub/sub channels for the requested topics scoped to the tenant; publishers (handlers, services after commit) publish small notices `{ type, entity, id, version }`. Clients refetch through the REST API, so SSE carries no payload that needs permission filtering beyond topic authorisation at subscription time.
-- Heartbeats every 25 s; `Last-Event-ID` resume for 5 minutes via a small Redis ring buffer per topic; mobile falls back to polling when backgrounded.
+- Heartbeats every 25 s. **`Last-Event-ID` resume is not built** — there is no ring buffer, so a reconnection cannot replay what it missed. Clients treat a reconnection as a gap and refetch instead, which is correct and more expensive than a resume; the BFF forwards the `last-event-id` header so the client half already works the day a buffer exists. Doc 23 carries it as outstanding.
+- Mobile falls back to polling when backgrounded.
 - WebSockets are not needed for the current requirements (one-directional server push); the abstraction (`realtime.publish(ctx, topic, notice)`) allows a swap.
 
 ## 7. Authentication mechanics per caller
 
 | Caller | Token | How obtained | Lifetime | Revocation |
 |---|---|---|---|---|
-| Browser (web apps) | Keycloak access token held server-side in the Next.js session; cookie `__Host-session` (httpOnly, Secure, SameSite=Lax) | Authorization Code + PKCE via Keycloak; BFF stores refresh token in Redis-backed session | Access 10 min, refresh sliding up to the tenant's idle/absolute timeouts | Session denylist (`sid`), Keycloak logout, platform `DELETE /me/sessions` |
+| Browser (web apps) | Keycloak access token held server-side in the Next.js session; cookie `__Host-session` (httpOnly, Secure, SameSite=Lax) | Authorization Code + PKCE via Keycloak; BFF stores refresh token in Redis-backed session, then calls `POST /api/v1/auth/session` so the platform has a session to list and revoke | Access 10 min, refresh sliding up to the tenant's idle/absolute timeouts | Session denylist (`sid`), written by `revokeSession` and `deactivateUser` inside the transaction that revokes the row (ADR-0044); Keycloak logout; platform `DELETE /me/sessions` |
 | Mobile | Access + refresh tokens in `expo-secure-store` | Authorization Code + PKCE (`expo-auth-session`) | Same | Same |
 | Integration (OAuth client credentials) | Access token from Keycloak client | Client credentials; client bound to one tenant via attribute | 60 min | Client disable |
 | Server-to-server (API key) | `Authorization: ApiKey <key>` | Created in admin console; stored hashed (argon2id); scopes | Configurable expiry | Delete key |

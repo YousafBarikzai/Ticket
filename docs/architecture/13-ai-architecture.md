@@ -2,6 +2,29 @@
 
 AI is a capability service (ADR-0006), not a feature sprinkled through modules. It is defined now so that PH-1 puts the hooks in place (classification registry, audit actor type `ai`, feature flags, budgets table) and PH-4 builds the service without touching other modules' code.
 
+> **Built in PH-4, against a stub provider (ADR-0040).** The gateway, the
+> prompt registry with immutable versions, the evaluation runner and its
+> promotion thresholds, per-tenant monthly budgets with a warning line and a
+> hard stop at 402, tenant and per-capability kill switches, the context
+> assembler under the asker's own permissions, the evidence list, the
+> suggestion lifecycle with outcomes, and the retention sweep. Four
+> capabilities: `reply-draft`, `ticket-summary`, `article-draft` and
+> `similar-work` (retrieval only, no model, no cost).
+>
+> **Still waiting on OD-04:** the provider itself. Nothing is registered in
+> production, so every capability that calls a model is refused rather than
+> answered; the stub is registered only outside production. Also waiting: the
+> pgvector half of hybrid retrieval in §4, because embeddings from a stub
+> would be noise, and the virtual agent, because ADR-0006's line — a person
+> reviews before anything reaches a requester — is the line PH-4 keeps.
+>
+> **Two deviations from what follows.** Prompts live in
+> `modules/ai/src/seed/prompts.ts` and are mirrored to the database at boot
+> rather than in `modules/ai/prompts/*.md`; a tenant may override tone and
+> language, which are MOD-13 settings rather than prompt fields. And the AI
+> budget is MOD-09's own table rather than a MOD-21 meter — the reasoning is
+> in ADR-0040.
+
 ## 1. Principles that shape the design
 
 1. **No module calls a model provider.** Everything goes through `AiGateway` in `modules/ai`.
@@ -90,6 +113,46 @@ flowchart LR
 - `tenant.ai_policy { allowedProviders[], region, retainPrompts, allowTraining: false }`.
 - Default for UK/EEA tenants: Azure OpenAI (UK South / Sweden Central) or AWS Bedrock (`eu-west-2` London) endpoints; Anthropic direct where the tenant accepts the provider's processing terms; local models (self-hosted OpenAI-compatible) for tenants that forbid external processing.
 - Prompts and completions are stored in the platform database (tenant-scoped, classified `confidential`) for audit and evaluation, not with the provider beyond the provider's transient processing.
+
+### 6.1 What is built (ADR-0042)
+
+OD-04 is closed: `AI_PROVIDER=anthropic` with `ANTHROPIC_API_KEY` registers
+the adapter, `stub` throws at boot in production, and unset means every
+capability that calls a model refuses with a 503 naming the configuration.
+
+Three things this section describes are **not** built, and each is a real
+constraint rather than a detail:
+
+- **Residency is built; the rest of `tenant.ai_policy` is not** (ADR-0047).
+  `tenant.ai_allowed_regions` states where a tenant's prompts may be processed;
+  a provider declares its own `processingRegion`, or `null` when it makes no
+  external call; and the gateway refuses a call outside the list rather than
+  falling back to another provider — a fallback would be this platform deciding
+  on a customer's behalf that somewhere else is close enough. An empty list
+  means "wherever this tenant's own data lives", resolved against
+  `tenant.region`. The check runs *before* the prompt is rendered, so a
+  forbidden call never interpolates ticket text into a prompt at all. Written
+  through `PUT /api/platform/v1/tenants/:id/ai-regions`, which is a platform
+  door rather than a tenant one: a tenant that could widen its own residency
+  could remove the control.
+
+  What is still missing from §5's `ai_policy` is the rest of it — there is no
+  per-tenant **provider** allow-list, no per-tenant retention setting and no
+  `allowTraining` flag. There is still one provider per deployment, so a tenant
+  whose allowed regions exclude it is refused rather than routed to a second
+  one; multi-provider routing is the piece that would change that.
+- **No Azure, Bedrock or self-hosted adapter.** The socket takes them
+  (`registerAiProvider`); nobody has written them.
+- **Prices are configuration, not code** (`AI_MODEL_PRICES`, micro-pence per
+  thousand tokens). A model with no price is refused before it is called,
+  because a budget that cannot see a cost is not a budget. Only the stub is
+  priced in code.
+
+The prompt is also the reason the adapter does not go through the integration
+gateway, which is otherwise the only way out of the platform (ADR-0023): the
+gateway records request bodies to `integration_log`, and a prompt is a
+rendered ticket. It would be copied into a table with a different retention
+policy and a different audience.
 
 ## 7. What PH-1 must include for this design
 

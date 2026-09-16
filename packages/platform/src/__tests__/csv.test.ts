@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCsv, parseCsvRecords } from '../domain/csv.js';
+import { parseCsv, parseCsvRecords } from '../csv.js';
 
 /**
  * The only hard part of CSV is the part a split-on-comma reader gets wrong, and

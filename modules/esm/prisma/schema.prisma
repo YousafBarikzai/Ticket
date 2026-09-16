@@ -1,0 +1,59 @@
+/// MOD-22 Enterprise service management packs (PH-4).
+///
+/// A pack is shipped with the deployment; what a tenant installs is a *copy*
+/// of it, owned by the tenant and editable like anything else it configured
+/// itself (ADR-0039). These two tables are therefore not the pack — they are
+/// the receipt: which pack a tenant took, at which version, and what the
+/// shipped definition looked like at the moment each item was copied.
+///
+/// That last part is the whole trick. An item whose current shape still
+/// hashes to `source_hash` is untouched, so a newer pack version can replace
+/// it safely; one that does not is an edit somebody made on purpose, and a
+/// later version is offered rather than applied.
+
+model PackInstallation {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  packKey     String   @map("pack_key")
+  /// The version of the shipped pack this tenant is level with. Moves only
+  /// when an upgrade is applied or explicitly declined in full.
+  packVersion Int      @map("pack_version")
+  name        String
+  /// The last time somebody raised one of this pack's requests. A maximum,
+  /// never a count, so an at-least-once redelivery cannot inflate it
+  /// (ADR-0031).
+  lastRequestAt DateTime? @map("last_request_at") @db.Timestamptz(6)
+  installedBy String?  @map("installed_by") @db.Uuid
+  installedAt DateTime @default(now()) @map("installed_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items       PackItem[]
+
+  @@unique([tenantId, packKey])
+  @@map("pack_installation")
+}
+
+/// One thing a pack put into a tenant, and where it came from.
+model PackItem {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  installationId String   @map("installation_id") @db.Uuid
+  /// service | form | request_type | workflow | sla_policy | article
+  kind           String
+  /// The key of the tenant's own record, in the module that owns it.
+  itemKey        String   @map("item_key")
+  /// SHA-256 of the shipped definition this copy was made from.
+  sourceHash     String   @map("source_hash")
+  /// A shipped definition the tenant looked at and chose not to take, so the
+  /// same offer is not made again. Cleared when the pack moves on again.
+  declinedHash   String?  @map("declined_hash")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  installation   PackInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  /// One pack owns a given key: two packs cannot both claim `hr-onboarding`.
+  @@unique([tenantId, kind, itemKey])
+  @@index([tenantId, installationId])
+  @@map("pack_item")
+}

@@ -1,5 +1,6 @@
 import { newId, transaction, type TenantContext } from '@itsm/platform';
 import type { AudienceDescriptor } from '../service/notification-service.js';
+import { assertNotifiable } from '../domain/notifying-events.js';
 
 /**
  * The default notification pack for every Phase 1 event, in English with
@@ -135,8 +136,14 @@ const packs: NotificationPack[] = [];
  * on its first run; re-running the seed adds what a later deployment brought.
  */
 export function registerNotificationPack(pack: NotificationPack): void {
+  // At registration, which is import time: a pack whose rule nobody would
+  // ever fire stops the process rather than shipping.
+  for (const rule of pack.rules) assertNotifiable(rule.key, rule.eventType);
   packs.push(pack);
 }
+
+// The defaults are held to the same rule, once, when this module loads.
+for (const rule of DEFAULT_RULES) assertNotifiable(rule.key, rule.eventType);
 
 export function registeredPacks(): readonly NotificationPack[] {
   return packs;

@@ -236,8 +236,15 @@ model Category {
   @@map("category")
 }
 
-/// Custom fields (PH-2 feature flag `ticket.customFields`), defined in PH-1 so
-/// the ticket API validates `custom` against them from the start.
+/// Custom fields (PH-2 feature flag `ticket.customFields`).
+///
+/// The ticket API validates `custom` against these on every write, and filters
+/// them on read by `classification` and `visibleTo` (ADR-0048). Two writers do
+/// not go through that check, each for a stated reason: a catalogue submission,
+/// whose answers the request type's form already validated, and a MOD-24
+/// migration, which carries whatever the previous tool held.
+///
+/// `visibleTo` holds **permission** keys, not role names.
 model FieldDefinition {
   id           String    @id @db.Uuid
   tenantId     String    @map("tenant_id") @db.Uuid

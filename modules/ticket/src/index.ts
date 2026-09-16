@@ -7,6 +7,17 @@
  */
 export { ticketManifest } from './manifest.js';
 export * as ticketService from './service/ticket-service.js';
+export * as fieldService from './service/field-service.js';
+export {
+  fieldSchema,
+  CLASSIFICATIONS,
+  FIELD_TYPES,
+  type Classification,
+  type FieldInput,
+  type FieldRow,
+  type FieldType,
+  type Reader,
+} from './service/field-service.js';
 export {
   STATES,
   CANONICAL_STATES,
@@ -20,6 +31,7 @@ export {
   type StateDefinition,
   type TransitionEffects,
 } from './domain/state-machine.js';
+export { importTicketSchema, importCommentSchema, importTicket, importComments, type ImportTicketInput, type ImportCommentInput } from './service/ticket-service.js';
 export type {
   ChannelTicketInput,
   AutomatedChange,

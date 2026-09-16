@@ -1,0 +1,352 @@
+/*
+ * The workbench's own layout.
+ *
+ * Everything here is *arrangement*. Colour, spacing, type and radii all come
+ * from the design system's custom properties, which is what keeps this app in
+ * step with the portal and the admin console when a token changes — and what
+ * stops an application quietly inventing a seventh grey.
+ *
+ * Logical properties throughout (`inline-size`, `margin-block`,
+ * `padding-inline`), for the same reason `@itsm/ui` uses them: the product
+ * ships in right-to-left locales, and a stylesheet written in `left` and
+ * `right` has to be rewritten rather than translated.
+ */
+
+/* ---- The queue ---------------------------------------------------------- */
+
+.itsm-Queue__head {
+  margin-block-end: var(--itsm-space-md);
+}
+
+.itsm-Queue__heading {
+  font-size: var(--itsm-font-size-2xl);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin: 0;
+}
+
+.itsm-Queue__lede {
+  color: var(--itsm-colour-text-secondary);
+  margin-block: var(--itsm-space-3xs) var(--itsm-space-sm);
+}
+
+.itsm-Queue__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Queue__chips a {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-pill);
+  color: var(--itsm-colour-text-secondary);
+  padding: var(--itsm-space-3xs) var(--itsm-space-sm);
+  text-decoration: none;
+}
+
+.itsm-Queue__chips a[aria-current='page'] {
+  background: var(--itsm-colour-surface-selected);
+  border-color: var(--itsm-colour-border-interactive);
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.itsm-Queue__number {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-Queue__title {
+  display: block;
+}
+
+.itsm-Queue__type {
+  color: var(--itsm-colour-text-muted);
+  display: block;
+  font-size: var(--itsm-font-size-xs);
+}
+
+.itsm-Queue__more {
+  margin-block-start: var(--itsm-space-md);
+}
+
+/* ---- The ticket workspace ----------------------------------------------- */
+
+/*
+ * Three panes on a wide screen, one column on a narrow one. The order in the
+ * DOM is facts → thread → assistance, which is also the order they are read
+ * aloud and the order they stack on a phone: what the ticket *is*, then what
+ * happened, then what a machine thinks about it. Grid areas put the facts pane
+ * on the side visually without moving it in the document.
+ */
+.itsm-Ticket {
+  display: grid;
+  gap: var(--itsm-space-lg);
+  grid-template-areas: 'head' 'facts' 'thread' 'assist';
+}
+
+@media (min-width: 60rem) {
+  .itsm-Ticket {
+    grid-template-areas:
+      'head head head'
+      'facts thread assist';
+    grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(16rem, 22rem);
+  }
+}
+
+.itsm-Ticket__head {
+  grid-area: head;
+}
+
+.itsm-Ticket__facts {
+  grid-area: facts;
+}
+
+.itsm-Ticket__thread {
+  grid-area: thread;
+  min-inline-size: 0;
+}
+
+.itsm-Ticket__assist {
+  grid-area: assist;
+}
+
+.itsm-Ticket__number {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-font-size-sm);
+  margin: 0;
+}
+
+.itsm-Ticket__title {
+  font-size: var(--itsm-font-size-2xl);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin-block: var(--itsm-space-3xs) var(--itsm-space-xs);
+}
+
+.itsm-Ticket__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+}
+
+.itsm-Ticket__properties {
+  display: grid;
+  gap: var(--itsm-space-3xs) var(--itsm-space-sm);
+  grid-template-columns: auto 1fr;
+  margin: 0 0 var(--itsm-space-md);
+}
+
+.itsm-Ticket__properties dt {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-font-size-xs);
+}
+
+.itsm-Ticket__properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.itsm-Ticket__sla {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin-block-end: var(--itsm-space-md);
+}
+
+/* ---- Actions ------------------------------------------------------------ */
+
+.itsm-TicketActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.itsm-TicketActions__move {
+  display: flex;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-TicketActions__final,
+.itsm-Suggestions__withheld {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-TicketActions__error,
+.itsm-Composer__error,
+.itsm-Suggestions__error,
+.itsm-SignIn__error {
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-font-size-sm);
+}
+
+/* ---- The composer ------------------------------------------------------- */
+
+.itsm-Composer {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin-block-start: var(--itsm-space-md);
+  padding: var(--itsm-space-sm);
+}
+
+/*
+ * The third statement that a note is internal, after the label and the button.
+ * A tint alone would fail SC 1.4.1; a tint *as well as* two pieces of text is
+ * what makes the state visible at a glance to everybody else.
+ */
+.itsm-Composer[data-internal='true'] {
+  background: var(--itsm-colour-warning-subtle);
+  border-color: var(--itsm-colour-warning-border);
+}
+
+.itsm-Composer__label {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.itsm-Composer__actions {
+  align-items: center;
+  display: flex;
+  gap: var(--itsm-space-sm);
+  justify-content: space-between;
+}
+
+/* ---- Assistance --------------------------------------------------------- */
+
+.itsm-Suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.itsm-Suggestions__heading {
+  font-size: var(--itsm-font-size-lg);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin: 0;
+}
+
+.itsm-Suggestions__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Suggestions__withheld {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Suggestions__pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+/* ---- Sign in ------------------------------------------------------------ */
+
+.itsm-SignIn {
+  margin: var(--itsm-space-3xl) auto;
+  max-inline-size: 26rem;
+  padding-inline: var(--itsm-space-md);
+}
+
+.itsm-SignIn__heading {
+  font-size: var(--itsm-font-size-2xl);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.itsm-SignIn__note {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.itsm-SignIn__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-SignIn__form label {
+  font-weight: var(--itsm-font-weight-medium);
+  margin-block-start: var(--itsm-space-xs);
+}
+
+/* ---- Shell extras ------------------------------------------------------- */
+
+.itsm-AppShell__tenant {
+  color: var(--itsm-colour-text-muted);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+.itsm-AppShell__who {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-AppShell__signout {
+  display: inline;
+}
+
+/* ---- Offline and the outbox (doc 14 §5) --------------------------------- */
+
+.itsm-Outbox {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-warning-border);
+  border-radius: var(--itsm-radius-md);
+  background: var(--itsm-colour-warning-subtle);
+  color: var(--itsm-colour-warning-subtleText);
+  margin-block-end: var(--itsm-space-md);
+  padding: var(--itsm-space-sm);
+}
+
+.itsm-Outbox__offline,
+.itsm-Outbox__pending {
+  margin: 0;
+}
+
+.itsm-Outbox__pending {
+  margin-block-start: var(--itsm-space-2xs);
+}
+
+.itsm-Outbox__heading {
+  font-size: var(--itsm-font-size-md);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin-block: var(--itsm-space-sm) var(--itsm-space-2xs);
+}
+
+.itsm-Outbox__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Outbox__item {
+  display: grid;
+  gap: var(--itsm-space-3xs);
+}
+
+.itsm-Outbox__what {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.itsm-Outbox__why {
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-Outbox__actions {
+  display: flex;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Report__queued,
+.itsm-Reply__queued,
+.itsm-Decision__queued {
+  background: var(--itsm-colour-info-subtle);
+  border-radius: var(--itsm-radius-md);
+  color: var(--itsm-colour-info-subtleText);
+  padding: var(--itsm-space-sm);
+}

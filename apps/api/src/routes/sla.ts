@@ -14,14 +14,14 @@ export async function slaRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/sla-policies', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await slaPolicyService.createPolicy(ctx, policySchema.parse(request.body));
+    const created = await slaPolicyService.createPolicy(ctx, policySchema.strict().parse(request.body));
     reply.code(201);
     return created;
   });
 
   app.put('/sla-policies/:idOrKey/targets', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ targets: z.array(targetSchema) }).parse(request.body);
+    const body = z.object({ targets: z.array(targetSchema) }).strict().parse(request.body);
     return { data: await slaPolicyService.updateTargets(ctx, idOrKey.parse(request.params).idOrKey, body.targets) };
   });
 
@@ -32,7 +32,7 @@ export async function slaRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/sla-calendars', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await slaPolicyService.createCalendar(ctx, calendarSchema.parse(request.body));
+    const created = await slaPolicyService.createCalendar(ctx, calendarSchema.strict().parse(request.body));
     reply.code(201);
     return created;
   });
@@ -44,7 +44,7 @@ export async function slaRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/priority-matrix', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ rows: z.array(z.unknown()) }).parse(request.body);
+    const body = z.object({ rows: z.array(z.unknown()) }).strict().parse(request.body);
     return { data: await slaPolicyService.setPriorityMatrix(ctx, body.rows) };
   });
 }

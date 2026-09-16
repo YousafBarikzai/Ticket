@@ -69,3 +69,19 @@ describe('React Native rendering', () => {
     expect(createNativeTheme('light').shadow.none.shadowOpacity).toBe(0);
   });
 });
+
+describe('the component stylesheet and the token pipeline agree', () => {
+  it('references no variable the pipeline does not emit', async () => {
+    // A `var(--itsm-thing-that-does-not-exist)` is silent: the declaration is
+    // dropped and the element renders with the browser default, which usually
+    // looks *almost* right. Every colour, space and radius in the stylesheet
+    // is checked against what the pipeline actually produces, so a renamed
+    // token fails here rather than in somebody's screenshot.
+    const { componentStylesheet } = await import('../../web/stylesheet.js');
+    const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('light'))]);
+    const used = [...new Set([...componentStylesheet.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))];
+
+    expect(used.length).toBeGreaterThan(50);
+    expect(used.filter((variable) => !defined.has(variable))).toEqual([]);
+  });
+});

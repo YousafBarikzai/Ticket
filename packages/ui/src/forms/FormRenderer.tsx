@@ -1,9 +1,12 @@
+'use client';
+
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { cx } from '../web/cx.js';
 import { Checkbox } from '../web/Checkbox.js';
 import { Combobox, type ComboboxOption } from '../web/Combobox.js';
 import { DatePicker } from '../web/DatePicker.js';
 import { FormField, type FieldControlProps } from '../web/FormField.js';
+import { RichText } from '../web/RichText.js';
 import { Input } from '../web/Input.js';
 import { Select } from '../web/Select.js';
 import { Textarea } from '../web/Textarea.js';
@@ -23,8 +26,6 @@ import {
   type FormDefinition,
   type FormValue,
   type FormValues,
-  type RichBlock,
-  type RichInline,
   type UiElement,
   type UiFieldElement,
 } from './schema.js';
@@ -54,55 +55,6 @@ export interface FormRendererProps {
   readonly disabled?: boolean;
   readonly locale?: string;
   readonly className?: string;
-}
-
-function renderInline(run: RichInline, key: number): ReactNode {
-  if ('href' in run) {
-    return (
-      <a key={key} href={run.href} rel="noopener noreferrer">
-        {run.text}
-      </a>
-    );
-  }
-  let node: ReactNode = run.text;
-  if (run.code) node = <code>{node}</code>;
-  if (run.italic) node = <em>{node}</em>;
-  if (run.bold) node = <strong>{node}</strong>;
-  return <span key={key}>{node}</span>;
-}
-
-/**
- * Rich instructions render from a structured document, never from an HTML
- * string. Form definitions are authored by administrators through a governed
- * builder, but "the author is trusted" is not a security model: a stored
- * definition is still data that reached us over the wire, and
- * `dangerouslySetInnerHTML` would turn a compromised admin account into stored
- * cross-site scripting for every requester who opens the form.
- */
-function RichInstruction({ content }: { readonly content: readonly RichBlock[] }): ReactNode {
-  return (
-    <>
-      {content.map((block, blockIndex) =>
-        block.type === 'paragraph' ? (
-          <p key={blockIndex} style={{ margin: '0 0 var(--itsm-space-xs)' }}>
-            {block.content.map(renderInline)}
-          </p>
-        ) : block.ordered ? (
-          <ol key={blockIndex}>
-            {block.items.map((item, itemIndex) => (
-              <li key={itemIndex}>{item.map(renderInline)}</li>
-            ))}
-          </ol>
-        ) : (
-          <ul key={blockIndex}>
-            {block.items.map((item, itemIndex) => (
-              <li key={itemIndex}>{item.map(renderInline)}</li>
-            ))}
-          </ul>
-        ),
-      )}
-    </>
-  );
 }
 
 function asString(value: FormValue | undefined): string {
@@ -345,7 +297,7 @@ export function FormRenderer({
             borderRadius: 'var(--itsm-radius-md)',
           }}
         >
-          <RichInstruction content={element.content} />
+          <RichText content={element.content} />
         </div>
       );
     }

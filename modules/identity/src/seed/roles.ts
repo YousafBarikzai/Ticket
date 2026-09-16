@@ -60,7 +60,23 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'ticket.attachment.add', scope: 'team' },
       { key: 'ticket.watch', scope: 'team' },
       { key: 'sla.read', scope: 'team' },
-      { key: 'search.query', scope: 'team' },
+      // Tenant-wide, where every other read an agent has is their team's.
+      //
+      // The narrower scope was inconsistent with the rest of the role in a way
+      // that only showed up when MOD-09's AI tried to ground a reply: an agent
+      // holds `knowledge.read` at `any` and could open an internal article by
+      // key, while search would never list one, because an internal article's
+      // ACL is reachable only at `any`. So the knowledge base was readable and
+      // not findable — which, for a knowledge base, is most of the way to not
+      // existing.
+      //
+      // What this widens beyond articles is small: a ticket's search ACL is
+      // already tenant-wide for anyone at team scope or above, so the change
+      // is internal articles and organisation-scoped ones. What it does not
+      // touch is the *read* path: `openRequest`, `readArticle` and
+      // `getTicket` each check their own permission, so finding a record still
+      // does not mean being served it.
+      { key: 'search.query', scope: 'any' },
       { key: 'notification.read', scope: 'own' },
       { key: 'identity.user.read', scope: 'team' },
       { key: 'identity.session.manage', scope: 'own' },
@@ -77,6 +93,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.read', scope: 'any' },
       { key: 'knowledge.write', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      // Suggestions are advisory and agent-facing (ADR-0006): an agent asks
+      // for one, reads the evidence beside it, and decides. Nothing they are
+      // shown is anything they could not already read.
+      { key: 'ai.suggest', scope: 'any' },
+      { key: 'ai.read', scope: 'any' },
       // Reading runs answers "why did this ticket go on hold?" without asking
       // an administrator. Operating them is somebody else's.
       { key: 'workflow.read', scope: 'any' },
@@ -155,6 +176,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'knowledge.write', scope: 'any' },
       { key: 'knowledge.publish', scope: 'any' },
       { key: 'knowledge.feedback', scope: 'own' },
+      { key: 'ai.suggest', scope: 'any' },
+      { key: 'ai.read', scope: 'any' },
       // A lead sees and unblocks runs without being able to change what they
       // do: rescuing a stuck run at 3am is operations, editing the automation
       // is a change.
@@ -258,6 +281,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Sets the rates and the budgets: the owner is who answers for the cost.
       { key: 'time.read', scope: 'any' },
       { key: 'time.manage', scope: 'any' },
+      // Speaks for the service in public: decides what the page says about it.
+      { key: 'statuspage.read', scope: 'any' },
+      { key: 'statuspage.manage', scope: 'any' },
     ],
   },
   {
@@ -377,6 +403,27 @@ export const SYSTEM_ROLES: SystemRole[] = [
       { key: 'time.log', scope: 'any' },
       { key: 'time.read', scope: 'any' },
       { key: 'time.manage', scope: 'any' },
+      { key: 'statuspage.read', scope: 'any' },
+      { key: 'statuspage.manage', scope: 'any' },
+      // Bringing another tool's data in writes users, teams, services and
+      // tickets in bulk: an administrator's act, and nobody else's.
+      { key: 'migration.read', scope: 'any' },
+      { key: 'migration.manage', scope: 'any' },
+      // Installing a pack writes services, forms, workflows and policies in
+      // one act, which is an administrator's and nobody else's.
+      { key: 'pack.read', scope: 'any' },
+      { key: 'pack.install', scope: 'any' },
+      // Hands the user list to an identity provider: an administrator's act.
+      { key: 'identity.scim.manage', scope: 'any' },
+      // Sees what the tenant is using, and may bring its own warnings
+      // forward. The hard limits are the plan's.
+      { key: 'tenant.usage.read', scope: 'any' },
+      { key: 'tenant.limit.manage', scope: 'any' },
+      // Sets what this tenant will spend on AI, and can switch it off. The
+      // prompts themselves are the deployment's and are not on this list.
+      { key: 'ai.suggest', scope: 'any' },
+      { key: 'ai.read', scope: 'any' },
+      { key: 'ai.manage', scope: 'any' },
     ],
   },
 ];

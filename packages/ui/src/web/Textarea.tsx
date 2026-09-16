@@ -1,3 +1,5 @@
+'use client';
+
 import { useEffect, useRef, type ComponentPropsWithRef, type ReactNode } from 'react';
 import { cx } from './cx.js';
 

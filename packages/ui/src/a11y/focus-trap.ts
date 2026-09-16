@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Focus management for overlays.
  *

@@ -9,6 +9,7 @@
  */
 import {
   environmentResolver,
+  loadConfig,
   logger,
   modules,
   registerModule,
@@ -19,7 +20,7 @@ import {
 } from '@itsm/platform';
 
 import { identityManifest, seedSystemRoles } from '@itsm/module-identity';
-import { tenancyManifest, registerSeedStep } from '@itsm/module-tenancy';
+import { tenancyManifest, registerSeedStep, seedPlans } from '@itsm/module-tenancy';
 import { ticketManifest } from '@itsm/module-ticket';
 import { securityManifest, seedClassifications, registerDefaultClassifications } from '@itsm/module-security';
 import { integrationsManifest, registerCredentialStore } from '@itsm/module-integrations';
@@ -40,6 +41,19 @@ import { assetsManifest } from '@itsm/module-assets';
 import { analyticsManifest, seedAnalyticsDefaults } from '@itsm/module-analytics';
 import { feedbackManifest, seedFeedbackDefaults } from '@itsm/module-feedback';
 import { timeManifest, seedTimeDefaults } from '@itsm/module-time';
+import { statusPageManifest, seedStatusDefaults } from '@itsm/module-statuspage';
+import { migrationManifest } from '@itsm/module-migration';
+import { esmManifest } from '@itsm/module-esm';
+import {
+  aiManifest,
+  anthropicProvider,
+  parseModelPrices,
+  registerAiProvider,
+  registerModelPrices,
+  seedAiDatasets,
+  seedAiPrompts,
+  stubProvider,
+} from '@itsm/module-ai';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -70,6 +84,10 @@ export const ALL_MODULES: ModuleManifest[] = [
   assetsManifest,
   feedbackManifest,
   timeManifest,
+  statusPageManifest,
+  migrationManifest,
+  esmManifest,
+  aiManifest,
   analyticsManifest,
   adminManifest,
 ];
@@ -93,12 +111,29 @@ export function bootstrapModules(): BootstrapResult {
   // than read from the database on every serialisation.
   registerDefaultClassifications();
 
+  // Plans are the deployment's, not a tenant's, so they are written once at
+  // boot rather than by a per-tenant seed step. Idempotent, and it never
+  // edits a plan an operator has tuned.
+  void seedPlans().catch((error: unknown) => {
+    logger.error('the default plans could not be seeded', { error: (error as Error).message });
+  });
+
   // Credential resolution, in order. The encrypted per-tenant store first, so a
   // tenant's own credential wins over a deployment-wide one of the same name;
   // the environment last, which is what a single-tenant deployment relies on
   // and what the pre-tenant inbound path uses.
   registerCredentialStore(registerSecretResolver);
   registerSecretResolver('environment', environmentResolver);
+
+  // Prompts and evaluation datasets are the deployment's, like plans: written
+  // once at boot rather than per tenant, and never over an operator's edit.
+  void seedAiPrompts()
+    .then(() => seedAiDatasets())
+    .catch((error: unknown) => {
+      logger.error('the AI prompts could not be seeded', { error: (error as Error).message });
+    });
+
+  registerAiPricesAndProvider();
 
   // The development email transport verifies nothing, so it is registered only
   // outside production. In production its presence would turn "no provider is
@@ -148,6 +183,10 @@ export function bootstrapModules(): BootstrapResult {
   registerSeedStep('time.defaults', async (ctx: TenantContext) => {
     await seedTimeDefaults(ctx);
   });
+  // After the catalogue, so the default service is a component from the start.
+  registerSeedStep('statuspage.defaults', async (ctx: TenantContext) => {
+    await seedStatusDefaults(ctx);
+  });
   registerSeedStep('admin.modules', async (ctx: TenantContext) => {
     await syncInstalledModules(ctx);
   });
@@ -161,6 +200,62 @@ export function bootstrapModules(): BootstrapResult {
 
   logger.info('modules registered', { count: modules().length, ids: modules().map((m) => m.id) });
   return { modules: modules().map((m) => m.id), problems };
+}
+
+/**
+ * The model provider and its price list, chosen by configuration.
+ *
+ * Three rules, and each one exists because of a way this goes wrong quietly:
+ *
+ * **The stub is refused in production.** It answers without a model, so its
+ * presence in a deployment turns "no provider has been chosen" from a refusal
+ * somebody fixes into answers somebody believes. Same bargain the development
+ * email transport strikes, for the same reason.
+ *
+ * **Prices are loaded before the provider.** An unpriced model is refused at
+ * the point of call (`ModelNotPriced`), so loading the provider first would
+ * open a window in which calls are made and costed at nothing.
+ *
+ * **A malformed price list stops the boot.** A half-loaded price list produces
+ * a budget that half-works, which is the worst of the three outcomes — worse
+ * than no AI, and much worse than a process that will not start.
+ */
+function registerAiPricesAndProvider(): void {
+  const config = loadConfig();
+
+  if (config.AI_MODEL_PRICES) {
+    registerModelPrices(parseModelPrices(config.AI_MODEL_PRICES));
+  }
+
+  switch (config.AI_PROVIDER) {
+    case 'anthropic': {
+      if (!config.ANTHROPIC_API_KEY) {
+        throw new Error('AI_PROVIDER is anthropic but ANTHROPIC_API_KEY is not set');
+      }
+      registerAiProvider(
+        anthropicProvider({
+          apiKey: config.ANTHROPIC_API_KEY,
+          ...(config.ANTHROPIC_BASE_URL ? { baseUrl: config.ANTHROPIC_BASE_URL } : {}),
+        }),
+      );
+      return;
+    }
+    case 'stub': {
+      if (config.NODE_ENV === 'production') {
+        throw new Error('AI_PROVIDER is stub, which answers without a model and is not a deployment option');
+      }
+      registerAiProvider(stubProvider());
+      return;
+    }
+    default: {
+      // Unset. Outside production the stub is registered anyway, so a
+      // developer who has configured nothing still gets a working suggestion
+      // surface; in production nothing is registered and every capability that
+      // calls a model refuses with a 503 naming the configuration.
+      if (config.NODE_ENV !== 'production') registerAiProvider(stubProvider());
+      else logger.warn('no AI provider is configured; every capability that calls a model will refuse');
+    }
+  }
 }
 
 export { modules, registerModule };

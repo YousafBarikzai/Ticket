@@ -1,0 +1,28 @@
+{
+  "name": "@itsm/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --webpack -p 3300",
+    "build": "next build --webpack",
+    "start": "next start -p 3300",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. --project unit apps/admin"
+  },
+  "dependencies": {
+    "@itsm/bff": "workspace:*",
+    "@itsm/contracts": "workspace:*",
+    "@itsm/sdk": "workspace:*",
+    "@itsm/ui": "workspace:*",
+    "next": "^16.3.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.0.1"
+  }
+}

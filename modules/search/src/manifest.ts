@@ -19,7 +19,7 @@ export const searchManifest: ModuleManifest = registerModule({
   permissions: [{ key: 'search.query', scopes: ['own', 'team', 'any'], description: 'Search across the platform.' }],
   events: {
     publishes: ['search.document.indexed'],
-    consumes: ['ticket.created', 'ticket.updated', 'ticket.status.changed', 'search.document.indexed'],
+    consumes: ['ticket.created', 'ticket.imported', 'ticket.updated', 'ticket.status.changed', 'search.document.indexed'],
   },
   featureFlags: [],
   settings: [],

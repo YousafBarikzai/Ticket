@@ -18,7 +18,7 @@ export async function notificationPreferenceRoutes(app: FastifyInstance): Promis
 
   app.put('/me/notification-preferences', async (request) => {
     const ctx = contextOf(request);
-    return preferenceService.setPreference(ctx, preferenceSchema.parse(request.body));
+    return preferenceService.setPreference(ctx, preferenceSchema.strict().parse(request.body));
   });
 
   app.get('/users/:id/notification-preferences', async (request) => {
@@ -30,6 +30,6 @@ export async function notificationPreferenceRoutes(app: FastifyInstance): Promis
   app.put('/users/:id/notification-preferences', async (request) => {
     const ctx = contextOf(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    return preferenceService.setPreference(ctx, preferenceSchema.parse(request.body), id);
+    return preferenceService.setPreference(ctx, preferenceSchema.strict().parse(request.body), id);
   });
 }

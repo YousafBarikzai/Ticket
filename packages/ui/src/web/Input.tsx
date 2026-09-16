@@ -1,3 +1,5 @@
+'use client';
+
 import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { cx } from './cx.js';
 

@@ -127,6 +127,51 @@ export async function createPolicy(ctx: TenantContext, input: unknown) {
   });
 }
 
+/**
+ * Edits a policy's own fields, leaving its targets alone.
+ *
+ * Targets are replaced wholesale by `updateTargets`, because a target is
+ * identified by priority and type rather than by a key somebody could patch.
+ * Splitting the two keeps a rename from touching a running timer.
+ */
+export const policyUpdateSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    match: exprSchema.optional(),
+    specificity: z.number().int().min(0).max(1000).optional(),
+    calendarMode: z.enum(['group', 'requester', 'fixed']).optional(),
+    calendarId: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+
+export async function updatePolicy(ctx: TenantContext, idOrKey: string, patch: unknown) {
+  authz.require(ctx, 'sla.policy.manage');
+  const parsed = policyUpdateSchema.parse(patch);
+
+  return transaction(ctx, async (tx) => {
+    const policy = await loadPolicy(tx, idOrKey);
+
+    const updated = await tx.slaPolicy.update({
+      where: { id: policy.id },
+      data: {
+        name: parsed.name,
+        match: parsed.match as never,
+        specificity: parsed.specificity,
+        calendarMode: parsed.calendarMode,
+        calendarId: parsed.calendarId,
+      },
+    });
+    await recordAudit(tx, ctx, {
+      action: 'sla.policy.updated',
+      targetType: 'sla_policy',
+      targetId: policy.id,
+      before: { name: policy.name, specificity: policy.specificity },
+      after: { name: updated.name, specificity: updated.specificity },
+    });
+    return updated;
+  });
+}
+
 export async function updateTargets(ctx: TenantContext, idOrKey: string, targets: unknown) {
   authz.require(ctx, 'sla.policy.manage');
   const parsed = z.array(targetSchema).min(1).max(24).parse(targets);

@@ -25,6 +25,23 @@ export function topicForEntity(tenantId: string, entity: string, id: string): st
   return tenantKey(tenantId, 'sse', entity, id);
 }
 
+/**
+ * The topic a queue watches.
+ *
+ * Without this there is no way for a screen to learn about a ticket it does
+ * not already know exists. The entity topic needs an id, and the user topic
+ * only carries what somebody requested or is assigned — so an agent watching
+ * their team's queue saw nothing at all when a new ticket arrived in it, which
+ * is the one thing a queue is for.
+ *
+ * Keyed by group rather than by tenant on purpose: a tenant-wide topic would
+ * wake every open browser in the organisation on every change, and would leak
+ * the timing of one team's work to another.
+ */
+export function topicForGroup(tenantId: string, groupId: string): string {
+  return tenantKey(tenantId, 'sse', 'group', groupId);
+}
+
 export async function publishNotice(ctx: TenantContext, topics: string[], notice: Omit<ChangeNotice, 'at'>): Promise<void> {
   const payload = JSON.stringify({ ...notice, at: new Date().toISOString() });
   try {

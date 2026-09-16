@@ -86,6 +86,239 @@ model InstalledModule {
 }
 
 // ===========================================================================
+// modules/ai/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-09 AI, the governed capability service (PH-4).
+///
+/// Two halves, split by who owns them.
+///
+/// Prompts and evaluations are the **deployment's**: they carry no
+/// `tenant_id`, every tenant reads the same rows, and a prompt version is
+/// promoted once for everybody after it has been evaluated. The same shape as
+/// MOD-21's plans, for the same reason — a tenant that could edit its own
+/// prompt could edit its way past every evaluation threshold the release gate
+/// depends on. What a tenant *may* change is tone and language, which are
+/// settings (MOD-13), not prompts.
+///
+/// Budgets, jobs and suggestions are the **tenant's**, isolated like
+/// everything else. A prompt and a completion are classified confidential and
+/// swept after their retention window (doc 13 §5).
+
+model AiPrompt {
+  key            String   @id
+  /// reply-draft | ticket-summary | article-draft | similar-work
+  capability     String
+  name           String
+  description    String
+  /// The version a call renders. Null until one has been promoted, which is
+  /// what makes "no evaluated prompt" a refusal rather than a silent default.
+  currentVersion Int?     @map("current_version")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  versions       AiPromptVersion[]
+
+  @@index([capability])
+  @@map("ai_prompt")
+}
+
+/// One immutable prompt text, with the score that let it be promoted.
+model AiPromptVersion {
+  id           String   @id @db.Uuid
+  promptKey    String   @map("prompt_key")
+  version      Int
+  /// What the model is told it is. Separate from the task so a change of
+  /// posture is visible as a change of posture.
+  systemPrompt String   @map("system_prompt")
+  /// The task, with `{{path}}` placeholders over the assembled context.
+  template     String
+  /// draft | evaluated | published | retired
+  status       String   @default("draft")
+  /// 0 to 1, from the last evaluation run. Null until one has been run.
+  score        Float?
+  evaluatedAt  DateTime? @map("evaluated_at") @db.Timestamptz(6)
+  publishedAt  DateTime? @map("published_at") @db.Timestamptz(6)
+  changeNote   String?  @map("change_note")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  prompt       AiPrompt @relation(fields: [promptKey], references: [key], onDelete: Cascade)
+  runs         AiEvalRun[]
+
+  @@unique([promptKey, version])
+  @@index([promptKey, status])
+  @@map("ai_prompt_version")
+}
+
+/// A set of cases a capability's prompt is judged against.
+model AiEvalDataset {
+  key        String   @id
+  capability String
+  name       String
+  /// The score a version must reach before it can be promoted.
+  threshold  Float    @default(0.8)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  cases      AiEvalCase[]
+  runs       AiEvalRun[]
+
+  @@index([capability])
+  @@map("ai_eval_dataset")
+}
+
+/// One case: a context to render the prompt against, and what a good answer
+/// has to contain or avoid. Deliberately not a golden string — two good
+/// answers to the same question differ, and pinning one of them scores
+/// fluency rather than usefulness.
+model AiEvalCase {
+  id         String   @id @db.Uuid
+  datasetKey String   @map("dataset_key")
+  key        String
+  /// The assembled context, as a job would have built it.
+  context    Json
+  /// { mustMention: string[], mustNotMention: string[], maxWords?: number }
+  expect     Json
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  dataset    AiEvalDataset @relation(fields: [datasetKey], references: [key], onDelete: Cascade)
+
+  @@unique([datasetKey, key])
+  @@map("ai_eval_case")
+}
+
+/// One evaluation of one prompt version against one dataset.
+model AiEvalRun {
+  id               String   @id @db.Uuid
+  promptVersionId  String   @map("prompt_version_id") @db.Uuid
+  datasetKey       String   @map("dataset_key")
+  model            String
+  score            Float
+  threshold        Float
+  passed           Boolean
+  /// What the run itself cost, in micro-pence. The deployment's, not a
+  /// tenant's: an evaluation has no tenant to charge, and hiding its cost
+  /// would make the cheapest thing to do with a prompt the thing nobody
+  /// measures.
+  costMicros       BigInt   @default(0) @map("cost_micros")
+  /// Per case: { key, score, failures[] }. Kept so a fall in the score can be
+  /// read as "which cases", not just "it went down".
+  cases            Json     @default("[]")
+  ranBy            String?  @map("ran_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  promptVersion    AiPromptVersion @relation(fields: [promptVersionId], references: [id], onDelete: Cascade)
+  dataset          AiEvalDataset   @relation(fields: [datasetKey], references: [key], onDelete: Cascade)
+
+  @@index([promptVersionId, createdAt(sort: Desc)])
+  @@map("ai_eval_run")
+}
+
+/// What a tenant has chosen to spend on AI this month, and what it has spent.
+///
+/// `spent` is a cached sum of the completed jobs in the period, not an
+/// accumulator: it is recomputed from `ai_job` every time a job finishes, so a
+/// retried or redelivered job cannot inflate it and the figure can always be
+/// rebuilt from the rows beneath it (ADR-0031).
+model AiBudget {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  /// `2026-09`. Spelled out rather than left as nullable dates, for the reason
+  /// MOD-12's rollup and MOD-21's meters both paid for.
+  periodKey   String   @map("period_key")
+  /// The tenant's own monthly cap, in whole pence. Null means no cap.
+  limitPence  Int?     @map("limit_pence")
+  /// Where the warning goes out, in whole pence. Refused above the cap.
+  warnPence   Int?     @map("warn_pence")
+  /// Micro-pence: a millionth of a penny, because one call costs a fraction
+  /// of one and a month of them has to add up without rounding at each step.
+  spentMicros BigInt   @default(0) @map("spent_micros")
+  /// ok | warned | blocked. Each line is announced once per period.
+  state       String   @default("ok")
+  warnedAt    DateTime? @map("warned_at") @db.Timestamptz(6)
+  blockedAt   DateTime? @map("blocked_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, periodKey])
+  @@map("ai_budget")
+}
+
+/// One request to the model gateway: what was asked, what it cost, what
+/// happened. The durable record every other figure is rebuilt from.
+model AiJob {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  capability      String
+  /// ticket | article — what the suggestion is about.
+  subjectType     String   @map("subject_type")
+  subjectId       String   @map("subject_id") @db.Uuid
+  /// queued | running | completed | failed | refused
+  status          String   @default("queued")
+  /// The person who asked. An AI job always has one: nothing here runs on its
+  /// own behalf (ADR-0006), and the audit rows name them as `on_behalf_of`.
+  requestedBy     String   @map("requested_by") @db.Uuid
+  promptKey       String   @map("prompt_key")
+  promptVersion   Int      @map("prompt_version")
+  provider        String
+  model           String
+  inputTokens     Int      @default(0) @map("input_tokens")
+  outputTokens    Int      @default(0) @map("output_tokens")
+  costMicros      BigInt   @default(0) @map("cost_micros")
+  /// The period the cost counts against, fixed when the job is created so a
+  /// job that runs across midnight on the first cannot land in two months.
+  periodKey       String   @map("period_key")
+  error           String?
+  /// The rendered prompt and the raw completion, kept for audit and
+  /// evaluation and swept after the retention window.
+  promptText      String?  @map("prompt_text")
+  completionText  String?  @map("completion_text")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt       DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  suggestion      AiSuggestion?
+
+  @@index([tenantId, status])
+  @@index([tenantId, periodKey, status])
+  @@index([tenantId, subjectType, subjectId, createdAt(sort: Desc)])
+  @@index([tenantId, createdAt])
+  @@map("ai_job")
+}
+
+/// What the model produced, what it was based on, and what a person did with
+/// it. Advisory: nothing here is applied without somebody accepting it.
+model AiSuggestion {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  jobId        String   @unique @map("job_id") @db.Uuid
+  capability   String
+  subjectType  String   @map("subject_type")
+  subjectId    String   @map("subject_id") @db.Uuid
+  /// The suggestion itself, in the capability's own shape.
+  content      Json
+  /// Why the model says it answered this way. Shown beside the answer.
+  reason       String
+  /// low | medium | high, from the model's own figure banded here so that a
+  /// number nobody calibrated is never shown as one.
+  confidence   String
+  /// What it was built from: [{ kind, id, title, ref }]. An answer with no
+  /// evidence is refused before it reaches anybody.
+  evidence     Json     @default("[]")
+  /// pending | accepted | edited | rejected
+  outcome      String   @default("pending")
+  outcomeBy    String?  @map("outcome_by") @db.Uuid
+  outcomeAt    DateTime? @map("outcome_at") @db.Timestamptz(6)
+  outcomeNote  String?  @map("outcome_note")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job          AiJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, subjectType, subjectId, createdAt(sort: Desc)])
+  @@index([tenantId, capability, outcome])
+  @@map("ai_suggestion")
+}
+
+// ===========================================================================
 // modules/analytics/prisma/schema.prisma
 // ===========================================================================
 
@@ -1688,6 +1921,70 @@ model InboundMessage {
 }
 
 // ===========================================================================
+// modules/esm/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-22 Enterprise service management packs (PH-4).
+///
+/// A pack is shipped with the deployment; what a tenant installs is a *copy*
+/// of it, owned by the tenant and editable like anything else it configured
+/// itself (ADR-0039). These two tables are therefore not the pack — they are
+/// the receipt: which pack a tenant took, at which version, and what the
+/// shipped definition looked like at the moment each item was copied.
+///
+/// That last part is the whole trick. An item whose current shape still
+/// hashes to `source_hash` is untouched, so a newer pack version can replace
+/// it safely; one that does not is an edit somebody made on purpose, and a
+/// later version is offered rather than applied.
+
+model PackInstallation {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  packKey     String   @map("pack_key")
+  /// The version of the shipped pack this tenant is level with. Moves only
+  /// when an upgrade is applied or explicitly declined in full.
+  packVersion Int      @map("pack_version")
+  name        String
+  /// The last time somebody raised one of this pack's requests. A maximum,
+  /// never a count, so an at-least-once redelivery cannot inflate it
+  /// (ADR-0031).
+  lastRequestAt DateTime? @map("last_request_at") @db.Timestamptz(6)
+  installedBy String?  @map("installed_by") @db.Uuid
+  installedAt DateTime @default(now()) @map("installed_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items       PackItem[]
+
+  @@unique([tenantId, packKey])
+  @@map("pack_installation")
+}
+
+/// One thing a pack put into a tenant, and where it came from.
+model PackItem {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  installationId String   @map("installation_id") @db.Uuid
+  /// service | form | request_type | workflow | sla_policy | article
+  kind           String
+  /// The key of the tenant's own record, in the module that owns it.
+  itemKey        String   @map("item_key")
+  /// SHA-256 of the shipped definition this copy was made from.
+  sourceHash     String   @map("source_hash")
+  /// A shipped definition the tenant looked at and chose not to take, so the
+  /// same offer is not made again. Cleared when the pack moves on again.
+  declinedHash   String?  @map("declined_hash")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  installation   PackInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  /// One pack owns a given key: two packs cannot both claim `hr-onboarding`.
+  @@unique([tenantId, kind, itemKey])
+  @@index([tenantId, installationId])
+  @@map("pack_item")
+}
+
+// ===========================================================================
 // modules/feedback/prisma/schema.prisma
 // ===========================================================================
 
@@ -1848,6 +2145,9 @@ model User {
   email         String
   displayName   String    @map("display_name")
   idpSubject    String?   @map("idp_subject")
+  /// The identity provider's own id for this person, as SCIM sends it. Not
+  /// the OIDC subject: Entra sends a different value in each.
+  scimExternalId String?  @map("scim_external_id")
   status        String    @default("active")
   managerId     String?   @map("manager_id") @db.Uuid
   locale        String    @default("en-GB")
@@ -1888,6 +2188,8 @@ model Team {
   emailAlias  String?   @map("email_alias")
   managerId   String?   @map("manager_id") @db.Uuid
   calendarId  String?   @map("calendar_id") @db.Uuid
+  /// Set when an identity provider's group owns this team through SCIM.
+  scimExternalId String? @map("scim_external_id")
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy   String?   @map("created_by") @db.Uuid
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1985,6 +2287,9 @@ model RoleAssignment {
   validTo   DateTime? @map("valid_to") @db.Timestamptz(6)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy String?   @map("created_by") @db.Uuid
+  /// The team (an identity provider's group) whose SCIM role mapping granted
+  /// this. Leaving the group revokes it; an assignment made by hand has none.
+  viaScimTeamId String? @map("via_scim_team_id") @db.Uuid
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -2046,6 +2351,39 @@ model Delegate {
   @@unique([principalId, delegateId, capability])
   @@index([tenantId, delegateId])
   @@map("delegate")
+}
+
+/// The SCIM bearer token, hashed. One current row per tenant; a rotated one
+/// keeps an expiry for the overlap; a revoked one keeps the date.
+model ScimToken {
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  tokenHash  String    @map("token_hash")
+  /// The last four characters, so an administrator can tell which is which.
+  hint       String
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, tokenHash])
+  @@index([tenantId, revokedAt])
+  @@map("scim_token")
+}
+
+/// A provider group's name to a platform role: joining the group grants
+/// it, leaving the group revokes it. The tenant's decision, made once.
+model ScimRoleMapping {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  groupName String   @map("group_name")
+  roleKey   String   @map("role_key")
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, groupName, roleKey])
+  @@map("scim_role_mapping")
 }
 
 // ===========================================================================
@@ -2582,6 +2920,140 @@ model KnowledgeCategory {
   @@unique([tenantId, key])
   @@index([tenantId, path])
   @@map("knowledge_category")
+}
+
+// ===========================================================================
+// modules/migration/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-24 Migration (PH-4).
+///
+/// Bringing another tool's records in: users, teams, services and tickets,
+/// from a file somebody uploaded or an API the gateway may reach. Every job
+/// runs as a dry run first if anybody is sensible, and every row's outcome is
+/// kept so a re-run picks up the ones that were fixed and leaves the ones
+/// that landed alone (ADR-0036).
+
+/// A saved mapping from a source's field names to ours, per entity. The
+/// built-in presets are code; these are the tenant's own, or a preset a
+/// tenant copied and changed.
+model ImportMapping {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  name        String
+  /// users | teams | services | tickets | comments
+  entity      String
+  /// The mapping document: where each field is in a record, the value maps,
+  /// the constants. Validated by the entity's schema before it is saved.
+  document    Json
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, key])
+  @@map("import_mapping")
+}
+
+/// A file somebody uploaded to import from. Kept as text, bounded, for a
+/// week: long enough for the dry run, the commit, and the re-run that proves
+/// the commit changed nothing.
+model ImportFile {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  filename   String
+  mime       String
+  bytes      Int
+  content    String
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, createdAt])
+  @@map("import_file")
+}
+
+/// One run: what to read, how to read it, whether to write anything, and
+/// how it went. A dry run is a job whose mode says so; it writes records and
+/// nothing else.
+model ImportJob {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  name        String
+  /// users | teams | services | tickets | comments
+  entity      String
+  /// csv | http_json | servicenow | jira | freshservice
+  source      String
+  /// The source configuration: url, paging, credential reference, CSV
+  /// options, or the uploaded file's id.
+  config      Json      @default("{}")
+  /// The mapping used, copied at creation so a later edit to the saved
+  /// mapping does not change what this job did.
+  mapping     Json
+  /// dry_run | commit
+  mode        String    @default("dry_run")
+  /// pending | running | completed | failed | cancelled
+  status      String    @default("pending")
+  seen        Int       @default(0)
+  created     Int       @default(0)
+  updated     Int       @default(0)
+  unchanged   Int       @default(0)
+  failed      Int       @default(0)
+  /// Why the whole job stopped, when it did: the source answered 401, the
+  /// file was not CSV, the mapping named a field that does not exist.
+  error       String?
+  fileId      String?   @map("file_id") @db.Uuid
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  records     ImportRecord[]
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, status])
+  @@map("import_job")
+}
+
+/// One row of one job: what it was, what became of it, and why not. The
+/// record is the report; a dry run's records say what a commit would do.
+model ImportRecord {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  jobId       String   @map("job_id") @db.Uuid
+  rowNumber   Int      @map("row_number")
+  externalKey String?  @map("external_key")
+  /// would_create | would_update | would_skip | created | updated | unchanged | failed
+  outcome     String
+  entityId    String?  @map("entity_id") @db.Uuid
+  /// The mapped record, for a dry run's preview and for the failure's context.
+  mapped      Json?
+  problems    String[] @default([])
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job         ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, jobId, outcome])
+  @@index([tenantId, jobId, rowNumber])
+  @@map("import_record")
+}
+
+/// The durable map from a source's identifier to ours. What makes a re-run
+/// an update rather than a duplicate, and what lets a ticket row's
+/// `caller_id` find the user a previous job created.
+model ImportLink {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  /// users | teams | services | tickets | comments
+  entity      String
+  externalKey String   @map("external_key")
+  entityId    String   @map("entity_id") @db.Uuid
+  jobId       String?  @map("job_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, entity, externalKey])
+  @@index([tenantId, entity, entityId])
+  @@map("import_link")
 }
 
 // ===========================================================================
@@ -3187,6 +3659,169 @@ model BreachRecord {
 }
 
 // ===========================================================================
+// modules/statuspage/prisma/schema.prisma
+// ===========================================================================
+
+/// MOD-23 Status page (PH-4).
+///
+/// The public face of the service desk: what is up, what is not, what is
+/// being worked on and when the next maintenance is. Fed by major incidents
+/// and scheduled changes so the page says what the desk knows without
+/// anybody remembering to update it, and editable by hand for everything
+/// else.
+///
+/// Its tables are the desk's own rather than views over MOD-08: what the
+/// public is told is a decision, not a projection. A major incident that is
+/// not customer-facing never appears; an internal update never leaks; and the
+/// wording on the page can be softened without touching the incident record.
+
+model StatusPage {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  description String?
+  isPublic    Boolean  @default(true) @map("is_public")
+  timeZone    String   @default("Europe/London") @map("time_zone")
+  supportUrl  String?  @map("support_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  components  StatusComponent[]
+  incidents   StatusIncident[]
+  maintenance MaintenanceWindow[]
+  subscribers StatusSubscriber[]
+
+  /// One page per tenant. Its URL is /status/<tenant slug>: the tenant
+  /// directory is the only thing a stranger may look up before a tenant is
+  /// known, so the page borrows its name rather than keeping a second one
+  /// (ADR-0035).
+  @@unique([tenantId])
+  @@map("status_page")
+}
+
+/// A thing the public can see the health of. Linked to a catalogue service
+/// where one exists, which is how a major incident against that service finds
+/// the component to mark.
+model StatusComponent {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  pageId      String   @map("page_id") @db.Uuid
+  key         String
+  name        String
+  description String?
+  groupName   String?  @map("group_name")
+  order       Int      @default(0)
+  serviceId   String?  @map("service_id") @db.Uuid
+  /// operational | degraded | partial_outage | major_outage | maintenance
+  status      String   @default("operational")
+  isVisible   Boolean  @default(true) @map("is_visible")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page        StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, serviceId])
+  @@map("status_component")
+}
+
+model StatusIncident {
+  id              String    @id @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  pageId          String    @map("page_id") @db.Uuid
+  /// The MOD-08 record it mirrors, when it mirrors one.
+  majorIncidentId String?   @map("major_incident_id") @db.Uuid
+  title           String
+  /// none | minor | major | critical
+  impact          String    @default("minor")
+  /// investigating | identified | monitoring | resolved
+  status          String    @default("investigating")
+  componentIds    String[]  @default([]) @map("component_ids") @db.Uuid
+  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz(6)
+  isVisible       Boolean   @default(true) @map("is_visible")
+  createdBy       String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page            StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  updates         StatusUpdate[]
+
+  @@index([tenantId, pageId, status, startedAt(sort: Desc)])
+  @@index([tenantId, majorIncidentId])
+  @@map("status_incident")
+}
+
+/// One line on an incident's public timeline. Only what was meant for the
+/// public: a MOD-08 update whose audience is `internal` or `stakeholders`
+/// never becomes one of these.
+model StatusUpdate {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  incidentId  String   @map("incident_id") @db.Uuid
+  status      String
+  body        String
+  /// major_incident | manual
+  source      String   @default("manual")
+  /// The MOD-08 timeline entry this came from, so a redelivery is a no-op.
+  sourceRef   String?  @map("source_ref") @db.Uuid
+  postedAt    DateTime @default(now()) @map("posted_at") @db.Timestamptz(6)
+  postedBy    String?  @map("posted_by") @db.Uuid
+  /// Subscribers were told; set by the job that told them.
+  notifiedAt  DateTime? @map("notified_at") @db.Timestamptz(6)
+
+  incident    StatusIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceRef])
+  @@index([tenantId, incidentId, postedAt])
+  @@map("status_update")
+}
+
+model MaintenanceWindow {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  pageId       String    @map("page_id") @db.Uuid
+  /// The MOD-08 change it announces, when it announces one.
+  changeId     String?   @map("change_id") @db.Uuid
+  title        String
+  body         String?
+  componentIds String[]  @default([]) @map("component_ids") @db.Uuid
+  startsAt     DateTime  @map("starts_at") @db.Timestamptz(6)
+  endsAt       DateTime  @map("ends_at") @db.Timestamptz(6)
+  /// scheduled | in_progress | completed | cancelled
+  status       String    @default("scheduled")
+  createdBy    String?   @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  notifiedAt   DateTime? @map("notified_at") @db.Timestamptz(6)
+
+  page         StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, pageId, status, startsAt])
+  @@index([tenantId, changeId])
+  @@map("maintenance_window")
+}
+
+/// Somebody who asked to be told. An address, not a user: the public has no
+/// account here. Confirmed by a signed link before anything is sent, so a
+/// stranger cannot subscribe somebody else's inbox to a stream of outages.
+model StatusSubscriber {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  pageId         String    @map("page_id") @db.Uuid
+  email          String
+  confirmedAt    DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  unsubscribedAt DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  page           StatusPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, pageId, confirmedAt])
+  @@map("status_subscriber")
+}
+
+// ===========================================================================
 // modules/tenancy/prisma/schema.prisma
 // ===========================================================================
 
@@ -3202,6 +3837,10 @@ model Tenant {
   status          String    @default("provisioning")
   parentTenantId  String?   @map("parent_tenant_id") @db.Uuid
   region          String    @default("eu-west")
+  /// Where this tenant's prompts may be processed. Empty means "wherever this
+  /// tenant's own data lives" — the safe reading, and the one that needs no
+  /// backfill guess for a tenant provisioned before the policy existed.
+  aiAllowedRegions String[] @default([]) @map("ai_allowed_regions")
   planKey         String?   @map("plan_key")
   settings        Json      @default("{}")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -3296,6 +3935,97 @@ model Organisation {
   @@index([tenantId, path])
   @@index([tenantId, parentId])
   @@map("organisation")
+}
+
+/// MOD-21 Plans, limits and metering (PH-4).
+///
+/// A plan is ours, not a tenant's: it has no `tenant_id`, so row-level
+/// security has nothing to attach to and every tenant reads the same row.
+/// What a tenant may see of it is decided by the service, and what a tenant
+/// may change is its own soft thresholds and nothing else (ADR-0038).
+model Plan {
+  key         String   @id
+  name        String
+  description String?
+  /// Per agent, per month, in micro-pence — the same unit every other amount
+  /// in this platform is held in. Null for a plan that is not sold at a list
+  /// price: a trial, or an enterprise agreement negotiated per customer.
+  /// Nothing in this repository charges anybody; this is what a price *is*,
+  /// not a billing integration.
+  pricePerAgentMicros BigInt? @map("price_per_agent_micros")
+  currency    String   @default("GBP")
+  /// Feature flag keys this plan turns on, over the platform defaults.
+  features    String[] @default([])
+  /// A plan nobody may be moved onto any more, kept for the tenants on it.
+  isRetired   Boolean  @default(false) @map("is_retired")
+  sortOrder   Int      @default(100) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  limits      PlanLimit[]
+
+  @@map("plan")
+}
+
+/// What a plan allows of one meter. `soft` is the line that warns and `hard`
+/// the line that refuses; null means no line of that kind.
+model PlanLimit {
+  id       String  @id @db.Uuid
+  planKey  String  @map("plan_key")
+  /// agents | tickets | storage | api_calls
+  meter    String
+  soft     BigInt?
+  hard     BigInt?
+
+  plan     Plan    @relation(fields: [planKey], references: [key], onDelete: Cascade)
+
+  @@unique([planKey, meter])
+  @@map("plan_limit")
+}
+
+/// A tenant's own figure for one meter, and the verdict the request path
+/// reads. Recomputed from the source rows nightly, moved by events in
+/// between: the same "rollup as a cache of facts" shape MOD-12 uses, for the
+/// same reason — an accumulated number nobody can rebuild is a number
+/// nobody can defend.
+model UsageMeter {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  meter       String
+  /// The first day of the period for a counted meter; null for a live one.
+  periodStart DateTime? @map("period_start") @db.Date
+  periodEnd   DateTime? @map("period_end") @db.Date
+  value       BigInt    @default(0)
+  /// ok | warned | blocked, as of the last time it moved.
+  state       String    @default("ok")
+  /// Set once per period per line, so a recompute cannot re-announce one.
+  warnedAt    DateTime? @map("warned_at") @db.Timestamptz(6)
+  blockedAt   DateTime? @map("blocked_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// PostgreSQL treats NULLs in a unique index as distinct, so a live meter
+  /// would never conflict with itself: the period is spelled out instead
+  /// (`live`, or `2026-09`), the way MOD-12's grouping key is.
+  periodKey   String    @map("period_key")
+
+  @@unique([tenantId, meter, periodKey])
+  @@index([tenantId, state])
+  @@map("usage_meter")
+}
+
+/// A tenant administrator's own warning threshold for one meter. Never a
+/// hard one: the hard line is the plan's, and a tenant that could move it
+/// would not have a plan.
+model TenantLimitOverride {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  meter     String
+  soft      BigInt
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([tenantId, meter])
+  @@map("tenant_limit_override")
 }
 
 // ===========================================================================
@@ -3540,8 +4270,15 @@ model Category {
   @@map("category")
 }
 
-/// Custom fields (PH-2 feature flag `ticket.customFields`), defined in PH-1 so
-/// the ticket API validates `custom` against them from the start.
+/// Custom fields (PH-2 feature flag `ticket.customFields`).
+///
+/// The ticket API validates `custom` against these on every write, and filters
+/// them on read by `classification` and `visibleTo` (ADR-0048). Two writers do
+/// not go through that check, each for a stated reason: a catalogue submission,
+/// whose answers the request type's form already validated, and a MOD-24
+/// migration, which carries whatever the previous tool held.
+///
+/// `visibleTo` holds **permission** keys, not role names.
 model FieldDefinition {
   id           String    @id @db.Uuid
   tenantId     String    @map("tenant_id") @db.Uuid
@@ -3600,7 +4337,7 @@ model ActivityType {
   key         String
   name        String
   description String?
-  billable    Boolean  @default(true)
+  billable    Boolean  @default(false)
   /// The default cost of an hour of this, before any team override.
   ratePerHour Decimal  @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
   currency    String   @default("GBP") @db.Char(3)
@@ -3650,7 +4387,7 @@ model TimeEntry {
   ratePerHour    Decimal   @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
   currency       String    @default("GBP") @db.Char(3)
   cost           Decimal   @default(0) @db.Decimal(14, 2)
-  billable       Boolean   @default(true)
+  billable       Boolean   @default(false)
   loggedAt       DateTime  @default(now()) @map("logged_at") @db.Timestamptz(6)
   createdBy      String?   @map("created_by") @db.Uuid
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)

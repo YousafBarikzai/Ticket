@@ -12,6 +12,20 @@ import type { PermissionSet } from './authz.js';
 export interface TenantContext {
   tenantId: string;
   region: string;
+  /**
+   * Where this tenant permits its prompts to be processed.
+   *
+   * Carried on the context rather than looked up by the AI module, for two
+   * reasons. It is a property of the tenant exactly as `region` is, and the
+   * context is already built from the tenant row — so this costs no extra
+   * query. And it keeps MOD-09 from taking a dependency on MOD-00 to ask one
+   * question about a row it does not own.
+   *
+   * Empty means "wherever this tenant's own data lives", resolved by
+   * `aiRegions` below. Two meanings for one empty value would be a bug; one
+   * meaning and one resolver is not.
+   */
+  aiAllowedRegions: readonly string[];
   actor: Actor;
   /** Organisation subtree paths the actor belongs to, resolved once per request. */
   organisationIds: string[];
@@ -28,6 +42,18 @@ export interface TenantContext {
   granteeTenantId?: string;
   ip?: string;
   userAgent?: string;
+}
+
+/**
+ * The regions a tenant's prompts may be processed in.
+ *
+ * An empty policy inherits the tenant's own data region, which is the safe
+ * reading and the one that needs no backfill: a tenant provisioned before the
+ * policy existed already stated where its data lives, and that answer is the
+ * conservative one. An operator who wants more says so explicitly.
+ */
+export function aiRegions(ctx: TenantContext): readonly string[] {
+  return ctx.aiAllowedRegions.length > 0 ? ctx.aiAllowedRegions : [ctx.region];
 }
 
 const storage = new AsyncLocalStorage<TenantContext>();
@@ -63,6 +89,7 @@ export function enterContext(ctx: TenantContext): void {
 export interface CreateContextInput {
   tenantId: string;
   region?: string;
+  aiAllowedRegions?: readonly string[];
   actor: Actor;
   permissions: PermissionSet;
   organisationIds?: string[];
@@ -82,6 +109,7 @@ export function createContext(input: CreateContextInput): TenantContext {
   return {
     tenantId: input.tenantId,
     region: input.region ?? 'eu-west',
+    aiAllowedRegions: input.aiAllowedRegions ?? [],
     actor: input.actor,
     organisationIds: input.organisationIds ?? [],
     organisationPaths: input.organisationPaths ?? [],
@@ -104,6 +132,26 @@ export function createContext(input: CreateContextInput): TenantContext {
  * reconcilers) acting inside one tenant. It still carries a tenant and is still
  * subject to row-level security: there is no "no tenant" mode.
  */
+/**
+ * The context fields that come from the tenant row, in one place.
+ *
+ * There are eleven places that build a context from a tenant, and every one of
+ * them used to spell `region: tenant.region` by hand. Adding a second
+ * tenant-derived field to that arrangement means eleven edits and one silent
+ * failure wherever somebody misses one — a residency policy that is simply
+ * absent in the worker reads exactly like a residency policy that allows
+ * everything.
+ *
+ * So the set is named rather than repeated. A twelfth field later is one edit
+ * here, and a twelfth call site gets all of them by construction.
+ */
+export function tenantFacts(tenant: { region: string; aiAllowedRegions?: readonly string[] }): {
+  region: string;
+  aiAllowedRegions: readonly string[];
+} {
+  return { region: tenant.region, aiAllowedRegions: tenant.aiAllowedRegions ?? [] };
+}
+
 export function systemContext(tenantId: string, options: Partial<CreateContextInput> = {}): TenantContext {
   return createContext({
     tenantId,

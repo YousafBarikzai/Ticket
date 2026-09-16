@@ -69,7 +69,7 @@ stateDiagram-v2
 ## 5. Modules, plans and flags
 
 - **Modules** are enabled per tenant (`installed_module`), gated by the plan from PH-3 (`plan_feature`). Enabling runs the module's seed.
-- **Plans** *(PH-3)*: `plan`, `plan_feature (flag keys)`, `limit (meter key, soft, hard)`. Limits are enforced asynchronously by MOD-21 metering (soft: warn; hard: block new usage with a clear message), never on the synchronous request path.
+- **Plans** (built PH-4, ADR-0038): `plan` (with its feature flag keys) and `plan_limit (meter, soft, hard)`, both platform-owned and carrying no `tenant_id`. Four meters — agents, tickets, storage, API calls — are counted as events land and rebuilt nightly from the rows beneath them; the request path reads a **cached verdict**, never a count, and fails open. A soft line warns the tenant's administrators once per period; a hard line refuses the act that grows the meter with 402 and a message naming the plan, and refuses nothing else. A tenant administrator may move its own warning threshold below the hard line, never the hard line itself.
 - **Flags** resolve platform default → plan gate → tenant override → organisation override (see [05 §7](05-platform-primitives.md#7-settings-and-feature-flags)).
 
 ## 6. Sandbox tenants *(PH-3)*

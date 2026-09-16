@@ -1,7 +1,9 @@
+'use client';
+
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { installAnnouncer } from '../a11y/announcer.js';
-import { renderTokenStylesheet, themeAttribute } from '../tokens/css.js';
-import { componentStylesheet } from './stylesheet.js';
+import { themeAttribute } from '../tokens/css.js';
+import { uiStylesheet } from './stylesheet.js';
 import type { ThemeName } from '../tokens/tokens.js';
 
 /**
@@ -21,11 +23,6 @@ export interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STYLE_ELEMENT_ID = 'itsm-ui-styles';
-
-/** The whole stylesheet, for apps that would rather emit it at build time than inject it at runtime. */
-export function uiStylesheet(): string {
-  return `${renderTokenStylesheet()}\n${componentStylesheet}`;
-}
 
 function installStylesheet(doc: Document): void {
   if (doc.getElementById(STYLE_ELEMENT_ID)) return;

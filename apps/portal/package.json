@@ -1,0 +1,30 @@
+{
+  "name": "@itsm/portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm sw && next dev --webpack -p 3200",
+    "build": "pnpm sw && next build --webpack",
+    "start": "next start -p 3200",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. --project unit apps/portal",
+    "sw": "tsx ../../infra/scripts/build-service-worker.ts"
+  },
+  "dependencies": {
+    "@itsm/bff": "workspace:*",
+    "@itsm/contracts": "workspace:*",
+    "@itsm/pwa": "workspace:*",
+    "@itsm/sdk": "workspace:*",
+    "@itsm/ui": "workspace:*",
+    "next": "^16.3.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.0.1"
+  }
+}

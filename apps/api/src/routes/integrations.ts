@@ -24,13 +24,13 @@ export async function integrationRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/credentials', async (request, reply) => {
     const ctx = contextOf(request);
-    const stored = await credentialService.storeCredential(ctx, credentialSchema.parse(request.body));
+    const stored = await credentialService.storeCredential(ctx, credentialSchema.strict().parse(request.body));
     return reply.code(201).send(stored);
   });
 
   app.post('/credentials/:ref/rotate', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ value: z.string().min(1).max(8_192) }).parse(request.body);
+    const body = z.object({ value: z.string().min(1).max(8_192) }).strict().parse(request.body);
     return credentialService.rotateCredential(ctx, byRef.parse(request.params).ref, body.value);
   });
 
@@ -47,7 +47,7 @@ export async function integrationRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/actions', async (request, reply) => {
     const ctx = contextOf(request);
-    const created = await actionService.createAction(ctx, actionSchema.parse(request.body));
+    const created = await actionService.createAction(ctx, actionSchema.strict().parse(request.body));
     return reply.code(201).send(created);
   });
 
@@ -71,7 +71,7 @@ export async function integrationRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/error-queue/:id/dismiss', async (request) => {
     const ctx = contextOf(request);
-    const body = z.object({ reason: z.string().min(1).max(500) }).parse(request.body);
+    const body = z.object({ reason: z.string().min(1).max(500) }).strict().parse(request.body);
     await actionService.dismissError(ctx, byId.parse(request.params).id, body.reason);
     return { status: 'dismissed' };
   });

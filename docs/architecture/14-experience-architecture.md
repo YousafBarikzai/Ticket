@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | `apps/portal` | Next.js App Router, React 19, Tailwind, `packages/ui` | Requester portal: home, search, report issue, request service, my tickets, timeline, approvals inbox, knowledge, profile | Yes (user PWA) | Server components for first paint; client components for forms and timeline; tenant subdomain and custom domains |
 | `apps/workbench` | Next.js | Agent workbench: queues, three-pane ticket workspace, knowledge authoring, major incident room, workload views | Yes (admin/agent PWA) | Keyboard-first; SSE-driven; heavy client state |
-| `apps/admin` | Next.js | Admin console and platform console: builders (fields, forms, categories, priorities, queues, calendars, templates, rules, workflows, SLAs, approvals), settings, flags, modules, packages, audit search, tenancy | Yes (admin PWA) | Guided builders with preview/validate/publish/rollback |
+| `apps/admin` | Next.js | Admin console and platform console: builders (fields, forms, categories, priorities, queues, calendars, templates, rules, workflows, SLAs, approvals), settings, flags, modules, packages, audit search, tenancy | **No, deliberately** (ADR-0049) | Guided builders with preview/validate/publish/rollback. A console that answered from a cache while somebody was changing a permission, a limit or a residency policy would show them a configuration that is not the one in force — so this is the one application here with no service worker, and the omission is a decision rather than an omission |
 | `apps/status` | Next.js static export | Public status pages | n/a | Built by a worker job; hosted on Cloudflare |
 | `apps/mobile` | Expo SDK (React Native), Expo Router | Requesters and agents: SSO, push, my tickets, create with camera, comments, approvals, offline drafts; agent triage *(PH-4)* | n/a | iOS PH-2, Android PH-5; EAS Build and Update |
 
@@ -62,7 +62,7 @@ packages/ui/
 ## 7. Localisation and accessibility
 
 - All strings externalised (ICU) in `packages/i18n`; pseudo-localisation build and missing-key check in CI; tenant default locale with user override; RTL mirrored via logical properties and verified by Storybook visual tests.
-- WCAG 2.2 AA: axe-core in component and e2e tests; keyboard completion of every core journey; focus management for dialogs and toasts; reduced-motion respect; 200 % zoom and 400 px width layouts.
+- WCAG 2.2 AA: axe-core in component tests (ADR-0046 — built; e2e is not, see §10.3); keyboard completion of every core journey; focus management for dialogs and toasts; reduced-motion respect; 200 % zoom and 400 px width layouts.
 - Content localisation (knowledge, catalogue, templates) is data with per-locale versions, resolved by the same settings order.
 
 ## 8. Performance budgets
@@ -78,3 +78,163 @@ packages/ui/
 
 - Product-analytics events for the Appendix C journeys live in their own `ux.` namespace so they are never confused with domain events (`ux.ticket.create.started`, `ux.ticket.create.completed`, `ux.search.performed`, `ux.deflection.recorded`, `ux.approval.decided`); they are sent to `POST /api/v1/analytics/events` in batches; no third-party analytics script by default.
 - Errors to Sentry (EU region) with release tagging and the correlation ID of the failing request.
+
+## 10. What is built, and where this document is ahead of it
+
+Sections 1 to 9 describe the intended shape of the experience tier. This
+section records what exists, because a document that describes four
+applications while one exists is a plan, and a reader cannot tell which
+sentences are which.
+
+### 10.1 Built
+
+| Piece | State |
+|---|---|
+| `packages/ui` | Tokens, a11y primitives, 26 web components, `FormRenderer`, and the two workbench components (`AiSuggestionCard`, `SlaClock`). Every component file carries `'use client'` (ADR-0041); the tokens and `uiStylesheet()` do not, so an application can emit the stylesheet during server rendering. |
+| `packages/sdk` | The typed API client: problem-details errors, idempotency keys on creates, `If-Match` on conditional updates, cursor paging, and one resource module per application. |
+| `packages/bff` | The backend-for-frontend, once: sign-in, the session store, and the proxy. Handlers speak `Request` and `Response` rather than a framework's types, so a route handler in an application is three lines. Sessions are namespaced per application. |
+| `apps/workbench` | Next.js App Router. The queue, and the three-pane ticket workspace with timeline, composer, transitions, assignment, SLA clocks, time totals and the AI suggestion surface. |
+| `apps/portal` | Next.js App Router. Home, report an issue, the catalogue with `FormRenderer`, my tickets, one ticket with reply and reopen, the approvals inbox, and knowledge search with articles. |
+| `packages/pwa` | The offline layer: a service worker with four caching strategies, and an IndexedDB outbox for the three writes §5 allows to be queued. The rules — what may be queued, what an HTTP answer means, when to stop retrying — are pure functions. |
+| The development sign-in | `POST /api/v1/auth/dev-session`, registered only outside production and only with no `OIDC_ISSUER` (ADR-0041). |
+
+### 10.2 Deviations from sections 1 to 9
+
+These are decisions, not omissions, and each is one somebody may reasonably
+reverse later:
+
+- **No Tailwind and no Radix** (§2). `packages/ui` is built on one generated
+  stylesheet driven by the token variables, and on hand-written ARIA patterns
+  with keyboard tests. What §2 describes is a reasonable stack; what exists has
+  no build-time CSS step and no third-party component semantics to keep in step
+  with the product's own.
+- **The two applications use different words for the same ticket** (§1), which
+  is not a deviation but is worth stating because it looks like one.
+  `pending_requester` reads to an agent as "Waiting on requester" — a queue
+  they can ignore — and to the person who raised it as "Waiting for you",
+  which is the most important sentence on their screen. Each table has a test
+  asserting it covers every canonical state MOD-04 defines.
+- **No TanStack Query** (§4). Server components fetch for first paint and
+  `router.refresh()` re-reads after a mutation. A cache layer is worth adding
+  when there is a screen that needs one; the queue and the ticket page do not.
+- **No Storybook, no `packages/i18n`, no `packages/ui/native`, no
+  `packages/ui/icons`** (§2, §6, §7). None of these has been built. The
+  accessibility tests §2 promises exist as keyboard and ARIA tests in
+  `packages/ui/src/**/__tests__`, and **axe-core now runs over every exported
+  component** in the same jsdom suite (ADR-0046). Two families of rule are
+  disabled by name because jsdom cannot answer them — anything needing layout,
+  and anything asking about a whole page — and colour contrast is covered
+  better elsewhere, computed from the token values in
+  `tokens/__tests__/contrast.test.ts`. What is still missing is a **full-page
+  audit**: heading order across a real screen, landmark structure and the skip
+  link only exist once components are composed, and that belongs to the
+  applications and to a browser.
+- **No push** (§5). The Push API is not wired; notifications are the in-app
+  inbox only. A service worker and an offline queue *are* built — see §10.3.
+- **SSE is connected** (§4, ADR-0045). `GET /events/stream` had existed since
+  Phase 1 with nothing opening it. The queue now watches its teams' topics and
+  refreshes, and the AI panel settles on a notice rather than a 1.5-second
+  poll — the poll stays at 5 s as the guarantee, because a stream that never
+  opens is indistinguishable, to the person waiting, from a job that never
+  finished. `Last-Event-ID` resume is still not built: a reconnection refetches.
+- **`apps/admin` exists as a first slice; `apps/status` and `apps/mobile` do
+  not.** MOD-23's status page is still served by the API rather than by a Next
+  app. The console (ADR-0049) covers day-one setup — people, the shape of a
+  ticket, and feature flags — and carries a gated platform section for tenants
+  and the price list. What it does **not** cover, and says so on each screen
+  rather than only here: creating a user, assigning a role, adding somebody to
+  a team, every typed tenant setting, and the seven remaining builders — forms,
+  rules, workflows, SLA policies, notification templates, the catalogue and ESM
+  packs. Those are still API-only. The workflow editor in particular is a graph
+  editor and a project of its own.
+
+### 10.3 Offline, as built (ADR-0043)
+
+Doc §5 describes Workbox through `@serwist/next`. What exists is a hand-written
+service worker bundled by `infra/scripts/build-service-worker.ts` into each
+app's `public/sw.js`, because Workbox's value is a build-time precache manifest
+and everything here is runtime caching. Revisit when there is a screen that has
+to work on a *first* visit; there is not.
+
+**Caching, in four rules.** Nothing about a session is ever cached — a cached
+sign-in response is somebody else's session served to the next person on a
+shared machine. API reads are network-first, because a queue showing yesterday's
+tickets is worse than a queue that takes a second. Content-hashed build output
+is cache-first; everything else static is stale-while-revalidate. Navigations
+fall back to a precached `/offline`.
+
+**Three writes may be queued**, and only three: report an issue, add a comment,
+decide an approval. All three are *additive* — none depends on the state of the
+thing it touches — so a delay changes when they happen and not whether they
+were right. A transition is not queueable, and the portal's reopen button says
+so rather than offering something the API would refuse hours later with nobody
+watching.
+
+**The idempotency key is minted when the person acts**, not when the queue
+sends, so two drains racing raise one ticket. A 409 on a create is treated as
+success; a 409 on a *decision* is a conflict, because two people deciding one
+approval is news somebody has to see.
+
+What is not built: SSE resume (`Last-Event-ID`; a reconnection refetches
+instead — doc 08 §6), push, background sync on browsers without `SyncManager`
+(they drain on `online` instead, which loses the case where the tab has
+closed), and any Lighthouse threshold in CI (§5 asks for ≥ 90 from PH-3; there
+is no Lighthouse run at all).
+
+### 10.4 What building the applications found in the API
+
+Recorded here rather than in a module's document, because each was invisible
+until something tried to use the API the way an application does:
+
+- **`POST /tickets/:id/assign` read no `If-Match`.** Every other mutation on a
+  ticket is conditional. Two agents taking the same ticket at the same moment
+  was therefore last-write-wins, silently. *Closed (ADR-0044):* the route now
+  reads `If-Match` when it is offered and does not require it. The asymmetry is
+  deliberate — a queue screen claims from a list it read a minute ago, and
+  making every claim re-read the row first is a worse trade than the race.
+  The ticket page, which holds the version, sends it and gets a 409; the queue
+  does not and keeps last-write-wins.
+- **The list grammar is `filter[...]`, and a wrong parameter is ignored rather
+  than refused.** A client that sent `?status=open` got every ticket back and
+  no error. The SDK now spells the grammar in one tested function; the wider
+  point is that an API which ignores unknown query parameters makes a whole
+  class of client bug invisible.
+- **A comment's visibility is `public`/`internal` and defaults to `public`.** A
+  client sending anything else — `isInternal: true`, say — had its internal
+  note delivered to the requester. *Closed (ADR-0044):* every request body
+  under `/api/v1` is now `.strict()`, applied at the 107 places a route parses
+  a body rather than on the schema definitions the modules export. An unknown
+  key is a 422 naming the key. Module schemas stay permissive: an internal
+  caller that passes an extra key is a type error caught at build time, and
+  making those strict would turn a leftover field into a production failure.
+- **Nobody recorded a session, so `GET /me/sessions` was always empty.** Doc 09
+  §2 has the BFF call `POST /api/v1/auth/session` after a sign-in "so the
+  platform records the session and runs JIT". JIT is fine — the context plugin
+  provisions from the token on the first authenticated request, which is a
+  better place for it. Session recording was not: `userService.recordSession`
+  had no caller outside a test, so `GET /me/sessions` listed nothing, `DELETE
+  /me/sessions/:id` had nothing to revoke, and — underneath both — the
+  `sess:deny:` denylist the token verifier checks on every request was read by
+  the verifier and written by nothing at all, so even a working revocation
+  would have changed a column and left the token valid until it expired. "Sign
+  out everywhere" was a promise doc 08 §9 makes and the platform could not
+  keep. *Closed (ADR-0044):* the endpoint exists, `packages/bff` calls it from
+  `createSession` and again on every refresh, and `revokeSession` and
+  `deactivateUser` write the denylist inside the transaction that revokes the
+  row. `tests/integration/session-lifecycle.test.ts` walks the whole chain and
+  asserts the revoked token is refused.
+- **The stream existed and nothing opened it.** `GET /events/stream` has been
+  mounted since Phase 1 and `ticket-service` has published a notice on every
+  change for just as long; no application had ever connected. So the queue
+  changed only when the person looking at it did something, and a ticket
+  somebody else moved sat on screen looking current. *Closed (ADR-0045):*
+  `useChangeStream` connects through the proxy, the queue watches its teams'
+  topics and refreshes (coalesced to one refresh per second, announced in an
+  `aria-live` region), and the AI panel settles on a notice instead of a
+  1.5-second poll. Connecting it also exposed two things the design had not
+  answered: there was no topic a queue could watch, and *any* topic could be
+  watched by anyone — both fixed in the same ADR.
+- **The catalogue's entitlement filter is the only thing between a requester
+  and a request type they may not have**, and it is applied twice — once when
+  browsing and once on submit (MOD-05). That is right, and worth noticing:
+  the portal does not filter at all, and must not start.

@@ -35,6 +35,10 @@ export const windowSchema = z
     endTime: z.string().regex(HHMM, 'HH:MM').optional(),
     serviceIds: z.array(z.string().uuid()).max(100).default([]),
   })
+  // Strict at the definition, because the two refinements below wrap this in a
+  // `ZodEffects` that the API boundary cannot make strict afterwards. A
+  // misspelled `blackout` window is the row this whole schema exists to stop.
+  .strict()
   .refine((value) => Boolean(value.startsAt && value.endsAt) || Boolean(value.weekday && value.startTime && value.endTime), {
     // A window that is neither absolute nor weekly covers nothing, and a
     // blackout that covers nothing is the most dangerous row in the table: it

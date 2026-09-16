@@ -1,3 +1,5 @@
+'use client';
+
 import { cloneElement, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { useStableId } from '../a11y/ids.js';
 
