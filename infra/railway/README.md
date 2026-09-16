@@ -119,8 +119,27 @@ them is a workflow that could do them to the wrong environment.
 6. **DNS and Cloudflare** for the subdomains in the table (doc 16 §2). The
    deploy creates the custom domain on the Railway side; the CNAME is yours.
 
-After that, deploys are: merge to `main` for staging, publish a release for
-production, open a pull request for a preview. Migrations run as phase 0 inside
+## One environment, for now
+
+`main` deploys to the Railway environment named **`production`**, and there is
+no `staging`. That is a decision about cost rather than about pipelines: a
+Railway environment carries its own Postgres, Redis and Keycloak, so a second
+one is three more managed services billed by the hour to protect a product
+with no users yet.
+
+What it costs is the rehearsal — a merge reaches the environment people use,
+with no earlier one to be wrong in first. Restore it the moment anybody
+depends on this: create a Railway environment named `staging`, point stage 5
+back at it, and stage 6 becomes the promotion it was written to be rather than
+a redeploy of the same place at a tagged version.
+
+Preview environments are off for the same reason, and are opt-in rather than
+removed: set a repository **variable** `RAILWAY_PREVIEWS` to `true` and every
+pull request gets its own environment again. Without it the preview job prints
+the plan, which is the part worth reading in a review anyway.
+
+After that, deploys are: merge to `main` to deploy, publish a release to
+redeploy at a tagged version behind the approval. Migrations run as phase 0 inside
 the environment, so no runner ever needs a public database URL.
 
 ## Search

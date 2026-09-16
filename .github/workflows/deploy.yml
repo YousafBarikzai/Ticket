@@ -26,8 +26,8 @@ on:
     types: [published]
 
 concurrency:
-  # Per environment, not per run: two deploys to staging at once is two halves
-  # of two commits, and the loser is whichever finishes second.
+  # Per environment, not per run: two deploys to one environment at once is
+  # two halves of two commits, and the loser is whichever finishes second.
   group: deploy-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
@@ -167,13 +167,18 @@ jobs:
           # Both computed here rather than in an `if:`. The `secrets` context
           # is not available to a step-level `if:`, and written there it is not
           # a wrong answer — it is a workflow file GitHub cannot parse at all.
-          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          # A preview needs a Railway environment of its own, and an environment
+          # is its own Postgres, Redis and Keycloak — three managed services per
+          # open pull request, billed by the hour. So previews are opt-in rather
+          # than on by default: without the variable this prints the plan, which
+          # is the part worth reading in a review anyway.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' && vars.RAILWAY_PREVIEWS == 'true' }}" >> "$GITHUB_OUTPUT"
           echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Say what would have happened
         if: steps.gate.outputs.ready != 'true'
         run: |
-          echo "::notice::No Railway credentials configured, so this is a plan rather than a deploy."
+          echo "::notice::Preview deploys are off (set the RAILWAY_PREVIEWS variable to 'true' to turn them on), so this is a plan rather than a deploy."
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
             --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }} --dry-run
 
@@ -248,7 +253,10 @@ jobs:
           # Both computed here rather than in an `if:`. The `secrets` context
           # is not available to a step-level `if:`, and written there it is not
           # a wrong answer — it is a workflow file GitHub cannot parse at all.
-          echo "ready=${{ secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+          # Matches the gate that created it: nothing was deployed for this pull
+          # request unless previews are on, and asking Railway to delete an
+          # environment that was never made is an error, not a no-op.
+          echo "ready=${{ secrets.RAILWAY_TOKEN != '' && vars.RAILWAY_PREVIEWS == 'true' }}" >> "$GITHUB_OUTPUT"
           echo "realm=${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET != '' && vars.KEYCLOAK_URL != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Delete the environment
@@ -259,15 +267,29 @@ jobs:
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
   # ---------------------------------------------------------------------------
-  # Stage 5 · Staging (merge to main)
+  # Stage 5 · Deploy (merge to main)
   # ---------------------------------------------------------------------------
-  staging:
-    name: 5 · Staging
+  #
+  # This deployed to a Railway environment named `staging` until there was a
+  # Railway account to deploy into, and then there was one environment in it.
+  #
+  # Railway gives a project a single environment called `production`, and a
+  # second one is a second Postgres, a second Redis and a second Keycloak —
+  # three managed services billed by the hour to protect a product with no
+  # users yet. So there is one environment, and `main` deploys to it.
+  #
+  # What that costs is the rehearsal: a merge reaches the environment people
+  # use, with no earlier one to be wrong in first. Worth restoring the moment
+  # anybody depends on this — create a Railway environment named `staging`,
+  # point this job back at it, and stage 6 becomes the promotion it was
+  # written to be rather than a redeploy of the same place at a tagged version.
+  deploy:
+    name: 5 · Deploy
     needs: images
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
-      name: staging
+      name: production
       url: ${{ steps.deploy.outputs.workbench-url }}
     steps:
       - uses: actions/checkout@v4
@@ -292,12 +314,12 @@ jobs:
         run: |
           echo "::notice::No Railway credentials configured, so this is a plan rather than a deploy."
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
-            --environment staging --tag ${{ needs.images.outputs.tag }} --dry-run
+            --environment production --tag ${{ needs.images.outputs.tag }} --dry-run
 
       - name: Deploy
         id: deploy
         if: steps.gate.outputs.ready == 'true'
-        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment staging --tag ${{ needs.images.outputs.tag }} --ensure-services
+        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment production --tag ${{ needs.images.outputs.tag }} --ensure-services
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -315,9 +337,9 @@ jobs:
           echo "::notice::The applications are deployed and running; nobody can sign in until the realm exists."
           echo "::notice::See docs/runbooks/first-production-deploy.md, 'Turning sign-in on'."
 
-      - name: Apply the realm for staging
+      - name: Apply the realm
         if: steps.gate.outputs.ready == 'true' && steps.gate.outputs.realm == 'true'
-        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment staging --hosts '${{ steps.deploy.outputs.hosts }}' --apply
+        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment production --hosts '${{ steps.deploy.outputs.hosts }}' --apply
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
