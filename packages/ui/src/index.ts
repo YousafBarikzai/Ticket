@@ -6,8 +6,10 @@
  *   a11y/   → focus, keyboard and live-region primitives
  *   web/    → the React components built on both
  *   forms/  → FormRenderer, the one renderer for catalogue forms everywhere
+ *   workbench/ → the components that know what a ticket and a suggestion are
  */
 export * from './tokens/index.js';
 export * from './a11y/index.js';
 export * from './web/index.js';
 export * from './forms/index.js';
+export * from './workbench/index.js';

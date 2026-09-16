@@ -12,5 +12,10 @@
     }
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "modules/**/*.ts", "infra/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "**/dist/**", "**/.next/**"]
+  // `apps/workbench` is excluded and typechecked by its own project instead
+  // (`turbo run typecheck`, which CI runs). Its files need the DOM library and
+  // Next's `jsx: preserve`, and adding either here would relax the server-side
+  // program that everything else is checked in: a worker that reached for
+  // `document` would start compiling.
+  "exclude": ["node_modules", "**/dist/**", "**/.next/**", "apps/workbench"]
 }

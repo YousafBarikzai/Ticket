@@ -38,7 +38,18 @@ declare module 'fastify' {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Routes that must work before a caller has a tenant or a session. */
-const UNAUTHENTICATED_PATHS = new Set(['/health/live', '/health/ready', '/api/openapi.json', '/api/docs', '/metrics']);
+const UNAUTHENTICATED_PATHS = new Set([
+  '/health/live',
+  '/health/ready',
+  '/api/openapi.json',
+  '/api/docs',
+  '/metrics',
+  // The development sign-in, which by definition has no token to present. The
+  // route is registered only when there is no identity provider and the
+  // environment is not production (routes/auth.ts), so in a deployment this
+  // entry names a path that answers 404.
+  '/api/v1/auth/dev-session',
+]);
 
 function isUnauthenticated(request: FastifyRequest): boolean {
   const url = request.url.split('?')[0] ?? '';

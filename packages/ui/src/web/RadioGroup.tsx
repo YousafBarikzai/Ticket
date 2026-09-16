@@ -1,3 +1,5 @@
+'use client';
+
 import type { ReactNode } from 'react';
 import { cx } from './cx.js';
 import { joinIds, useIds } from '../a11y/ids.js';
