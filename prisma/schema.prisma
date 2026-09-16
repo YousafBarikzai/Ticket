@@ -3837,6 +3837,10 @@ model Tenant {
   status          String    @default("provisioning")
   parentTenantId  String?   @map("parent_tenant_id") @db.Uuid
   region          String    @default("eu-west")
+  /// Where this tenant's prompts may be processed. Empty means "wherever this
+  /// tenant's own data lives" — the safe reading, and the one that needs no
+  /// backfill guess for a tenant provisioned before the policy existed.
+  aiAllowedRegions String[] @default([]) @map("ai_allowed_regions")
   planKey         String?   @map("plan_key")
   settings        Json      @default("{}")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -3943,6 +3947,13 @@ model Plan {
   key         String   @id
   name        String
   description String?
+  /// Per agent, per month, in micro-pence — the same unit every other amount
+  /// in this platform is held in. Null for a plan that is not sold at a list
+  /// price: a trial, or an enterprise agreement negotiated per customer.
+  /// Nothing in this repository charges anybody; this is what a price *is*,
+  /// not a billing integration.
+  pricePerAgentMicros BigInt? @map("price_per_agent_micros")
+  currency    String   @default("GBP")
   /// Feature flag keys this plan turns on, over the platform defaults.
   features    String[] @default([])
   /// A plan nobody may be moved onto any more, kept for the tenants on it.
@@ -4319,7 +4330,7 @@ model ActivityType {
   key         String
   name        String
   description String?
-  billable    Boolean  @default(true)
+  billable    Boolean  @default(false)
   /// The default cost of an hour of this, before any team override.
   ratePerHour Decimal  @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
   currency    String   @default("GBP") @db.Char(3)
@@ -4369,7 +4380,7 @@ model TimeEntry {
   ratePerHour    Decimal   @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
   currency       String    @default("GBP") @db.Char(3)
   cost           Decimal   @default(0) @db.Decimal(14, 2)
-  billable       Boolean   @default(true)
+  billable       Boolean   @default(false)
   loggedAt       DateTime  @default(now()) @map("logged_at") @db.Timestamptz(6)
   createdBy      String?   @map("created_by") @db.Uuid
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)

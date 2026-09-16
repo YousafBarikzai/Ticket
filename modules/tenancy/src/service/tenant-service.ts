@@ -193,6 +193,54 @@ export async function findTenantBySlug(slug: string) {
   return platformDb().tenant.findFirst({ where: { slug, deletedAt: null } });
 }
 
+/**
+ * The regions a tenant permits its prompts to be processed in.
+ *
+ * A platform operator's write, not a tenant's: residency is a contractual term
+ * and a tenant that could widen its own would be a control it could remove.
+ * Narrowing is equally the operator's, because a tenant that locked itself out
+ * of every configured provider would be an outage nobody could explain from
+ * inside the product.
+ *
+ * An empty list is meaningful and is allowed: it means "wherever this tenant's
+ * own data lives", which is the default every tenant starts on and the one an
+ * operator returns it to by clearing the list.
+ */
+export const aiRegionsSchema = z.object({
+  regions: z.array(z.string().regex(/^[a-z][a-z0-9-]{1,30}$/)).max(10),
+});
+
+export async function setAiRegions(tenantId: string, input: z.input<typeof aiRegionsSchema>) {
+  const parsed = aiRegionsSchema.parse(input);
+  // De-duplicated and ordered, so two lists with the same members are the same
+  // list — an audit diff that reports a change because somebody reordered a
+  // dropdown is noise that hides the changes that matter.
+  const regions = [...new Set(parsed.regions)].sort();
+
+  const tenant = await platformDb().tenant.findFirst({ where: { id: tenantId, deletedAt: null } });
+  if (!tenant) throw new NotFoundError('tenant', tenantId);
+
+  const updated = await platformDb().tenant.update({
+    where: { id: tenantId },
+    data: { aiAllowedRegions: regions },
+  });
+
+  const ctx = systemContext(tenantId, { region: tenant.region });
+  await withContext(ctx, async () => {
+    await transaction(ctx, (tx) =>
+      recordAudit(tx, ctx, {
+        action: 'tenant.ai_regions.changed',
+        targetType: 'tenant',
+        targetId: tenantId,
+        before: { regions: tenant.aiAllowedRegions },
+        after: { regions },
+      }),
+    );
+  });
+
+  return { id: updated.id, aiAllowedRegions: updated.aiAllowedRegions };
+}
+
 export async function findTenantById(id: string) {
   return platformDb().tenant.findFirst({ where: { id, deletedAt: null } });
 }

@@ -10,6 +10,7 @@ import {
   registeredJobs,
   schedule,
   systemContext,
+  tenantFacts,
   withContext,
   type QueueName,
 } from '@itsm/platform';
@@ -36,10 +37,17 @@ import type { EventEnvelope } from '@itsm/contracts';
 const PUBLISHER_INSTANCE = `${process.env.HOSTNAME ?? 'worker'}-${process.pid}`;
 
 /** Tenants that are able to do work right now. */
-async function activeTenants(): Promise<{ id: string; region: string }[]> {
+/**
+ * Selected columns, not the whole row — but every column `tenantFacts` reads.
+ * A narrower select here is how a tenant-derived policy ends up absent in
+ * background work while being present in the API, which is worse than being
+ * absent in both: the same tenant would get two different answers depending
+ * on which process asked.
+ */
+async function activeTenants(): Promise<{ id: string; region: string; aiAllowedRegions: string[] }[]> {
   const tenants = await platformDb().tenant.findMany({
     where: { status: 'active', deletedAt: null },
-    select: { id: true, region: true },
+    select: { id: true, region: true, aiAllowedRegions: true },
   });
   return tenants;
 }
@@ -101,7 +109,7 @@ defineJob<{ notificationId: string; channel: string }>('notify', 'notification.d
 defineJob('sla', 'sla.tick', async () => {
   const tenants = await activeTenants();
   for (const tenant of tenants) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       for (let partition = 0; partition < TIMER_PARTITIONS; partition += 1) {
         await enqueue(ctx, 'sla', 'sla.tick.partition', { partition }, { idempotencyKey: `tick-${tenant.id}-${partition}-${Math.floor(Date.now() / 60_000)}` });
@@ -129,7 +137,7 @@ defineJob<{ partition: number }>('sla', 'sla.tick.partition', async (payload, { 
 defineJob('retention', 'audit.verifyChain', async () => {
   const tenants = await activeTenants();
   for (const tenant of tenants) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const result = await auditService.verifyTenantChain(ctx);
       if (!result.valid) {
@@ -148,7 +156,7 @@ defineJob('retention', 'audit.verifyChain', async () => {
 
 defineJob('analytics', 'analytics.rollup.rebuild', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const result = await rebuildRecent(ctx);
       logger.debug('rollup rebuilt', { tenantId: tenant.id, ...result });
@@ -158,7 +166,7 @@ defineJob('analytics', 'analytics.rollup.rebuild', async () => {
 
 defineJob('analytics', 'analytics.report.sweep', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const ran = await reportService.runDue(ctx);
       if (ran > 0) logger.info('scheduled reports ran', { tenantId: tenant.id, ran });
@@ -168,7 +176,7 @@ defineJob('analytics', 'analytics.report.sweep', async () => {
 
 defineJob('retention', 'feedback.expiry.sweep', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const expired = await invitationService.expireDue(ctx);
       if (expired > 0) logger.debug('survey invitations expired', { tenantId: tenant.id, expired });
@@ -178,7 +186,7 @@ defineJob('retention', 'feedback.expiry.sweep', async () => {
 
 defineJob('analytics', 'budget.sweep', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const result = await budgetService.recomputeAll(ctx);
       if (result.corrected > 0) logger.info('budget totals corrected', { tenantId: tenant.id, ...result });
@@ -188,7 +196,7 @@ defineJob('analytics', 'budget.sweep', async () => {
 
 defineJob('retention', 'usage.recompute', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       await enqueue(ctx, 'retention', 'usage.recompute.tenant', {}, { idempotencyKey: `usage-${tenant.id}-${new Date().toISOString().slice(0, 10)}` });
     });
@@ -205,7 +213,7 @@ defineJob('retention', 'usage.flush', async () => {
   if (waiting.size === 0) return;
   const contexts = new Map<string, ReturnType<typeof systemContext>>();
   for (const tenant of await activeTenants()) {
-    if (waiting.has(tenant.id)) contexts.set(tenant.id, systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() }));
+    if (waiting.has(tenant.id)) contexts.set(tenant.id, systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() }));
   }
   const flushed = await flushApiCalls((tenantId) => contexts.get(tenantId) ?? null);
   if (flushed > 0) logger.debug('api calls metered', { flushed, tenants: contexts.size });
@@ -213,7 +221,7 @@ defineJob('retention', 'usage.flush', async () => {
 
 defineJob('retention', 'ai.retention.sweep', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const { cleared } = await sweepPrompts(ctx);
       if (cleared > 0) logger.debug('AI prompts and completions swept', { tenantId: tenant.id, cleared });
@@ -223,7 +231,7 @@ defineJob('retention', 'ai.retention.sweep', async () => {
 
 defineJob('retention', 'import.file.sweep', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const removed = await sweepFiles(ctx);
       if (removed > 0) logger.debug('import files swept', { tenantId: tenant.id, removed });
@@ -233,7 +241,7 @@ defineJob('retention', 'import.file.sweep', async () => {
 
 defineJob('notify', 'status.maintenance.sweep', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const moved = await statusIncidentService.sweepMaintenance(ctx);
       if (moved > 0) logger.debug('maintenance windows moved', { tenantId: tenant.id, moved });
@@ -243,7 +251,7 @@ defineJob('notify', 'status.maintenance.sweep', async () => {
 
 defineJob('analytics', 'analytics.drift.check', async () => {
   for (const tenant of await activeTenants()) {
-    const ctx = systemContext(tenant.id, { region: tenant.region, correlationId: newCorrelationId() });
+    const ctx = systemContext(tenant.id, { ...tenantFacts(tenant), correlationId: newCorrelationId() });
     await withContext(ctx, async () => {
       const result = await checkTicketDrift(ctx);
       if (result.breached) {

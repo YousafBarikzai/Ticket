@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { systemContext, transaction, withContext } from '@itsm/platform';
 import { settingsService } from '@itsm/module-admin';
+import { tenantService } from '@itsm/module-tenancy';
 import { userService } from '@itsm/module-identity';
 import { articleService } from '@itsm/module-knowledge';
-import { runSuggestionJob, sweepPrompts } from '@itsm/module-ai';
+import { activeProvider, clearAiProvider, registerAiProvider, runSuggestionJob, stubProvider, sweepPrompts } from '@itsm/module-ai';
 import { closeHarness, contextFor, createTestTenant, deleteTestTenant, drainEvents, request, type TestTenant } from '../support/harness.js';
 
 /**
@@ -265,6 +266,56 @@ describe('the controls that stop it', () => {
     expect(stillWorks.body.status).toBe('completed');
 
     await request('/api/v1/ai/budget', { method: 'PUT', token: asAdmin(), body: { limitPence: null, warnPence: null } });
+  });
+
+  /**
+   * Residency, end to end.
+   *
+   * The unit test proves the comparison; this proves it is wired into the one
+   * path that calls a model. Worth having separately because the failure mode
+   * is invisible: a policy that is never consulted looks exactly like a policy
+   * that is satisfied, and nothing in a passing suggestion would say which.
+   *
+   * The stub declares no region, so it can never be refused. A provider that
+   * makes a call has to name one, and this registers a stub that does.
+   */
+  it('refuses a provider that processes outside the tenant\u2019s regions', async () => {
+    const ticketId = await raiseTicket('Laptop will not wake from sleep', 'Since the update.');
+    const original = activeProvider();
+
+    // Through the service, not the HTTP route. `PUT /tenants/:id/ai-regions`
+    // needs `platform.tenant.manage` at `any` scope, and no tenant role holds
+    // a `platform.*` permission — which is the route being a platform door
+    // working correctly, not a gap. Every other integration test reaches a
+    // platform-level operation the same way.
+    const setRegions = (regions: string[]) => tenantService.setAiRegions(tenant.id, { regions });
+
+    // Everything the stub does, plus a jurisdiction.
+    registerAiProvider({ ...stubProvider(), processingRegion: 'us-east' });
+    await setRegions(['eu-west']);
+
+    try {
+      const refused = await suggest('ticket-summary', ticketId);
+      // 403, not 503: waiting will not change the answer, and an error that
+      // looks transient invites a retry loop against a policy.
+      expect(refused.status).toBe(403);
+      expect(JSON.stringify(refused.body)).toMatch(/us-east/);
+
+      // The same tenant, with the region permitted, gets its job. 202 and not
+      // 201: `ticket-summary` calls a model, so the door's answer is a queued
+      // job id, the same as the end-to-end test above.
+      await setRegions(['eu-west', 'us-east']);
+      const allowed = await suggest('ticket-summary', ticketId);
+      expect(allowed.status).toBe(202);
+      expect(allowed.body.status).toBe('queued');
+    } finally {
+      // Restored either way. Leaving a us-east stub registered because there
+      // was nothing to put back would quietly fail every AI test after this
+      // one, in a suite where the provider is process-global.
+      if (original) registerAiProvider(original);
+      else clearAiProvider();
+      await setRegions([]);
+    }
   });
 
   it('refuses a warning line above the cap, which could never be reached', async () => {

@@ -1,6 +1,7 @@
 import {
   NotFoundError,
   ValidationError,
+  aiRegions,
   authz,
   logger,
   newId,
@@ -152,6 +153,11 @@ export async function runEvaluation(ctx: TenantContext, promptKey: string, versi
       systemPrompt: promptVersion.systemPrompt,
       template: promptVersion.template,
       context: evalCase.context as Record<string, unknown>,
+      // An evaluation sends the same prompts to the same provider as the real
+      // thing, so it is bound by the same policy. A run that was exempt would
+      // be a way to process a tenant's data outside its regions by calling it
+      // a test.
+      allowedRegions: aiRegions(ctx),
     });
     costMicros += result.costMicros;
     model = result.completion.model;

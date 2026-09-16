@@ -41,6 +41,14 @@ export interface AnthropicOptions {
   readonly timeoutMs?: number;
   /** The models this deployment is allowed to ask for. */
   readonly models?: readonly string[];
+  /**
+   * Where the configured endpoint processes a prompt. Defaults to `us-east`,
+   * because that is where `api.anthropic.com` is and an operator who has not
+   * thought about it should get the answer that is true rather than the one
+   * that is convenient. An operator pointing `baseUrl` at an endpoint in
+   * another jurisdiction sets this to match.
+   */
+  readonly processingRegion?: string;
   /** Injectable so the tests need no network and no key. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -139,6 +147,7 @@ export function anthropicProvider(options: AnthropicOptions): AiProvider {
   return {
     name: 'anthropic',
     models,
+    processingRegion: options.processingRegion ?? 'us-east',
 
     async complete(request: CompletionRequest): Promise<Completion> {
       if (!models.includes(request.model)) {

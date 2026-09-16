@@ -19,7 +19,7 @@ model ActivityType {
   key         String
   name        String
   description String?
-  billable    Boolean  @default(true)
+  billable    Boolean  @default(false)
   /// The default cost of an hour of this, before any team override.
   ratePerHour Decimal  @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
   currency    String   @default("GBP") @db.Char(3)
@@ -69,7 +69,7 @@ model TimeEntry {
   ratePerHour    Decimal   @default(0) @map("rate_per_hour") @db.Decimal(14, 2)
   currency       String    @default("GBP") @db.Char(3)
   cost           Decimal   @default(0) @db.Decimal(14, 2)
-  billable       Boolean   @default(true)
+  billable       Boolean   @default(false)
   loggedAt       DateTime  @default(now()) @map("logged_at") @db.Timestamptz(6)
   createdBy      String?   @map("created_by") @db.Uuid
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)

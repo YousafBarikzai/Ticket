@@ -1,16 +1,17 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import {
-  EMPTY_PERMISSIONS,
-  SYSTEM_PERMISSIONS,
-  TenantSuspendedError,
-  UnauthorisedError,
   buildPermissionSet,
   createContext,
+  EMPTY_PERMISSIONS,
   enterContext,
   loadConfig,
   logger,
   newCorrelationId,
+  SYSTEM_PERMISSIONS,
+  tenantFacts,
+  TenantSuspendedError,
+  UnauthorisedError,
   withContext,
   type TenantContext,
 } from '@itsm/platform';
@@ -127,7 +128,10 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
 
     const base = {
       tenantId: tenant.id,
-      region: tenant.region,
+      // Through `tenantFacts` rather than field by field: every context built
+      // from a tenant row gets the same set, so a policy that exists here
+      // cannot be quietly missing in the worker.
+      ...tenantFacts(tenant),
       correlationId: request.correlationId,
       ip: request.ip,
       userAgent: request.headers['user-agent'],
