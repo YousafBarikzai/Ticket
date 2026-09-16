@@ -478,7 +478,17 @@ async function main(): Promise<void> {
   );
   const { environments, services } = idsFrom(project);
   const environmentId = environments.get(options.environment);
-  if (!environmentId) throw new Error(`no Railway environment named ${options.environment} in this project`);
+  if (!environmentId) {
+    // The names it does have, because the alternative is guessing at a project
+    // you cannot see. A Railway project starts with one environment called
+    // `production`, and this pipeline deploys `main` to `staging` — so the
+    // first deploy into a fresh project fails here, and the fix is a name.
+    const existing = [...environments.keys()].sort();
+    throw new Error(
+      `no Railway environment named ${options.environment} in this project. It has: ${existing.join(', ') || '(none)'}.
+Create one named exactly ${options.environment} in Railway, or deploy to one of the above.`,
+    );
+  }
 
   /*
    * Filled as the deploy goes, phase by phase.
