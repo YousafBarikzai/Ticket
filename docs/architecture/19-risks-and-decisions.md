@@ -23,6 +23,10 @@ Follow-up that option A carries into PH-2: the DPIA stance on email must be sett
 | OD-01 | Identity broker | **Closed:** self-hosted Keycloak (product owner, Sept 2026) | Single realm with Keycloak Organizations per tenant; realm-per-tenant escape hatch (ADR-0011) | — |
 | OD-02 | Search engine beyond PostgreSQL FTS | **Closed:** Meilisearch (product owner, Sept 2026) | One index per tenant behind `SearchBackend`; the PostgreSQL projection remains and is what search falls back to, so losing the engine costs typo tolerance rather than search (ADR-0017) | — |
 | OD-03 | Email provider | **Closed:** both, chosen per tenant (product owner, Sept 2026) | Postmark by default; Microsoft Graph where a tenant's DPIA requires mail to stay in their own Microsoft geography. The choice is on the channel account, so one customer's residency commitment does not decide another's provider (ADR-0022) | — |
+<!-- Every open decision, with what it blocks and what happens until it is
+     made, is reconciled in 23 §7. This table stays the register; that section is
+     the working list. -->
+
 | OD-04 | AI providers and residency | Open — **and no longer blocking** | The gateway, prompts, budgets, kill switches, evidence, evaluation and refusals are built and tested against a stub provider (ADR-0040). Closing this is one adapter and one `registerAiProvider` call. UK/EEA endpoints (Azure OpenAI UK South, Bedrock `eu-west-2`) as defaults for UK tenants; per-tenant policy (13 §6). Until it is closed, production refuses every capability that calls a model rather than answering with a stub. | PH-4 start |
 | OD-05 | Commercial model | Open | Metering design supports seats and usage meters; MSP roll-ups via tenant hierarchy (10 §1, §5) | PH-3 |
 | OD-06 | Product name, domain, branding | Open | Domain layout assumed: `help`, `desk`, `admin`, `api`, `auth`, `status` subdomains plus wildcard for tenants (16 §2) | PH-2 |
