@@ -14,5 +14,5 @@ import { ThemeProvider } from '@itsm/ui';
  * `injectStyles` is off because the layout has already emitted the stylesheet.
  */
 export function Chrome({ children }: { children: ReactNode }): ReactNode {
-  return <ThemeProvider injectStyles={false}>{children}</ThemeProvider>;
+  return <ThemeProvider injectStyles={false} storageKey="itsm-theme">{children}</ThemeProvider>;
 }

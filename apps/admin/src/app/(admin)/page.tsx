@@ -5,7 +5,7 @@ import { Badge, Card, EmptyState } from '@itsm/ui';
 import { currentActor } from '../../server/session.js';
 import { holds } from '../../permissions.js';
 
-export const metadata: Metadata = { title: 'Overview' };
+export const metadata: Metadata = { title: 'Command centre' };
 export const dynamic = 'force-dynamic';
 
 /**
@@ -17,57 +17,107 @@ export const dynamic = 'force-dynamic';
  * they are configuring — because the console for the wrong tenant looks
  * exactly like the console for the right one — and what they are permitted to
  * change, so a missing section is explained rather than merely absent.
+ *
+ * Every section in the navigation appears here, plus the two that do not have
+ * their own navigation entry: the people on the desk and the shape of a
+ * ticket. A screen reachable only by typing its URL is a screen nobody uses.
  */
-export default async function OverviewPage(): Promise<ReactNode> {
+
+interface Section {
+  readonly href: string;
+  readonly title: string;
+  readonly description: string;
+  /** Any one of these opens it. The first is what the "not available" note names. */
+  readonly permissions: readonly string[];
+}
+
+const SECTIONS: readonly Section[] = [
+  {
+    href: '/queues',
+    title: 'Queues',
+    description: 'Who is available, the shifts they work, who is on call, and what routing can ask for.',
+    permissions: ['workload.read', 'workload.manage'],
+  },
+  {
+    href: '/tickets',
+    title: 'Tickets',
+    description: 'Everything raised on this desk, across every team — the shape of the workload, not a queue to work.',
+    permissions: ['ticket.read'],
+  },
+  {
+    href: '/cmdb',
+    title: 'Services and CMDB',
+    description: 'The configuration items and assets a ticket can point at, and the classes they belong to.',
+    permissions: ['cmdb.read', 'cmdb.manage', 'asset.read', 'asset.manage'],
+  },
+  {
+    href: '/automation',
+    title: 'Automation',
+    description: 'Rules that react to one thing, and workflows that run several steps and can wait.',
+    permissions: ['rules.rule.manage', 'rules.rule.read', 'workflow.manage', 'workflow.read'],
+  },
+  {
+    href: '/sla',
+    title: 'SLA management',
+    description: 'Service level targets, business calendars, and the grid that decides a priority.',
+    permissions: ['sla.policy.manage', 'sla.policy.read'],
+  },
+  {
+    href: '/insights',
+    title: 'Insights',
+    description: 'What this desk measures, where those numbers are shown, and what goes out on a schedule.',
+    permissions: ['analytics.read', 'analytics.manage'],
+  },
+  {
+    href: '/integrations',
+    title: 'Integrations',
+    description: 'Outbound actions, the credentials behind them, and the queue of calls that failed.',
+    permissions: ['integration.action.read', 'integration.action.manage', 'integration.credential.read'],
+  },
+  {
+    href: '/catalogue',
+    title: 'What people can ask for',
+    description: 'Services and request types, and whether each is on the portal yet.',
+    permissions: ['catalogue.manage'],
+  },
+  {
+    href: '/fields',
+    title: 'The shape of a ticket',
+    description: 'The custom fields a ticket carries, who may see each one, and when it is required.',
+    permissions: ['ticket.config.manage'],
+  },
+  {
+    href: '/settings',
+    title: 'Configuration',
+    description: 'Feature flags, the AI budget, and what this desk is allowed to use.',
+    permissions: ['admin.setting.manage', 'admin.setting.read'],
+  },
+  {
+    href: '/people',
+    title: 'People',
+    description: 'Who is on this desk, and what the platform holds for each of them.',
+    permissions: ['identity.user.read', 'identity.user.manage'],
+  },
+  {
+    href: '/security',
+    title: 'Security',
+    description: 'What the audit pipeline has flagged, and the full vocabulary a role can be built from.',
+    permissions: ['security.alert.read', 'identity.role.manage', 'identity.user.read'],
+  },
+  {
+    href: '/audit',
+    title: 'Audit',
+    description: 'Every change recorded on this desk, in the order it happened.',
+    permissions: ['audit.read'],
+  },
+];
+
+export default async function CommandCentrePage(): Promise<ReactNode> {
   const { me } = await currentActor();
 
-  const sections = [
-    {
-      href: '/people',
-      title: 'People',
-      description: 'Who is on this desk, which teams they are in, and what each role may do.',
-      permission: 'identity.user.manage',
-    },
-    {
-      href: '/fields',
-      title: 'The shape of a ticket',
-      description: 'The custom fields a ticket carries, who may see each one, and when it is required.',
-      permission: 'ticket.config.manage',
-    },
-    {
-      href: '/catalogue',
-      title: 'What people can ask for',
-      description: 'Services and request types, and whether each is on the portal yet.',
-      permission: 'catalogue.manage',
-    },
-    {
-      href: '/rules',
-      title: 'What happens automatically',
-      description: 'Rules that watch for something happening to a ticket and do something about it.',
-      permission: 'rules.rule.manage',
-    },
-    {
-      href: '/sla',
-      title: 'What this desk promises',
-      description: 'Service level targets, business calendars, and the grid that decides a priority.',
-      permission: 'sla.policy.manage',
-    },
-    {
-      href: '/workflows',
-      title: 'What runs across several steps',
-      description: 'Published workflows, and the runs that are waiting or have failed.',
-      permission: 'workflow.manage',
-    },
-    {
-      href: '/settings',
-      title: 'Settings',
-      description: 'Feature flags, the AI budget, and what this desk is allowed to use.',
-      permission: 'admin.settings.manage',
-    },
-  ];
-
-  const reachable = sections.filter((section) => holds(me, section.permission));
-  const withheld = sections.filter((section) => !holds(me, section.permission));
+  const may = (section: Section): boolean => section.permissions.some((permission) => holds(me, permission));
+  const reachable = SECTIONS.filter(may);
+  const withheld = SECTIONS.filter((section) => !may(section));
 
   return (
     <div className="itsm-Admin">
@@ -109,7 +159,7 @@ export default async function OverviewPage(): Promise<ReactNode> {
           <ul>
             {withheld.map((section) => (
               <li key={section.href}>
-                {section.title} <Badge emphasis="subtle">needs {section.permission}</Badge>
+                {section.title} <Badge emphasis="subtle">needs {section.permissions[0]}</Badge>
               </li>
             ))}
           </ul>

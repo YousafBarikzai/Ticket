@@ -66,7 +66,7 @@ export function PriorityMatrix({
           <tr>
             <th scope="col">
               <span aria-hidden="true">Impact ↓ / Urgency →</span>
-              <span className="itsm-VisuallyHidden">Impact, down the side; urgency, across the top</span>
+              <span className="itsm-visually-hidden">Impact, down the side; urgency, across the top</span>
             </th>
             {LEVELS.map((urgency) => (
               <th scope="col" key={urgency}>

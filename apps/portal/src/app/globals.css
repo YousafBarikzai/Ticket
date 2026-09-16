@@ -435,3 +435,95 @@
   color: var(--itsm-colour-info-subtleText);
   padding: var(--itsm-space-sm);
 }
+
+/* ---- Profile ------------------------------------------------------------ */
+
+/*
+ * Four cards stacked. Not a two-column grid at any width: the page is read top
+ * to bottom once, when somebody has come to change one thing, and a second
+ * column only moves that thing further from where they are looking.
+ */
+.itsm-Profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+/*
+ * A description list, not a table. The pairs have no columns to compare across
+ * and no order to sort by, and a screen reader announcing "table, 5 rows,
+ * 2 columns" for five facts about you is a worse description than "list".
+ */
+.itsm-Details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+}
+
+.itsm-Details__row {
+  display: grid;
+  gap: var(--itsm-space-2xs);
+  grid-template-columns: minmax(8rem, 1fr) 2fr;
+}
+
+.itsm-Details__row dt {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.itsm-Details__row dd {
+  margin: 0;
+}
+
+.itsm-Chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Prefs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.itsm-Prefs__channel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Prefs__channel + .itsm-Prefs__channel {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  padding-block-start: var(--itsm-space-md);
+}
+
+/*
+ * The detail is indented under its switch so that the switch stays the thing
+ * you read first — everything inside only exists while the channel is on.
+ */
+.itsm-Prefs__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin-inline-start: var(--itsm-space-lg);
+}
+
+.itsm-Prefs__window {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-sm);
+}
+
+.itsm-Prefs__note,
+.itsm-Prefs__saved {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-Prefs__error {
+  color: var(--itsm-colour-danger-subtleText);
+}

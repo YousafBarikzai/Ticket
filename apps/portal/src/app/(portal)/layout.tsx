@@ -40,14 +40,30 @@ export default async function PortalLayout({ children }: { children: ReactNode }
     }
   }
 
+  /*
+   * The five the brief asks for, in its order: Home, My requests, Services,
+   * Knowledge, Profile.
+   *
+   * Approvals is the sixth and is not in that list. It is kept because
+   * removing it would take away a screen people use, and because it is already
+   * the brief's own progressive disclosure done properly: it appears only for
+   * somebody who has approvals to give, carrying the number waiting, and is
+   * invisible to everybody else. A requester's navigation is still five items.
+   *
+   * The labels are the brief's words rather than the ones that were here.
+   * "My requests" and "Services" are what a person coming to a service desk
+   * calls these; "My tickets" and "Request something" are what the people who
+   * run one call them.
+   */
   const nav = [
     { id: 'home', label: 'Home', href: '/' },
-    ...(held.has('catalogue.read') ? [{ id: 'catalogue', label: 'Request something', href: '/catalogue' }] : []),
-    { id: 'tickets', label: 'My tickets', href: '/tickets' },
+    { id: 'tickets', label: 'My requests', href: '/tickets' },
+    ...(held.has('catalogue.read') ? [{ id: 'catalogue', label: 'Services', href: '/catalogue' }] : []),
+    ...(held.has('knowledge.read') ? [{ id: 'knowledge', label: 'Knowledge', href: '/knowledge' }] : []),
     ...(held.has('approval.read')
       ? [{ id: 'approvals', label: 'Approvals', href: '/approvals', ...(waiting > 0 ? { badge: waiting } : {}) }]
       : []),
-    ...(held.has('knowledge.read') ? [{ id: 'knowledge', label: 'Help articles', href: '/knowledge' }] : []),
+    { id: 'profile', label: 'Profile', href: '/profile' },
   ];
 
   return (
