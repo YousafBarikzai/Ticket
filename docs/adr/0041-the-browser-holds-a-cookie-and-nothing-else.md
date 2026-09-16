@@ -49,6 +49,21 @@ only route the browser has. There is deliberately no configuration that
 points a browser-side client anywhere else — a `NEXT_PUBLIC_API_URL` would be
 the escape hatch that undoes this the first time somebody is in a hurry.
 
+**All of it lives in `packages/bff`, once.** The handlers speak `Request` and
+`Response` rather than a framework's own types, so a route handler in any
+application is three lines and the whole sign-in round trip can be tested
+without standing a server up. An application supplies four facts — its name,
+the environment variable holding its origin, where a sign-in lands, and its
+two pages that are reachable without one — and nothing else. The alternative,
+discovered the moment a second application needed it, is that the `__Host-`
+attributes, the proxy's allow-lists and the single-use pending login all exist
+twice and drift apart quietly.
+
+Sessions are namespaced per application (`bff:<app>:sess:`). Two applications
+may share a Redis, and an identifier minted for one must not resolve in the
+other: they have different audiences, and an agent's session appearing in the
+portal would be a privilege boundary crossed by a cookie name.
+
 **The proxy is a pipe with a bouncer on it, and knows nothing about the
 domain.** Its rules are four allow-lists and no business logic:
 
@@ -72,8 +87,8 @@ configured. The BFF calls it exactly as it would call Keycloak's token
 endpoint, so the code path a developer exercises daily is the code path that
 runs in production, minus the provider.
 
-Two consequences of building the first Next application are recorded here
-because they are repository-wide and the next application inherits them:
+Two consequences of building the first Next applications are recorded here
+because they are repository-wide and the next one inherits them:
 
 - **`@itsm/ui` is a client library.** Every component file carries
   `'use client'`, including the ones that use no hook today, because the
@@ -109,8 +124,13 @@ the API by different routes — direct and proxied — which is one more thing t
 know when reading the code, and is written down at the top of
 `src/server/session.ts` for that reason.
 
-**What this does not settle.** The proxy does not yet carry server-sent
-events, so the workbench polls a job it started rather than being told
+**What this does not settle.** The two applications use different vocabulary
+for the same ticket on purpose — `pending_requester` is "waiting on requester"
+to an agent and "Waiting for you" to a requester. Each table has a test
+asserting it covers every canonical state MOD-04 defines, so a new state
+fails in both places rather than falling through to something bland; what
+neither can check is whether the *words* are still the right ones. The proxy
+does not yet carry server-sent events, so the workbench polls a job it started rather than being told
 (ADR-0015 exists and the stream is built; wiring it through the BFF is
 Phase 5 work). There is no service worker and no offline queue, which doc 14
 §5 requires of the PWA. And the API's assign endpoint reads no `If-Match`, so

@@ -67,7 +67,7 @@ jobs:
       # fourth workspace grows a `.tsx`, it belongs on this list — the root
       # tsconfig's `exclude` is the list to keep it in step with.
       - name: Typecheck the workspaces the root project excludes
-        run: pnpm exec turbo run typecheck --filter=@itsm/ui --filter=@itsm/workbench
+        run: pnpm exec turbo run typecheck --filter=@itsm/ui --filter=@itsm/workbench --filter=@itsm/portal
 
       - name: Unit tests
         run: pnpm exec vitest run --project unit

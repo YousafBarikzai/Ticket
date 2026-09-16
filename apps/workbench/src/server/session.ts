@@ -1,12 +1,9 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { createClient, workbench, type Workbench } from '@itsm/sdk';
-import { config } from '../bff/config.js';
-import { SESSION_COOKIE } from '../bff/cookies.js';
-import { refreshTokens, readClaims } from '../bff/oidc.js';
-import { needsRefresh, newCorrelationId, type Session } from '../bff/session.js';
-import { sessionStore } from '../bff/store.js';
+import { SESSION_COOKIE, type Session } from '@itsm/bff';
+import { workbench, type Workbench } from '@itsm/sdk';
+import { bff } from '../bff.js';
 
 /**
  * How a server component gets at the API.
@@ -24,42 +21,7 @@ import { sessionStore } from '../bff/store.js';
 
 export async function currentSession(): Promise<Session | null> {
   const jar = await cookies();
-  const id = jar.get(SESSION_COOKIE)?.value;
-  if (!id) return null;
-
-  const store = await sessionStore();
-  const session = await store.get(id);
-  if (!session) return null;
-  if (!needsRefresh(session)) return session;
-
-  const settings = config().oidc;
-  // Without a provider there is nothing to refresh against: the development
-  // token simply expires, and the person signs in again. Saying so here is
-  // better than a refresh path that silently does nothing.
-  if (!settings || !session.refreshToken) {
-    await store.delete(session.id);
-    return null;
-  }
-
-  try {
-    const tokens = await refreshTokens(settings, session.refreshToken);
-    const claims = readClaims(tokens.accessToken);
-    const refreshed: Session = {
-      ...session,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken ?? session.refreshToken,
-      accessExpiresAt: Date.now() + tokens.expiresInSeconds * 1000,
-      displayName: claims.displayName ?? session.displayName,
-    };
-    await store.put(refreshed, config().sessionTtlSeconds);
-    return refreshed;
-  } catch {
-    // A refused refresh means the provider has ended the session — because the
-    // person signed out elsewhere, or an administrator revoked it. Dropping the
-    // record here is what makes that take effect in this app too.
-    await store.delete(session.id);
-    return null;
-  }
+  return bff.sessionFor(jar.get(SESSION_COOKIE)?.value);
 }
 
 /**
@@ -73,17 +35,7 @@ export async function requireSession(): Promise<Session> {
   return session;
 }
 
-/** The SDK, bound to this request's session and its correlation id. */
-export function apiFor(session: Session, correlationId = newCorrelationId()): Workbench {
-  return workbench(
-    createClient({
-      baseUrl: config().apiBaseUrl,
-      token: session.accessToken,
-      correlationId,
-      // Server components render during a request, and Next's fetch caches by
-      // default. A queue that shows yesterday's tickets because the framework
-      // was being helpful is worse than a slow queue.
-      fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }),
-    }),
-  );
+/** The SDK, bound to this request's session. */
+export function apiFor(session: Session): Workbench {
+  return workbench(bff.clientFor(session));
 }

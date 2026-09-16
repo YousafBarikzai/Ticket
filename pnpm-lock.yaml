@@ -78,6 +78,9 @@ importers:
       '@itsm/api':
         specifier: workspace:*
         version: link:apps/api
+      '@itsm/bff':
+        specifier: workspace:*
+        version: link:packages/bff
       '@itsm/business-time':
         specifier: workspace:*
         version: link:packages/business-time
@@ -171,6 +174,9 @@ importers:
       '@itsm/platform':
         specifier: workspace:*
         version: link:packages/platform
+      '@itsm/portal':
+        specifier: workspace:*
+        version: link:apps/portal
       '@itsm/runtime':
         specifier: workspace:*
         version: link:packages/runtime
@@ -295,8 +301,11 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
-  apps/workbench:
+  apps/portal:
     dependencies:
+      '@itsm/bff':
+        specifier: workspace:*
+        version: link:../../packages/bff
       '@itsm/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -306,9 +315,43 @@ importers:
       '@itsm/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      ioredis:
-        specifier: ^6
-        version: 6.0.0
+      next:
+        specifier: ^16.3.5
+        version: 16.3.5(@opentelemetry/api@1.9.1)(@types/node@22.20.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+    devDependencies:
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      jsdom:
+        specifier: ^30.0.1
+        version: 30.0.1
+
+  apps/workbench:
+    dependencies:
+      '@itsm/bff':
+        specifier: workspace:*
+        version: link:../../packages/bff
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@itsm/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@itsm/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       next:
         specifier: ^16.3.5
         version: 16.3.5(@opentelemetry/api@1.9.1)(@types/node@22.20.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -904,6 +947,15 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+
+  packages/bff:
+    dependencies:
+      '@itsm/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      ioredis:
+        specifier: ^6
+        version: 6.0.0
 
   packages/business-time: {}
 

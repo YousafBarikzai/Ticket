@@ -9,3 +9,5 @@ coverage/
 .turbo/
 .pnpm-store/
 /tmp/
+# Built by infra/scripts/build-service-worker.ts before dev and build.
+apps/*/public/sw.js

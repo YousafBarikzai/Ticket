@@ -1,8 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Suggestion } from '@itsm/sdk';
 import { evidenceFor, hrefForEvidence, renderSuggestion } from '../ai/render.js';
-import { devSignIn, DevSignInFailed } from '../bff/dev-sign-in.js';
-import type { BffConfig } from '../bff/config.js';
 
 describe('rendering what each capability produced', () => {
   it('splits a reply draft into paragraphs and offers it to the composer', () => {
@@ -80,40 +78,5 @@ describe('evidence', () => {
     const copied = evidenceFor(suggestion);
     expect(copied[0]).not.toBe(suggestion.evidence[0]);
     expect(copied[0]).toEqual(suggestion.evidence[0]);
-  });
-});
-
-describe('the development sign-in, from the BFF', () => {
-  const config = { apiBaseUrl: 'http://api.test' } as BffConfig;
-
-  function respond(status: number, body: unknown): typeof fetch {
-    return vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
-  }
-
-  it('returns the token set the API minted', async () => {
-    const tokens = await devSignIn(
-      config,
-      { tenantSlug: 'acme', email: 'agent@acme.test' },
-      respond(201, { accessToken: 'at', expiresInSeconds: 3600, tenantId: 't', userId: 'u', displayName: 'Agent' }),
-    );
-    expect(tokens).toEqual({ accessToken: 'at', expiresInSeconds: 3600, tenantId: 't', userId: 'u', displayName: 'Agent' });
-  });
-
-  it('says plainly when the API has no development sign-in at all', async () => {
-    await expect(devSignIn(config, { tenantSlug: 'a', email: 'b@c.test' }, respond(404, {}))).rejects.toThrow(
-      /no development sign-in/,
-    );
-  });
-
-  it('gives one message for an unknown tenant and an unknown user', async () => {
-    await expect(devSignIn(config, { tenantSlug: 'a', email: 'b@c.test' }, respond(401, {}))).rejects.toBeInstanceOf(
-      DevSignInFailed,
-    );
-  });
-
-  it('refuses a response with no tenant rather than storing an unusable session', async () => {
-    await expect(
-      devSignIn(config, { tenantSlug: 'a', email: 'b@c.test' }, respond(201, { accessToken: 'at' })),
-    ).rejects.toThrow(/unusable token/);
   });
 });
