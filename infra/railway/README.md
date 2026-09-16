@@ -50,9 +50,20 @@ That paragraph was the only place the region existed for a release, and a
 paragraph is not a setting: the first project stood up under this pipeline came
 up in **US West**, because nothing in the deploy ever mentioned a region to
 Railway. It is now `region` in `services.json`, applied to every service
-instance, and asserted by a test. A Railway *project* also has a region of its
-own for its managed Postgres and Redis, and that one is chosen when the project
-is created and cannot be changed afterwards — see the runbook.
+instance, and asserted by a test.
+
+Two things about Railway's regions that decide how much this costs to get
+wrong:
+
+- **A region belongs to a service, not to a project.** Moving a service is a
+  redeploy and nothing else — *unless it has a volume attached*, in which case
+  changing the region **replaces the volume**. None of the ten services here
+  carries one; the managed Postgres and Redis do, which is why theirs is worth
+  setting before they hold anything.
+- **Amsterdam is `ams`.** `europe-west4` names the same place and is Railway's
+  legacy spelling, but Railway's own tooling reads the legacy name as a
+  *different* region and plans a destructive volume move to reach it. Use
+  `ams`.
 
 ## Before the first deploy
 

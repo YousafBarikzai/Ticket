@@ -29,19 +29,32 @@ see.
 
 ---
 
-## 1. A project in the right region
+## 1. The right region
 
-Railway fixes a project's region when it is created, and the managed Postgres
-volume cannot be moved afterwards. Decision D-01 option A and the residency
-commitment in `docs/architecture/19` put production in **EU West (Amsterdam)**.
+Decision D-01 option A and the residency commitment in
+`docs/architecture/19` put production in **EU West (Amsterdam)**, whose Railway
+identifier is **`ams`**.
 
-If the existing project is anywhere else and holds nothing worth keeping,
-create a new one in EU West rather than trying to migrate it. Note its project
-id — it becomes `RAILWAY_PROJECT_ID`.
+A region belongs to a **service**, not to a project — so an existing project in
+the wrong region does not need replacing. Keep it, and note its project id: it
+becomes `RAILWAY_PROJECT_ID`.
 
-The service *instances* also carry a region, and the deploy sets that from
-`region` in `infra/railway/services.json`. The project region is the one you
-have to get right by hand.
+What you set by hand is the region of each **managed** service, because those
+are the ones with volumes:
+
+- Changing a service's region is a redeploy and nothing more — **unless it has
+  a volume attached**, in which case the change *replaces* the volume. An empty
+  database loses nothing; a populated one loses everything.
+- So set the region on Postgres, `postgres-keycloak` and Redis **when you
+  create them, before they hold anything**. Each service's own Settings has
+  the region.
+
+Use `ams`, not `europe-west4`. Both name Amsterdam, but `europe-west4` is
+Railway's legacy spelling and its tooling treats it as a different region —
+which on a service with a volume means a destructive move.
+
+The ten pipeline services carry no volumes, and the deploy sets their region
+for you from `region` in `infra/railway/services.json`.
 
 **Environments:** create `staging` and `production` in the project. The names
 must match exactly — the deploy looks an environment up by name and refuses one
@@ -60,6 +73,9 @@ From Railway's own catalogue, in this project:
 | **Postgres** (a second one) | Keycloak's own store — name it `postgres-keycloak` |
 | **Keycloak** | sign-in. Point it at `postgres-keycloak` |
 | **Meilisearch** *(optional)* | leave `MEILISEARCH_URL` unset and search runs off the Postgres projection, which is written in the same transaction as the change it describes and is therefore never stale |
+
+Set each one's region to **`ams`** as you create it — see step 1 for why doing
+it afterwards is not the same thing.
 
 Two Postgres instances rather than one is deliberate: Keycloak's schema is
 Keycloak's, and a shared database makes its upgrades our problem.

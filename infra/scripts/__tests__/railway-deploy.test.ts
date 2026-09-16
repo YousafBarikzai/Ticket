@@ -229,7 +229,12 @@ describe('what each service is actually given', () => {
     // Decision D-01 option A and the residency commitment in doc 19. This was
     // a sentence in a README while nothing sent a region at all, and the first
     // project stood up under this pipeline came up in US West.
-    expect(catalogue.region).toBe('europe-west4');
+    //
+    // `ams` and not `europe-west4`: both name Amsterdam, but the Google-style
+    // spelling is Railway's legacy one and its own tooling reads it as a
+    // different region — planning a destructive move of any attached volume to
+    // get there. Asserted by value rather than by "is set" for that reason.
+    expect(catalogue.region).toBe('ams');
   });
 
   it('gives every public service a port to send its domain at', () => {
