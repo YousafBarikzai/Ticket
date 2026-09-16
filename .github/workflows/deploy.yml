@@ -1,0 +1,341 @@
+name: Deploy
+
+# Stages 4 to 6 of the pipeline in docs/architecture/16 §3. Stages 1 to 3 —
+# validate, build, integration — are ci.yml and are what this waits on.
+#
+# Every job that touches Railway is guarded by `vars.DEPLOY_DOMAIN` and
+# `secrets.RAILWAY_TOKEN` being present. Not a placeholder: until the project
+# variables exist, this workflow builds and scans the images and then skips the
+# deploy, so the pipeline is reviewable, its image builds are exercised on every
+# push, and nothing here is red for the want of a credential. The day the token
+# is set, the same jobs start deploying with no edit to this file.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+concurrency:
+  # Per environment, not per run: two deploys to staging at once is two halves
+  # of two commits, and the loser is whichever finishes second.
+  group: deploy-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Pushing images to GHCR under this repository's namespace.
+  packages: write
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Stage 2, for real: the images stages 4 to 6 deploy.
+  #
+  # ci.yml builds the API and worker images to scan them and throws them away.
+  # These are pushed, tagged by commit, and are the artefacts every environment
+  # below runs — so the image that was scanned is the image that runs, which is
+  # the only version of that sentence worth having.
+  # ---------------------------------------------------------------------------
+  images:
+    name: Build and push images
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.value }}
+      image-base: ${{ steps.image.outputs.base }}
+    strategy:
+      # One job per target rather than one job building six: they share every
+      # early layer through the registry cache, and a failure names the image.
+      fail-fast: false
+      matrix:
+        target: [api, worker, migrate, portal, workbench, admin]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "value=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Where the images go, taken from the catalogue the deploy reads rather
+      # than spelled a second time here.
+      #
+      # Two faults in one step. `github.repository` is `Owner/Repo` with the
+      # case the owner typed, and an OCI repository name must be lowercase — so
+      # the obvious `${{ github.repository }}` fails every build with "repository
+      # name must be lowercase". And a path written once in this file and once
+      # in services.json is two strings that must agree, where disagreeing means
+      # CI pushes to one place and the deploy pulls from another, each reporting
+      # success. So the path comes from the catalogue, and this refuses to build
+      # at all if the catalogue does not name this repository.
+      - name: Where the images go
+        id: image
+        run: |
+          registry=$(jq -r .image.registry infra/railway/services.json)
+          repository=$(jq -r .image.repository infra/railway/services.json)
+          expected=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          if [ "${repository}" != "${expected}" ]; then
+            echo "::error::infra/railway/services.json names ${repository}, but this is ${expected}. CI would push where the deploy does not look."
+            exit 1
+          fi
+          echo "registry=${registry}" >> "$GITHUB_OUTPUT"
+          echo "base=${registry}/${repository}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.image.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Built once, into the local daemon. Deliberately not `push: true` here:
+      # a second build-push step would rebuild — from cache, almost always
+      # identically — and "almost always identically" is not the claim worth
+      # making. The image Trivy opens below is the image `docker push` sends,
+      # because it is the same image.
+      - name: Build ${{ matrix.target }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: ${{ matrix.target }}
+          load: true
+          push: false
+          tags: ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+      # Scanned before it is pushed, not after. A critical vulnerability found
+      # in a registry is a vulnerability somebody can already deploy.
+      - name: Scan ${{ matrix.target }}
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Software bill of materials
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+          artifact-name: sbom-${{ matrix.target }}.spdx.json
+
+      - name: Push ${{ matrix.target }}
+        run: docker push ${{ steps.image.outputs.base }}/${{ matrix.target }}:${{ steps.tag.outputs.value }}
+
+  # ---------------------------------------------------------------------------
+  # Stage 4 · Preview (PR open/update)
+  # ---------------------------------------------------------------------------
+  preview:
+    name: 4 · Preview environment
+    needs: images
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    environment:
+      name: preview-${{ github.event.number }}
+      url: https://help.pr-${{ github.event.number }}.${{ vars.DEPLOY_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Is there anywhere to deploy to?
+        id: gate
+        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Say what would have happened
+        if: steps.gate.outputs.ready != 'true'
+        run: |
+          echo "::notice::No Railway credentials configured, so this is a plan rather than a deploy."
+          DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
+            --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }} --dry-run
+
+      # Applied, not written to a file for somebody to apply: doc 16 §4 says
+      # realm changes are code applied by a job on deploy, and a realm file that
+      # nothing applies is a redirect URI nobody updated.
+      - name: Apply the realm for this preview
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment pr-${{ github.event.number }} --apply
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
+          KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+
+      - name: Deploy
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }}
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+
+      # The walking skeleton is what this repository already has that answers
+      # "is it actually working": it drives a real ticket through a real API.
+      # Doc 16 §3 also lists Playwright, axe and Lighthouse here; none of those
+      # exist in this repository yet, and stage 4 says so rather than implying
+      # a browser suite that was never written (docs/architecture/18 §3).
+      - name: Walking skeleton against the preview
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/walking-skeleton.ts
+        env:
+          API_BASE_URL: https://api.pr-${{ github.event.number }}.${{ vars.DEPLOY_DOMAIN }}
+
+  # A preview environment that outlives its pull request is a database nobody
+  # is watching, on a bill somebody is paying.
+  preview-teardown:
+    name: 4 · Tear the preview down
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The same gate as every other job, and computed the same way for a
+      # reason: the `secrets` context is not available in a step's `if:`, only
+      # in `run:` and `env:`. Written directly in the `if:` it is not a wrong
+      # answer, it is a workflow file GitHub cannot parse at all — no jobs, a
+      # run named after the file, and a `push` trigger firing on a branch the
+      # `on:` filter excludes, because the filter is in the part that did not
+      # parse either.
+      - name: Is there anything to tear down?
+        id: gate
+        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete the environment
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/railway-teardown.ts --environment pr-${{ github.event.number }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+
+  # ---------------------------------------------------------------------------
+  # Stage 5 · Staging (merge to main)
+  # ---------------------------------------------------------------------------
+  staging:
+    name: 5 · Staging
+    needs: images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://desk.staging.${{ vars.DEPLOY_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Is there anywhere to deploy to?
+        id: gate
+        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Say what would have happened
+        if: steps.gate.outputs.ready != 'true'
+        run: |
+          echo "::notice::No Railway credentials configured, so this is a plan rather than a deploy."
+          DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
+            --environment staging --tag ${{ needs.images.outputs.tag }} --dry-run
+
+      - name: Apply the realm for staging
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment staging --apply
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
+          KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+
+      - name: Deploy
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment staging --tag ${{ needs.images.outputs.tag }}
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+
+      - name: Smoke test
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/walking-skeleton.ts
+        env:
+          API_BASE_URL: https://api.staging.${{ vars.DEPLOY_DOMAIN }}
+
+  # ---------------------------------------------------------------------------
+  # Stage 6 · Release (tag vX.Y.Z), behind a manual approval
+  # ---------------------------------------------------------------------------
+  production:
+    name: 6 · Production
+    needs: images
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    # The approval gate is the GitHub environment's, not a step in this file:
+    # a required reviewer on `production` cannot be bypassed by editing the
+    # workflow in the pull request that wants to deploy.
+    environment:
+      name: production
+      url: https://desk.${{ vars.DEPLOY_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Is there anywhere to deploy to?
+        id: gate
+        run: echo "ready=${{ vars.DEPLOY_DOMAIN != '' && secrets.RAILWAY_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Say what would have happened
+        if: steps.gate.outputs.ready != 'true'
+        run: |
+          echo "::notice::No Railway credentials configured, so this is a plan rather than a deploy."
+          DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
+            --environment production --tag ${{ github.event.release.tag_name }} --dry-run
+
+      - name: Apply the realm for production
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/keycloak-realm.ts --environment production --apply
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
+          KEYCLOAK_ADMIN_CLIENT_ID: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_ID }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+
+      - name: Deploy
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment production --tag ${{ github.event.release.tag_name }}
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+
+      - name: Post-deploy smoke test
+        if: steps.gate.outputs.ready == 'true'
+        run: pnpm exec tsx infra/scripts/walking-skeleton.ts
+        env:
+          API_BASE_URL: https://api.${{ vars.DEPLOY_DOMAIN }}

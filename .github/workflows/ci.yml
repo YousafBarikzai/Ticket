@@ -52,6 +52,26 @@ jobs:
       - name: Module contract
         run: pnpm lint:boundaries
 
+      # The workflows themselves, checked by something other than the run that
+      # would have used them.
+      #
+      # A workflow file with an invalid expression does not fail a job — it
+      # fails to parse, so there are no jobs: a run named after the file, no
+      # logs to read, and `on:` filters that do not apply because they are in
+      # the part that did not parse. deploy.yml shipped with `secrets` in a
+      # step's `if:`, which is valid YAML and not a valid context there, and
+      # nothing in this pipeline could have said so. This runs in a second and
+      # makes that whole class unreachable.
+      #
+      # Pinned to a release rather than a floating action: a linter that gates
+      # every push is a linter whose version should change when somebody
+      # decides it does.
+      - name: Workflow files
+        run: |
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz" \
+            | tar xz actionlint
+          ./actionlint -no-color
+
       - name: Typecheck
         run: pnpm exec tsc --noEmit -p tsconfig.json
 
