@@ -1,6 +1,6 @@
-import { DependencyUnavailableError, logger, metrics } from '@itsm/platform';
+import { DependencyUnavailableError, ValidationError, logger, metrics } from '@itsm/platform';
 import { renderStrict } from '@itsm/module-workflow';
-import { DEFAULT_MODEL, costOf } from '../domain/budget.js';
+import { DEFAULT_MODEL, costOf, isPriced, pricedModels } from '../domain/budget.js';
 import type { Capability } from '../domain/capabilities.js';
 import { activeProvider } from '../providers/registry.js';
 import type { Completion } from '../providers/types.js';
@@ -48,11 +48,30 @@ export interface GatewayResult {
   provider: string;
 }
 
+/**
+ * A model nobody has priced cannot be called.
+ *
+ * `costOf` returns nothing for an unpriced model, so before this check a
+ * deployment that pointed a prompt at a model missing from its price list
+ * spent money the budget recorded as zero — every warning line unreached,
+ * every cap unenforced, and nothing anywhere saying so. Refused before the
+ * call rather than discovered on an invoice.
+ */
+export class ModelNotPriced extends ValidationError {
+  constructor(model: string) {
+    super(
+      `${model} has no price in this deployment, so a call against it could not be counted towards any budget. ` +
+        `Priced models: ${pricedModels().join(', ') || 'none'}. Set AI_MODEL_PRICES.`,
+    );
+  }
+}
+
 export async function callModel(call: GatewayCall): Promise<GatewayResult> {
   const provider = activeProvider();
   if (!provider) throw new NoProviderConfigured();
 
   const model = call.model ?? DEFAULT_MODEL;
+  if (!isPriced(model)) throw new ModelNotPriced(model);
   // Strict: a prompt rendered with a hole in it is a prompt that asks the
   // model to fill the hole, and it will. The workflow engine learned this
   // first; the same renderer is used here rather than a second one.

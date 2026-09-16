@@ -9,6 +9,7 @@
  */
 import {
   environmentResolver,
+  loadConfig,
   logger,
   modules,
   registerModule,
@@ -43,7 +44,16 @@ import { timeManifest, seedTimeDefaults } from '@itsm/module-time';
 import { statusPageManifest, seedStatusDefaults } from '@itsm/module-statuspage';
 import { migrationManifest } from '@itsm/module-migration';
 import { esmManifest } from '@itsm/module-esm';
-import { aiManifest, registerAiProvider, seedAiDatasets, seedAiPrompts, stubProvider } from '@itsm/module-ai';
+import {
+  aiManifest,
+  anthropicProvider,
+  parseModelPrices,
+  registerAiProvider,
+  registerModelPrices,
+  seedAiDatasets,
+  seedAiPrompts,
+  stubProvider,
+} from '@itsm/module-ai';
 import {
   channelsManifest,
   seedChannelDefaults,
@@ -123,13 +133,7 @@ export function bootstrapModules(): BootstrapResult {
       logger.error('the AI prompts could not be seeded', { error: (error as Error).message });
     });
 
-  // The stub provider answers without a model. Registered only outside
-  // production, for exactly the reason the development email transport is:
-  // in production its presence would turn "no provider has been chosen yet"
-  // (OD-04) from a refusal somebody fixes into answers somebody believes.
-  if (process.env.NODE_ENV !== 'production') {
-    registerAiProvider(stubProvider());
-  }
+  registerAiPricesAndProvider();
 
   // The development email transport verifies nothing, so it is registered only
   // outside production. In production its presence would turn "no provider is
@@ -196,6 +200,62 @@ export function bootstrapModules(): BootstrapResult {
 
   logger.info('modules registered', { count: modules().length, ids: modules().map((m) => m.id) });
   return { modules: modules().map((m) => m.id), problems };
+}
+
+/**
+ * The model provider and its price list, chosen by configuration.
+ *
+ * Three rules, and each one exists because of a way this goes wrong quietly:
+ *
+ * **The stub is refused in production.** It answers without a model, so its
+ * presence in a deployment turns "no provider has been chosen" from a refusal
+ * somebody fixes into answers somebody believes. Same bargain the development
+ * email transport strikes, for the same reason.
+ *
+ * **Prices are loaded before the provider.** An unpriced model is refused at
+ * the point of call (`ModelNotPriced`), so loading the provider first would
+ * open a window in which calls are made and costed at nothing.
+ *
+ * **A malformed price list stops the boot.** A half-loaded price list produces
+ * a budget that half-works, which is the worst of the three outcomes — worse
+ * than no AI, and much worse than a process that will not start.
+ */
+function registerAiPricesAndProvider(): void {
+  const config = loadConfig();
+
+  if (config.AI_MODEL_PRICES) {
+    registerModelPrices(parseModelPrices(config.AI_MODEL_PRICES));
+  }
+
+  switch (config.AI_PROVIDER) {
+    case 'anthropic': {
+      if (!config.ANTHROPIC_API_KEY) {
+        throw new Error('AI_PROVIDER is anthropic but ANTHROPIC_API_KEY is not set');
+      }
+      registerAiProvider(
+        anthropicProvider({
+          apiKey: config.ANTHROPIC_API_KEY,
+          ...(config.ANTHROPIC_BASE_URL ? { baseUrl: config.ANTHROPIC_BASE_URL } : {}),
+        }),
+      );
+      return;
+    }
+    case 'stub': {
+      if (config.NODE_ENV === 'production') {
+        throw new Error('AI_PROVIDER is stub, which answers without a model and is not a deployment option');
+      }
+      registerAiProvider(stubProvider());
+      return;
+    }
+    default: {
+      // Unset. Outside production the stub is registered anyway, so a
+      // developer who has configured nothing still gets a working suggestion
+      // surface; in production nothing is registered and every capability that
+      // calls a model refuses with a 503 naming the configuration.
+      if (config.NODE_ENV !== 'production') registerAiProvider(stubProvider());
+      else logger.warn('no AI provider is configured; every capability that calls a model will refuse');
+    }
+  }
 }
 
 export { modules, registerModule };

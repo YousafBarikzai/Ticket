@@ -35,30 +35,110 @@ export interface ModelPrice {
 }
 
 /**
- * What each model costs. The stub's price is deliberately in the same range as
- * a real mid-sized model, so a budget that looks sensible against the stub
- * still looks sensible on the day OD-04 is closed and a real one is plugged
- * in. A price list of zeroes would have made every budget test vacuous.
+ * What each model costs.
+ *
+ * Only the stub is priced here, and deliberately so. A real model's price is
+ * published by its vendor, changes without asking this repository, and is
+ * quoted in another currency — so a number hard-coded here would be a guess
+ * that looks like a fact, and the thing it decides is when a tenant stops
+ * being able to spend money. Real prices are supplied by whoever runs the
+ * deployment, through `registerModelPrices`.
+ *
+ * The stub's price is in the same range as a mid-sized model on purpose, so a
+ * budget that looks sensible against it still looks sensible against a real
+ * one. A price list of zeroes would have made every budget test vacuous.
  */
-export const MODEL_PRICES: Record<string, ModelPrice> = {
+const BUILT_IN_PRICES: Record<string, ModelPrice> = {
   'stub-small': { inputPerThousand: 60_000n, outputPerThousand: 300_000n },
   'stub-large': { inputPerThousand: 240_000n, outputPerThousand: 1_200_000n },
 };
 
+const registered = new Map<string, ModelPrice>();
+
+/**
+ * Installs the prices for this deployment's models, in micro-pence per
+ * thousand tokens.
+ *
+ * Called once at boot from whatever the operator configured. Repeated calls
+ * replace a model's price rather than accumulating, so a correction is one
+ * restart rather than a mystery.
+ */
+export function registerModelPrices(prices: Readonly<Record<string, ModelPrice>>): void {
+  for (const [model, price] of Object.entries(prices)) registered.set(model, price);
+}
+
+/** Test helper, and the way a deployment forgets a price it should not have had. */
+export function clearModelPrices(): void {
+  registered.clear();
+}
+
+export function priceFor(model: string): ModelPrice | null {
+  return registered.get(model) ?? BUILT_IN_PRICES[model] ?? null;
+}
+
+export function pricedModels(): string[] {
+  return [...new Set([...Object.keys(BUILT_IN_PRICES), ...registered.keys()])].sort();
+}
+
 export const DEFAULT_MODEL = 'stub-small';
+
+/**
+ * Whether a call against this model can be costed at all.
+ *
+ * Checked **before** the call, not after, and this is the important part: an
+ * unpriced model used to cost `0n`, which meant every budget silently stopped
+ * working the moment somebody pointed a prompt at a model nobody had priced.
+ * A budget that cannot see a cost is not a budget, and the honest failure is a
+ * refusal an operator can read rather than an invoice they cannot explain.
+ */
+export function isPriced(model: string): boolean {
+  return priceFor(model) !== null;
+}
 
 /**
  * The cost of one call, rounded up.
  *
  * Up, not to nearest: a platform that rounds its own costs down is a platform
  * that discovers the difference at the end of the quarter.
+ *
+ * Returns `0n` for a model with no price, which is only reachable when the
+ * model was priced at the moment of the call and unpriced by the time it
+ * returned. `isPriced` is where that case is refused.
  */
 export function costOf(model: string, inputTokens: number, outputTokens: number): bigint {
-  const price = MODEL_PRICES[model];
+  const price = priceFor(model);
   if (!price) return 0n;
   const input = (BigInt(Math.max(0, inputTokens)) * price.inputPerThousand + 999n) / 1000n;
   const output = (BigInt(Math.max(0, outputTokens)) * price.outputPerThousand + 999n) / 1000n;
   return input + output;
+}
+
+/**
+ * Reads an operator's price list.
+ *
+ * `{"claude-sonnet-5": {"inputPerThousand": 240000, "outputPerThousand": 1200000}}`
+ * — micro-pence per thousand tokens, because that is the unit the budget works
+ * in and a conversion left to a configuration file is a conversion nobody
+ * checks. Anything malformed throws rather than being skipped: a price list
+ * that half-loaded would produce a budget that half-works.
+ */
+export function parseModelPrices(json: string): Record<string, ModelPrice> {
+  const parsed: unknown = JSON.parse(json);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('the model price list must be an object keyed by model name');
+  }
+
+  const out: Record<string, ModelPrice> = {};
+  for (const [model, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const entry = value as { inputPerThousand?: unknown; outputPerThousand?: unknown };
+    const input = Number(entry?.inputPerThousand);
+    const output = Number(entry?.outputPerThousand);
+    if (!Number.isFinite(input) || input < 0 || !Number.isFinite(output) || output < 0) {
+      throw new Error(`the price for ${model} needs a non-negative inputPerThousand and outputPerThousand`);
+    }
+    out[model] = { inputPerThousand: BigInt(Math.round(input)), outputPerThousand: BigInt(Math.round(output)) };
+  }
+  return out;
 }
 
 export function penceToMicros(pence: number): bigint {
