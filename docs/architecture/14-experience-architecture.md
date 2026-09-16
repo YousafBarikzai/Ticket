@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | `apps/portal` | Next.js App Router, React 19, Tailwind, `packages/ui` | Requester portal: home, search, report issue, request service, my tickets, timeline, approvals inbox, knowledge, profile | Yes (user PWA) | Server components for first paint; client components for forms and timeline; tenant subdomain and custom domains |
 | `apps/workbench` | Next.js | Agent workbench: queues, three-pane ticket workspace, knowledge authoring, major incident room, workload views | Yes (admin/agent PWA) | Keyboard-first; SSE-driven; heavy client state |
-| `apps/admin` | Next.js | Admin console and platform console: builders (fields, forms, categories, priorities, queues, calendars, templates, rules, workflows, SLAs, approvals), settings, flags, modules, packages, audit search, tenancy | Yes (admin PWA) | Guided builders with preview/validate/publish/rollback |
+| `apps/admin` | Next.js | Admin console and platform console: builders (fields, forms, categories, priorities, queues, calendars, templates, rules, workflows, SLAs, approvals), settings, flags, modules, packages, audit search, tenancy | **No, deliberately** (ADR-0049) | Guided builders with preview/validate/publish/rollback. A console that answered from a cache while somebody was changing a permission, a limit or a residency policy would show them a configuration that is not the one in force — so this is the one application here with no service worker, and the omission is a decision rather than an omission |
 | `apps/status` | Next.js static export | Public status pages | n/a | Built by a worker job; hosted on Cloudflare |
 | `apps/mobile` | Expo SDK (React Native), Expo Router | Requesters and agents: SSO, push, my tickets, create with camera, comments, approvals, offline drafts; agent triage *(PH-4)* | n/a | iOS PH-2, Android PH-5; EAS Build and Update |
 
@@ -137,10 +137,16 @@ reverse later:
   poll — the poll stays at 5 s as the guarantee, because a stream that never
   opens is indistinguishable, to the person waiting, from a job that never
   finished. `Last-Event-ID` resume is still not built: a reconnection refetches.
-- **`apps/admin`, `apps/status` and `apps/mobile` do not exist.** MOD-23's
-  status page is served by the API, not by a Next app. Without an admin
-  console, every builder in §1 — fields, forms, rules, workflows, SLA
-  policies, packs, flags — is reachable only through the API.
+- **`apps/admin` exists as a first slice; `apps/status` and `apps/mobile` do
+  not.** MOD-23's status page is still served by the API rather than by a Next
+  app. The console (ADR-0049) covers day-one setup — people, the shape of a
+  ticket, and feature flags — and carries a gated platform section for tenants
+  and the price list. What it does **not** cover, and says so on each screen
+  rather than only here: creating a user, assigning a role, adding somebody to
+  a team, every typed tenant setting, and the seven remaining builders — forms,
+  rules, workflows, SLA policies, notification templates, the catalogue and ESM
+  packs. Those are still API-only. The workflow editor in particular is a graph
+  editor and a project of its own.
 
 ### 10.3 Offline, as built (ADR-0043)
 

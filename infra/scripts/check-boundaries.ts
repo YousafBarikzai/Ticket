@@ -187,6 +187,7 @@ const EGRESS_ALLOWED = [
   // reaching for `fetch` somewhere else is still a deliberate edit.
   'apps/workbench/src/client/',
   'apps/portal/src/client/',
+  'apps/admin/src/client/',
   // The AI model provider (ADR-0042). The destination is fixed by the adapter
   // and configured by an operator, like Meilisearch and the OIDC issuer — but
   // the deciding reason is the body: the gateway records request and response

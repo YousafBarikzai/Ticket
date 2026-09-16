@@ -19,5 +19,5 @@
   // in — a worker that reached for `document` would start compiling. Next also
   // augments `ProcessEnv` to make `NODE_ENV` read-only, which is correct for an
   // application and wrong for the test harness that sets it.
-  "exclude": ["node_modules", "**/dist/**", "**/.next/**", "apps/workbench", "apps/portal"]
+  "exclude": ["node_modules", "**/dist/**", "**/.next/**", "apps/workbench", "apps/portal", "apps/admin"]
 }
