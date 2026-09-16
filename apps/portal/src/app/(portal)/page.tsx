@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Badge, Card } from '@itsm/ui';
+import { Badge, Tile, TileGrid } from '@itsm/ui';
 import { apiFor, requireSession } from '../../server/session.js';
 import { needsYou, raisedAgo, requesterState } from '../../tickets/presentation.js';
 
@@ -44,18 +44,16 @@ export default async function HomePage(): Promise<ReactNode> {
     <div className="itsm-Home">
       <h1 className="itsm-Home__heading">How can we help?</h1>
 
-      <div className="itsm-Home__actions">
-        <Card title="Something is broken" subtitle="Report an issue and we will pick it up.">
-          <Link className="itsm-Home__cta" href="/report">
-            Report an issue
-          </Link>
-        </Card>
-        <Card title="I need something" subtitle="Software, access, hardware, a change.">
-          <Link className="itsm-Home__cta" href="/catalogue">
-            Request something
-          </Link>
-        </Card>
-      </div>
+      {/*
+        Tiles rather than cards with links inside them. A card is a container
+        that may happen to be interactive; a tile *is* the action, so the whole
+        surface is the target and a keyboard user gets the same large hit area
+        a mouse user does instead of a small link inside a big box.
+      */}
+      <TileGrid className="itsm-Home__actions">
+        <Tile title="Something is broken" description="Report an issue and we will pick it up." href="/report" />
+        <Tile title="I need something" description="Software, access, hardware, a change." href="/catalogue" />
+      </TileGrid>
 
       {/*
         First, because it is the only thing on this page that is somebody's to

@@ -1,6 +1,7 @@
 import type { Client } from '../client.js';
 import type { Me } from './types.js';
 import { builders, type Builders } from './builders.js';
+import { operations, type Operations } from './operations.js';
 
 /**
  * The administration console's view of the API.
@@ -109,6 +110,17 @@ export interface Admin {
    */
   readonly configure: Builders;
 
+  /**
+   * What the desk is doing: its queues, its tickets, its estate, its numbers,
+   * its integrations and its audit trail.
+   *
+   * A fourth namespace because it answers the fourth question. `tenant.*` is
+   * who may use the desk, `configure.*` is what it does on its own, and this is
+   * what has actually happened — read-only almost throughout, and tenant-scoped
+   * like the other two.
+   */
+  readonly observe: Operations;
+
   /** What an administrator of one desk may do. */
   readonly tenant: {
     users(search?: string): Promise<UserRow[]>;
@@ -144,6 +156,8 @@ export function admin(client: Client): Admin {
     me: () => client.request<Me>('/api/v1/me'),
 
     configure: builders(client),
+
+    observe: operations(client),
 
     tenant: {
       users: (search) =>

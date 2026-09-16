@@ -15,7 +15,12 @@ import {
   RadioGroup,
   Select,
   Switch,
+  InteractiveTable,
   Table,
+  Tile,
+  TileGrid,
+  Metric,
+  MetricGrid,
   Tabs,
   Textarea,
   Timeline,
@@ -233,7 +238,7 @@ describe('structure', () => {
 
   it('a sortable table', async () => {
     const { container } = render(
-      <Table
+      <InteractiveTable
         caption="Open tickets"
         columns={columns}
         rows={rows}
@@ -247,13 +252,46 @@ describe('structure', () => {
 
   it('a grid, which is what the table becomes when rows are activatable', async () => {
     const { container } = render(
-      <Table caption="Queue" columns={columns} rows={rows} rowKey={(row) => row.id} onRowActivate={() => undefined} />,
+      <InteractiveTable caption="Queue" columns={columns} rows={rows} rowKey={(row) => row.id} onRowActivate={() => undefined} />,
     );
     await expectNoViolations(container);
   });
 
   it('an empty table, whose empty state is inside the grid', async () => {
     const { container } = render(<Table caption="Queue" columns={columns} rows={[]} rowKey={(row) => row.id} />);
+    await expectNoViolations(container);
+  });
+
+  it('a tile, which is a whole-surface target rather than a card with a link in it', async () => {
+    const { container } = render(
+      <TileGrid>
+        <Tile title="Access and accounts" description="Passwords, permissions, joining a team" href="/catalogue/access" />
+        <Tile title="Devices and equipment" description="Laptops, phones, screens, anything that plugs in" href="/catalogue/devices" />
+        <Tile title="Something else" description="Tell us in your own words and we will route it" href="/catalogue" />
+      </TileGrid>,
+    );
+    await expectNoViolations(container);
+  });
+
+  it('a tile with a decorative icon, which must not be announced twice', async () => {
+    const { container } = render(<Tile title="New request" description="Start here" icon={<span>+</span>} href="/new" />);
+    await expectNoViolations(container);
+  });
+
+  it('a tile that acts rather than navigates, so it is a button', async () => {
+    const { container } = render(<Tile title="Dictate a request" onClick={() => undefined} />);
+    await expectNoViolations(container);
+  });
+
+  it('metrics, including the tones that must not carry the meaning alone', async () => {
+    const { container } = render(
+      <MetricGrid>
+        <Metric label="Open tickets" value="128" note="12 more than yesterday" tone="bad" />
+        <Metric label="Breaching SLA" value="3" note="Two fewer than yesterday" tone="good" />
+        <Metric label="Unassigned" value="7" note="Longest waiting 2 hours" />
+        <Metric label="Awaiting approval" value="4" href="/approvals" />
+      </MetricGrid>,
+    );
     await expectNoViolations(container);
   });
 

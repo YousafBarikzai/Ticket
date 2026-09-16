@@ -9,5 +9,5 @@ import { ThemeProvider } from '@itsm/ui';
  * own means the root layout stays one.
  */
 export function Chrome({ children }: { children: ReactNode }): ReactNode {
-  return <ThemeProvider injectStyles={false}>{children}</ThemeProvider>;
+  return <ThemeProvider injectStyles={false} storageKey="itsm-theme">{children}</ThemeProvider>;
 }

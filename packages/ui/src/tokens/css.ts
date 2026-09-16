@@ -20,6 +20,7 @@ import {
   elevation,
   focusRing,
   fontFamily,
+  lift,
   fontSize,
   fontWeight,
   letterSpacing,
@@ -83,6 +84,7 @@ export const cssVar = {
   scrim: (): string => ref('colour-scrim'),
   space: (token: SpacingToken): string => ref(`space-${token}`),
   radius: (token: RadiusToken): string => ref(`radius-${token}`),
+  lift: (token: 'sm' | 'md'): string => ref(`lift-${token}`),
   fontSize: (token: FontSizeToken): string => ref(`font-size-${token}`),
   fontWeight: (token: FontWeightToken): string => ref(`font-weight-${token}`),
   lineHeight: (token: LineHeightToken): string => ref(`line-height-${token}`),
@@ -107,6 +109,7 @@ export function structuralVariables(): Record<string, string> {
     vars[`${variablePrefix}-radius-${token}`] = token === 'pill' ? `${value}px` : rem(value);
   }
   for (const [token, value] of Object.entries(borderWidth)) vars[`${variablePrefix}-border-${token}`] = `${value}px`;
+  for (const [token, value] of Object.entries(lift)) vars[`${variablePrefix}-lift-${token}`] = `${value}px`;
   for (const [token, value] of Object.entries(controlHeight)) {
     vars[`${variablePrefix}-control-height-${token}`] = rem(value);
   }
@@ -154,7 +157,7 @@ export function themeVariables(theme: ThemeName): Record<string, string> {
 
   // The colour scheme keyword makes the browser's own UI — scrollbars, form
   // controls we do not skin, the caret — follow the theme.
-  vars['color-scheme'] = theme === 'dark' ? 'dark' : 'light';
+  vars['color-scheme'] = theme === 'dark' || theme === 'apple-dark' ? 'dark' : 'light';
 
   return vars;
 }
@@ -180,19 +183,26 @@ export function renderTokenStylesheet(): string {
 
   sections.push(`:root {\n${Object.entries(structuralVariables()).map(([n, v]) => `  ${n}: ${v};`).join('\n')}\n}`);
 
-  // Light is the default so that a document with no attribute and no OS
-  // preference still renders a complete theme.
-  sections.push(block(`:root, ${themeSelector('light')}`, themeVariables('light')));
+  // `apple` is the default so that a document with no attribute and no OS
+  // preference still renders a complete theme. The older `light`, `dark` and
+  // `high-contrast` themes keep their own blocks and stay selectable — the
+  // Apple theme is a layer over this system rather than a replacement for it,
+  // and a tenant that had pinned a theme keeps the one it pinned.
+  sections.push(block(`:root, ${themeSelector('apple')}`, themeVariables('apple')));
 
   for (const theme of themeNames) {
-    if (theme === 'light') continue;
+    if (theme === 'apple') continue;
     sections.push(block(themeSelector(theme), themeVariables(theme)));
   }
 
   // OS preferences apply only where the app has not pinned a theme, so an
   // explicit choice in the user's profile always wins.
   sections.push(
-    `@media (prefers-color-scheme: dark) {\n${block(`:root:not([${themeAttribute}])`, themeVariables('dark'), '  ')}\n}`,
+    `@media (prefers-color-scheme: dark) {\n${block(
+      `:root:not([${themeAttribute}])`,
+      themeVariables('apple-dark'),
+      '  ',
+    )}\n}`,
   );
   sections.push(
     `@media (prefers-contrast: more) {\n${block(

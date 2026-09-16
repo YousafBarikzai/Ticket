@@ -41,7 +41,7 @@ describe('WCAG 2.2 AA contrast audit', () => {
   const results = auditAllThemes();
 
   it('covers every theme and a meaningful number of pairings', () => {
-    expect(themeNames).toHaveLength(3);
+    expect(themeNames).toHaveLength(5);
     expect(contrastContract().length).toBeGreaterThan(50);
     expect(results).toHaveLength(contrastContract().length * themeNames.length);
   });

@@ -1,346 +1,340 @@
 /*
- * The portal's own layout.
+ * The administration console's own layout.
  *
- * Arrangement only: colour, spacing, type and radii come from the design
- * system's custom properties, which is what keeps this app in step with the
- * workbench when a token changes. Logical properties throughout, so the
- * right-to-left locales mirror rather than needing a second stylesheet.
+ * This file used to be a copy of the portal's stylesheet — the same `65ch`
+ * measure, the same `.itsm-Home` and `.itsm-Approvals` rules for screens that
+ * do not exist here — and not one rule in it matched a class this app renders.
+ * Every `.itsm-Admin__*` element was falling back to a browser default, which
+ * is why the console looked untouched by a theme that was already applied to
+ * it: the tokens were arriving and nothing was spending them.
  *
- * One measurement runs through everything here: `65ch`. The portal is read,
- * not scanned — a person is trying to understand what is happening to their
- * request — and a line longer than about seventy characters is where the eye
- * starts losing its place on the return sweep.
+ * Arrangement only, as in the other two apps. Colour, spacing, type, radii and
+ * the lift on hover all come from the design system's custom properties, so a
+ * token change reaches all three. Logical properties throughout, because the
+ * product ships in right-to-left locales and a stylesheet written in `left`
+ * and `right` has to be rewritten rather than translated.
+ *
+ * The measure is wider than the portal's `65ch` and deliberately so. The
+ * portal is *read* — somebody is following what happened to their request. A
+ * console is *scanned*: it is tables of keys, statuses and permissions, and a
+ * table forced to two thirds of the window wraps every row it should not.
  */
 
-.itsm-Page {
+.itsm-Admin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
   margin-inline: auto;
-  max-inline-size: 65ch;
+  max-inline-size: 90rem;
   padding-inline: var(--itsm-space-md);
 }
 
-.itsm-Page__heading {
+.itsm-Admin__head h1 {
   font-size: var(--itsm-font-size-2xl);
   font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: -0.01em;
   margin-block: var(--itsm-space-sm) var(--itsm-space-2xs);
 }
 
-.itsm-Page__lede {
+.itsm-Admin__lede {
   color: var(--itsm-colour-text-secondary);
-  margin-block-end: var(--itsm-space-lg);
-}
-
-.itsm-Page__footnote {
-  margin-block-start: var(--itsm-space-lg);
-}
-
-/* ---- Home --------------------------------------------------------------- */
-
-.itsm-Home {
-  margin-inline: auto;
-  max-inline-size: 65ch;
-  padding-inline: var(--itsm-space-md);
-}
-
-.itsm-Home__heading {
-  font-size: var(--itsm-font-size-3xl);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: var(--itsm-space-lg) var(--itsm-space-md);
+  margin: 0;
+  max-inline-size: 70ch;
 }
 
 /*
- * The two things somebody came to do, side by side on anything wider than a
- * phone and stacked below it — in that order, because "something is broken"
- * is the more urgent of the two and should be first on the small screen.
+ * The landing grid. `auto-fill` rather than a fixed column count: the console
+ * is opened on a laptop beside a support queue as often as on a full screen,
+ * and a three-column grid that never reflows is a three-column grid with a
+ * horizontal scrollbar.
  */
-.itsm-Home__actions {
+.itsm-Admin__sections {
   display: grid;
-  gap: var(--itsm-space-sm);
-  grid-template-columns: 1fr;
-  margin-block-end: var(--itsm-space-xl);
-}
-
-@media (min-width: 40rem) {
-  .itsm-Home__actions {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.itsm-Home__cta {
-  display: inline-block;
-  font-weight: var(--itsm-font-weight-medium);
-}
-
-.itsm-Home__waiting,
-.itsm-Home__recent {
-  margin-block-end: var(--itsm-space-xl);
-}
-
-.itsm-Home__waiting h2,
-.itsm-Home__recent h2 {
-  font-size: var(--itsm-font-size-lg);
-  font-weight: var(--itsm-font-weight-semibold);
-}
-
-.itsm-Home__waiting ul,
-.itsm-Home__recent ul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Home__waiting li,
-.itsm-Home__recent li {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Home__meta,
-.itsm-Home__empty {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-}
-
-/* ---- Catalogue ---------------------------------------------------------- */
-
-.itsm-Catalogue__group {
-  margin-block-end: var(--itsm-space-lg);
-}
-
-.itsm-Catalogue__items {
-  display: grid;
-  gap: var(--itsm-space-sm);
-  grid-template-columns: 1fr;
-}
-
-@media (min-width: 40rem) {
-  .itsm-Catalogue__items {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-/* ---- Tickets ------------------------------------------------------------ */
-
-.itsm-Tickets {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Tickets__row {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  border-radius: var(--itsm-radius-md);
-  padding: var(--itsm-space-sm);
-}
-
-/*
- * The one row on the page that is somebody's to act on. The border says so as
- * well as the badge and the sentence, because a person scanning for "which of
- * these is mine to do" reads the shape before the words.
- */
-.itsm-Tickets__row[data-needs-you='true'] {
-  border-color: var(--itsm-colour-warning-border);
-  border-inline-start-width: var(--itsm-border-thick);
-}
-
-.itsm-Tickets__title {
-  font-weight: var(--itsm-font-weight-medium);
-}
-
-.itsm-Tickets__meta {
-  align-items: baseline;
-  color: var(--itsm-colour-text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: var(--itsm-font-size-sm);
-  gap: var(--itsm-space-2xs);
-  margin-block: var(--itsm-space-3xs);
-}
-
-.itsm-Tickets__number {
-  font-family: var(--itsm-font-family-mono);
-}
-
-.itsm-Tickets__detail {
-  margin: 0;
-}
-
-/* ---- One ticket --------------------------------------------------------- */
-
-.itsm-Ticket__raised {
-  background: var(--itsm-colour-success-subtle);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-success-subtleText);
-  padding: var(--itsm-space-sm);
-}
-
-.itsm-Ticket__number {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-  margin-block-end: 0;
-}
-
-.itsm-Ticket__state {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Ticket__description {
-  border-inline-start: var(--itsm-border-thick) solid var(--itsm-colour-border-subtle);
-  color: var(--itsm-colour-text-secondary);
-  margin-block: var(--itsm-space-md);
-  padding-inline-start: var(--itsm-space-sm);
-  white-space: pre-wrap;
-}
-
-.itsm-Ticket__historyHeading,
-.itsm-Article h2 {
-  font-size: var(--itsm-font-size-lg);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block-start: var(--itsm-space-xl);
-}
-
-/* ---- Forms and replies -------------------------------------------------- */
-
-.itsm-Report,
-.itsm-Request,
-.itsm-Reply,
-.itsm-Decision {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
-}
-
-.itsm-Reply {
-  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  margin-block-start: var(--itsm-space-lg);
-  padding-block-start: var(--itsm-space-md);
-}
-
-.itsm-Reply__actions,
-.itsm-Decision__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Reply__closed,
-.itsm-Request__noForm {
-  color: var(--itsm-colour-text-secondary);
-}
-
-.itsm-Report__error,
-.itsm-Request__error,
-.itsm-Reply__error,
-.itsm-Decision__error {
-  color: var(--itsm-colour-danger-subtleText);
-}
-
-/* ---- Approvals ---------------------------------------------------------- */
-
-.itsm-Approvals {
-  display: flex;
-  flex-direction: column;
   gap: var(--itsm-space-md);
-  list-style: none;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+
+.itsm-Admin__sections h2 {
+  font-size: var(--itsm-font-size-lg);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin: 0 0 var(--itsm-space-2xs);
+}
+
+.itsm-Admin__sections p {
+  color: var(--itsm-colour-text-secondary);
   margin: 0;
-  padding: 0;
 }
 
-.itsm-Approvals__row {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  border-radius: var(--itsm-radius-md);
-  padding: var(--itsm-space-sm);
+.itsm-Admin__groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
 }
 
-.itsm-Approvals__what {
+.itsm-Admin__groups h3 {
   font-size: var(--itsm-font-size-md);
   font-weight: var(--itsm-font-weight-semibold);
-  margin: 0;
+  margin: 0 0 var(--itsm-space-2xs);
+  text-transform: capitalize;
 }
 
-.itsm-Approvals__meta {
-  color: var(--itsm-colour-text-muted);
+/*
+ * The two closing notes every read-only screen carries: what this screen
+ * cannot do, and what the account may not see. Set apart from the content
+ * above rather than styled as a warning — neither is an error, and an amber
+ * panel at the foot of every page teaches people to ignore amber panels.
+ */
+.itsm-Admin__note,
+.itsm-Admin__withheld {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  color: var(--itsm-colour-text-secondary);
+  padding-block-start: var(--itsm-space-md);
+}
+
+.itsm-Admin__note h2,
+.itsm-Admin__withheld h2 {
   font-size: var(--itsm-font-size-sm);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--itsm-space-2xs);
+  text-transform: uppercase;
 }
 
-/* ---- Search and articles ------------------------------------------------ */
-
-.itsm-Search {
-  align-items: flex-end;
-  display: flex;
-  gap: var(--itsm-space-2xs);
-  margin-block-end: var(--itsm-space-lg);
+.itsm-Admin__note p {
+  margin: 0;
+  max-inline-size: 70ch;
 }
 
-.itsm-Search > .itsm-Field {
-  flex: 1;
-}
-
-.itsm-Search__degraded {
-  background: var(--itsm-colour-warning-subtle);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-warning-subtleText);
-  padding: var(--itsm-space-xs);
-}
-
-.itsm-Search__results {
+.itsm-Admin__withheld ul {
   display: flex;
   flex-direction: column;
-  gap: var(--itsm-space-sm);
+  gap: var(--itsm-space-3xs);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.itsm-Search__snippet {
-  color: var(--itsm-colour-text-secondary);
+.itsm-Admin__error {
+  color: var(--itsm-colour-danger-subtleText);
   margin: 0;
 }
 
-.itsm-Article__escape {
-  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  color: var(--itsm-colour-text-secondary);
-  margin-block-start: var(--itsm-space-xl);
-  padding-block-start: var(--itsm-space-md);
+/* ---- Panels -------------------------------------------------------------- */
+
+/*
+ * One list on a screen that shows several. The heading carries the weight and
+ * the panel itself has no border: six bordered boxes down a page is six boxes
+ * competing with the tables inside them, which are the thing worth looking at.
+ */
+.itsm-Panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
 }
 
-.itsm-Feedback {
+.itsm-Panel__title {
+  font-size: var(--itsm-font-size-lg);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin: 0;
+}
+
+.itsm-Panel__lede {
+  color: var(--itsm-colour-text-secondary);
+  margin: 0;
+  max-inline-size: 70ch;
+}
+
+/* ---- Filters ------------------------------------------------------------- */
+
+/*
+ * Links, not controls. A server component that filters on its own search
+ * parameters needs no JavaScript, and the current one is marked with
+ * `aria-current` rather than colour alone (SC 1.4.1).
+ */
+.itsm-Filters {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: var(--itsm-space-2xs);
-  margin-block-start: var(--itsm-space-lg);
 }
 
-.itsm-Feedback textarea {
-  flex-basis: 100%;
+.itsm-Filters__label {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
 }
 
-/* ---- Sign in ------------------------------------------------------------ */
+.itsm-Filters__item {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-pill);
+  color: var(--itsm-colour-text-secondary);
+  display: inline-block;
+  padding: var(--itsm-space-3xs) var(--itsm-space-sm);
+  text-decoration: none;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard),
+    color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+.itsm-Filters__item:hover {
+  background: var(--itsm-colour-surface-hover);
+  color: var(--itsm-colour-text-primary);
+}
+
+.itsm-Filters__item[aria-current='page'] {
+  background: var(--itsm-colour-brand-solid);
+  border-color: transparent;
+  color: var(--itsm-colour-brand-solidText);
+}
+
+.itsm-Filters .itsm-Input {
+  inline-size: auto;
+  min-inline-size: 16rem;
+}
+
+/* ---- Builders ------------------------------------------------------------ */
+
+/*
+ * The editors the console already had. Shared classes across four of them
+ * because they are the same shape — a stack of fields, a key preview, an
+ * error and a confirmation — and four near-identical blocks would drift.
+ */
+.itsm-FieldEditor {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md);
+}
+
+/*
+ * The key a name will produce, shown before it is saved. A key is permanent
+ * and a name is not, and somebody who sees `whatPeopleCanAskFor` appear as
+ * they type stops and reconsiders the name.
+ */
+.itsm-FieldEditor__key {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
+  margin: 0;
+}
+
+.itsm-FieldEditor__key code {
+  background: var(--itsm-colour-surface-sunken);
+  border-radius: var(--itsm-radius-sm);
+  padding: 0 var(--itsm-space-3xs);
+}
+
+.itsm-FieldEditor__error {
+  color: var(--itsm-colour-danger-subtleText);
+  margin: 0;
+}
+
+.itsm-FieldEditor__done {
+  color: var(--itsm-colour-success-subtleText);
+  margin: 0;
+}
+
+.itsm-RuleEditor__group {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: var(--itsm-space-sm);
+}
+
+.itsm-RuleEditor__group legend {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
+  font-weight: var(--itsm-font-weight-semibold);
+  padding-inline: var(--itsm-space-3xs);
+}
+
+/*
+ * One condition or one action: several controls that read as a sentence. They
+ * wrap rather than scroll, because the last control in the row is usually the
+ * value and it is the one somebody is typing into.
+ */
+.itsm-RuleEditor__row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-RuleEditor__result {
+  background: var(--itsm-colour-surface-sunken);
+  border-radius: var(--itsm-radius-md);
+  padding: var(--itsm-space-sm);
+}
+
+.itsm-FlagList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-FlagList__item {
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  padding-block-end: var(--itsm-space-sm);
+}
+
+.itsm-FlagList__item:last-child {
+  border-block-end: none;
+  padding-block-end: 0;
+}
+
+.itsm-FlagList__error {
+  color: var(--itsm-colour-danger-subtleText);
+  margin: var(--itsm-space-3xs) 0 0;
+}
+
+/*
+ * Impact down the side, urgency across the top. A grid rather than a table
+ * because every cell is a control; the axes are labelled in the markup and
+ * the whole thing is announced by the visually hidden caption above it.
+ */
+.itsm-PriorityMatrix {
+  overflow-x: auto;
+}
+
+.itsm-PriorityMatrix table {
+  border-collapse: collapse;
+}
+
+.itsm-PriorityMatrix th,
+.itsm-PriorityMatrix td {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  padding: var(--itsm-space-3xs);
+  text-align: start;
+}
+
+.itsm-PriorityMatrix th {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+/* ---- Sign in ------------------------------------------------------------- */
 
 .itsm-SignIn {
-  margin: var(--itsm-space-3xl) auto;
-  max-inline-size: 26rem;
-  padding-inline: var(--itsm-space-md);
+  margin-inline: auto;
+  max-inline-size: 28rem;
+  padding: var(--itsm-space-xl) var(--itsm-space-md);
 }
 
 .itsm-SignIn__heading {
   font-size: var(--itsm-font-size-2xl);
   font-weight: var(--itsm-font-weight-semibold);
+  margin-block: 0 var(--itsm-space-2xs);
 }
 
 .itsm-SignIn__note {
   color: var(--itsm-colour-text-secondary);
+  margin-block-end: var(--itsm-space-lg);
 }
 
 .itsm-SignIn__error {
@@ -350,18 +344,24 @@
 .itsm-SignIn__form {
   display: flex;
   flex-direction: column;
-  gap: var(--itsm-space-2xs);
+  gap: var(--itsm-space-sm);
 }
 
 .itsm-SignIn__form label {
-  font-weight: var(--itsm-font-weight-medium);
-  margin-block-start: var(--itsm-space-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
 }
 
-/* ---- Shell extras ------------------------------------------------------- */
+/* ---- Shell extras -------------------------------------------------------- */
 
+/*
+ * Which desk this is. It sits in the brand, quietly, and it is the single
+ * most important word on the page: the console for the wrong tenant looks
+ * exactly like the console for the right one.
+ */
 .itsm-AppShell__tenant {
-  color: var(--itsm-colour-text-muted);
+  color: var(--itsm-colour-text-secondary);
   font-weight: var(--itsm-font-weight-regular);
 }
 
@@ -371,67 +371,5 @@
 }
 
 .itsm-AppShell__signout {
-  display: inline;
-}
-
-/* ---- Offline and the outbox (doc 14 §5) --------------------------------- */
-
-.itsm-Outbox {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-warning-border);
-  border-radius: var(--itsm-radius-md);
-  background: var(--itsm-colour-warning-subtle);
-  color: var(--itsm-colour-warning-subtleText);
-  margin-block-end: var(--itsm-space-md);
-  padding: var(--itsm-space-sm);
-}
-
-.itsm-Outbox__offline,
-.itsm-Outbox__pending {
-  margin: 0;
-}
-
-.itsm-Outbox__pending {
-  margin-block-start: var(--itsm-space-2xs);
-}
-
-.itsm-Outbox__heading {
-  font-size: var(--itsm-font-size-md);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: var(--itsm-space-sm) var(--itsm-space-2xs);
-}
-
-.itsm-Outbox__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Outbox__item {
-  display: grid;
-  gap: var(--itsm-space-3xs);
-}
-
-.itsm-Outbox__what {
-  font-weight: var(--itsm-font-weight-medium);
-}
-
-.itsm-Outbox__why {
-  font-size: var(--itsm-font-size-sm);
-}
-
-.itsm-Outbox__actions {
-  display: flex;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Report__queued,
-.itsm-Reply__queued,
-.itsm-Decision__queued {
-  background: var(--itsm-colour-info-subtle);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-info-subtleText);
-  padding: var(--itsm-space-sm);
+  margin-inline-start: var(--itsm-space-2xs);
 }

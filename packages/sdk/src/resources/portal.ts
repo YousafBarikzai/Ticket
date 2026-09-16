@@ -124,9 +124,40 @@ export const queueable = {
   },
 } as const;
 
+
+/** One channel's settings for the signed-in person. */
+export interface NotificationPreference {
+  channel: string;
+  enabled: boolean;
+  quietHours: { start: string; end: string } | null;
+  digestMode: string;
+}
+
+/** `channel` is the key; everything else the schema defaults. */
+export interface NotificationPreferenceInput {
+  channel: 'inapp' | 'email' | 'push' | 'sms';
+  enabled?: boolean;
+  quietHours?: { start: string; end: string } | null;
+  digestMode?: 'immediate' | 'hourly' | 'daily';
+}
+
 export function portal(client: Client) {
   return {
     me: (): Promise<Me> => client.request<Me>('/api/v1/me'),
+
+    /**
+     * What this person has asked to be told about, and how.
+     *
+     * `/me/...` rather than `/users/:id/...`: the second path is the same
+     * service checked as the administrative act it is, and somebody reading
+     * their own profile has no business being asked for a permission over
+     * other people.
+     */
+    notificationPreferences: (): Promise<NotificationPreference[]> =>
+      client.request<{ data: NotificationPreference[] }>('/api/v1/me/notification-preferences').then((body) => body.data),
+
+    setNotificationPreference: (preference: NotificationPreferenceInput): Promise<NotificationPreference> =>
+      client.request<NotificationPreference>('/api/v1/me/notification-preferences', { method: 'PUT', body: preference }),
 
     // ---- Raising something -------------------------------------------------
 

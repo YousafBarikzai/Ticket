@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Ticket } from '@itsm/sdk';
-import { Badge, Button, EmptyState, Table, type TableColumn } from '@itsm/ui';
+import { Badge, Button, EmptyState, InteractiveTable, type TableColumn } from '@itsm/ui';
 import { useChangeStream } from '../client/useChangeStream.js';
 import { ageOf, categoryIntent, priorityEmphasis, priorityIntent, stateLabel, typeLabel } from '../queue/presentation.js';
 
@@ -145,7 +145,7 @@ export function QueueTable({ tickets, caption, emptyTitle, emptyDescription, wat
 
   return (
     <>
-      <Table
+      <InteractiveTable
         caption={caption}
         captionHidden
         columns={columns}

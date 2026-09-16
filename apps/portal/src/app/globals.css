@@ -48,26 +48,17 @@
 }
 
 /*
- * The two things somebody came to do, side by side on anything wider than a
- * phone and stacked below it — in that order, because "something is broken"
- * is the more urgent of the two and should be first on the small screen.
+ * The two things somebody came to do. The columns come from `.itsm-TileGrid`
+ * in the design system, which reflows on its own at the width the tiles stop
+ * fitting — this only adds the space beneath. Repeating the columns here would
+ * mean a tile that changed size needed two files edited to keep working, and
+ * one of them would be forgotten.
+ *
+ * Source order still matters and is unchanged: "something is broken" is the
+ * more urgent of the two and is first, which is what a single column shows.
  */
 .itsm-Home__actions {
-  display: grid;
-  gap: var(--itsm-space-sm);
-  grid-template-columns: 1fr;
   margin-block-end: var(--itsm-space-xl);
-}
-
-@media (min-width: 40rem) {
-  .itsm-Home__actions {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.itsm-Home__cta {
-  display: inline-block;
-  font-weight: var(--itsm-font-weight-medium);
 }
 
 .itsm-Home__waiting,
@@ -109,18 +100,6 @@
 
 .itsm-Catalogue__group {
   margin-block-end: var(--itsm-space-lg);
-}
-
-.itsm-Catalogue__items {
-  display: grid;
-  gap: var(--itsm-space-sm);
-  grid-template-columns: 1fr;
-}
-
-@media (min-width: 40rem) {
-  .itsm-Catalogue__items {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 
 /* ---- Tickets ------------------------------------------------------------ */
@@ -434,4 +413,96 @@
   border-radius: var(--itsm-radius-md);
   color: var(--itsm-colour-info-subtleText);
   padding: var(--itsm-space-sm);
+}
+
+/* ---- Profile ------------------------------------------------------------ */
+
+/*
+ * Four cards stacked. Not a two-column grid at any width: the page is read top
+ * to bottom once, when somebody has come to change one thing, and a second
+ * column only moves that thing further from where they are looking.
+ */
+.itsm-Profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+/*
+ * A description list, not a table. The pairs have no columns to compare across
+ * and no order to sort by, and a screen reader announcing "table, 5 rows,
+ * 2 columns" for five facts about you is a worse description than "list".
+ */
+.itsm-Details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+}
+
+.itsm-Details__row {
+  display: grid;
+  gap: var(--itsm-space-2xs);
+  grid-template-columns: minmax(8rem, 1fr) 2fr;
+}
+
+.itsm-Details__row dt {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.itsm-Details__row dd {
+  margin: 0;
+}
+
+.itsm-Chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Prefs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.itsm-Prefs__channel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Prefs__channel + .itsm-Prefs__channel {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  padding-block-start: var(--itsm-space-md);
+}
+
+/*
+ * The detail is indented under its switch so that the switch stays the thing
+ * you read first — everything inside only exists while the channel is on.
+ */
+.itsm-Prefs__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin-inline-start: var(--itsm-space-lg);
+}
+
+.itsm-Prefs__window {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-sm);
+}
+
+.itsm-Prefs__note,
+.itsm-Prefs__saved {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-font-size-sm);
+}
+
+.itsm-Prefs__error {
+  color: var(--itsm-colour-danger-subtleText);
 }
