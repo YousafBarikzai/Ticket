@@ -91,7 +91,15 @@ export async function startApp(): Promise<FastifyInstance> {
   // are required before the first event arrives.
   await outboxPublisher.syncConsumerRegistry();
 
-  await app.listen({ port: config.API_PORT, host: '0.0.0.0' });
+  // `::` rather than `0.0.0.0`, and the difference is not cosmetic: `0.0.0.0`
+  // binds IPv4 only, and Railway's private network — which its edge proxy and
+  // its health checks both reach a container over — is IPv6. A process bound
+  // to `0.0.0.0` there is a process nothing can connect to, on any port.
+  //
+  // Node binds dual-stack by default, so `::` accepts IPv4 as well and every
+  // other way this runs (docker compose, a laptop, the walking skeleton on
+  // 127.0.0.1) is unaffected.
+  await app.listen({ port: config.API_PORT, host: '::' });
   logger.info('api listening', { port: config.API_PORT });
 
   const shutdown = async (signal: string): Promise<void> => {

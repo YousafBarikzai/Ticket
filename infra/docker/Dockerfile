@@ -154,7 +154,13 @@ FROM runtime-base AS web-runtime
 ENV NODE_ENV=production
 # Next binds to localhost unless told otherwise, and a container that binds to
 # localhost is a container nothing can reach.
-ENV HOSTNAME=0.0.0.0
+#
+# `::` rather than `0.0.0.0` for the same reason the API uses it: `0.0.0.0` is
+# IPv4 only, and Railway's private network — the one its edge proxy reaches a
+# container over — is IPv6. Bound to `0.0.0.0` these answered `Application
+# failed to respond` while Railway reported them Online, which is exactly what
+# an unreachable container that is running perfectly well looks like.
+ENV HOSTNAME=::
 # The same removal as the API image, for the same reason: npm ships inside the
 # Node image with its own bundled dependencies, none of which anything here
 # executes, and every one of which a scanner will find.
