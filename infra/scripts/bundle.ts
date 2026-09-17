@@ -43,6 +43,11 @@ const targets = [
   // migration (services.json, phase 1). It is bundled for the same reason: the
   // image it runs in has no package manager to run `pnpm seed` with.
   { entry: 'infra/scripts/seed.ts', out: 'dist/seed.js' },
+  // The first tenant and the first administrator, from the same image as the
+  // migration (services.json, phase 1). Separate from the seed because it must
+  // never delete anything, and separate from the migration because it connects
+  // as the application role rather than `app_owner`.
+  { entry: 'infra/scripts/bootstrap.ts', out: 'dist/bootstrap.js' },
 ];
 
 await rm(resolve(root, 'dist'), { recursive: true, force: true });
