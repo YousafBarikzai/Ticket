@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { credentialsFrom, explainRefusal, faultIn, hostFor, hostsFor, imageFor, phasesOf, readCatalogue, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
+import { describe, expect, it, vi } from 'vitest';
+import { callApi, credentialsFrom, explainRefusal, faultIn, hostFor, hostsFor, imageFor, phasesOf, readCatalogue, operationName, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
 import { isPreview } from '../railway-teardown.js';
 
 /**
@@ -343,5 +343,62 @@ describe('the credentials, checked before the first call', () => {
     // A guess bolted onto an error nobody has diagnosed is how a wrong cause
     // becomes the first thing the next person reads.
     expect(explainRefusal('Not Authorized')).toBe('Not Authorized');
+  });
+});
+
+describe('when Railway does not answer', () => {
+  /*
+   * A real deploy, run 35243639500: phase 1 printed `fetch failed` and exited,
+   * having updated three of the four workers. Two words, no service named, an
+   * environment left half on the new image and half on the old.
+   */
+
+  it('names the call that failed, because the log is all anybody gets', () => {
+    expect(operationName('\n  mutation SetImage($input: X!) {')).toBe('SetImage');
+    expect(operationName('\n  query Environments($projectId: String!) {')).toBe('Environments');
+    expect(operationName('{ nothing }')).toBe('an unnamed operation');
+  });
+
+  it('retries a call that can be sent twice', async () => {
+    let calls = 0;
+    const fetcher = vi.fn(async () => {
+      calls += 1;
+      if (calls < 3) throw new TypeError('fetch failed');
+      return { ok: true, status: 200, json: async () => ({ data: { ok: true } }) } as Response;
+    });
+    vi.stubGlobal('fetch', fetcher);
+    vi.useFakeTimers();
+    const promise = callApi('mutation SetImage($x: Int) { a }', {}, 'tok');
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toEqual({ ok: true });
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    expect(calls).toBe(3);
+  });
+
+  it('never retries a create, because twice is two services rather than one', async () => {
+    // The reason this is a list and not a blanket retry. A connection that
+    // fails gives no answer, and no answer does not mean nothing happened —
+    // so a second CreateService is a duplicate with the same name.
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls += 1;
+      throw new TypeError('fetch failed');
+    }));
+    await expect(callApi('mutation CreateService($x: Int) { a }', {}, 'tok')).rejects.toThrow(
+      /unreachable during CreateService: fetch failed/,
+    );
+    vi.unstubAllGlobals();
+    expect(calls).toBe(1);
+  });
+
+  it('does not retry a refusal, which would fail identically four times', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ errors: [{ message: 'Project not found' }] }),
+    }) as Response));
+    await expect(callApi('query Environments($x: Int) { a }', {}, 'tok')).rejects.toThrow(/Project not found/);
+    vi.unstubAllGlobals();
   });
 });

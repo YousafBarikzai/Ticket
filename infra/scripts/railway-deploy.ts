@@ -183,20 +183,75 @@ interface GraphQlError {
   message: string;
 }
 
+/** `mutation SetImage(...)` → `SetImage`. Used to say *which* call failed. */
+export function operationName(query: string): string {
+  return /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? 'an unnamed operation';
+}
+
+/**
+ * The operations it is safe to send twice.
+ *
+ * A connection that fails gives no answer, and no answer does not mean nothing
+ * happened — the request may have been received and applied. So retrying is
+ * only safe where sending the same call twice is the same as sending it once.
+ *
+ * The two reads are trivially safe. `SetImage` and `SetVariables` set a value
+ * rather than appending one. `Redeploy` asks for a deployment of the current
+ * configuration; a duplicate is a wasted deploy, not a wrong one.
+ *
+ * The three creates are deliberately absent, and this is the whole reason for
+ * a list rather than a blanket retry: `CreateService` sent twice is two
+ * services with the same name, and `CreateServiceDomain` sent twice is a second
+ * hostname the environment does not know it has. A duplicate there is worse
+ * than the failure it is trying to paper over.
+ */
+const RETRYABLE = new Set(['Environments', 'Domains', 'SetImage', 'SetVariables', 'Redeploy']);
+
+const NETWORK_ATTEMPTS = 4;
+
 export async function callApi<T>(query: string, variables: Record<string, unknown>, token: string): Promise<T> {
-  const response = await fetch(API, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`Railway API answered ${response.status}: ${await response.text()}`);
-  const body = (await response.json()) as { data?: T; errors?: GraphQlError[] };
-  // GraphQL answers 200 with an `errors` array, so a status check alone would
-  // report a failed deploy as a successful one.
-  if (body.errors?.length) throw new Error(`Railway API refused the call: ${body.errors.map((e) => e.message).join('; ')}`);
-  if (!body.data) throw new Error('Railway API returned no data');
-  return body.data;
+  const what = operationName(query);
+  const attempts = RETRYABLE.has(what) ? NETWORK_ATTEMPTS : 1;
+  let last = 'never answered';
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(API, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ query, variables }),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error: unknown) {
+      // The connection failed, so Railway never answered. Node words this
+      // `fetch failed` and nothing else — which, in the middle of a ten-service
+      // deploy, does not say which service or which call, and that is how a
+      // half-applied environment gets reported in two words.
+      last = error instanceof Error ? error.message : String(error);
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 2_000));
+        continue;
+      }
+      throw new Error(
+        `Railway API unreachable during ${what}${attempts > 1 ? `, after ${attempts} attempts` : ''}: ${last}`,
+      );
+    }
+
+    if (!response.ok) throw new Error(`Railway API answered ${response.status} to ${what}: ${await response.text()}`);
+    const body = (await response.json()) as { data?: T; errors?: GraphQlError[] };
+    // GraphQL answers 200 with an `errors` array, so a status check alone would
+    // report a failed deploy as a successful one.
+    if (body.errors?.length) {
+      throw new Error(`Railway API refused the call: ${body.errors.map((e) => e.message).join('; ')}`);
+    }
+    if (!body.data) throw new Error(`Railway API returned no data for ${what}`);
+    return body.data;
+  }
+
+  // Unreachable: the loop either returns or throws. Here so the type holds
+  // without an assertion that would outlive whatever made it true.
+  throw new Error(`Railway API unreachable during ${what}: ${last}`);
 }
 
 const ENVIRONMENT_QUERY = `
