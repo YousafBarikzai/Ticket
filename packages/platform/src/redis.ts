@@ -6,22 +6,42 @@ import { loadConfig } from './config.js';
  * requirement); the cache connection keeps the default so a cache problem
  * surfaces quickly instead of hanging a request.
  */
+
+/**
+ * What every connection needs, whatever else it sets.
+ *
+ * `family: 0` is the whole of it, and it is not a tuning knob. ioredis
+ * defaults to `family: 4`, so it resolves the host as IPv4 and nothing else —
+ * and a managed Redis is commonly reachable only over an IPv6 private network,
+ * `redis.railway.internal` among them. The client then fails to connect to a
+ * server that is running, listening and correctly addressed.
+ *
+ * `0` means "whichever the name resolves to", which is right everywhere: the
+ * IPv4 address of a local `docker compose` Redis, the IPv6 address of a
+ * managed one, without either being named here.
+ *
+ * This cost an evening in a readiness check that said `redis: failed` while
+ * the host, port, user and password were all correct — because they were, and
+ * the client was never asking for the address they pointed at.
+ */
+const COMMON = { family: 0 } as const;
+
 let cacheClient: Redis | undefined;
 let queueClient: Redis | undefined;
 let subscriberClient: Redis | undefined;
 
 export function cache(): Redis {
-  if (!cacheClient) cacheClient = new Redis(loadConfig().REDIS_URL, { lazyConnect: false, enableOfflineQueue: true });
+  if (!cacheClient) cacheClient = new Redis(loadConfig().REDIS_URL, { ...COMMON, lazyConnect: false, enableOfflineQueue: true });
   return cacheClient;
 }
 
 export function queueConnection(): Redis {
-  if (!queueClient) queueClient = new Redis(loadConfig().REDIS_URL, { maxRetriesPerRequest: null });
+  if (!queueClient) queueClient = new Redis(loadConfig().REDIS_URL, { ...COMMON, maxRetriesPerRequest: null });
   return queueClient;
 }
 
 export function subscriber(): Redis {
-  if (!subscriberClient) subscriberClient = new Redis(loadConfig().REDIS_URL, { maxRetriesPerRequest: null });
+  if (!subscriberClient) subscriberClient = new Redis(loadConfig().REDIS_URL, { ...COMMON, maxRetriesPerRequest: null });
   return subscriberClient;
 }
 
