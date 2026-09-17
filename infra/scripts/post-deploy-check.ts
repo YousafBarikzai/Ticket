@@ -76,12 +76,19 @@ export interface Outcome {
 
 /**
  * A deployment is not up the instant the API returns. Railway pulls an image,
- * starts a container and waits for its own health check, so the first few
- * seconds of 502s mean "not yet" rather than "broken" — and a smoke test that
- * cannot tell those apart is a smoke test that fails every other deploy.
+ * starts a container and waits for its own health check, so the first minutes
+ * of 502s mean "not yet" rather than "broken" — and a smoke test that cannot
+ * tell those apart is a smoke test that fails every other deploy.
+ *
+ * Six minutes, because the first budget here was one and that was guesswork
+ * dressed as a constant. The number to match is Railway's own: the api
+ * service's failed deployment spent **4:53** in `Network > Healthcheck` before
+ * Railway gave up on it. A check that stops at 55 seconds reports a verdict on
+ * a deployment Railway has not finished forming an opinion about, which is not
+ * a slow check, it is a check measuring the wrong thing.
  */
-const ATTEMPTS = 10;
-const GAP_MS = 6_000;
+const ATTEMPTS = 36;
+const GAP_MS = 10_000;
 
 export function readinessDetail(body: unknown): string {
   const checks = (body as { checks?: Record<string, string> } | null)?.checks;

@@ -93,14 +93,14 @@ describe('what it reports', () => {
     expect(outcomes.find((outcome) => outcome.probe.kind === 'live')!.ok).toBe(true);
   });
 
-  it('says how many attempts it made, so a slow start is distinguishable from a broken one', async () => {
+  it('retries for longer than Railway spends deciding, so a slow start is not called broken', async () => {
     vi.useFakeTimers();
     const promise = check({ portal: 'https://portal-x' }, answering(() => 502));
     await vi.runAllTimersAsync();
     const [outcome] = await promise;
     vi.useRealTimers();
     expect(outcome!.ok).toBe(false);
-    expect(outcome!.detail).toMatch(/after 10 attempts: 502/);
+    expect(outcome!.detail).toMatch(/after 36 attempts: 502/);
   });
 });
 
