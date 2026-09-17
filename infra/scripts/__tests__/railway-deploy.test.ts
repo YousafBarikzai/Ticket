@@ -402,3 +402,38 @@ describe('when Railway does not answer', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('telling Railway which port to knock on', () => {
+  /*
+   * The last thing between a working deployment and a reachable one.
+   *
+   * The API's own log read `api listening port: 3000`, 27 modules registered,
+   * database connected — and Railway failed its health check for 4:53 and tore
+   * the container down, because Railway routes and probes `PORT` and nothing
+   * had ever told it that number.
+   */
+
+  it('sets PORT to the port the service actually listens on', () => {
+    const hosts = new Map([['api', 'api-x.up.railway.app']]);
+    expect(variablesFor(named('api'), hosts).PORT).toBe('3000');
+    expect(variablesFor(named('portal'), hosts).PORT).toBe('3200');
+    expect(variablesFor(named('workbench'), hosts).PORT).toBe('3100');
+    expect(variablesFor(named('admin'), hosts).PORT).toBe('3300');
+  });
+
+  it('agrees with the port the domain forwards to, which is the same number', () => {
+    // These come from one field in the catalogue, so they cannot drift — and
+    // this asserts that the deploy keeps reading that one field rather than
+    // growing a second list of ports beside it.
+    for (const service of catalogue.services.filter((one) => one.public)) {
+      expect(variablesFor(service, new Map()).PORT, service.name).toBe(String(service.port));
+    }
+  });
+
+  it('gives a worker no PORT, because it has nothing to listen with', () => {
+    // A worker that advertised a port would be a worker Railway would health
+    // check, and it has no HTTP surface to answer with.
+    expect(variablesFor(named('worker-events'), new Map()).PORT).toBeUndefined();
+    expect(variablesFor(named('migrate'), new Map()).PORT).toBeUndefined();
+  });
+});

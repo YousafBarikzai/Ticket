@@ -160,8 +160,22 @@ change to the index settings, because Meilisearch applies those at write time.
 `railway-deploy.ts` sets the image, the replica count, the region, the health
 check path, the start command for the two jobs that share an image, each
 service's own variables (`WORKER_QUEUES`, `OTEL_SERVICE_NAME`), the origin
-variables derived from `DEPLOY_DOMAIN`, and the public domain of each public
-service.
+variables derived from `DEPLOY_DOMAIN`, the public domain of each public
+service, and `PORT`.
+
+**`PORT` is not redundant with the `port` in the catalogue**, which is the
+mistake it was added to fix. Each service listens on a fixed port of its own —
+the API on 3000, the workbench on 3100 — because they also run under `docker
+compose` and on a laptop, where fixed ports are what make the addresses
+memorable. Railway reads none of that: it routes the public domain and runs
+the health check against `PORT`.
+
+The first deployment where everything else was right is what this cost. The
+API's own log read `api listening port: 3000`, 27 modules registered and the
+database connected, while Railway failed a health check for 4:53 and destroyed
+the container. Nothing was wrong with the application, and neither log said the
+word `port` twice. `PORT` now comes from the same catalogue field the domain's
+target port does, so the two cannot disagree.
 
 It will not set a credential, and that is enforced by a test. `DATABASE_URL`,
 `DATABASE_URL_APP`, `DATABASE_URL_PLATFORM`, `REDIS_URL`, `OIDC_ISSUER`,
