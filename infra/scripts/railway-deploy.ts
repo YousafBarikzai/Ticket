@@ -176,6 +176,24 @@ export function variablesFor(service: ServiceDefinition, hosts: ReadonlyMap<stri
   // both expressed in public terms.
   if (name && apiHost) variables.API_BASE_URL = `https://${apiHost}`;
 
+  /*
+   * The port, told to Railway in the only way Railway reads it.
+   *
+   * Every service here listens on a fixed port of its own — the API on 3000,
+   * the workbench on 3100 — because they are also run by `docker compose` and
+   * by a developer, where fixed ports are what make the addresses memorable.
+   * Railway does not look at that. It routes the public domain and runs the
+   * health check against `PORT`, and a service that listens somewhere else is
+   * a service it cannot reach.
+   *
+   * Which is exactly what the first working deployment looked like: the API's
+   * own log said `api listening port: 3000`, with 27 modules registered and
+   * the database connected, while Railway spent 4:53 failing a health check
+   * and then destroyed it. Nothing was wrong with the application, and nothing
+   * in either log said the word `port` twice.
+   */
+  if (service.port) variables.PORT = String(service.port);
+
   return variables;
 }
 
