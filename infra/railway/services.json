@@ -36,6 +36,16 @@
       "$comment": "Runs to completion before anything else starts. Expand-only (doc 16 \u00a74), as app_owner."
     },
     {
+      "name": "bootstrap",
+      "target": "migrate",
+      "phase": 1,
+      "kind": "job",
+      "public": false,
+      "replicas": 1,
+      "command": "node dist/bootstrap.js",
+      "$comment": "The first tenant and the first administrator, in every environment that is not a preview. Phase 1 rather than alongside the API, because a deployed API whose database has no tenant is a service that answers every request with a refusal. It does nothing at all unless BOOTSTRAP_TENANT_SLUG is set, writes only what is missing and deletes nothing — which is what separates it from `seed`, whose whole design is to drop and rebuild. Same image as the migration, a different entry point and a different credential: it connects as the application role, so its writes are subject to the same row-level security as the product's."
+    },
+    {
       "name": "seed",
       "target": "migrate",
       "phase": 1,
