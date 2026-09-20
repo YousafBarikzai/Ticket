@@ -9,6 +9,37 @@ import { rawBodyPlugin } from './plugins/raw-body.js';
 import { registerRoutes } from './routes/index.js';
 
 /**
+ * A connection string carries a password, and both ioredis and Prisma put the
+ * URL they were handed into some of their messages. `/health/ready` is
+ * unauthenticated — Railway's health check calls it, and so can anyone — so a
+ * reason served from here has to have the credentials taken out of it first.
+ */
+const CREDENTIALS = /\b([a-z][a-z0-9+.-]*):\/\/[^\s@/]*@/gi;
+
+/**
+ * Why a dependency check failed, in a form that is safe to serve publicly.
+ *
+ * The alternative, and what this replaces, is the word `failed`. That is what
+ * the first live deploy reported for an evening while the host, port, user and
+ * password were every one of them correct — because `failed` is the same word
+ * for a wrong password, a name that does not resolve and a refused connection,
+ * and those are three problems with three different fixes. The error object
+ * said which; the only process that had it caught it, reduced it to a boolean
+ * and dropped it, leaving the fault to be guessed at from outside.
+ */
+export function failureDetail(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const safe = raw.replace(CREDENTIALS, (_match, scheme: string) => `${scheme}://***@`);
+  // One line, and bounded: this is a value in a small JSON body that a health
+  // check polls every few seconds, not a log. The first line of an ioredis or
+  // Prisma message is the part that names the fault; what follows it is a
+  // stack, or a link to documentation about the stack.
+  const line = safe.split('\n')[0]?.trim() ?? '';
+  if (line === '') return 'failed';
+  return `failed: ${line.length > 200 ? `${line.slice(0, 197)}...` : line}`;
+}
+
+/**
  * The API process (docs/architecture/03 §1).
  *
  * One Fastify server mounting every module. Building the app separately from
@@ -51,21 +82,21 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.get('/health/live', async () => ({ status: 'ok', uptimeSeconds: Math.round(process.uptime()) }));
 
   app.get('/health/ready', async (_request, reply) => {
-    const checks: Record<string, 'ok' | 'failed'> = {};
+    const checks: Record<string, string> = {};
     try {
       await platformDb().$queryRaw`SELECT 1`;
       checks.database = 'ok';
-    } catch {
-      checks.database = 'failed';
+    } catch (error) {
+      checks.database = failureDetail(error);
     }
     try {
       const { cache } = await import('@itsm/platform');
       await cache().ping();
       checks.redis = 'ok';
-    } catch {
-      checks.redis = 'failed';
+    } catch (error) {
+      checks.redis = failureDetail(error);
     }
-    checks.modules = modules().length > 0 ? 'ok' : 'failed';
+    checks.modules = modules().length > 0 ? 'ok' : 'failed: no module registered';
 
     const ready = Object.values(checks).every((value) => value === 'ok');
     reply.status(ready ? 200 : 503);
