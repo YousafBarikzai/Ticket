@@ -133,12 +133,54 @@ export function partialImportBody(realm: Realm): Record<string, unknown> {
   };
 }
 
+/**
+ * Keys that exist for whoever opens `realm.json`, not for Keycloak.
+ *
+ * Keycloak deserialises a `RealmRepresentation` strictly: a key it does not
+ * know is not ignored, it is a 400 reading
+ * `{"errorMessage":"unable to read contents from stream"}` — which names
+ * neither the key nor the fact that a key is the problem.
+ */
+function isComment(key: string): boolean {
+  return key === '$comment' || key.startsWith('comment.');
+}
+
+/**
+ * The realm as a `RealmRepresentation`, which is less than `realm.json` holds.
+ *
+ * Two things in that file are not part of the representation and have to come
+ * out before it is sent. The `comment.*` keys, which are prose. And
+ * `userProfile`, which is real configuration Keycloak accepts only at
+ * `/admin/realms/{realm}/users/profile` — it is a `UPConfig`, a different
+ * document with a different endpoint, and it is kept beside the realm here
+ * because that is where it is legible, not because Keycloak takes it there.
+ *
+ * Both of them used to go out on the create path, which is the one path that
+ * did not filter. That path only runs when the realm does not exist yet, so
+ * the fault was invisible until the very first deploy of a new environment —
+ * the one occasion where nobody has a working realm to compare against.
+ */
+export function realmBody(realm: Realm): Record<string, unknown> {
+  const { userProfile: _profile, ...rest } = realm as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(rest).filter(([key]) => !isComment(key)));
+}
+
+/**
+ * The declarative user profile, or null when the realm does not declare one.
+ *
+ * It is not decoration. `tenant_id` is declared here, the mapper copies it into
+ * the access token, and `apps/api/src/auth/verify.ts` refuses any token whose
+ * payload lacks it. Drop this and every sign-in fails closed.
+ */
+export function userProfileOf(realm: Realm): Record<string, unknown> | null {
+  const profile = (realm as { userProfile?: Record<string, unknown> }).userProfile;
+  return profile && Object.keys(profile).length > 0 ? profile : null;
+}
+
 /** The realm's own settings, which a partial import does not carry. */
 export function realmSettings(realm: Realm): Record<string, unknown> {
-  const { clients: _clients, clientScopes: _scopes, ...rest } = realm as Record<string, unknown>;
-  // The `$comment` and `comment.*` keys are for whoever opens the file; Keycloak
-  // would either reject them or store them, and neither is wanted.
-  return Object.fromEntries(Object.entries(rest).filter(([key]) => !key.startsWith('comment.') && key !== '$comment'));
+  const { clients: _clients, clientScopes: _scopes, ...rest } = realmBody(realm);
+  return rest;
 }
 
 /**
@@ -173,14 +215,38 @@ async function adminToken(baseUrl: string, clientId: string, clientSecret: strin
   return ((await response.json()) as { access_token: string }).access_token;
 }
 
+/**
+ * The user profile, sent to the endpoint that owns it.
+ *
+ * After the realm either way: creating a realm does not carry it, and a
+ * partial import does not carry it either, so it is the one piece of this
+ * configuration that has to be written on both paths or it is never written
+ * at all.
+ */
+async function applyUserProfile(realm: Realm, baseUrl: string, headers: Record<string, string>): Promise<void> {
+  const profile = userProfileOf(realm);
+  if (!profile) return;
+
+  const response = await fetch(`${baseUrl}/admin/realms/${realm.realm}/users/profile`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(profile),
+  });
+  if (!response.ok) {
+    throw new Error(`could not apply the user profile: ${response.status}${permissionHint(response.status)} ${await response.text()}`);
+  }
+  console.log(`applied the user profile for ${realm.realm}`);
+}
+
 async function apply(realm: Realm, baseUrl: string, token: string): Promise<void> {
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const exists = await fetch(`${baseUrl}/admin/realms/${realm.realm}`, { headers });
 
   if (exists.status === 404) {
-    const created = await fetch(`${baseUrl}/admin/realms`, { method: 'POST', headers, body: JSON.stringify(realm) });
+    const created = await fetch(`${baseUrl}/admin/realms`, { method: 'POST', headers, body: JSON.stringify(realmBody(realm)) });
     if (!created.ok) throw new Error(`could not create the realm: ${created.status}${permissionHint(created.status)} ${await created.text()}`);
     console.log(`created realm ${realm.realm}`);
+    await applyUserProfile(realm, baseUrl, headers);
     return;
   }
   if (!exists.ok) throw new Error(`could not read the realm: ${exists.status}${permissionHint(exists.status)}`);
@@ -198,6 +264,8 @@ async function apply(realm: Realm, baseUrl: string, token: string): Promise<void
     body: JSON.stringify(partialImportBody(realm)),
   });
   if (!imported.ok) throw new Error(`could not import the clients: ${imported.status}${permissionHint(imported.status)} ${await imported.text()}`);
+
+  await applyUserProfile(realm, baseUrl, headers);
   console.log(`updated realm ${realm.realm}`);
 }
 

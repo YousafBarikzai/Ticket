@@ -5,10 +5,12 @@ import {
   authHost,
   partialImportBody,
   permissionHint,
+  realmBody,
   readRealm,
   realmSettings,
   resolveRealm,
   unresolvedPlaceholders,
+  userProfileOf,
   type Realm,
 } from '../keycloak-realm.js';
 
@@ -200,5 +202,63 @@ describe('permissionHint', () => {
    */
   it('adds nothing to a failure that is not about permission', () => {
     for (const status of [400, 404, 409, 500, 502]) expect(permissionHint(status)).toBe('');
+  });
+});
+
+describe('realmBody', () => {
+  /**
+   * The create path posts this straight to `POST /admin/realms`, and Keycloak
+   * deserialises a RealmRepresentation strictly. A key it does not know is a
+   * 400 reading "unable to read contents from stream" — a message that names
+   * neither the key nor the fact that a key is the problem, on the one deploy
+   * where there is no working realm to compare against.
+   */
+  it('sends Keycloak nothing Keycloak does not know', () => {
+    const body = realmBody(readRealm());
+    for (const key of Object.keys(body)) {
+      expect(key.startsWith('comment.'), `comment key survived: ${key}`).toBe(false);
+      expect(key).not.toBe('$comment');
+      expect(key).not.toBe('userProfile');
+    }
+  });
+
+  /** Everything that is a realm setting is still there. */
+  it('keeps the realm itself', () => {
+    const body = realmBody(readRealm());
+    expect(body.realm).toBe('itsm');
+    expect(body.enabled).toBe(true);
+    expect(Array.isArray(body.clients)).toBe(true);
+  });
+
+  /** The update path strips the same keys, and the clients on top. */
+  it('agrees with realmSettings on what is not a realm setting', () => {
+    const settings = realmSettings(readRealm());
+    expect(settings.clients).toBeUndefined();
+    expect(settings.clientScopes).toBeUndefined();
+    expect(settings.userProfile).toBeUndefined();
+    expect(Object.keys(settings).some((key) => key.startsWith('comment.'))).toBe(false);
+  });
+});
+
+describe('userProfileOf', () => {
+  /**
+   * `tenant_id` is declared here, a mapper copies it into the access token, and
+   * `apps/api/src/auth/verify.ts` refuses any token whose payload lacks it.
+   * Lose the profile and every sign-in fails closed — so this asserts the
+   * attribute survives being taken out of the realm body, not merely that
+   * something was returned.
+   */
+  it('carries the attribute the API refuses tokens without', () => {
+    const profile = userProfileOf(readRealm());
+    expect(profile).not.toBeNull();
+    const names = (profile?.attributes as { name: string }[]).map((attribute) => attribute.name);
+    expect(names).toContain('tenant_id');
+    expect(names).toContain('itsm_user_id');
+  });
+
+  /** A realm that declares none is not an error; it just has nothing to send. */
+  it('is null when there is no profile to apply', () => {
+    expect(userProfileOf({ realm: 'x', clients: [] } as unknown as Realm)).toBeNull();
+    expect(userProfileOf({ realm: 'x', clients: [], userProfile: {} } as unknown as Realm)).toBeNull();
   });
 });
