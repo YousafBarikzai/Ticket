@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { hostsFor, readCatalogue } from '../railway-deploy.js';
-import { PLACEHOLDER, authHost, partialImportBody, readRealm, realmSettings, resolveRealm, unresolvedPlaceholders, type Realm } from '../keycloak-realm.js';
+import {
+  PLACEHOLDER,
+  authHost,
+  partialImportBody,
+  permissionHint,
+  readRealm,
+  realmSettings,
+  resolveRealm,
+  unresolvedPlaceholders,
+  type Realm,
+} from '../keycloak-realm.js';
 
 /**
  * The realm, checked against the thing it has to agree with.
@@ -158,5 +168,37 @@ describe('what Keycloak is actually sent', () => {
 
   it('carries the resolved frontend URL, so Keycloak builds its own links on the right host', () => {
     expect((realmSettings(resolved).attributes as Record<string, string>).frontendUrl).toBe('https://auth.staging.example.com');
+  });
+});
+
+describe('permissionHint', () => {
+  /**
+   * The point of the hint is that it names the role. A message saying only
+   * "403" sends someone to look at the realm, the URL or Keycloak's own
+   * health, and the answer is in none of those places.
+   */
+  it('names the role a refused call actually needs', () => {
+    for (const status of [401, 403]) {
+      const hint = permissionHint(status);
+      expect(hint).toContain('`admin`');
+      expect(hint).toContain('master');
+      expect(hint).toContain('Service accounts roles');
+    }
+  });
+
+  /**
+   * And it says the wrong one is wrong, because the wrong one is the one the
+   * name suggests and the one this project's runbook asked for until now.
+   */
+  it('says why realm-admin is not it', () => {
+    expect(permissionHint(403)).toContain('realm-admin');
+  });
+
+  /**
+   * Everything else that can fail here is about the realm rather than the
+   * caller, so it must not carry a permissions hint.
+   */
+  it('adds nothing to a failure that is not about permission', () => {
+    for (const status of [400, 404, 409, 500, 502]) expect(permissionHint(status)).toBe('');
   });
 });

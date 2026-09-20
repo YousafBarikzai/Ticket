@@ -402,8 +402,20 @@ included, and redeploy.
 2. In the **master** realm, create a client — `itsm-pipeline` will do. Turn
    **Client authentication** on, turn every flow off except **Service accounts
    roles**, and save.
-3. On that client, **Service accounts roles** → assign `realm-admin` from
-   `realm-management`. It has to be able to create a realm and import clients.
+3. On that client, **Service accounts roles** → **Assign role** → **Realm
+   roles** → `admin`.
+
+   Not `realm-admin`, and not a client role. `realm-admin` lives on the
+   `<realm>-realm` client that Keycloak creates *alongside* a realm, so before
+   the first run there is no `itsm-realm` client to take it from — the search
+   comes back empty and the step looks broken. And the first thing the script
+   does is `POST /admin/realms`, which creates a realm rather than administering
+   one, so the role that authorises it has to be a realm role in `master`.
+
+   `admin` is administration of the whole Keycloak, which is more than the
+   realm needs once it exists. The narrower pair is `create-realm` for the
+   first run and `realm-admin` on `itsm-realm` afterwards — two passes, and it
+   breaks again the day the realm is recreated, which is why this says `admin`.
 4. **Credentials** tab → copy the client secret.
 5. In GitHub: `KEYCLOAK_ADMIN_CLIENT_ID` = `itsm-pipeline` and
    `KEYCLOAK_ADMIN_CLIENT_SECRET` = that secret, both as **secrets**; and

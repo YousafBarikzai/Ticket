@@ -141,6 +141,27 @@ export function realmSettings(realm: Realm): Record<string, unknown> {
   return Object.fromEntries(Object.entries(rest).filter(([key]) => !key.startsWith('comment.') && key !== '$comment'));
 }
 
+/**
+ * What a 401 or 403 from the admin API actually means here.
+ *
+ * Every other failure in `apply` is about the realm — it is missing, it is
+ * malformed, Keycloak is down. These two are about the caller: the service
+ * account authenticated fine and then was not allowed to do the thing. That is
+ * a different fix, in a different place, and the bare status code names
+ * neither. It is also the failure a first-time deploy is most likely to hit,
+ * because the role this needs is not the one the name suggests.
+ */
+export function permissionHint(status: number): string {
+  if (status !== 401 && status !== 403) return '';
+  return (
+    ' — the service account is authenticated but not authorised.' +
+    ' It needs the realm role `admin` in the `master` realm' +
+    ' (Clients → your pipeline client → Service accounts roles → Assign role → Realm roles).' +
+    ' `realm-admin` is the wrong one: it is a client role on `<realm>-realm`,' +
+    ' which Keycloak does not create until the realm exists.'
+  );
+}
+
 async function adminToken(baseUrl: string, clientId: string, clientSecret: string): Promise<string> {
   const response = await fetch(`${baseUrl}/realms/master/protocol/openid-connect/token`, {
     method: 'POST',
@@ -148,7 +169,7 @@ async function adminToken(baseUrl: string, clientId: string, clientSecret: strin
     body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }),
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Error(`Keycloak refused the admin credentials: ${response.status}`);
+  if (!response.ok) throw new Error(`Keycloak refused the admin credentials: ${response.status}${permissionHint(response.status)}`);
   return ((await response.json()) as { access_token: string }).access_token;
 }
 
@@ -158,25 +179,25 @@ async function apply(realm: Realm, baseUrl: string, token: string): Promise<void
 
   if (exists.status === 404) {
     const created = await fetch(`${baseUrl}/admin/realms`, { method: 'POST', headers, body: JSON.stringify(realm) });
-    if (!created.ok) throw new Error(`could not create the realm: ${created.status} ${await created.text()}`);
+    if (!created.ok) throw new Error(`could not create the realm: ${created.status}${permissionHint(created.status)} ${await created.text()}`);
     console.log(`created realm ${realm.realm}`);
     return;
   }
-  if (!exists.ok) throw new Error(`could not read the realm: ${exists.status}`);
+  if (!exists.ok) throw new Error(`could not read the realm: ${exists.status}${permissionHint(exists.status)}`);
 
   const updated = await fetch(`${baseUrl}/admin/realms/${realm.realm}`, {
     method: 'PUT',
     headers,
     body: JSON.stringify(realmSettings(realm)),
   });
-  if (!updated.ok) throw new Error(`could not update the realm: ${updated.status} ${await updated.text()}`);
+  if (!updated.ok) throw new Error(`could not update the realm: ${updated.status}${permissionHint(updated.status)} ${await updated.text()}`);
 
   const imported = await fetch(`${baseUrl}/admin/realms/${realm.realm}/partialImport`, {
     method: 'POST',
     headers,
     body: JSON.stringify(partialImportBody(realm)),
   });
-  if (!imported.ok) throw new Error(`could not import the clients: ${imported.status} ${await imported.text()}`);
+  if (!imported.ok) throw new Error(`could not import the clients: ${imported.status}${permissionHint(imported.status)} ${await imported.text()}`);
   console.log(`updated realm ${realm.realm}`);
 }
 
