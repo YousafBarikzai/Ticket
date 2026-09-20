@@ -269,11 +269,25 @@ public database URL.
 
 ## 9. Check it actually works
 
+The deploy has already done this — `post-deploy-check.ts` runs as its last step
+and fails the job if anything is unreachable. To run it by hand against an
+environment:
+
 ```
-pnpm exec tsx infra/scripts/walking-skeleton.ts
+pnpm exec tsx infra/scripts/post-deploy-check.ts \
+  --hosts '{"api":"https://api.<domain>","portal":"https://help.<domain>"}'
 ```
-with `API_BASE_URL=https://api.<your-domain>`. It drives a real ticket through
-the real API.
+
+It asks each service the health path Railway itself asks, and asks the API
+which of its own dependencies are answering. `redis: failed: getaddrinfo
+ENOTFOUND redis.railway.internal` names the fault; that is the point of it.
+
+**Not** the walking skeleton. `walking-skeleton.ts` calls `bootstrapModules`
+and boots the whole platform in the calling process, against the calling
+machine's database — handed a deployed API's URL it fails on the *local*
+`DATABASE_URL_APP` without ever opening a connection to the deployment. It is a
+good test of a local stack, which is what `pnpm skeleton` is for. It has never
+been a smoke test, and this runbook said it was for a release.
 
 Then the render pass, which is what found eleven broken admin screens:
 
@@ -290,6 +304,48 @@ is the guard working. Run it against a preview environment instead.
 
 ---
 
+## The first tenant and the first administrator
+
+A migrated database is 185 empty tables. Nothing in the product is reachable
+without a tenant, and the first person through the door is worse than that:
+sign-in provisions an unknown visitor just in time with **no role at all**, so
+they arrive authenticated, permissionless, and looking at a service desk that
+refuses them.
+
+Both are handled by the `bootstrap` service (`services.json`, phase 1 — after
+the migration, before the API). It does nothing unless you tell it to:
+
+| Variable | |
+|---|---|
+| `BOOTSTRAP_TENANT_SLUG` | The tenant's slug. **Unset, nothing happens at all.** |
+| `BOOTSTRAP_ADMIN_EMAIL` | Required once the slug is set. The address the first administrator will sign in with. |
+| `BOOTSTRAP_TENANT_NAME` | Optional; the slug is used if it is absent. |
+| `BOOTSTRAP_TENANT_REGION` | Optional; `eu-west`. |
+| `BOOTSTRAP_ADMIN_NAME` | Optional; the address is used if it is absent. |
+
+Set them on the `bootstrap` service in Railway and redeploy.
+
+Three things about it are deliberate:
+
+- **It never deletes.** `seed.ts` drops an existing tenant so that running it
+  twice is the same as running it once, which is right for a preview
+  environment and catastrophic in a real one. This writes what is missing and
+  removes nothing, so it is safe on every deploy forever.
+- **It leaves the administrator unlinked.** The account is created with no
+  `idpSubject`, so the first sign-in through the identity provider *links* it by
+  address rather than provisioning a second, roleless account beside it. That
+  branch — `user-service.ts`, "an account may already exist from an import or an
+  invitation" — is the whole mechanism by which this works. It follows that
+  `BOOTSTRAP_ADMIN_EMAIL` must match the address Keycloak will put in the token.
+- **It runs as the application role, not `app_owner`.** It ships in the
+  migration image because that image already carries the module graph for the
+  seed, but it connects with the ordinary application credential, so its writes
+  are subject to the same row-level security as the product's. A bootstrap
+  running as the migration role would be the one write path in the system that
+  RLS never saw.
+
+---
+
 ## Turning sign-in on
 
 The deploy applies the Keycloak realm — the clients, the redirect URIs and the
@@ -298,7 +354,48 @@ client to do it with. Without one it deploys everything, says in the log that
 it skipped the realm, and carries on. That is deliberate: the applications
 running and nobody able to sign in is a better first deploy than a red one.
 
-To turn it on:
+### Standing Keycloak up
+
+Keycloak is not deployed by this pipeline, so it is created once, by hand. It
+needs a database; a second database on the Postgres that is already there is
+enough, and costs nothing.
+
+1. On the Postgres service, run `CREATE DATABASE keycloak;` — on its own.
+   Railway's query box executes the first statement and stops, so a second one
+   below it looks like it ran and did not.
+2. **+ New → Docker Image**, `quay.io/keycloak/keycloak:<version>`, named
+   `keycloak`. Pin a version; `:latest` means a major upgrade arrives on a
+   restart nobody chose.
+3. Variables. The `${{...}}` references resolve — *on a service*, which is not
+   true of a Shared Variable, where they are stored as the literal text and a
+   `${{Postgres.RAILWAY_PRIVATE_DOMAIN}}` becomes `P1013: empty host in database
+   URL`:
+
+   | | |
+   |---|---|
+   | `KC_DB` | `postgres` |
+   | `KC_DB_URL` | `jdbc:postgresql://postgres.railway.internal:5432/keycloak` |
+   | `KC_DB_USERNAME` | `${{Postgres.PGUSER}}` |
+   | `KC_DB_PASSWORD` | `${{Postgres.PGPASSWORD}}` |
+   | `KC_HTTP_ENABLED` | `true` |
+   | `KC_HTTP_HOST` | `::` |
+   | `KC_HTTP_PORT` | `8080` |
+   | `KC_PROXY_HEADERS` | `xforwarded` |
+   | `KC_HOSTNAME_STRICT` | `false` |
+   | `KC_BOOTSTRAP_ADMIN_USERNAME` | `admin` |
+   | `KC_BOOTSTRAP_ADMIN_PASSWORD` | one you choose |
+
+   `KC_HTTP_HOST` is `::` for the reason everything else here binds `::`:
+   Railway's private network is IPv6, its edge proxy and its health checks both
+   reach a container over it, and a process bound to `0.0.0.0` there is a
+   process nothing can connect to on any port.
+4. **Settings → Deploy → Custom Start Command**: `start`.
+5. **Settings → Networking → Generate Domain**, target port `8080`.
+
+Then set `KC_HOSTNAME` on the service to the URL Railway gave you, scheme
+included, and redeploy.
+
+### Letting the pipeline apply the realm
 
 1. Open Keycloak's admin console at its own hostname and sign in with the
    bootstrap admin you set when you created the service.
