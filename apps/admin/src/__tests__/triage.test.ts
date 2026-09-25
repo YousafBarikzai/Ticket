@@ -2,14 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { DecisionQuestionScore } from '@itsm/sdk';
 import {
   acceptanceText,
+  appliedText,
   asPercent,
+  autoNotice,
+  autoReadiness,
   brierText,
   calibrationRows,
   fieldLabel,
   gateText,
+  lastStepDownText,
   modeNotice,
   skipLabel,
   skipRows,
+  stepDownText,
   suggestReadiness,
 } from '../triage.js';
 
@@ -30,9 +35,12 @@ function question(overrides: Partial<DecisionQuestionScore> = {}): DecisionQuest
     ],
     autoGate: { eligible: false, considered: 4, agreement: null, reason: '4 scored answers at or above 0.9; 200 are needed' },
     responses: { accepted: 0, dismissed: 0 },
+    applied: { applied: 0, overridden: 0 },
     ...overrides,
   };
 }
+
+const EARNED = { eligible: true, considered: 240, agreement: 0.97, reason: '97.0% agreement over 240 answers' };
 
 describe('the numbers', () => {
   it('shows a dash, not 0%, when there is nothing to measure', () => {
@@ -130,5 +138,64 @@ describe('suggest mode', () => {
   it('shows how often agents took a field’s suggestion, and a dash before any', () => {
     expect(acceptanceText(question())).toBe('—');
     expect(acceptanceText(question({ responses: { accepted: 7, dismissed: 3 } }))).toBe('7 of 10 accepted');
+  });
+});
+
+describe('auto mode', () => {
+  const group = (earned: boolean) =>
+    question({ question: 'group', autoGate: earned ? EARNED : { eligible: false, considered: 12, agreement: null, reason: 'too few' } });
+
+  it('says which fields it sets and which it still only suggests', () => {
+    const text = autoNotice({ mode: 'auto', questions: [question({ autoGate: EARNED }), group(false), question({ question: 'type', autoGate: null })] });
+    expect(text).toMatch(/sets category on new tickets where it is empty/);
+    expect(text).toMatch(/Assignment group is suggested until it has earned it/);
+    expect(text).toMatch(/type, priority, major incident — is always only suggested/);
+  });
+
+  it('says plainly when no field has earned it, so auto is only suggesting', () => {
+    expect(autoNotice({ mode: 'auto', questions: [question(), group(false)] })).toMatch(/no field has earned it yet, so it only suggests/);
+  });
+
+  it('is silent outside auto', () => {
+    expect(autoNotice({ mode: 'suggest', questions: [question({ autoGate: EARNED })] })).toBeNull();
+  });
+
+  it('puts the gate beside the switch while the desk is suggesting', () => {
+    expect(autoReadiness({ mode: 'suggest', questions: [question({ autoGate: EARNED }), group(true)] })).toMatch(
+      /Category and assignment group have earned it\./,
+    );
+    expect(autoReadiness({ mode: 'suggest', questions: [question()] })).toMatch(/would change nothing until one does/);
+    expect(autoReadiness({ mode: 'shadow', questions: [question()] })).toBeNull();
+  });
+
+  it('shows what the AI set for a field, and a dash before anything', () => {
+    expect(appliedText(question())).toBe('—');
+    expect(appliedText(question({ applied: { applied: 40, overridden: 0 } }))).toBe('40 set');
+    expect(appliedText(question({ applied: { applied: 40, overridden: 3 } }))).toBe('40 set, 3 corrected');
+  });
+});
+
+describe('the step-down meter', () => {
+  const meter = { window: 100, considered: 100, overridden: 4, rate: 0.04, limit: 0.05, wouldStepDown: false };
+
+  it('says how close auto is to switching itself back', () => {
+    expect(stepDownText(meter)).toBe(
+      'Agents corrected 4 of the last 100 tickets the AI changed by itself (4.0%). Above 5% of the last 100, auto switches itself back to suggest.',
+    );
+  });
+
+  it('says a short history is not enough to act on, rather than alarming anyone', () => {
+    expect(stepDownText({ ...meter, considered: 20, overridden: 2, rate: 0.1 })).toMatch(/not yet enough to step down on/);
+  });
+
+  it('is silent before the AI has set anything', () => {
+    expect(stepDownText({ ...meter, considered: 0, overridden: 0, rate: null })).toBeNull();
+  });
+
+  it('says when auto last withdrew itself, and that administrators were told', () => {
+    expect(lastStepDownText({ at: '2026-09-30T08:00:00.000Z', overridden: 7, window: 100 })).toBe(
+      'On 2026-09-30 auto switched itself back to suggest: agents corrected 7 of the last 100 tickets it had changed. Administrators were told by email.',
+    );
+    expect(lastStepDownText(null)).toBeNull();
   });
 });

@@ -7,14 +7,19 @@ import { holds } from '../../../permissions.js';
 import { Panel } from '../../../components/Panel.js';
 import {
   acceptanceText,
+  appliedText,
   asPercent,
+  autoNotice,
+  autoReadiness,
   brierText,
   calibrationRows,
   fieldLabel,
   gateText,
+  lastStepDownText,
   modeNotice,
   skipLabel,
   skipRows,
+  stepDownText,
   suggestReadiness,
 } from '../../../triage.js';
 
@@ -22,13 +27,14 @@ export const metadata: Metadata = { title: 'AI triage' };
 export const dynamic = 'force-dynamic';
 
 /**
- * Shadow triage, and whether it has earned anything (ADR-0051).
+ * AI triage, and what it has earned (ADR-0051).
  *
  * In shadow the AI decides a triage for each new channel ticket and records
  * it, and nothing on the ticket changes. When the ticket is resolved, what it
- * was resolved as is written against the decision. This page is the only place
- * that comparison is read — which is the point of shadow: the evidence for
- * letting a decision act is gathered where nobody is affected by it.
+ * was resolved as is written against the decision. This page is where that
+ * comparison is read — the evidence for letting a decision act, gathered
+ * where nobody is affected by it — and, once `auto` is on, where a desk sees
+ * what the AI set by itself and how close it is to stepping back down.
  *
  * Read-only. The mode and thresholds are settings, and changing them happens
  * under Configuration with the audit trail that goes with it. The recent
@@ -67,9 +73,10 @@ export default async function AiTriagePage({
         <h1>AI triage</h1>
         <p className="itsm-Admin__lede">
           The AI decides a type, category, team and priority for each new email, chat, voice and portal ticket. In
-          shadow it only records the answer; in suggest, agents see it on the ticket and accept or dismiss it. Nothing
-          on a ticket changes unless an agent accepts. When the ticket is resolved, the answer is compared with what the
-          desk settled on — and that comparison is what would one day let a decision act on its own.
+          shadow it only records the answer; in suggest, agents see it on the ticket and accept or dismiss it; in auto
+          it also sets category and team by itself where they are empty — each only once it has earned it here, and
+          each with an Undo on the ticket. When the ticket is resolved, the answer is compared with what the desk
+          settled on, and that comparison is what earns a field its place in auto.
         </p>
       </header>
 
@@ -82,7 +89,17 @@ export default async function AiTriagePage({
               {modeNotice(score.value)}
             </p>
           ) : null}
+          {lastStepDownText(score.value.lastStepDown) ? (
+            <p className="itsm-Admin__note" role="status">
+              {lastStepDownText(score.value.lastStepDown)}
+            </p>
+          ) : null}
+          {autoNotice(score.value) ? <p className="itsm-Admin__note">{autoNotice(score.value)}</p> : null}
+          {stepDownText(score.value.stepDown) ? (
+            <p className="itsm-Admin__note">{stepDownText(score.value.stepDown)}</p>
+          ) : null}
           {suggestReadiness(score.value) ? <p className="itsm-Admin__note">{suggestReadiness(score.value)}</p> : null}
+          {autoReadiness(score.value) ? <p className="itsm-Admin__note">{autoReadiness(score.value)}</p> : null}
 
           <MetricGrid>
             <Metric label={`Decisions, last ${days} days`} value={score.value.decisions} note={`Mode: ${score.value.mode}`} />
@@ -112,16 +129,17 @@ export default async function AiTriagePage({
             title="How often it matched the desk"
             description={
               <>
-                Against resolved tickets only. Auto-apply would need {Math.round(score.value.thresholds.auto * 100)}%
-                confidence and is earned per field from this evidence; it is{' '}
+                Against resolved tickets only. Auto sets a field by itself only at{' '}
+                {Math.round(score.value.thresholds.auto * 100)}% confidence or more, and only once that field has earned
+                it here over the last 90 days; across both fields it is{' '}
                 {score.value.autoEligible ? (
                   <Badge intent="success" srPrefix="Auto">
                     earned
                   </Badge>
                 ) : (
                   <Badge srPrefix="Auto">not earned</Badge>
-                )}{' '}
-                and is not switched on in this release.
+                )}
+                .
               </>
             }
             result={{ ok: true, value: score.value.questions }}
@@ -136,6 +154,7 @@ export default async function AiTriagePage({
                   { key: 'accuracy', header: 'Right', cell: (row) => asPercent(row.accuracy), align: 'end' },
                   { key: 'brier', header: 'Brier (lower is better)', cell: (row) => brierText(row.brier), align: 'end' },
                   { key: 'agents', header: 'Agents', cell: (row) => acceptanceText(row), align: 'end' },
+                  { key: 'applied', header: 'Set by AI', cell: (row) => appliedText(row), align: 'end' },
                   { key: 'gate', header: 'Auto-apply', cell: (row) => gateText(row) },
                 ]}
                 rows={questions}

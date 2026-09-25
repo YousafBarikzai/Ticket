@@ -118,6 +118,7 @@ export {
   DECISION_MODES,
   DECISION_PURPOSES,
   DEFAULT_THRESHOLDS,
+  GATED_QUESTIONS,
   SELECTABLE_MODES,
   STEP_DOWN,
   SUGGESTION_KINDS,
@@ -127,16 +128,21 @@ export {
   decisionDefinitionFor,
   decisionModelFor,
   isDecisionPurpose,
+  overrides,
   pendingSuggestions,
   planDecision,
   problemWithThresholds,
   scoreAnswers,
   shouldStepDown,
+  standingApplied,
   triageQuestions,
   triagesChannel,
+  type AppliedEntry,
   type DecisionMode,
   type DecisionPurpose,
   type PendingSuggestion,
+  type ResponseAction,
+  type StandingApplied,
   type SuggestionKind,
   type Thresholds,
 } from './domain/decisions.js';
@@ -149,6 +155,8 @@ export {
   type DecideResult,
 } from './service/gateway.js';
 export {
+  GATE_WINDOW_DAYS,
+  gatesFor,
   listDecisions,
   modeFor,
   runTriage,
@@ -160,13 +168,16 @@ export {
   type DecisionSummary,
   type QuestionScore,
   type ScoreQuery,
+  type StepDownNotice,
   type TriageRun,
 } from './service/decision-service.js';
+export { recordOverrides, reviewAutoMode, stepDownState, type StepDownState } from './service/auto-service.js';
 export { tenantAiRegions } from './service/residency-service.js';
 export {
   respondSchema,
   respondToSuggestion,
   triageSuggestionFor,
+  undoApplied,
   type RespondInput,
   type SuggestionResponse,
   type TriageSuggestionView,
@@ -174,3 +185,4 @@ export {
 export { SHIPPED_DATASETS, SHIPPED_PROMPTS, type ShippedDataset, type ShippedPrompt } from './seed/prompts.js';
 import './jobs/index.js';
 import './handlers/index.js';
+import './notifications.js';

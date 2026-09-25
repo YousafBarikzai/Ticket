@@ -303,6 +303,8 @@ export interface DecisionQuestionScore {
   autoGate: { eligible: boolean; considered: number; agreement: number | null; reason: string } | null;
   /** What agents did with this field's suggestions, in `suggest` mode. */
   responses: { accepted: number; dismissed: number };
+  /** What the AI set by itself, in `auto` mode, and how much of it people changed or undid. */
+  applied: { applied: number; overridden: number };
 }
 
 export interface DecisionScore {
@@ -320,6 +322,17 @@ export interface DecisionScore {
   meanLatencyMs: number | null;
   questions: DecisionQuestionScore[];
   autoEligible: boolean;
+  /** The automatic step-down's meter: corrections over the most recent applied decisions. */
+  stepDown: {
+    window: number;
+    considered: number;
+    overridden: number;
+    rate: number | null;
+    limit: number;
+    wouldStepDown: boolean;
+  };
+  /** The last time `auto` switched itself back to `suggest`, if ever. */
+  lastStepDown: { at: string; overridden: number; window: number } | null;
 }
 
 export interface DecisionRow {

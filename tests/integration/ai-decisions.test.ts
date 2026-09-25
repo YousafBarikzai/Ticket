@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { queue, systemContext, transaction, withContext } from '@itsm/platform';
+import { getSetting, queue, systemContext, transaction, withContext } from '@itsm/platform';
 import { settingsService } from '@itsm/module-admin';
 import { tenantService } from '@itsm/module-tenancy';
 import {
@@ -7,6 +8,7 @@ import {
   clearAiProvider,
   registerAiProvider,
   resetDecisionBreakers,
+  reviewAutoMode,
   runTriage,
   stubProvider,
 } from '@itsm/module-ai';
@@ -133,9 +135,8 @@ describe('before a tenant switches it on', () => {
     }
   });
 
-  it('cannot be put into a mode this release does not honour', async () => {
-    // Nothing applies an answer without a person yet, so `auto` is refused.
-    await expect(setSetting('ai.decision.triage.mode', 'auto')).rejects.toThrow();
+  it('cannot be put into a mode that does not exist', async () => {
+    await expect(setSetting('ai.decision.triage.mode', 'always')).rejects.toThrow();
   });
 });
 
@@ -499,5 +500,342 @@ describe('in suggest mode', () => {
     } finally {
       await setSetting('ai.decision.triage.mode', 'suggest');
     }
+  });
+});
+
+describe('in auto mode', () => {
+  type CategoryRow = { id: string; tenantId: string; name: string; key: string; path: string };
+  let access: CategoryRow;
+  let printing: CategoryRow;
+  let fastPolicyKey: string;
+
+  beforeAll(async () => {
+    await setFlag('ai.decision.triage', true);
+    await setSetting('ai.decision.triage.mode', 'auto');
+    const category = (key: string, name: string): CategoryRow => ({
+      id: randomUUID(),
+      tenantId: tenant.id,
+      name,
+      key,
+      path: name,
+    });
+    access = category('access-vpn', 'Access / VPN');
+    printing = category('printing', 'Hardware / Printing');
+    await read((tx) => tx.category.createMany({ data: [access, printing] }));
+  });
+
+  afterAll(async () => {
+    await setSetting('ai.decision.triage.mode', 'off');
+    await setFlag('ai.decision.triage', false);
+  });
+
+  /** A provider sure of itself: Access / VPN, the Service Desk, and a type and priority it may never apply. */
+  function sureProvider(confidence = 0.96) {
+    const stub = stubProvider();
+    return {
+      ...stub,
+      async decide(request: Parameters<NonNullable<typeof stub.decide>>[0]) {
+        const answers: Record<string, { value: string | boolean; confidence: number }> = {
+          type: { value: 'request', confidence },
+          priority: { value: 'P1', confidence },
+          majorIncident: { value: false, confidence },
+        };
+        if (request.questions.category) answers.category = { value: 'Access / VPN', confidence };
+        if (request.questions.group) answers.group = { value: 'Service Desk', confidence };
+        return { answers, model: request.model, inputTokens: 100, outputTokens: 20, providerRequestId: null };
+      },
+    };
+  }
+
+  /**
+   * A shadow record that earns a field: resolved tickets where a confident
+   * answer matched what the desk settled on. Written straight to the table,
+   * because two hundred resolved tickets is what earning it takes.
+   */
+  async function earn(question: 'category' | 'group', value: string, label: string, count = 210): Promise<void> {
+    await read((tx) =>
+      tx.aiDecision.createMany({
+        data: Array.from({ length: count }, () => ({
+          id: randomUUID(),
+          tenantId: tenant.id,
+          purpose: 'triage',
+          subjectType: 'ticket',
+          subjectId: randomUUID(),
+          mode: 'shadow',
+          questionSetVersion: 1,
+          provider: 'stub',
+          model: 'stub-small',
+          answers: { [question]: { value: label, confidence: 0.95 } },
+          proposed: { [question]: value },
+          settled: { [question]: value },
+          settledAt: new Date(),
+          outcome: 'shadowed',
+          periodKey: '2026-09',
+        })),
+      }),
+    );
+  }
+
+  interface AutoView {
+    decisionId: string;
+    suggestions: { question: string; kind: string }[];
+    applied: { question: string; field: string; value: string; display: string }[];
+  }
+
+  async function viewFor(ticketId: string, token = tenant.people.agent!.token) {
+    return request<{ data: AutoView | null }>(`/api/v1/ai/triage/${ticketId}`, { token });
+  }
+
+  async function ticketRow(id: string) {
+    return read((tx) => tx.ticket.findFirst({ where: { id } }));
+  }
+
+  async function decisionRow(ticketId: string) {
+    return read((tx) => tx.aiDecision.findFirst({ where: { subjectId: ticketId }, orderBy: { createdAt: 'desc' } }));
+  }
+
+  it('suggests, and sets nothing, until a field has earned it on this desk', async () => {
+    registerAiProvider(sureProvider());
+    const ticket = await raise('Cannot reach the VPN from home', 'It times out.', 'email');
+    const run = await triage(ticket.id);
+    expect(run).toMatchObject({ outcome: 'suggested' });
+
+    const row = await ticketRow(ticket.id);
+    expect(row).toMatchObject({ categoryId: null, groupId: null });
+    const plan = (await decisionRow(ticket.id))!.plan as { question: string; action: string; reason: string }[];
+    expect(plan.find((entry) => entry.question === 'group')).toMatchObject({ action: 'suggest' });
+    expect(plan.find((entry) => entry.question === 'group')!.reason).toMatch(/has not earned auto/);
+
+    const view = (await viewFor(ticket.id)).body.data!;
+    expect(view.applied).toEqual([]);
+    expect(view.suggestions.map((item) => item.question)).toEqual(expect.arrayContaining(['category', 'group']));
+  });
+
+  it('sets a field that has earned it, as the AI, and only suggests one that has not', async () => {
+    await earn('group', tenant.teamId, 'Service Desk');
+    registerAiProvider(sureProvider());
+    const ticket = await raise('VPN drops every ten minutes', 'Since the update.', 'email');
+    const run = await triage(ticket.id);
+    expect(run).toMatchObject({ outcome: 'applied' });
+
+    const row = await ticketRow(ticket.id);
+    expect(row).toMatchObject({ groupId: tenant.teamId, categoryId: null, type: 'incident', priority: 'P3' });
+
+    const decision = (await decisionRow(ticket.id))!;
+    expect(decision.outcome).toBe('applied');
+    expect(decision.applied).toMatchObject({ group: { field: 'groupId', from: null, to: tenant.teamId } });
+
+    // The ticket's history says the AI did it, not the requester or the agent.
+    const history = await read((tx) =>
+      tx.ticketEvent.findFirst({ where: { ticketId: ticket.id, type: 'updated' }, orderBy: { occurredAt: 'desc' } }),
+    );
+    expect(history).toMatchObject({ actorType: 'ai' });
+    const audit = await read((tx) => tx.auditEvent.findFirst({ where: { action: 'ai.decision.applied', targetId: ticket.id } }));
+    expect(audit).toMatchObject({ actorType: 'ai' });
+    expect(audit!.after).toMatchObject({ decisionId: decision.id, provider: 'stub', fields: { group: { confidence: 0.96 } } });
+    // What SLA re-matches on.
+    const classified = await read((tx) =>
+      tx.outboxEvent.count({ where: { type: 'ticket.classified', aggregateId: ticket.id } }),
+    );
+    expect(classified).toBe(1);
+
+    const view = (await viewFor(ticket.id)).body.data!;
+    expect(view.applied.map((item) => [item.question, item.display])).toEqual([['group', 'Service Desk']]);
+    expect(view.suggestions.map((item) => item.question)).toContain('category');
+  });
+
+  it('never writes over a field somebody already set', async () => {
+    await earn('category', access.id, 'Access / VPN');
+    registerAiProvider(sureProvider());
+    const response = await request<{ id: string }>('/api/v1/tickets', {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { type: 'incident', title: 'VPN certificate expired', priority: 'P3', sourceChannel: 'portal', groupId: tenant.otherTeamId },
+    });
+    expect(response.status).toBe(201);
+    await triage(response.body.id);
+
+    const row = await ticketRow(response.body.id);
+    // The team somebody chose stands; the empty category is filled.
+    expect(row).toMatchObject({ groupId: tenant.otherTeamId, categoryId: access.id });
+    const plan = (await decisionRow(response.body.id))!.plan as { question: string; action: string; reason: string }[];
+    expect(plan.find((entry) => entry.question === 'group')!.reason).toMatch(/set by a person or a rule/);
+  });
+
+  it('moves the SLA onto the policy the new category matches, and keeps the clock running from creation', async () => {
+    fastPolicyKey = `vpn-fast-${Date.now().toString(36)}`;
+    const created = await request('/api/v1/sla-policies', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: {
+        key: fastPolicyKey,
+        name: 'VPN, fast',
+        match: { eq: [{ var: 'ticket.categoryId' }, access.id] },
+        specificity: 900,
+        calendarMode: 'fixed',
+        calendarId: null,
+        targets: [{ priority: 'P3', targetType: 'resolution', minutes: 60 }],
+      },
+    });
+    expect(created.status).toBe(201);
+
+    registerAiProvider(sureProvider());
+    const ticket = await raise('VPN client will not install', 'Installer fails at 90%.', 'email');
+    await drainEvents(tenant.id);
+    const before = await read((tx) => tx.slaTimer.findFirst({ where: { ticketId: ticket.id, targetType: 'resolution' } }));
+    expect(before).not.toBeNull();
+
+    await triage(ticket.id);
+    await drainEvents(tenant.id);
+
+    const policy = await read((tx) => tx.slaPolicy.findFirst({ where: { key: fastPolicyKey } }));
+    const after = await read((tx) => tx.slaTimer.findFirst({ where: { ticketId: ticket.id, targetType: 'resolution' } }));
+    expect(after).toMatchObject({ policyId: policy!.id, targetMs: 60 * 60_000, state: 'running' });
+    // The clock did not restart: same start, and the hour counts from then.
+    expect(after!.startedAt.getTime()).toBe(before!.startedAt.getTime());
+    expect(after!.dueAt!.getTime()).toBeLessThanOrEqual(before!.startedAt.getTime() + 60 * 60_000 + 1_000);
+    expect((await ticketRow(ticket.id))!.slaPolicyId).toBe(policy!.id);
+    const audit = await read((tx) => tx.auditEvent.findFirst({ where: { action: 'sla.timers.rematched', targetId: ticket.id } }));
+    expect(audit).not.toBeNull();
+  });
+
+  it('shows what the AI set with an Undo that puts it back, as the agent, and counts it as a correction', async () => {
+    registerAiProvider(sureProvider());
+    const ticket = await raise('Printer asks for a VPN login', 'Odd prompt.', 'email');
+    await triage(ticket.id);
+    const view = (await viewFor(ticket.id)).body.data!;
+    expect(view.applied.map((item) => item.question).sort()).toEqual(['category', 'group']);
+
+    const version = (await ticketRow(ticket.id))!.version;
+    // A requester cannot undo anything.
+    const refused = await request(`/api/v1/ai/decisions/${view.decisionId}/applied/group/undo`, {
+      method: 'POST',
+      token: tenant.people.requester!.token,
+      body: { version },
+    });
+    expect(refused.status).toBe(403);
+
+    const undone = await request(`/api/v1/ai/decisions/${view.decisionId}/applied/group/undo`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { version },
+    });
+    expect(undone.status).toBe(200);
+    const row = await ticketRow(ticket.id);
+    expect(row).toMatchObject({ groupId: null, categoryId: access.id });
+    expect(row!.updatedBy).toBe(tenant.people.agent!.id);
+
+    const decision = (await decisionRow(ticket.id))!;
+    expect(decision.responses).toMatchObject({ group: { action: 'undone', by: tenant.people.agent!.id } });
+    const audit = await read((tx) => tx.auditEvent.findFirst({ where: { action: 'ai.decision.undone', targetId: ticket.id } }));
+    expect(audit!.after).toMatchObject({ question: 'group', restored: null });
+
+    // Only the category is left to undo, and the group cannot be undone twice.
+    expect((await viewFor(ticket.id)).body.data!.applied.map((item) => item.question)).toEqual(['category']);
+    const again = await request(`/api/v1/ai/decisions/${view.decisionId}/applied/group/undo`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { version: (await ticketRow(ticket.id))!.version },
+    });
+    expect(again.status).toBe(422);
+  });
+
+  it('counts a person changing what the AI set as a correction — and not the AI, and not a reassignment', async () => {
+    registerAiProvider(sureProvider());
+    const ticket = await raise('VPN slow on hotel wifi', 'Unusable.', 'email');
+    await triage(ticket.id);
+    // The AI's own write comes back as an event too; it is not a correction.
+    await drainEvents(tenant.id);
+    expect((await decisionRow(ticket.id))!.responses).toEqual({});
+
+    // Taking the ticket keeps the team the AI set: not a correction either.
+    const taken = await request(`/api/v1/tickets/${ticket.number}/assign`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { assigneeId: tenant.people.agent!.id },
+    });
+    expect(taken.status).toBe(200);
+    await drainEvents(tenant.id);
+    expect((await decisionRow(ticket.id))!.responses).toEqual({});
+
+    const changed = await request(`/api/v1/tickets/${ticket.number}`, {
+      method: 'PATCH',
+      token: tenant.people.agent!.token,
+      headers: { 'if-match': `"${(await ticketRow(ticket.id))!.version}"` },
+      body: { categoryId: printing.id },
+    });
+    expect(changed.status).toBe(200);
+    await drainEvents(tenant.id);
+
+    const decision = (await decisionRow(ticket.id))!;
+    expect(decision.responses).toMatchObject({ category: { action: 'overridden', to: printing.id } });
+    expect((decision.responses as Record<string, unknown>).group).toBeUndefined();
+    const audit = await read((tx) => tx.auditEvent.findFirst({ where: { action: 'ai.decision.overridden', targetId: ticket.id } }));
+    expect(audit).not.toBeNull();
+
+    const score = await request<{ questions: { question: string; applied: { applied: number; overridden: number } }[] }>(
+      '/api/v1/ai/decisions/score',
+      { token: tenant.people.admin!.token },
+    );
+    expect(score.body.questions.find((question) => question.question === 'category')!.applied.overridden).toBeGreaterThanOrEqual(1);
+  });
+
+  it('steps itself back to suggest when people correct too many, and tells the administrators', async () => {
+    // The last hundred applied decisions, newest of all, six of them corrected.
+    const now = Date.now();
+    await read((tx) =>
+      tx.aiDecision.createMany({
+        data: Array.from({ length: 100 }, (_, index) => ({
+          id: randomUUID(),
+          tenantId: tenant.id,
+          purpose: 'triage',
+          subjectType: 'ticket',
+          subjectId: randomUUID(),
+          mode: 'auto',
+          questionSetVersion: 1,
+          provider: 'stub',
+          model: 'stub-small',
+          applied: { group: { field: 'groupId', from: null, to: tenant.teamId, confidence: 0.95, at: new Date(now).toISOString() } },
+          responses: index < 6 ? { group: { action: 'overridden', by: tenant.people.agent!.id } } : {},
+          outcome: 'applied',
+          periodKey: '2026-09',
+          createdAt: new Date(now + 60_000 + index),
+        })),
+      }),
+    );
+
+    const worker = systemContext(tenant.id, { region: 'eu-west' });
+    expect(await withContext(worker, () => reviewAutoMode(worker, 'triage'))).toBe(true);
+    // Once is enough: it is in suggest now.
+    expect(await withContext(worker, () => reviewAutoMode(worker, 'triage'))).toBe(false);
+
+    const context = ctx();
+    expect(await withContext(context, () => getSetting(context, 'ai.decision.triage.mode'))).toBe('suggest');
+    const audit = await read((tx) => tx.auditEvent.findFirst({ where: { action: 'ai.decision.stepped_down' } }));
+    expect(audit).toMatchObject({ actorType: 'system' });
+    expect(audit!.after).toMatchObject({ mode: 'suggest', overridden: 6, window: 100 });
+
+    await drainEvents(tenant.id);
+    const told = await read((tx) =>
+      tx.notification.findMany({ where: { eventType: 'ai.decision.stepped_down', recipientId: tenant.people.admin!.id } }),
+    );
+    expect(told.length).toBeGreaterThanOrEqual(1);
+
+    const score = await request<{ lastStepDown: { overridden: number } | null; stepDown: { wouldStepDown: boolean } }>(
+      '/api/v1/ai/decisions/score',
+      { token: tenant.people.admin!.token },
+    );
+    expect(score.body.lastStepDown).toMatchObject({ overridden: 6 });
+    expect(score.body.stepDown.wouldStepDown).toBe(true);
+
+    // What the AI already set keeps its Undo after the step-down.
+    registerAiProvider(sureProvider());
+    await setSetting('ai.decision.triage.mode', 'auto');
+    const ticket = await raise('VPN will not reconnect after sleep', 'Every morning.', 'email');
+    // Auto again, but the evidence has not changed: the next correction would
+    // step it down again, and until then it applies.
+    await triage(ticket.id);
+    await setSetting('ai.decision.triage.mode', 'suggest');
+    expect((await viewFor(ticket.id)).body.data!.applied.length).toBeGreaterThan(0);
   });
 });

@@ -30,9 +30,10 @@ AI is a capability service (ADR-0006), not a feature sprinkled through modules. 
 > no) with a confidence per answer. Decisions have their own gateway entry
 > (`decide`), a provider chain per purpose that never leaves the tenant's
 > regions, and four modes per tenant (`off`, `shadow`, `suggest`, `auto`). In
-> `auto` mode, and only there, four routing fields may be applied without a
-> person: type, category, subcategory and assignment group. §6.2 describes
-> this.
+> `auto` mode, and only there, two routing fields may be applied without a
+> person: category (with its subcategory) and assignment group, each only
+> when empty and only once the desk's own record has earned it. §6.2
+> describes this.
 
 ## 1. Principles that shape the design
 
@@ -111,7 +112,7 @@ flowchart LR
 |---|---|
 | Evidence display | `evidence` stored and rendered; UI components in `packages/ui` (`AiSuggestionCard`) |
 | Permission enforcement | Context assembler runs under actor context; tool gateway checks permissions per action |
-| Human override | Generated suggestions are never auto-applied; actions need approval unless low-risk auto-approved by policy. Decisions may apply four routing fields in `auto` mode, never over a person's value, each reversible (ADR-0051) |
+| Human override | Generated suggestions are never auto-applied; actions need approval unless low-risk auto-approved by policy. Decisions may apply two routing fields (category, assignment group) in `auto` mode, only when empty, each with a one-click undo, and withdraw themselves when people correct too many (ADR-0051) |
 | Audit record | Every job, suggestion, outcome and action writes audit events with actor `ai` and the human's identity as `on_behalf_of` |
 | Evaluation result | Prompt promotion blocked below threshold; scores visible in admin |
 | Kill switch | Tenant and per-feature flags; effective ≤ 10 s; runbook |
@@ -181,8 +182,8 @@ priority as a suggestion only).
 | When it runs | After the ticket exists, as a `ticket.created` consumer. Intake never waits for it and never fails because of it. |
 | Provider chain | Per purpose, for example `jev → anthropic → rules`. A provider is skipped when it is outside the tenant's regions, unpriced, open-circuited, timed out or over budget, and the reason is recorded. `rules` makes no call and leaves the ticket as intake left it. |
 | Modes | `off` (default), `shadow` (record only), `suggest` (≥ 0.60 becomes an advisory suggestion), `auto` (≥ 0.90 may be applied). Thresholds are tenant settings; mode changes need `ai.manage` and are audited. |
-| What `auto` may change | Type, category, subcategory, assignment group. Never a field a person or rule set. Never priority, impact, urgency, major incident, escalation or status. |
-| Earning and losing `auto` | Earned with ≥ 95% agreement with people over ≥ 200 shadow decisions at or above the auto threshold. Lost automatically when people override > 5% of the last 100 applied decisions. |
+| What `auto` may change | Category (with subcategory) and assignment group, only when empty. Never a field that already has a value. Never type (fixed when a ticket is raised), priority, impact, urgency, major incident, escalation or status. |
+| Earning and losing `auto` | Earned per field, checked on every decision: ≥ 95% agreement with people over ≥ 200 settled decisions at or above the auto threshold in the last 90 days. Lost automatically when people correct > 5% of the last 100 applied decisions: the purpose steps down to `suggest`, and administrators are told in-app and by email. |
 | SLA | `ticket.classified` triggers a re-match of targets. The clock that started at creation keeps running. |
 | Record | `ai_decision`: provider, model, question-set version, answers and confidences, latency, tokens, cost, chain attempts, outcome, and the value people settled on. Cost counts toward the AI budget. |
 | Credentials | Environment or secret store only. Never from a tenant, never stored, never logged. A decision provider must declare its processing region; none is assumed. |
@@ -244,7 +245,7 @@ data-processing terms have been verified. Until then `triage` runs
 
 A desk may choose `suggest` at any time. A suggestion changes nothing until an
 agent accepts it, and the AI triage page puts current accuracy beside the
-choice. `auto` is still refused.
+choice.
 
 - **What agents see:** answers at or above the suggest threshold appear as a
   "Suggested triage" card on the ticket in the workbench
@@ -272,6 +273,53 @@ choice. `auto` is still refused.
 - **No declaration screen:** the workbench has no screen for declaring a
   major incident, so the warning points the agent to the desk's own process
   rather than linking to one.
+
+**Auto mode (Phase 5).**
+
+A desk may choose `auto` at any time, because choosing it is not what lets an
+answer act. Each allow-listed field is applied only once the desk's own record
+has earned it, and that is checked on every decision.
+
+- **What it sets:** category and assignment group, at or above the auto
+  threshold (0.90), and only when the field is empty. Type, priority and a
+  major-incident call stay suggestions. A field that has not earned it yet is
+  suggested exactly as in `suggest`.
+- **The gate:** `gatesFor` reads the desk's settled decisions from the last 90
+  days: ≥ 95% agreement over ≥ 200 answers at or above the auto threshold, per
+  field. The AI triage page and every decision call the same function. An
+  applied value nobody changed before resolution counts as agreement; one a
+  person changed counts against it.
+- **How it writes:** in its own transaction after the decision is recorded,
+  through `ticketService.applyAutomatedChange` as actor `ai`, with each field
+  expected to still hold what the decision saw. A rule or person who got
+  there first wins, and that answer becomes a suggestion. Each application is
+  audited (`ai.decision.applied`), recorded on `ai_decision.applied`, and
+  published as `ticket.classified`. Rules react to it as they would to a
+  person's edit. The group is set as a field, as a rule sets it, so no
+  assignment notification is sent.
+- **SLA:** the SLA module re-matches on `ticket.classified`. Time used is
+  counted from creation on the new policy's calendar, less time paused, so the
+  clock is never restarted and never loses the hours before the
+  classification.
+- **Undo:** the workbench card shows what the AI set as "Set by AI" with an
+  Undo (`POST /ai/decisions/:id/applied/:question/undo`). Undo puts back the
+  previous value as the agent's own edit, with their version, and records the
+  correction (`ai.decision.undone`). A value somebody has since changed is
+  theirs and can't be undone from here.
+- **Corrections and the step-down:** a person (actor `user`) changing an
+  applied field is recorded as a correction (`ai.decision.overridden`) by
+  `ticket.updated` and `ticket.assigned` consumers. The AI's own writes and a
+  rule's are not. Each correction queues `ai.decision.review`. When more than
+  5% of the last 100 applied decisions were corrected, the review writes the
+  mode setting back to `suggest` under an advisory lock, audits
+  `config.published` and `ai.decision.stepped_down`, and publishes
+  `ai.decision.stepped_down` to the tenant's administrators, in the console
+  and by email. Values already set keep their Undo.
+- **The AI triage page** shows which fields auto sets and which it only
+  suggests, a "Set by AI" column (set, and how many were corrected), the
+  step-down meter, and the last step-down.
+- **Budget alerts now arrive:** `ai.budget.threshold` had been published with
+  no notification rule. The same pack now delivers it to administrators.
 
 Three things differ from the plan, deliberately:
 

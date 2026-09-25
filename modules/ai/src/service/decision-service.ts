@@ -6,44 +6,52 @@ import {
   isEnabled,
   logger,
   maskRecord,
+  metrics,
   newId,
+  publish,
   recordAudit,
   transaction,
   type TenantContext,
   type Tx,
 } from '@itsm/platform';
+import { events } from '@itsm/contracts';
 import { ticketService } from '@itsm/module-ticket';
 import { formatMicros, periodFor } from '../domain/budget.js';
 import {
   DECISION_PURPOSES,
   DEFAULT_THRESHOLDS,
+  GATED_QUESTIONS,
   autoGate,
   decisionDefinitionFor,
   planDecision,
   problemWithThresholds,
   scoreAnswers,
   triageQuestions,
+  type AppliedEntry,
   type AutoGate,
   type DecisionMode,
   type DecisionPurpose,
+  type PlannedAnswer,
   type Score,
   type ScoredAnswer,
   type Thresholds,
 } from '../domain/decisions.js';
 import type { DecisionValue } from '../providers/types.js';
 import { budgetAllows, recordSpend } from './budget-service.js';
+import { stepDownState, type StepDownState } from './auto-service.js';
 import { decide } from './gateway.js';
 import { tenantAiRegions } from './residency-service.js';
 
 /**
  * Structured decisions, recorded (ADR-0051).
  *
- * This release decides and records and does nothing else. `shadow` is the
- * only mode a tenant can select, so no answer here changes a ticket, is shown
- * to anybody, or is sent anywhere a person did not first switch on. What it
- * produces is the evidence the later modes are gated on: who answered, what
+ * Every decision is recorded whatever it goes on to do: who answered, what
  * they said, how sure they said they were, what it cost, how long it took,
- * and every provider the chain passed over and why.
+ * and every provider the chain passed over and why. In `shadow` that is all
+ * that happens. In `suggest` the confident answers wait for an agent. In
+ * `auto` the most confident answers to the allow-listed routing fields are
+ * applied, as the `ai` actor, but only to fields that are still empty and
+ * only once this desk's own record has earned each one.
  *
  * A decision never fails the thing it is about. Every path that cannot decide
  * — switched off, budget spent, no provider inside the tenant's regions, a
@@ -160,6 +168,75 @@ export async function thresholdsFor(ctx: TenantContext): Promise<Thresholds> {
 /** The longest description sent. Past this it is the requester's signature and their email history. */
 const MAX_DESCRIPTION = 4000;
 
+/** The most decisions one score, or one gate, reads. Beyond this the newest are read. */
+const SCORE_LIMIT = 5_000;
+
+/**
+ * How far back the `auto` gate reads, whatever window a page is showing. One
+ * fixed window, so the gate a page reports is the gate the next decision
+ * checks.
+ */
+export const GATE_WINDOW_DAYS = 90;
+
+type SettledRow = { answers: unknown; proposed: unknown; settled: unknown };
+
+/** One answer to one question, against what the ticket settled as. */
+function scoredFor(row: SettledRow, question: string): ScoredAnswer {
+  const answer = (row.answers as Record<string, { value: unknown; confidence: number }>)[question];
+  const proposed = (row.proposed as Record<string, DecisionValue | null>)[question] ?? null;
+  const actual = ((row.settled as Record<string, DecisionValue | null> | null) ?? {})[question] ?? null;
+  return {
+    predicted: answer && answer.value !== null ? proposed : null,
+    confidence: answer?.confidence ?? 0,
+    actual,
+  };
+}
+
+/**
+ * Each gated question's `auto` gate, read from this tenant's own settled
+ * decisions over the gate window.
+ *
+ * The one function both the AI triage page and every `auto` decision call:
+ * what the page says has been earned is exactly what the next decision will
+ * apply. An applied value that nobody changed before the ticket was resolved
+ * counts as agreement — a person had the ticket in front of them and left it
+ * — and one somebody changed counts against it, which is what keeps a field
+ * that stops being right from staying earned.
+ */
+export async function gatesFor(
+  tx: Tx,
+  purpose: DecisionPurpose,
+  thresholds: Thresholds,
+  now = new Date(),
+): Promise<Record<string, AutoGate>> {
+  const since = new Date(now.getTime() - GATE_WINDOW_DAYS * 86_400_000);
+  const rows = await tx.aiDecision.findMany({
+    where: { purpose, settledAt: { not: null }, createdAt: { gte: since } },
+    select: { answers: true, proposed: true, settled: true },
+    orderBy: { createdAt: 'desc' },
+    take: SCORE_LIMIT,
+  });
+  return Object.fromEntries(
+    GATED_QUESTIONS.map((question) => [question, autoGate(rows.map((row) => scoredFor(row, question)), thresholds)]),
+  );
+}
+
+/** The ticket fields whose gate is earned, from the gates by question. */
+function earnedFields(purpose: DecisionPurpose, gates: Record<string, AutoGate>): Set<string> {
+  const bindings = decisionDefinitionFor(purpose).bindings;
+  const earned = new Set<string>();
+  for (const [question, gate] of Object.entries(gates)) {
+    const field = bindings[question]?.field;
+    if (gate.eligible && field) earned.add(field);
+  }
+  return earned;
+}
+
+/** The actor an applied answer is written as: the AI, never whoever raised the ticket. */
+export function asDecisionActor(ctx: TenantContext, purpose: DecisionPurpose): TenantContext {
+  return { ...ctx, actor: { type: 'ai', id: null, displayName: `AI ${purpose}` } };
+}
+
 export interface TriageRun {
   decisionId: string;
   outcome: string;
@@ -176,14 +253,8 @@ export interface TriageRun {
 export async function runTriage(ctx: TenantContext, ticketId: string, at = new Date()): Promise<TriageRun | null> {
   const purpose: DecisionPurpose = 'triage';
   const definition = decisionDefinitionFor(purpose);
-  const selected = await modeFor(ctx, purpose);
-  if (selected === 'off') return null;
-  // Shadow and suggest are honoured in this release; neither changes a
-  // ticket. `auto` is refused by the settings schema, and this is the second
-  // lock: a value written around the schema is treated as suggest, which
-  // still waits for a person.
-  const mode: DecisionMode = selected === 'shadow' ? 'shadow' : 'suggest';
-  if (selected !== mode) logger.warn('a decision mode this release does not honour was treated as suggest', { selected });
+  const mode = await modeFor(ctx, purpose);
+  if (mode === 'off') return null;
   const thresholds = await thresholdsFor(ctx);
   const periodKey = periodFor(at);
 
@@ -199,12 +270,16 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     if (earlier) return { earlier } as const;
     const ticket = await tx.ticket.findFirst({ where: { id: ticketId, deletedAt: null } });
     if (!ticket) throw new NotFoundError('ticket', ticketId);
-    const [categories, teams, budgetOk] = await Promise.all([
+    const [categories, teams, budgetOk, gates] = await Promise.all([
       tx.category.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, path: true }, orderBy: { path: 'asc' } }),
       tx.team.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       budgetAllows(ctx, tx, at),
+      // Only `auto` reads the gate, and it reads it on every decision: a field
+      // that stops being right stops being applied without anybody having to
+      // notice first.
+      mode === 'auto' ? gatesFor(tx, purpose, thresholds, at) : Promise.resolve({} as Record<string, AutoGate>),
     ]);
-    return { earlier: null, ticket, categories, teams, budgetOk };
+    return { earlier: null, ticket, categories, teams, budgetOk, gates };
   });
   if (read.earlier) {
     return { decisionId: read.earlier.id, outcome: read.earlier.outcome, provider: read.earlier.provider };
@@ -240,10 +315,10 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
       answer.value === null ? null : map && typeof answer.value === 'string' ? (map.get(answer.value) ?? null) : answer.value;
   }
 
-  // Every field that already has a value counts as a person's (or a rule's)
-  // until the ticket's own history can say otherwise. Conservative on
-  // purpose: in shadow mode it changes nothing, and before `auto` exists it
-  // is replaced by the field history rather than loosened.
+  // Every field that already has a value counts as a person's (or a rule's).
+  // Conservative on purpose: `auto` only ever fills a field that is empty, so
+  // it cannot write over anything anybody chose — a requester's pick on a
+  // form, a catalogue item's team, a rule that got there first.
   const current: Record<string, unknown> = {
     type: ticket.type,
     categoryId: ticket.categoryId,
@@ -259,11 +334,17 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     values: proposed,
     current,
     humanSet,
+    earned: earnedFields(purpose, read.gates),
   });
 
-  // `suggested` only when there is something for an agent to see; a suggest
+  // `suggested` when there is something for a person to see or for the AI to
+  // apply; the apply below upgrades it to `applied` once the write lands. A
   // decision whose every answer fell below the line is recorded like shadow.
-  const outcome = !result.decision ? 'none' : plan.some((entry) => entry.action === 'suggest') ? 'suggested' : 'shadowed';
+  let outcome = !result.decision
+    ? 'none'
+    : plan.some((entry) => entry.action === 'suggest' || entry.action === 'apply')
+      ? 'suggested'
+      : 'shadowed';
   const decisionId = newId();
   await transaction(ctx, async (tx) => {
     await tx.aiDecision.create({
@@ -315,7 +396,144 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     });
   });
 
+  if (plan.some((entry) => entry.action === 'apply')) {
+    const applied = await applyDecision(ctx, {
+      purpose,
+      decisionId,
+      ticket: { id: ticket.id, number: ticket.number },
+      plan,
+      answers,
+      proposed,
+      current,
+      provider: result.provider,
+      model: result.model,
+      at,
+    });
+    if (applied > 0) outcome = 'applied';
+  }
+
   return { decisionId, outcome, provider: result.provider };
+}
+
+interface ApplyInput {
+  purpose: DecisionPurpose;
+  decisionId: string;
+  ticket: { id: string; number: string };
+  plan: readonly PlannedAnswer[];
+  answers: Record<string, { value: unknown; confidence: number }>;
+  proposed: Record<string, string | number | boolean | null>;
+  current: Record<string, unknown>;
+  provider: string;
+  model: string | null;
+  at: Date;
+}
+
+/**
+ * Applies the answers a decision's plan says may be applied, and records
+ * exactly what landed.
+ *
+ * Its own transaction, after the decision is recorded: the decision is the
+ * evidence and stands whether or not the write does. The write goes through
+ * the ticket module's automation path as the `ai` actor, with each field
+ * expected to still hold what the decision saw — a rule or a person who set
+ * it in the seconds the provider took wins, and that field is offered as a
+ * suggestion instead. Returns how many fields were set; never throws, because
+ * a ticket that was not re-routed is a ticket intake already left in a
+ * working state.
+ */
+async function applyDecision(ctx: TenantContext, input: ApplyInput): Promise<number> {
+  const definition = decisionDefinitionFor(input.purpose);
+  const actor = asDecisionActor(ctx, input.purpose);
+  const entries = input.plan.filter((entry) => entry.action === 'apply' && entry.field !== null);
+  const patch: Record<string, unknown> = {};
+  const expect: Record<string, unknown> = {};
+  for (const entry of entries) {
+    patch[entry.field!] = input.proposed[entry.question];
+    expect[entry.field!] = input.current[entry.field!] ?? null;
+  }
+
+  try {
+    return await transaction(actor, async (tx) => {
+      const change = await ticketService.applyAutomatedChange(
+        actor,
+        tx,
+        input.ticket.id,
+        { patch, expect },
+        {
+          kind: 'ai',
+          id: input.decisionId,
+          key: input.purpose,
+          version: definition.questionSetVersion,
+          reason: `AI ${input.purpose} decision ${input.decisionId} (${input.provider}${input.model ? ` ${input.model}` : ''})`,
+        },
+      );
+
+      const at = input.at.toISOString();
+      const applied: Record<string, AppliedEntry> = {};
+      for (const entry of entries) {
+        const changed = change.changed[entry.field!];
+        if (!changed) continue;
+        applied[entry.question] = {
+          field: entry.field!,
+          from: (changed.before ?? null) as AppliedEntry['from'],
+          to: changed.after as AppliedEntry['to'],
+          confidence: input.answers[entry.question]?.confidence ?? 0,
+          at,
+        };
+      }
+      if (Object.keys(applied).length === 0) {
+        logger.info('a decision planned to apply found its fields already set', {
+          decisionId: input.decisionId,
+          refused: change.refused,
+        });
+        return 0;
+      }
+
+      await tx.aiDecision.update({
+        where: { id: input.decisionId },
+        data: { applied: applied as never, outcome: 'applied' },
+      });
+      // Which AI changed the ticket, how sure it was, and what it replaced.
+      // The ticket's own history records the same change under actor `ai`.
+      await recordAudit(tx, actor, {
+        action: 'ai.decision.applied',
+        targetType: 'ticket',
+        targetId: input.ticket.id,
+        before: Object.fromEntries(Object.values(applied).map((entry) => [entry.field, entry.from])),
+        after: {
+          decisionId: input.decisionId,
+          purpose: input.purpose,
+          provider: input.provider,
+          model: input.model,
+          fields: applied,
+        },
+      });
+      // What SLA re-matches on: a classification, not any edit.
+      await publish(tx, actor, {
+        definition: events.ticketClassified,
+        aggregateId: input.ticket.id,
+        payload: {
+          ticketId: input.ticket.id,
+          number: input.ticket.number,
+          decisionId: input.decisionId,
+          changed: Object.fromEntries(
+            Object.values(applied).map((entry) => [entry.field, { before: entry.from, after: entry.to }]),
+          ),
+        },
+      });
+      for (const entry of Object.values(applied)) {
+        metrics.increment('ai_decision_fields_applied_total', { purpose: input.purpose, field: entry.field });
+      }
+      return Object.keys(applied).length;
+    });
+  } catch (error) {
+    metrics.increment('ai_decision_apply_failed_total', { purpose: input.purpose });
+    logger.warn('a decision could not be applied; its answers are offered as suggestions instead', {
+      decisionId: input.decisionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  }
 }
 
 const listSchema = z
@@ -398,15 +616,23 @@ export async function settleDecisions(ctx: TenantContext, tx: Tx, ticketId: stri
   return decisions.length;
 }
 
-/** The questions whose answers could ever be applied, and so gate `auto`. */
-const GATED_QUESTIONS: readonly string[] = ['type', 'category', 'group'];
-
 export interface QuestionScore extends Score {
   question: string;
-  /** Present for the questions `auto` could apply. */
+  /**
+   * Present for the questions `auto` could apply. Always read over the gate
+   * window (`GATE_WINDOW_DAYS`), whatever `days` the score was asked for.
+   */
   autoGate: AutoGate | null;
   /** What agents did with this field's suggestions, in `suggest` mode. */
   responses: { accepted: number; dismissed: number };
+  /** What the AI set by itself, and how much of that people changed or undid. */
+  applied: { applied: number; overridden: number };
+}
+
+export interface StepDownNotice {
+  at: Date;
+  overridden: number;
+  window: number;
 }
 
 export interface DecisionScore {
@@ -427,6 +653,10 @@ export interface DecisionScore {
   questions: QuestionScore[];
   /** True only when every gated question has earned it. */
   autoEligible: boolean;
+  /** The automatic step-down's meter: people's corrections over the last applied decisions. */
+  stepDown: StepDownState;
+  /** The last time `auto` withdrew itself, if it ever has. */
+  lastStepDown: StepDownNotice | null;
 }
 
 const scoreSchema = z
@@ -437,9 +667,6 @@ const scoreSchema = z
   .strict();
 
 export type ScoreQuery = z.input<typeof scoreSchema>;
-
-/** The most decisions one score reads. Beyond this the newest are scored. */
-const SCORE_LIMIT = 5_000;
 
 /**
  * How well a purpose's decisions matched what people settled on.
@@ -455,23 +682,38 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
   const since = new Date(now.getTime() - parsed.days * 86_400_000);
   const [mode, thresholds] = await Promise.all([modeFor(ctx, parsed.purpose), thresholdsFor(ctx)]);
 
-  const rows = await transaction(ctx, (tx) =>
-    tx.aiDecision.findMany({
-      where: { purpose: parsed.purpose, createdAt: { gte: since } },
-      select: {
-        provider: true,
-        answers: true,
-        proposed: true,
-        attempts: true,
-        settled: true,
-        responses: true,
-        latencyMs: true,
-        costMicros: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: SCORE_LIMIT,
-    }),
-  );
+  const { rows, gates, stepDown, lastStepDown } = await transaction(ctx, async (tx) => {
+    const [rows, gates, stepDown, notice] = await Promise.all([
+      tx.aiDecision.findMany({
+        where: { purpose: parsed.purpose, createdAt: { gte: since } },
+        select: {
+          provider: true,
+          answers: true,
+          proposed: true,
+          attempts: true,
+          settled: true,
+          responses: true,
+          applied: true,
+          latencyMs: true,
+          costMicros: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: SCORE_LIMIT,
+      }),
+      gatesFor(tx, parsed.purpose, thresholds, now),
+      stepDownState(tx, parsed.purpose),
+      tx.auditEvent.findFirst({
+        where: { action: 'ai.decision.stepped_down', targetId: parsed.purpose },
+        orderBy: { seq: 'desc' },
+        select: { occurredAt: true, after: true },
+      }),
+    ]);
+    const after = (notice?.after ?? {}) as { overridden?: number; window?: number };
+    const lastStepDown: StepDownNotice | null = notice
+      ? { at: notice.occurredAt, overridden: after.overridden ?? 0, window: after.window ?? 0 }
+      : null;
+    return { rows, gates, stepDown, lastStepDown };
+  });
 
   const byProvider: Record<string, number> = {};
   const skips: Record<string, number> = {};
@@ -496,34 +738,33 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
   const questionKeys = new Set<string>();
   for (const row of settledRows) for (const key of Object.keys((row.answers as object) ?? {})) questionKeys.add(key);
   const responseCounts = new Map<string, { accepted: number; dismissed: number }>();
+  const appliedCounts = new Map<string, { applied: number; overridden: number }>();
   for (const row of rows) {
-    for (const [question, response] of Object.entries((row.responses as Record<string, { action?: string }>) ?? {})) {
+    const responses = (row.responses as Record<string, { action?: string }>) ?? {};
+    for (const [question, response] of Object.entries(responses)) {
       questionKeys.add(question);
       const counts = responseCounts.get(question) ?? { accepted: 0, dismissed: 0 };
       if (response?.action === 'accepted') counts.accepted += 1;
       if (response?.action === 'dismissed') counts.dismissed += 1;
       responseCounts.set(question, counts);
     }
+    for (const question of Object.keys((row.applied as object) ?? {})) {
+      questionKeys.add(question);
+      const counts = appliedCounts.get(question) ?? { applied: 0, overridden: 0 };
+      counts.applied += 1;
+      const action = responses[question]?.action;
+      if (action === 'undone' || action === 'overridden') counts.overridden += 1;
+      appliedCounts.set(question, counts);
+    }
   }
 
-  const questions: QuestionScore[] = [...questionKeys].sort().map((question) => {
-    const scored: ScoredAnswer[] = settledRows.map((row) => {
-      const answer = (row.answers as Record<string, { value: unknown; confidence: number }>)[question];
-      const proposed = (row.proposed as Record<string, DecisionValue | null>)[question] ?? null;
-      const actual = (row.settled as Record<string, DecisionValue | null>)[question] ?? null;
-      return {
-        predicted: answer && answer.value !== null ? proposed : null,
-        confidence: answer?.confidence ?? 0,
-        actual,
-      };
-    });
-    return {
-      question,
-      ...scoreAnswers(scored),
-      autoGate: GATED_QUESTIONS.includes(question) ? autoGate(scored, thresholds) : null,
-      responses: responseCounts.get(question) ?? { accepted: 0, dismissed: 0 },
-    };
-  });
+  const questions: QuestionScore[] = [...questionKeys].sort().map((question) => ({
+    question,
+    ...scoreAnswers(settledRows.map((row) => scoredFor(row, question))),
+    autoGate: gates[question] ?? null,
+    responses: responseCounts.get(question) ?? { accepted: 0, dismissed: 0 },
+    applied: appliedCounts.get(question) ?? { applied: 0, overridden: 0 },
+  }));
 
   const gated = questions.filter((question) => question.autoGate !== null);
   return {
@@ -541,5 +782,7 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
     meanLatencyMs: answered > 0 ? Math.round(latencyTotal / answered) : null,
     questions,
     autoEligible: gated.length > 0 && gated.every((question) => question.autoGate!.eligible),
+    stepDown,
+    lastStepDown,
   };
 }

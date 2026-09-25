@@ -1,5 +1,6 @@
-import { defineHandler, enqueue, logger, metrics } from '@itsm/platform';
+import { defineHandler, enqueue, logger, metrics, type TenantContext } from '@itsm/platform';
 import { triagesChannel } from '../domain/decisions.js';
+import { recordOverrides } from '../service/auto-service.js';
 import { modeFor, settleDecisions } from '../service/decision-service.js';
 
 /**
@@ -53,5 +54,58 @@ defineHandler({
     // spoiled it. It is two indexed statements, and cheap to retry.
     if (toCategory !== 'resolved') return;
     await settleDecisions(ctx, tx, ticketId);
+  },
+});
+
+/**
+ * Asks whether `auto` should step down, off the transaction that recorded the
+ * correction: the step-down writes a setting and clears its cache, and the
+ * cache must only be cleared once the new value is committed.
+ */
+async function askForReview(ctx: TenantContext): Promise<void> {
+  try {
+    await enqueue(ctx, 'ai', 'ai.decision.review', { purpose: 'triage' });
+  } catch (error) {
+    // Not a statement, so the transaction is untouched. The next correction
+    // asks again, and the page shows the meter either way.
+    logger.warn('the auto step-down review was not queued', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * A person changing what `auto` set is a correction (ADR-0051).
+ *
+ * Only people: actor `user`. The AI's own write comes back as a
+ * `ticket.updated` from actor `ai`, and a rule reacting to it as `workflow`;
+ * neither is anybody disagreeing. Written in the event's transaction, like
+ * settling, and not caught for the same reason.
+ */
+defineHandler({
+  consumer: 'ai',
+  moduleId: 'MOD-09-AI',
+  eventType: 'ticket.updated',
+  required: false,
+  async handle(ctx, event, tx) {
+    if (event.actor.type !== 'user') return;
+    const { ticketId, changed } = event.payload as { ticketId: string; changed: Record<string, { after: unknown }> };
+    if (!('categoryId' in changed) && !('groupId' in changed)) return;
+    const after = Object.fromEntries(Object.entries(changed).map(([field, change]) => [field, change.after]));
+    if (await recordOverrides(ctx, tx, ticketId, after)) await askForReview(ctx);
+  },
+});
+
+defineHandler({
+  consumer: 'ai',
+  moduleId: 'MOD-09-AI',
+  eventType: 'ticket.assigned',
+  required: false,
+  async handle(ctx, event, tx) {
+    if (event.actor.type !== 'user') return;
+    // Every assignment names the group, changed or not; a group the AI set
+    // that is still the group is not a correction, and `overrides` says so.
+    const { ticketId, groupId } = event.payload as { ticketId: string; groupId: string | null };
+    if (await recordOverrides(ctx, tx, ticketId, { groupId })) await askForReview(ctx);
   },
 });

@@ -8,14 +8,17 @@ import {
   autoGate,
   checkDecision,
   decisionModelFor,
+  overrides,
   pendingSuggestions,
   planDecision,
   problemWithThresholds,
   scoreAnswers,
   shouldStepDown,
+  standingApplied,
   timeoutFor,
   triageQuestions,
   triagesChannel,
+  type PendingInput,
   type PlanInput,
   type ScoredAnswer,
 } from '../domain/decisions.js';
@@ -29,13 +32,14 @@ import type { DecisionQuestion } from '../providers/types.js';
  */
 
 describe('the catalogue', () => {
-  it('lets a tenant choose off, shadow or suggest — never auto — in this release', () => {
-    expect([...SELECTABLE_MODES]).toEqual(['off', 'shadow', 'suggest']);
+  it('lets a tenant choose any mode, because choosing auto is not what lets an answer act', () => {
+    expect([...SELECTABLE_MODES]).toEqual(['off', 'shadow', 'suggest', 'auto']);
   });
 
-  it('never allows priority, impact, urgency or status to be applied without a person', () => {
-    expect([...AUTO_APPLY_FIELDS].sort()).toEqual(['categoryId', 'groupId', 'type']);
-    for (const field of ['priority', 'impact', 'urgency', 'status', 'assigneeId']) {
+  it('applies category and team without a person, and nothing else', () => {
+    expect([...AUTO_APPLY_FIELDS].sort()).toEqual(['categoryId', 'groupId']);
+    // Type is fixed when a ticket is raised; the rest are a person's call.
+    for (const field of ['type', 'priority', 'impact', 'urgency', 'status', 'assigneeId']) {
       expect(AUTO_APPLY_FIELDS as readonly string[]).not.toContain(field);
     }
   });
@@ -184,10 +188,29 @@ describe('what an answer is allowed to do', () => {
       values: { category: 'c2' },
       current: { categoryId: null },
       humanSet: new Set(),
+      earned: new Set(['categoryId', 'groupId']),
       ...overrides,
     };
   }
   const only = (overrides: Partial<PlanInput> = {}) => planDecision(input(overrides))[0]!;
+
+  it('suggests a field this desk has not earned yet, however confident', () => {
+    const plan = only({ earned: new Set(['groupId']) });
+    expect(plan).toMatchObject({ field: 'categoryId', action: 'suggest' });
+    expect(plan.reason).toMatch(/has not earned auto on this desk yet/);
+    expect(only({ earned: undefined }).action).toBe('suggest');
+  });
+
+  it('never applies a type, now that a ticket’s type cannot change', () => {
+    const plan = only({
+      answers: { type: { value: 'request', confidence: 0.99 } },
+      values: { type: 'request' },
+      current: { type: 'incident' },
+      earned: new Set(['type', 'categoryId', 'groupId']),
+    });
+    expect(plan).toMatchObject({ field: 'type', action: 'suggest' });
+    expect(plan.reason).toMatch(/never applied without a person/);
+  });
 
   it('never acts in shadow mode, however confident', () => {
     expect(only({ mode: 'shadow' })).toMatchObject({ action: 'record', reason: 'mode is shadow' });
@@ -329,7 +352,7 @@ describe('which suggestions an agent sees', () => {
     current: { categoryId: null, groupId: null, priority: 'P3', type: 'incident' } as Record<string, unknown>,
     responded: new Set<string>(),
   };
-  const questions = (input = base) => pendingSuggestions(input).map((entry) => entry.question);
+  const questions = (input: PendingInput = base) => pendingSuggestions(input).map((entry) => entry.question);
 
   it('shows the answers planned as suggestions, with what each would do', () => {
     const pending = pendingSuggestions(base);
@@ -358,5 +381,44 @@ describe('which suggestions an agent sees', () => {
   it('shows a major-incident answer only when it says yes', () => {
     const no = { ...base, answers: { ...base.answers, majorIncident: { value: false, confidence: 0.9 } }, proposed: { ...base.proposed, majorIncident: false } };
     expect(questions(no)).not.toContain('majorIncident');
+  });
+
+  it('offers an answer planned to be applied that was not, and never one that was', () => {
+    const planned = { ...base, plan: base.plan.map((entry) => (entry.question === 'group' ? { ...entry, action: 'apply' as const } : entry)) };
+    expect(questions(planned)).toContain('group');
+    expect(questions({ ...planned, applied: new Set(['group']) })).not.toContain('group');
+  });
+});
+
+describe('what the AI set by itself', () => {
+  const applied = {
+    category: { field: 'categoryId', from: null, to: 'c2', confidence: 0.96, at: '2026-09-25T10:00:00.000Z' },
+    group: { field: 'groupId', from: null, to: 'g3', confidence: 0.93, at: '2026-09-25T10:00:00.000Z' },
+  };
+  const answers = { category: { value: 'Access / VPN', confidence: 0.96 }, group: { value: 'Network', confidence: 0.93 } };
+  const standing = (current: Record<string, unknown>, responded = new Set<string>()) =>
+    standingApplied({ applied, answers, current, responded }).map((entry) => entry.question);
+
+  it('offers Undo on each value still on the ticket, with the label a person reads', () => {
+    expect(standing({ categoryId: 'c2', groupId: 'g3' })).toEqual(['category', 'group']);
+    expect(standingApplied({ applied, answers, current: { categoryId: 'c2' }, responded: new Set() })[0]).toMatchObject({
+      display: 'Access / VPN',
+      value: 'c2',
+    });
+  });
+
+  it('offers nothing once a person has changed it: it is theirs now', () => {
+    expect(standing({ categoryId: 'c9', groupId: 'g3' })).toEqual(['group']);
+  });
+
+  it('offers nothing twice', () => {
+    expect(standing({ categoryId: 'c2', groupId: 'g3' }, new Set(['group']))).toEqual(['category']);
+  });
+
+  it('counts a change to anything else as a correction, and the same value as none', () => {
+    expect(overrides(applied.group, 'g1')).toBe(true);
+    expect(overrides(applied.group, null)).toBe(true);
+    expect(overrides(applied.group, 'g3')).toBe(false);
+    expect(overrides(undefined, 'g1')).toBe(false);
   });
 });

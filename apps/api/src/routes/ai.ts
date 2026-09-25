@@ -20,6 +20,7 @@ import {
   scoreDecisions,
   setBudget,
   triageSuggestionFor,
+  undoApplied,
 } from '@itsm/module-ai';
 import { contextOf } from '../plugins/context.js';
 
@@ -162,10 +163,11 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * The triage suggestions still waiting on one ticket, in `suggest` mode
+   * The triage suggestions still waiting on one ticket, and the values the AI
+   * set by itself that can still be undone, in `suggest` and `auto` modes
    * (ADR-0051). `data` is null when there is nothing to show — no decision,
-   * nothing confident enough, everything already dealt with, or the desk not
-   * in `suggest` mode at all.
+   * nothing confident enough, everything already dealt with, or the desk in
+   * `off` or `shadow`.
    */
   app.get('/ai/triage/:ticketId', async (request) => {
     const ctx = contextOf(request);
@@ -189,6 +191,17 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const { id, question } = suggestionParams.parse(request.params);
     return respondToSuggestion(ctx, id, question, 'dismissed', respondSchema.parse(request.body ?? {}));
+  });
+
+  /**
+   * Undoes a value the AI set by itself in `auto` mode: puts back what the
+   * field held before, as the agent's own edit with the version they were
+   * looking at, and counts it as a correction towards the step-down.
+   */
+  app.post('/ai/decisions/:id/applied/:question/undo', async (request) => {
+    const ctx = contextOf(request);
+    const { id, question } = suggestionParams.parse(request.params);
+    return undoApplied(ctx, id, question, respondSchema.parse(request.body ?? {}));
   });
 
   app.get('/ai/budget', async (request) => {

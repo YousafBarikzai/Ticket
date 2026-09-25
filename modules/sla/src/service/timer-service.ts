@@ -17,6 +17,7 @@ import {
   transaction,
 } from '@itsm/platform';
 import { evaluate, events, type Expr } from '@itsm/contracts';
+import { STATES } from '@itsm/module-ticket';
 import { partitionFor } from '../manifest.js';
 import { applyEscalations } from './escalation-service.js';
 
@@ -173,6 +174,147 @@ export async function startTimersForTicket(ctx: TenantContext, tx: Tx, ticketId:
 
   metrics.increment('sla_timers_started_total', {}, started);
   return started;
+}
+
+export interface RematchResult {
+  /** The policy the ticket matches now, or null when none does and nothing changed. */
+  policyId: string | null;
+  /** Running or paused timers moved onto the new target. */
+  retargeted: number;
+  /** Targets the ticket had no timer for, started from when it was raised. */
+  started: number;
+}
+
+/**
+ * Re-matches a ticket's SLA after it was classified (ADR-0051).
+ *
+ * An AI decision in `auto` mode can set a new ticket's category and team a
+ * few seconds after it was raised, and a policy may match on either. **The
+ * clock started at creation and keeps running**: business time already used
+ * is kept, and only the policy, the target and so the due time change. A
+ * ticket must not earn extra time because a model was slow to classify it,
+ * and must not lose time it was promised either. A target that is now
+ * already overdue has its due time set to now, and the next tick breaches it
+ * as it would have been breached.
+ *
+ * Timers already met, breached or cancelled are history and are left alone;
+ * so are timers for targets the new policy does not have. A ticket that
+ * matches no policy keeps what it has: a classification is a reason to
+ * re-check, not a reason to take a promise away.
+ */
+export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketId: string): Promise<RematchResult> {
+  const result: RematchResult = { policyId: null, retargeted: 0, started: 0 };
+  const ticket = (await tx.ticket.findFirst({ where: { id: ticketId } })) as TicketForSla | null;
+  if (!ticket) return result;
+  const state = STATES[ticket.status as keyof typeof STATES];
+  if (!state || state.sla.resolutionTimer === 'stopped' || state.sla.resolutionTimer === 'cancelled') return result;
+
+  const policy = await matchPolicy(tx, ctx, ticket);
+  if (!policy) return result;
+  result.policyId = policy.id;
+
+  const targets = policy.targets.filter((t) => t.priority === ticket.priority);
+  const { id: calendarId, calendar } = await calendarForTicket(tx, policy, ticket);
+  const timers = await tx.slaTimer.findMany({ where: { ticketId } });
+  const now = new Date();
+  const before = { policyId: timers[0]?.policyId ?? null, dueAt: timers.find((t) => t.targetType === 'resolution')?.dueAt ?? null };
+
+  for (const target of targets) {
+    const targetMs = target.minutes * 60_000;
+    const timer = timers.find((t) => t.targetType === target.targetType);
+
+    if (!timer) {
+      // A target the ticket never had a timer for: it runs from when the
+      // ticket was raised, as it would have if the ticket had arrived
+      // classified. Only while the clock is running; a pending ticket's
+      // timers start again when it does.
+      if (state.sla.resolutionTimer !== 'running') continue;
+      const startedAt = ticket.createdAt;
+      const dueAt = addBusinessMs(startedAt, targetMs, calendar);
+      const timerId = newId();
+      await tx.slaTimer.create({
+        data: {
+          id: timerId,
+          tenantId: ctx.tenantId,
+          ticketId,
+          targetType: target.targetType,
+          policyId: policy.id,
+          policyVersion: policy.version,
+          calendarId,
+          targetMs,
+          startedAt,
+          lastResumedAt: startedAt,
+          dueAt,
+          remainingMs: targetMs,
+          state: 'running',
+          nextWarningAt: nextWarningInstant(startedAt, targetMs, target.warningThresholds, [], calendar),
+          partition: partitionFor(ticketId),
+        },
+      });
+      await publish(tx, ctx, {
+        definition: events.slaTimerStarted,
+        aggregateId: timerId,
+        payload: { timerId, ticketId, targetType: target.targetType, dueAt: dueAt.toISOString(), policyId: policy.id },
+      });
+      result.started += 1;
+      continue;
+    }
+
+    if (timer.state !== 'running' && timer.state !== 'paused') continue;
+    if (timer.policyId === policy.id && timer.targetMs === targetMs && timer.calendarId === calendarId) continue;
+
+    // Business time used so far, as if the new policy had applied from the
+    // start: creation to now on the new calendar, less the time the ticket
+    // spent paused. Counting it on the old calendar instead would let a
+    // ticket raised out of hours and matched to a round-the-clock policy
+    // keep the evening it arrived in.
+    const running = timer.state === 'running';
+    const pauses = await tx.slaPause.findMany({ where: { timerId: timer.id }, select: { from: true, to: true } });
+    const paused = pauses.reduce((sum, pause) => sum + elapsedBusinessMs(pause.from, pause.to ?? now, calendar), 0);
+    const used = Math.max(0, elapsedBusinessMs(timer.startedAt, now, calendar) - paused);
+    const remainingMs = Math.max(0, targetMs - used);
+
+    await tx.slaTimer.update({
+      where: { id: timer.id },
+      data: {
+        policyId: policy.id,
+        policyVersion: policy.version,
+        calendarId,
+        targetMs,
+        remainingMs,
+        elapsedMs: used,
+        ...(running
+          ? {
+              // Banked as a pause would bank it, then running again from now
+              // against what is left of the new target.
+              lastResumedAt: now,
+              dueAt: addBusinessMs(now, remainingMs, calendar),
+              nextWarningAt: nextWarningInstant(now, remainingMs, target.warningThresholds, timer.warningsFired, calendar),
+            }
+          : {}),
+        version: { increment: 1 },
+      },
+    });
+    result.retargeted += 1;
+  }
+
+  if (result.retargeted + result.started > 0) {
+    await tx.ticket.updateMany({ where: { id: ticketId }, data: { slaPolicyId: policy.id } });
+    const resolution = await tx.slaTimer.findFirst({ where: { ticketId, targetType: 'resolution' } });
+    if (resolution?.dueAt) {
+      await tx.ticket.updateMany({ where: { id: ticketId }, data: { dueAt: resolution.dueAt } });
+    }
+    await recordAudit(tx, ctx, {
+      action: 'sla.timers.rematched',
+      targetType: 'ticket',
+      targetId: ticketId,
+      before,
+      after: { policyId: policy.id, dueAt: resolution?.dueAt ?? null, retargeted: result.retargeted, started: result.started },
+      reason: 'the ticket was classified after it was raised; the clock kept running from creation',
+    });
+    metrics.increment('sla_timers_rematched_total', {}, result.retargeted + result.started);
+  }
+  return result;
 }
 
 /** The instant at which the next unfired warning threshold is reached. */

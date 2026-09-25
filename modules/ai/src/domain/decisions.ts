@@ -32,16 +32,16 @@ export const DECISION_MODES = ['off', 'shadow', 'suggest', 'auto'] as const;
 export type DecisionMode = (typeof DECISION_MODES)[number];
 
 /**
- * The modes a tenant can select in this release.
+ * The modes a tenant can select.
  *
- * `auto` exists in the vocabulary, the policy and the record so that nothing
- * about it is a schema change later — but nothing applies an answer without a
- * person yet, so offering it would be offering a setting that does nothing.
- * `suggest` shows answers to agents, who accept or dismiss each one; it may be
- * chosen at any time, because a suggestion changes nothing until a person
- * acts on it, and the AI triage page shows the accuracy beside the choice.
+ * All four. `suggest` shows answers to agents, who accept or dismiss each
+ * one. `auto` may be selected at any time too, because selecting it is not
+ * what lets an answer act: each allow-listed field is applied only once this
+ * desk's own record shows it has earned it (`autoGate`), checked on every
+ * decision, so no way of writing the setting can get round it. Until a field
+ * has earned it, `auto` suggests that field exactly as `suggest` would.
  */
-export const SELECTABLE_MODES = ['off', 'shadow', 'suggest'] as const satisfies readonly DecisionMode[];
+export const SELECTABLE_MODES = ['off', 'shadow', 'suggest', 'auto'] as const satisfies readonly DecisionMode[];
 
 /**
  * What an agent may do with each triage answer in `suggest` mode.
@@ -74,6 +74,18 @@ export interface PendingSuggestion {
   confidence: number;
 }
 
+/** What a decision set on a ticket by itself, in `auto` mode. Keyed by question. */
+export interface AppliedEntry {
+  field: string;
+  from: string | number | boolean | null;
+  to: string | number | boolean;
+  confidence: number;
+  at: string;
+}
+
+/** What a person did about one answer. `undone` and `overridden` only follow an applied one. */
+export type ResponseAction = 'accepted' | 'dismissed' | 'undone' | 'overridden';
+
 export interface PendingInput {
   plan: readonly { question: string; field: string | null; action: PlannedAction }[];
   answers: Readonly<Record<string, { value: unknown; confidence: number }>>;
@@ -84,6 +96,8 @@ export interface PendingInput {
   current: Readonly<Record<string, unknown>>;
   /** Questions a person has already accepted or dismissed. */
   responded: ReadonlySet<string>;
+  /** Questions the decision applied by itself. Never suggested as well. */
+  applied?: ReadonlySet<string>;
 }
 
 /**
@@ -98,7 +112,11 @@ export interface PendingInput {
 export function pendingSuggestions(input: PendingInput): PendingSuggestion[] {
   const out: PendingSuggestion[] = [];
   for (const entry of input.plan) {
-    if (entry.action !== 'suggest') continue;
+    // An answer planned to be applied that was not — the ticket moved before
+    // the write, or the write failed — is offered to a person instead, which
+    // is what it would have been in `suggest`.
+    if (entry.action !== 'suggest' && entry.action !== 'apply') continue;
+    if (input.applied?.has(entry.question)) continue;
     if (input.responded.has(entry.question)) continue;
     const kind = SUGGESTION_KINDS[entry.question];
     if (!kind) continue;
@@ -122,16 +140,67 @@ export function pendingSuggestions(input: PendingInput): PendingSuggestion[] {
   return out;
 }
 
+export interface StandingApplied {
+  question: string;
+  field: string;
+  value: string | number | boolean;
+  /** What the provider picked, for a person to read. */
+  display: string;
+  confidence: number;
+  at: string;
+}
+
+/**
+ * The values a decision set that are still on the ticket and that nobody has
+ * answered — the ones an agent can undo. A value somebody has since changed
+ * is theirs now, and undoing it would undo them.
+ */
+export function standingApplied(input: {
+  applied: Readonly<Record<string, AppliedEntry>>;
+  answers: Readonly<Record<string, { value: unknown; confidence: number }>>;
+  current: Readonly<Record<string, unknown>>;
+  responded: ReadonlySet<string>;
+}): StandingApplied[] {
+  const out: StandingApplied[] = [];
+  for (const [question, entry] of Object.entries(input.applied)) {
+    if (input.responded.has(question)) continue;
+    if (input.current[entry.field] !== entry.to) continue;
+    const answer = input.answers[question];
+    out.push({
+      question,
+      field: entry.field,
+      value: entry.to,
+      display: answer && typeof answer.value === 'string' ? answer.value : String(entry.to),
+      confidence: entry.confidence,
+      at: entry.at,
+    });
+  }
+  return out;
+}
+
+/**
+ * Whether a person's change to a field overrides what a decision applied.
+ * Setting it to anything else does; setting it to the same value does not.
+ */
+export function overrides(entry: AppliedEntry | undefined, after: unknown): boolean {
+  return entry !== undefined && after !== entry.to;
+}
+
 /**
  * The ticket fields a decision may ever change without a person (ADR-0051).
  *
  * Routing facts only: a wrong one costs a re-route, and the people working the
  * queue correct them routinely. `categoryId` covers category and subcategory,
- * which are one tree. Priority, impact, urgency, major incident, escalation and
- * status are not here and are not a threshold away from being here: adding one
- * is an ADR with its own shadow evidence.
+ * which are one tree. Type was on the ADR's list and is not here: a ticket's
+ * type is fixed when it is raised, and changing that is a ticket-module
+ * decision of its own. Priority, impact, urgency, major incident, escalation
+ * and status are not here and are not a threshold away from being here: adding
+ * one is an ADR with its own shadow evidence.
  */
-export const AUTO_APPLY_FIELDS = ['type', 'categoryId', 'groupId'] as const;
+export const AUTO_APPLY_FIELDS = ['categoryId', 'groupId'] as const;
+
+/** The questions whose answers `auto` could apply, and so the ones gated. */
+export const GATED_QUESTIONS: readonly string[] = ['category', 'group'];
 export type AutoApplyField = (typeof AUTO_APPLY_FIELDS)[number];
 
 export function isAutoApplyField(field: string): field is AutoApplyField {
@@ -448,6 +517,11 @@ export interface PlanInput {
   current: Readonly<Record<string, unknown>>;
   /** Fields a person or a rule set. Never changed by a decision. */
   humanSet: ReadonlySet<string>;
+  /**
+   * Fields whose `auto` gate this tenant's record has passed. Only `auto`
+   * reads it; a field not in it is suggested instead.
+   */
+  earned?: ReadonlySet<string>;
 }
 
 /**
@@ -456,8 +530,8 @@ export interface PlanInput {
  * The order of the checks is the design: mode first (shadow never acts), then
  * whether there is an answer, then whether it would change anything, then
  * confidence, then whether the field is one a decision may ever touch, then
- * whether a person got there first. Every refusal to act says which check
- * refused.
+ * whether a person got there first, then whether this desk's record has
+ * earned the field. Every refusal to act says which check refused.
  */
 export function planDecision(input: PlanInput): PlannedAnswer[] {
   const out: PlannedAnswer[] = [];
@@ -496,6 +570,10 @@ export function planDecision(input: PlanInput): PlannedAnswer[] {
     }
     if (input.humanSet.has(field)) {
       plan('suggest', `${field} was set by a person or a rule`);
+      continue;
+    }
+    if (!input.earned?.has(field)) {
+      plan('suggest', `${field} has not earned auto on this desk yet`);
       continue;
     }
     plan('apply', `confidence ${answer.confidence} is at or above ${input.thresholds.auto}`);

@@ -13,6 +13,7 @@
     "@itsm/module-identity": "workspace:*",
     "@itsm/module-integrations": "workspace:*",
     "@itsm/module-knowledge": "workspace:*",
+    "@itsm/module-notifications": "workspace:*",
     "@itsm/module-problem": "workspace:*",
     "@itsm/module-search": "workspace:*",
     "@itsm/module-tenancy": "workspace:*",

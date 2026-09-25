@@ -224,6 +224,19 @@ export interface TriageSuggestion {
   model: string | null;
   createdAt: string;
   suggestions: TriageSuggestionItem[];
+  /** Values the AI set by itself in `auto` mode that are still on the ticket, each undoable. */
+  applied: TriageAppliedItem[];
+}
+
+/** One value the AI set by itself (ADR-0051, `auto` mode). */
+export interface TriageAppliedItem {
+  question: string;
+  field: string;
+  value: string | number | boolean;
+  /** What the provider picked, for a person to read. */
+  display: string;
+  confidence: number;
+  at: string;
 }
 
 export interface TimeSummary {

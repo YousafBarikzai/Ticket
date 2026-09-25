@@ -1,7 +1,7 @@
-import type { TriageSuggestionItem } from '@itsm/sdk';
+import type { TriageAppliedItem, TriageSuggestionItem } from '@itsm/sdk';
 
 /**
- * How a triage suggestion reads to an agent (ADR-0051, `suggest` mode).
+ * How triage reads to an agent (ADR-0051, `suggest` and `auto` modes).
  *
  * Pure and separate from the card so the wording has tests. Confidence is a
  * word, never a percentage: the same rule the reply suggestions follow,
@@ -45,4 +45,15 @@ export function orderSuggestions(items: readonly TriageSuggestionItem[]): Triage
   return [...items].sort(
     (a, b) => rank[a.kind] - rank[b.kind] || questionRank.indexOf(a.question) - questionRank.indexOf(b.question),
   );
+}
+
+/** The sentence under a value the AI set by itself, saying what Undo would do. */
+export function appliedLine(item: TriageAppliedItem): string {
+  return `AI set ${fieldName(item.question).toLowerCase()} to ${item.display}. Undo puts back what it was before.`;
+}
+
+/** Category before team: the order a person reads a routing decision in. */
+export function orderApplied(items: readonly TriageAppliedItem[]): TriageAppliedItem[] {
+  const questionRank = ['category', 'group'];
+  return [...items].sort((a, b) => questionRank.indexOf(a.question) - questionRank.indexOf(b.question));
 }

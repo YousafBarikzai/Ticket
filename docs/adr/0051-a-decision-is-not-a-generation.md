@@ -93,29 +93,47 @@ default is `off`.
 Thresholds are tenant settings. The mode is changed by a person holding
 `ai.manage`, and every change is audited.
 
-**This amends ADR-0006 narrowly: four fields may be applied without a person.**
-Only these four, and only in `auto` mode:
+**This amends ADR-0006 narrowly: routing fields may be applied without a
+person.** Only these, and only in `auto` mode:
 
-- ticket **type**
-- **category**
-- **subcategory**
+- **category**, which includes subcategory: the two are one tree
 - **assignment group**
 
-All four are routing facts. A wrong one costs a re-route, and all four are
-routinely corrected by the people who work the queue. The conditions:
+Both are routing facts. A wrong one costs a re-route, and both are routinely
+corrected by the people who work the queue. Ticket **type** was on this list as
+first written and is not applied: a ticket's type is fixed when it is raised,
+and making it changeable is a ticket-module decision with its own consequences
+(numbering, workflows, SLA). Until that is decided, type is a suggestion. The
+conditions:
 
-- **Never over a person.** A field a person has set, at creation or later, is
-  not changed.
-- **Attributed.** Each application is audited with actor `ai`, the decision id,
-  the provider, the model and the confidence.
+- **Never over anything set.** Only an empty field is filled. A value that is
+  there when the decision is made — a requester's choice on a form, a
+  catalogue item's team, a rule that ran first — counts as a person's and is
+  not changed. The write also expects each field to still hold what the
+  decision saw, so a rule or a person who sets it in the seconds a provider
+  takes wins, and that answer is offered as a suggestion instead.
+- **Attributed.** Each application is written as actor `ai` through the ticket
+  module's automation path, and audited (`ai.decision.applied`) with the
+  decision id, the provider, the model and the confidence.
 - **Reversible.** Each application can be undone in one action, which restores
-  the previous value and records the correction as an outcome.
-- **Earned per tenant.** `auto` can be selected only after that tenant's shadow
-  record for the purpose agrees with the values people set. The bar is 95%
-  agreement over at least 200 decisions at or above the auto threshold.
-- **Withdrawn automatically.** If people override more than 5% of the last 100
-  applied decisions, the purpose steps down to `suggest`. The step-down is
-  audited and an administrator is told.
+  the previous value as the agent's own edit and records the correction.
+- **Earned per tenant, per field, on every decision.** A field is applied only
+  once that tenant's own settled record for it agrees with the values people
+  settled on: 95% agreement over at least 200 decisions at or above the auto
+  threshold, read over the last 90 days. The gate is checked on every
+  decision, not when the mode is switched, so `auto` may be selected at any
+  time and no way of writing the setting gets round it; a field that has not
+  earned it is suggested exactly as in `suggest`. An applied value that nobody
+  changed before the ticket was resolved counts as agreement, and one somebody
+  changed counts against it, so a field that stops being right stops being
+  applied.
+- **Withdrawn automatically.** A correction is a person (actor `user`) changing
+  an applied field to anything else, or undoing it; the AI's own writes and a
+  rule reacting to them are not. If people correct more than 5% of the last
+  100 applied decisions, the purpose steps down to `suggest`. The step-down is
+  written as a new version of the mode setting, audited
+  (`ai.decision.stepped_down`), and the tenant's administrators are told in
+  the console and by email.
 
 **Everything else stays advisory, whatever the confidence:** priority, impact,
 urgency, major-incident declaration, escalation, status, and anything a
@@ -204,7 +222,17 @@ read and its rule that nothing but shapes is logged.
   unit test against the pure chain walker, and the record names which state a
   decision ended in.
 - **The SLA module gains one consumer** (`ticket.classified`). It re-matches
-  targets and never restarts a clock.
+  targets and never restarts a clock: time used is counted from creation on
+  the new policy's calendar, less time paused, and a target already overdue
+  under the new policy breaches on the next tick. Timers already met or
+  breached, and targets the new policy lacks, are left as they are.
+- **Rules react to what the AI sets.** The AI's write is published as actor
+  `ai`, not `workflow`, so a rule that routes by category routes a ticket the
+  AI categorised as it would one a person did. Triage runs once, on creation,
+  so this cannot loop.
+- **A group set by `auto` is a field change, not an assignment**, as it is
+  when a rule sets one: it publishes `ticket.updated` and `ticket.classified`,
+  not `ticket.assigned`, and so sends no assignment notification.
 - **Doc 13 §6.1's "one provider per deployment" no longer holds for
   decisions.** Generation is unchanged.
 - **Compliance is checkable from data.** `GET /ai/decisions` is read-only and

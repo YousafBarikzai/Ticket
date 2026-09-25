@@ -95,6 +95,7 @@ export type {
   Ticket,
   TriageSuggestion,
   TriageSuggestionItem,
+  TriageAppliedItem,
   Timeline,
   TimelineAttachment,
   TimelineCommentEntry,

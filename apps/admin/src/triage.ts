@@ -107,12 +107,82 @@ export function modeNotice(score: Pick<DecisionScore, 'mode' | 'decisions'>): st
   return null;
 }
 
+/** What `auto` is doing field by field, in words: which fields it sets and which it only suggests. */
+export function autoNotice(score: Pick<DecisionScore, 'mode' | 'questions'>): string | null {
+  if (score.mode !== 'auto') return null;
+  const gated = score.questions.filter((question) => question.autoGate !== null);
+  const earned = gated.filter((question) => question.autoGate!.eligible).map((question) => fieldLabel(question.question).toLowerCase());
+  const waiting = gated.filter((question) => !question.autoGate!.eligible).map((question) => fieldLabel(question.question).toLowerCase());
+  const sets =
+    earned.length > 0
+      ? `AI triage is in auto mode and sets ${earned.join(' and ')} on new tickets where it is empty.`
+      : 'AI triage is in auto mode, but no field has earned it yet, so it only suggests.';
+  const suggests = waiting.length > 0 ? ` ${capitalise(waiting.join(' and '))} is suggested until it has earned it.` : '';
+  return `${sets}${suggests} Everything else — type, priority, major incident — is always only suggested.`;
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * The step-down meter: how close `auto` is to switching itself back to
+ * `suggest`. Shown whenever the AI has set anything, in any mode, because
+ * a desk that stepped down will want to see the number go down again.
+ */
+export function stepDownText(stepDown: DecisionScore['stepDown']): string | null {
+  if (stepDown.considered === 0) return null;
+  const limit = `${Math.round(stepDown.limit * 100)}%`;
+  const rate = asPercent(stepDown.rate);
+  const sample =
+    stepDown.considered < stepDown.window
+      ? ` It only acts on a full ${stepDown.window}, so this is not yet enough to step down on.`
+      : '';
+  return (
+    `Agents corrected ${stepDown.overridden} of the last ${stepDown.considered} tickets the AI changed by itself (${rate}). ` +
+    `Above ${limit} of the last ${stepDown.window}, auto switches itself back to suggest.${sample}`
+  );
+}
+
+/** The last time `auto` withdrew itself, said once, at the top of the page. */
+export function lastStepDownText(notice: DecisionScore['lastStepDown']): string | null {
+  if (!notice) return null;
+  const when = new Date(notice.at).toISOString().slice(0, 10);
+  return `On ${when} auto switched itself back to suggest: agents corrected ${notice.overridden} of the last ${notice.window} tickets it had changed. Administrators were told by email.`;
+}
+
+/** What the AI set by itself for a field, and how much of it people changed. */
+export function appliedText(question: DecisionQuestionScore): string {
+  const { applied, overridden } = question.applied;
+  if (applied === 0) return '—';
+  return overridden === 0 ? `${applied} set` : `${applied} set, ${overridden} corrected`;
+}
+
 /** How often agents took a field's suggestion, when they have seen any. */
 export function acceptanceText(question: DecisionQuestionScore): string {
   const { accepted, dismissed } = question.responses;
   const total = accepted + dismissed;
   if (total === 0) return '—';
   return `${accepted} of ${total} accepted`;
+}
+
+/**
+ * What switching to `auto` would do, with the gate beside it. Any time is
+ * allowed: a field is set only once it has earned it, so switching early
+ * suggests exactly as `suggest` does until then.
+ */
+export function autoReadiness(score: Pick<DecisionScore, 'mode' | 'questions'>): string | null {
+  if (score.mode !== 'suggest') return null;
+  const gated = score.questions.filter((question) => question.autoGate !== null);
+  const earned = gated.filter((question) => question.autoGate!.eligible).map((question) => fieldLabel(question.question).toLowerCase());
+  const evidence =
+    earned.length > 0
+      ? `${capitalise(earned.join(' and '))} ${earned.length === 1 ? 'has' : 'have'} earned it.`
+      : 'No field has earned it yet, so switching now would change nothing until one does.';
+  return (
+    'Switching ai.decision.triage.mode to auto lets the AI set category and team by itself on new tickets where they are empty, ' +
+    `each only once it has been right 95% of the time over 200 resolved tickets. ${evidence}`
+  );
 }
 
 /**

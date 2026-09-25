@@ -513,6 +513,9 @@ importers:
       '@itsm/module-knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@itsm/module-notifications':
+        specifier: workspace:*
+        version: link:../notifications
       '@itsm/module-problem':
         specifier: workspace:*
         version: link:../problem

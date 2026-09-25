@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { TriageSuggestionItem } from '@itsm/sdk';
-import { confidenceWord, fieldName, orderSuggestions, suggestionLine } from '../ai/triage.js';
+import type { TriageAppliedItem, TriageSuggestionItem } from '@itsm/sdk';
+import { appliedLine, confidenceWord, fieldName, orderApplied, orderSuggestions, suggestionLine } from '../ai/triage.js';
 
 /**
  * How a triage suggestion reads to an agent. Each case is a place the card
@@ -47,5 +47,28 @@ describe('the order', () => {
       item({ question: 'category' }),
     ]).map((entry) => entry.question);
     expect(ordered).toEqual(['category', 'priority', 'type', 'majorIncident']);
+  });
+});
+
+describe('what the AI set by itself', () => {
+  const applied = (overrides: Partial<TriageAppliedItem> = {}): TriageAppliedItem => ({
+    question: 'group',
+    field: 'groupId',
+    value: 'g1',
+    display: 'Network',
+    confidence: 0.96,
+    at: '2026-09-25T10:00:00.000Z',
+    ...overrides,
+  });
+
+  it('says the AI set it, and what Undo does', () => {
+    expect(appliedLine(applied())).toBe('AI set team to Network. Undo puts back what it was before.');
+  });
+
+  it('reads category before team', () => {
+    expect(orderApplied([applied(), applied({ question: 'category', field: 'categoryId' })]).map((entry) => entry.question)).toEqual([
+      'category',
+      'group',
+    ]);
   });
 });

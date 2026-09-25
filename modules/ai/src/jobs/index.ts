@@ -1,4 +1,5 @@
 import { defineJob } from '@itsm/platform';
+import { reviewAutoMode } from '../service/auto-service.js';
 import { runTriage } from '../service/decision-service.js';
 import { runSuggestionJob } from '../service/suggestion-service.js';
 
@@ -18,4 +19,12 @@ defineJob<{ jobId: string }>('ai', 'ai.suggest', async (payload, { ctx }) => {
  */
 defineJob<{ purpose: 'triage'; ticketId: string }>('ai', 'ai.decide', async (payload, { ctx }) => {
   await runTriage(ctx, payload.ticketId);
+});
+
+/**
+ * Whether `auto` should withdraw itself, asked after a person corrects a
+ * value it applied. Harmless to run twice: it steps down at most once.
+ */
+defineJob<{ purpose: 'triage' }>('ai', 'ai.decision.review', async (payload, { ctx }) => {
+  await reviewAutoMode(ctx, payload.purpose);
 });

@@ -360,9 +360,13 @@ model AiDecision {
   /// The ticket's triage fields when the decision was made. A suggestion is
   /// withdrawn once a person changes the field away from this.
   baseline           Json      @default("{}")
-  /// { question: { action: accepted | dismissed, by, at } } — what agents did
-  /// with each suggestion, in `suggest` mode.
+  /// { question: { action: accepted | dismissed | undone | overridden, by, at } }
+  /// — what people did with each answer: a suggestion accepted or dismissed,
+  /// or a value the decision applied that a person undid or changed.
   responses          Json      @default("{}")
+  /// { question: { field, from, to, confidence, at } } — what the decision set
+  /// on the ticket by itself, in `auto` mode, as the `ai` actor.
+  applied            Json      @default("{}")
   /// shadowed | suggested | applied | none (nobody answered; rules stand).
   outcome            String
   /// { question: value } people settled on, filled in later, for scoring.

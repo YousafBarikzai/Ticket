@@ -179,6 +179,21 @@ export const ticketAssigned = defineEvent({
   }),
 });
 
+export const ticketClassified = defineEvent({
+  type: 'ticket.classified',
+  version: 1,
+  aggregateType: 'ticket',
+  webhook: true,
+  description:
+    'An AI triage decision in auto mode set routing fields on a new ticket (ADR-0051). The same change is also a ticket.updated; ' +
+    'this one says it was a classification, so the SLA module re-matches targets without restarting the clock.',
+  payload: z.object({
+    ...ticketRef,
+    decisionId: id,
+    changed: z.record(z.object({ before: z.unknown(), after: z.unknown() })),
+  }),
+});
+
 export const ticketCommentAdded = defineEvent({
   type: 'ticket.comment.added',
   version: 1,
@@ -1271,11 +1286,30 @@ export const aiBudgetThreshold = defineEvent({
   }),
 });
 
+export const aiDecisionSteppedDown = defineEvent({
+  type: 'ai.decision.stepped_down',
+  version: 1,
+  aggregateType: 'ai_decision',
+  webhook: true,
+  description:
+    'People corrected too many of the values a decision purpose applied on its own, so it moved itself from auto back to suggest (ADR-0051).',
+  payload: z.object({
+    purpose: z.string(),
+    from: z.string(),
+    to: z.string(),
+    /** Applied decisions a person corrected, out of `window`. */
+    overridden: z.number().int(),
+    window: z.number().int(),
+    /** The tenant's administrators, so MOD-11 can tell them. */
+    audience: z.array(z.object({ kind: z.literal('user'), userId: id })),
+  }),
+});
+
 export const eventCatalogue = [
   tenantCreated, tenantSuspended,
   userProvisioned, userUpdated, userDeactivated, roleAssignmentChanged,
   authLoginSucceeded, authLoginFailed, sessionRevoked,
-  ticketCreated, ticketImported, ticketUpdated, ticketStatusChanged, ticketAssigned, ticketCommentAdded,
+  ticketCreated, ticketImported, ticketUpdated, ticketStatusChanged, ticketAssigned, ticketClassified, ticketCommentAdded,
   ticketAttachmentAdded, ticketAttachmentScanned, ticketTaskCreated, ticketTaskCompleted,
   ticketLinked, ticketMerged,
   slaTimerStarted, slaTimerWarning, slaTimerBreached, slaTimerPaused, slaTimerResumed, slaTimerMet,
@@ -1302,7 +1336,7 @@ export const eventCatalogue = [
   importJobFinished,
   usageLimitReached, planChanged,
   packInstalled, packUpgraded,
-  aiSuggestionCreated, aiBudgetThreshold,
+  aiSuggestionCreated, aiBudgetThreshold, aiDecisionSteppedDown,
 ] as const;
 
 export const eventTypes = eventCatalogue.map((e) => e.type);

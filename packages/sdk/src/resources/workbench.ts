@@ -158,6 +158,17 @@ export function workbench(client: Client) {
       ),
 
     /**
+     * Puts back what a field held before the AI set it, in `auto` mode. The
+     * agent's own edit, with the version they were looking at, and counted
+     * as a correction.
+     */
+    undoTriage: (decisionId: string, question: string, version: number) =>
+      client.request<{ decisionId: string; question: string; restored: string | number | boolean | null }>(
+        `/api/v1/ai/decisions/${encodeURIComponent(decisionId)}/applied/${encodeURIComponent(question)}/undo`,
+        { method: 'POST', body: { version } },
+      ),
+
+    /**
      * What the person did with it. Recorded once, and the whole reason the
      * suggestion surface is worth building: without it nobody ever learns
      * whether any of this helps.
