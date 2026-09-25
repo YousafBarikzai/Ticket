@@ -7,12 +7,14 @@ import {
   SELECTABLE_MODES,
   autoGate,
   checkDecision,
+  decisionModelFor,
   planDecision,
   problemWithThresholds,
   scoreAnswers,
   shouldStepDown,
   timeoutFor,
   triageQuestions,
+  triagesChannel,
   type PlanInput,
   type ScoredAnswer,
 } from '../domain/decisions.js';
@@ -35,6 +37,23 @@ describe('the catalogue', () => {
     for (const field of ['priority', 'impact', 'urgency', 'status', 'assigneeId']) {
       expect(AUTO_APPLY_FIELDS as readonly string[]).not.toContain(field);
     }
+  });
+
+  it('triages what arrives untriaged, and nothing an agent or a migration raised', () => {
+    for (const channel of ['email', 'portal', 'slack', 'teams', 'whatsapp', 'voice', 'mobile']) {
+      expect(triagesChannel(channel)).toBe(true);
+    }
+    for (const channel of ['api', 'import', 'system', 'anything-else']) {
+      expect(triagesChannel(channel)).toBe(false);
+    }
+  });
+
+  it('asks Anthropic for triage with Sonnet 5, and anybody else with their default', () => {
+    const triage = DECISION_CATALOGUE.triage;
+    const anthropic = { provider: { models: ['claude-opus-5', 'claude-sonnet-5'] }, defaultModel: 'claude-opus-5' };
+    expect(decisionModelFor(triage, 'anthropic', anthropic)).toBe('claude-sonnet-5');
+    expect(decisionModelFor(triage, 'anthropic', { ...anthropic, provider: { models: ['claude-opus-5'] } })).toBe('claude-opus-5');
+    expect(decisionModelFor(triage, 'stub', { provider: { models: ['stub-small'] }, defaultModel: 'stub-small' })).toBe('stub-small');
   });
 
   it('gives a decision engine two seconds and a general model longer', () => {

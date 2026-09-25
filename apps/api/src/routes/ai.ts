@@ -15,6 +15,7 @@ import {
   recordOutcome,
   requestSchema,
   requestSuggestion,
+  scoreDecisions,
   setBudget,
 } from '@itsm/module-ai';
 import { contextOf } from '../plugins/context.js';
@@ -145,6 +146,16 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const rows = await listDecisions(ctx, request.query as Record<string, unknown>);
     return { data: rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() })) };
+  });
+
+  /**
+   * How well the decisions matched what people settled on, per question, and
+   * whether `auto` has been earned. Computed from the rows on each request.
+   */
+  app.get('/ai/decisions/score', async (request) => {
+    const ctx = contextOf(request);
+    const score = await scoreDecisions(ctx, request.query as Record<string, unknown>);
+    return { ...score, since: score.since.toISOString() };
   });
 
   app.get('/ai/budget', async (request) => {

@@ -120,15 +120,18 @@ export {
   DEFAULT_THRESHOLDS,
   SELECTABLE_MODES,
   STEP_DOWN,
+  TRIAGE_CHANNELS,
   autoGate,
   checkDecision,
   decisionDefinitionFor,
+  decisionModelFor,
   isDecisionPurpose,
   planDecision,
   problemWithThresholds,
   scoreAnswers,
   shouldStepDown,
   triageQuestions,
+  triagesChannel,
   type DecisionMode,
   type DecisionPurpose,
   type Thresholds,
@@ -145,10 +148,17 @@ export {
   listDecisions,
   modeFor,
   runTriage,
+  scoreDecisions,
+  settleDecisions,
   thresholdsFor,
   type DecisionListQuery,
+  type DecisionScore,
   type DecisionSummary,
+  type QuestionScore,
+  type ScoreQuery,
   type TriageRun,
 } from './service/decision-service.js';
+export { tenantAiRegions } from './service/residency-service.js';
 export { SHIPPED_DATASETS, SHIPPED_PROMPTS, type ShippedDataset, type ShippedPrompt } from './seed/prompts.js';
 import './jobs/index.js';
+import './handlers/index.js';

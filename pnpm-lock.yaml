@@ -519,6 +519,9 @@ importers:
       '@itsm/module-search':
         specifier: workspace:*
         version: link:../search
+      '@itsm/module-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@itsm/module-ticket':
         specifier: workspace:*
         version: link:../ticket

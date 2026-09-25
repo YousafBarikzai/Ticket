@@ -206,8 +206,39 @@ data-processing terms have been verified. Until then `triage` runs
 - The Anthropic adapter now runs on the official SDK and answers `decide`
   through structured outputs. The stub answers `decide` deterministically.
 
-Nothing calls `runTriage` yet. The `ticket.created` consumer is the next step,
-and it arrives with the purpose still `off` by default.
+**Shadow triage (Phase 3, still no behaviour change).**
+
+- **What runs:** a `ticket.created` consumer queues `ai.decide` for tickets
+  that arrive untriaged: email, portal, Slack, Teams, WhatsApp, voice and
+  mobile. Tickets raised through `api` (agents and integrations), `import`
+  and `system` are skipped, because a person or a migration already chose
+  their fields. The job is keyed by ticket, and `runTriage` refuses a second
+  decision for the same ticket and question set, so a redelivered event
+  cannot spend twice. The purpose is still `off` until a tenant turns it on.
+- **Model:** triage asks Anthropic with Claude Sonnet 5, chosen for shadow
+  triage as a strong classifier at about a third of the drafting model's
+  cost. When a deployment does not offer that model, the provider's default is
+  used. The model still needs a price, or the provider is skipped as
+  `unpriced`.
+- **Scoring against the desk:** when a ticket reaches `resolved`, a
+  `ticket.status.changed` consumer writes what it was resolved as onto every
+  triage decision about it: type, category, group, priority, and whether a
+  major incident was declared from it and not stood down. A reopened ticket is
+  settled again when it is resolved again. `GET /ai/decisions/score` computes
+  accuracy, the Brier score, calibration bands and the `auto` gate per field
+  from those rows, on request, with nothing stored to drift.
+- **Where it shows:** the admin console's **AI triage** page (`ai.read`)
+  shows the totals, accuracy by field, calibration, and who answered or was
+  passed over. Its list of recent decisions needs `ai.manage`, because a list
+  of every decision is a list of every triaged ticket. `GET /ai/decisions` for
+  one ticket follows the ticket's own visibility, and anyone who cannot see
+  the ticket gets a 404.
+- **Residency in the worker:** a queued job's context is rebuilt from its
+  envelope, which names the tenant but not its regions. `aiRegions` read that
+  as the default region. Both worker paths, `runTriage` and the existing
+  `runSuggestionJob`, now read the tenant's regions from its row
+  (`tenantAiRegions`), so the last check before a prompt leaves is the
+  tenant's own policy (ADR-0047).
 
 Three things differ from the plan, deliberately:
 

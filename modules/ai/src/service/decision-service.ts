@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   NotFoundError,
-  aiRegions,
   authz,
   getSetting,
   isEnabled,
@@ -11,21 +10,30 @@ import {
   recordAudit,
   transaction,
   type TenantContext,
+  type Tx,
 } from '@itsm/platform';
+import { ticketService } from '@itsm/module-ticket';
 import { formatMicros, periodFor } from '../domain/budget.js';
 import {
   DECISION_PURPOSES,
   DEFAULT_THRESHOLDS,
+  autoGate,
   decisionDefinitionFor,
   planDecision,
   problemWithThresholds,
+  scoreAnswers,
   triageQuestions,
+  type AutoGate,
   type DecisionMode,
   type DecisionPurpose,
+  type Score,
+  type ScoredAnswer,
   type Thresholds,
 } from '../domain/decisions.js';
+import type { DecisionValue } from '../providers/types.js';
 import { budgetAllows, recordSpend } from './budget-service.js';
 import { decide } from './gateway.js';
+import { tenantAiRegions } from './residency-service.js';
 
 /**
  * Structured decisions, recorded (ADR-0051).
@@ -181,6 +189,13 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
   // Read, then let go of the transaction: a provider call is seconds long, and
   // a transaction held across it is a connection held across it.
   const read = await transaction(ctx, async (tx) => {
+    // One triage per ticket and question set. A job delivered twice, or an
+    // event replayed, finds the first decision and stops before it spends.
+    const earlier = await tx.aiDecision.findFirst({
+      where: { purpose, subjectType: 'ticket', subjectId: ticketId, questionSetVersion: definition.questionSetVersion },
+      select: { id: true, outcome: true, provider: true },
+    });
+    if (earlier) return { earlier } as const;
     const ticket = await tx.ticket.findFirst({ where: { id: ticketId, deletedAt: null } });
     if (!ticket) throw new NotFoundError('ticket', ticketId);
     const [categories, teams, budgetOk] = await Promise.all([
@@ -188,10 +203,16 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
       tx.team.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       budgetAllows(ctx, tx, at),
     ]);
-    return { ticket, categories, teams, budgetOk };
+    return { earlier: null, ticket, categories, teams, budgetOk };
   });
+  if (read.earlier) {
+    return { decisionId: read.earlier.id, outcome: read.earlier.outcome, provider: read.earlier.provider };
+  }
 
   const { ticket } = read;
+  // The tenant's own residency policy, from its row: this runs in a worker,
+  // whose context does not carry it.
+  const allowedRegions = await tenantAiRegions(ctx);
   // Masked under the classification registry for this actor, the same as a
   // suggestion's context: a decision provider is sent what the tenant's
   // policy lets leave, and nothing else from the row.
@@ -206,7 +227,7 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     purpose,
     state,
     questions: set.questions,
-    allowedRegions: aiRegions(ctx),
+    allowedRegions,
     budgetAvailable: read.budgetOk,
   });
 
@@ -303,10 +324,23 @@ const listSchema = z
 
 export type DecisionListQuery = z.input<typeof listSchema>;
 
-/** What decided, how confidently, at what cost, newest first. Read-only. */
+/**
+ * What decided, how confidently, at what cost, newest first. Read-only.
+ *
+ * Two doors. About one ticket: anybody with `ai.read` who may see that ticket,
+ * and a 404 for one they may not — a decision names the ticket and how it was
+ * classified, so it must not be the thing that tells an agent in another team
+ * the ticket exists. Across the tenant: `ai.manage`, because a list of every
+ * decision is a list of every triaged ticket.
+ */
 export async function listDecisions(ctx: TenantContext, query: DecisionListQuery = {}): Promise<DecisionSummary[]> {
-  authz.require(ctx, 'ai.read');
   const parsed = listSchema.parse(query);
+  if (parsed.subjectId) {
+    authz.require(ctx, 'ai.read');
+    await ticketService.getTicket(ctx, parsed.subjectId);
+  } else {
+    authz.require(ctx, 'ai.manage');
+  }
   const rows = await transaction(ctx, (tx) =>
     tx.aiDecision.findMany({
       where: {
@@ -318,4 +352,176 @@ export async function listDecisions(ctx: TenantContext, query: DecisionListQuery
     }),
   );
   return rows.map((row) => summarise(row as DecisionRow));
+}
+
+/**
+ * Records what a resolved ticket ended up as, against every triage decision
+ * made about it (ADR-0051).
+ *
+ * The values are the ticket's own fields at resolution, in the same terms the
+ * decision's `proposed` column uses — ids for category and group — so scoring
+ * compares like with like. `majorIncident` is whether one was declared from
+ * this ticket and not stood down. Called inside the status-change event's
+ * transaction; a ticket nobody triaged costs one indexed count and nothing
+ * else.
+ */
+export async function settleDecisions(ctx: TenantContext, tx: Tx, ticketId: string, at = new Date()): Promise<number> {
+  const decisions = await tx.aiDecision.findMany({
+    where: { purpose: 'triage', subjectType: 'ticket', subjectId: ticketId },
+    select: { id: true },
+  });
+  if (decisions.length === 0) return 0;
+
+  const ticket = await tx.ticket.findFirst({
+    where: { id: ticketId },
+    select: { type: true, categoryId: true, groupId: true, priority: true },
+  });
+  if (!ticket) return 0;
+  const declared = await tx.majorIncident.count({ where: { ticketId, status: { not: 'stood_down' } } });
+
+  const settled = {
+    type: ticket.type,
+    category: ticket.categoryId,
+    group: ticket.groupId,
+    priority: ticket.priority,
+    majorIncident: declared > 0,
+  };
+  await tx.aiDecision.updateMany({
+    where: { id: { in: decisions.map((decision) => decision.id) } },
+    data: { settled: settled as never, settledAt: at },
+  });
+  logger.debug('triage decisions settled', { tenantId: ctx.tenantId, ticketId, decisions: decisions.length });
+  return decisions.length;
+}
+
+/** The questions whose answers could ever be applied, and so gate `auto`. */
+const GATED_QUESTIONS: readonly string[] = ['type', 'category', 'group'];
+
+export interface QuestionScore extends Score {
+  question: string;
+  /** Present for the questions `auto` could apply. */
+  autoGate: AutoGate | null;
+}
+
+export interface DecisionScore {
+  purpose: DecisionPurpose;
+  mode: DecisionMode;
+  thresholds: Thresholds;
+  since: Date;
+  decisions: number;
+  settled: number;
+  /** Decisions nobody answered, which left the ticket as intake did. */
+  fellToRules: number;
+  byProvider: Record<string, number>;
+  /** How often each link was passed over, and why. */
+  skips: Record<string, number>;
+  costMicros: string;
+  costDisplay: string;
+  meanLatencyMs: number | null;
+  questions: QuestionScore[];
+  /** True only when every gated question has earned it. */
+  autoEligible: boolean;
+}
+
+const scoreSchema = z
+  .object({
+    purpose: z.enum(DECISION_PURPOSES).default('triage'),
+    days: z.coerce.number().int().min(1).max(365).default(90),
+  })
+  .strict();
+
+export type ScoreQuery = z.input<typeof scoreSchema>;
+
+/** The most decisions one score reads. Beyond this the newest are scored. */
+const SCORE_LIMIT = 5_000;
+
+/**
+ * How well a purpose's decisions matched what people settled on.
+ *
+ * Read-only and computed on request from the rows, like the budget: there is
+ * no stored score to drift from the decisions beneath it. The `auto` gate is
+ * the same function the mode change will call, so what this page says has
+ * been earned is exactly what switching `auto` on will check.
+ */
+export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {}, now = new Date()): Promise<DecisionScore> {
+  authz.require(ctx, 'ai.read');
+  const parsed = scoreSchema.parse(query);
+  const since = new Date(now.getTime() - parsed.days * 86_400_000);
+  const [mode, thresholds] = await Promise.all([modeFor(ctx, parsed.purpose), thresholdsFor(ctx)]);
+
+  const rows = await transaction(ctx, (tx) =>
+    tx.aiDecision.findMany({
+      where: { purpose: parsed.purpose, createdAt: { gte: since } },
+      select: {
+        provider: true,
+        answers: true,
+        proposed: true,
+        attempts: true,
+        settled: true,
+        latencyMs: true,
+        costMicros: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: SCORE_LIMIT,
+    }),
+  );
+
+  const byProvider: Record<string, number> = {};
+  const skips: Record<string, number> = {};
+  let cost = 0n;
+  let latencyTotal = 0;
+  let answered = 0;
+  for (const row of rows) {
+    byProvider[row.provider] = (byProvider[row.provider] ?? 0) + 1;
+    cost += row.costMicros;
+    if (row.provider !== 'rules') {
+      latencyTotal += row.latencyMs;
+      answered += 1;
+    }
+    for (const attempt of (row.attempts as { provider: string; outcome: string; reason: string | null }[]) ?? []) {
+      if (attempt.outcome === 'answered' || !attempt.reason) continue;
+      const key = `${attempt.provider}:${attempt.reason}`;
+      skips[key] = (skips[key] ?? 0) + 1;
+    }
+  }
+
+  const settledRows = rows.filter((row) => row.settled !== null);
+  const questionKeys = new Set<string>();
+  for (const row of settledRows) for (const key of Object.keys((row.answers as object) ?? {})) questionKeys.add(key);
+
+  const questions: QuestionScore[] = [...questionKeys].sort().map((question) => {
+    const scored: ScoredAnswer[] = settledRows.map((row) => {
+      const answer = (row.answers as Record<string, { value: unknown; confidence: number }>)[question];
+      const proposed = (row.proposed as Record<string, DecisionValue | null>)[question] ?? null;
+      const actual = (row.settled as Record<string, DecisionValue | null>)[question] ?? null;
+      return {
+        predicted: answer && answer.value !== null ? proposed : null,
+        confidence: answer?.confidence ?? 0,
+        actual,
+      };
+    });
+    return {
+      question,
+      ...scoreAnswers(scored),
+      autoGate: GATED_QUESTIONS.includes(question) ? autoGate(scored, thresholds) : null,
+    };
+  });
+
+  const gated = questions.filter((question) => question.autoGate !== null);
+  return {
+    purpose: parsed.purpose,
+    mode,
+    thresholds,
+    since,
+    decisions: rows.length,
+    settled: settledRows.length,
+    fellToRules: byProvider.rules ?? 0,
+    byProvider,
+    skips,
+    costMicros: String(cost),
+    costDisplay: formatMicros(cost),
+    meanLatencyMs: answered > 0 ? Math.round(latencyTotal / answered) : null,
+    questions,
+    autoEligible: gated.length > 0 && gated.every((question) => question.autoGate!.eligible),
+  };
 }

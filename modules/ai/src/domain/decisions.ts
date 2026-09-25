@@ -116,6 +116,15 @@ export interface DecisionPurposeDefinition {
    * decision is only worth having while the ticket is still new.
    */
   readonly timeoutMs: Readonly<Record<string, number>> & { readonly default: number };
+  /**
+   * The model each provider is asked with, where it is not the provider's
+   * default. A product choice rather than an operator's: triage is
+   * classification, and the model that suits it is not the one a deployment
+   * picked for drafting replies. Used only when the provider offers it; the
+   * provider's default otherwise, so a deployment that narrowed its model
+   * list still decides rather than failing.
+   */
+  readonly models: Readonly<Record<string, string>>;
   readonly bindings: Readonly<Record<string, QuestionBinding>>;
 }
 
@@ -131,6 +140,9 @@ export const DECISION_CATALOGUE: Readonly<Record<DecisionPurpose, DecisionPurpos
     // documentation), then the general model, then the stub outside production.
     chain: ['jev', 'anthropic', 'stub'],
     timeoutMs: { default: 20_000, jev: 2_000 },
+    // Chosen by the product owner for shadow triage: a strong classifier at
+    // about a third of the cost of the drafting model.
+    models: { anthropic: 'claude-sonnet-5' },
     bindings: {
       type: { field: 'type' },
       category: { field: 'categoryId' },
@@ -143,6 +155,19 @@ export const DECISION_CATALOGUE: Readonly<Record<DecisionPurpose, DecisionPurpos
 
 export function decisionDefinitionFor(purpose: DecisionPurpose): DecisionPurposeDefinition {
   return DECISION_CATALOGUE[purpose];
+}
+
+/**
+ * The model a provider is asked a purpose's questions with: the purpose's
+ * choice when the provider offers it, otherwise the provider's default.
+ */
+export function decisionModelFor(
+  definition: DecisionPurposeDefinition,
+  provider: string,
+  entry: { provider: { models: readonly string[] }; defaultModel: string },
+): string {
+  const preferred = definition.models[provider];
+  return preferred && entry.provider.models.includes(preferred) ? preferred : entry.defaultModel;
 }
 
 /** Which link of the chain a provider gets, in milliseconds. */
@@ -160,6 +185,21 @@ export function timeoutFor(definition: DecisionPurposeDefinition, provider: stri
  * pick from reliably and paying for every token of it.
  */
 export const MAX_OPTIONS = 200;
+
+/**
+ * The channels whose tickets are triaged.
+ *
+ * The ones a ticket arrives by untriaged: a requester's email, chat message,
+ * call or portal form. `api` is left out because it is how agents and
+ * integrations raise tickets with the fields already chosen — asking a model
+ * to second-guess a person who just picked them costs money and teaches
+ * nothing. `import` and `system` are not intake at all.
+ */
+export const TRIAGE_CHANNELS = ['email', 'portal', 'slack', 'teams', 'whatsapp', 'voice', 'mobile'] as const;
+
+export function triagesChannel(channel: string): boolean {
+  return (TRIAGE_CHANNELS as readonly string[]).includes(channel);
+}
 
 /** The types a ticket can arrive as. Problem, change and task are made, not reported. */
 export const TRIAGE_TYPES = ['incident', 'request', 'question'] as const;

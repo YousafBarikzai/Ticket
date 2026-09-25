@@ -554,6 +554,29 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403 },
   },
   {
+    what: 'see the AI decisions about one ticket',
+    path: (t) => `/api/v1/ai/decisions?subjectId=${t.ticketIds[0]}`,
+    // A decision names the ticket and how it was classified, so it follows
+    // the ticket's own visibility: the agent in the other team gets the same
+    // 404 the ticket would give them (ADR-0051).
+    allowed: ['agent', 'lead', 'admin'],
+    deniedStatus: { requester: 403, otherAgent: 404 },
+  },
+  {
+    what: 'list every AI decision in the tenant',
+    path: () => '/api/v1/ai/decisions',
+    // A list of every decision is a list of every triaged ticket.
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'see how well AI triage has matched people',
+    path: () => '/api/v1/ai/decisions/score',
+    // Totals only — no ticket, no answer — so every holder of `ai.read`.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
     what: 'set this tenant\u2019s AI budget',
     method: 'PUT',
     path: () => '/api/v1/ai/budget',

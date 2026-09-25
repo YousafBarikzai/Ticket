@@ -33,6 +33,7 @@ import { assemble, renderable } from './context-service.js';
 import { assertWithinBudget, recordSpend } from './budget-service.js';
 import { NoProviderConfigured, ProviderOutsideResidency, callModel, residencyPermits } from './gateway.js';
 import { currentVersionOf } from './prompt-service.js';
+import { tenantAiRegions } from './residency-service.js';
 
 /**
  * The suggestion lifecycle: asked for, generated, shown, decided.
@@ -325,7 +326,10 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
       template: version.template,
       context: renderable(assembled.context),
       model: job.model,
-      allowedRegions: aiRegions(ctx),
+      // The tenant's row, not the worker's context: a job envelope carries
+      // the tenant but not its regions, so `aiRegions(ctx)` here would be a
+      // default region rather than this tenant's policy.
+      allowedRegions: await tenantAiRegions(ctx),
     });
     const parsedOut = parseCompletion(capability, result.completion.text);
 

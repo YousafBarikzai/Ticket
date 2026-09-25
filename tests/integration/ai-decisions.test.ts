@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { systemContext, transaction, withContext } from '@itsm/platform';
+import { queue, systemContext, transaction, withContext } from '@itsm/platform';
 import { settingsService } from '@itsm/module-admin';
 import { tenantService } from '@itsm/module-tenancy';
 import {
@@ -10,7 +10,15 @@ import {
   runTriage,
   stubProvider,
 } from '@itsm/module-ai';
-import { closeHarness, contextFor, createTestTenant, deleteTestTenant, request, type TestTenant } from '../support/harness.js';
+import {
+  closeHarness,
+  contextFor,
+  createTestTenant,
+  deleteTestTenant,
+  drainEvents,
+  request,
+  type TestTenant,
+} from '../support/harness.js';
 
 /**
  * Structured decisions, in shadow (ADR-0051).
@@ -67,14 +75,27 @@ async function setSetting(key: string, value: unknown): Promise<void> {
   await withContext(context, () => settingsService.publishSetting(context, { key, value, reason: 'integration test' }));
 }
 
-async function raiseTicket(title: string, description: string): Promise<string> {
-  const response = await request<{ id: string }>('/api/v1/tickets', {
+async function raiseTicket(title: string, description: string, sourceChannel = 'api'): Promise<string> {
+  return (await raise(title, description, sourceChannel)).id;
+}
+
+async function raise(title: string, description: string, sourceChannel = 'api'): Promise<{ id: string; number: string }> {
+  const response = await request<{ id: string; number: string }>('/api/v1/tickets', {
     method: 'POST',
     token: tenant.people.agent!.token,
-    body: { type: 'incident', title, description, priority: 'P3' },
+    body: { type: 'incident', title, description, priority: 'P3', sourceChannel },
   });
   expect(response.status).toBe(201);
-  return response.body.id;
+  return response.body;
+}
+
+async function move(number: string, to: string): Promise<void> {
+  const response = await request(`/api/v1/tickets/${number}/transitions`, {
+    method: 'POST',
+    token: tenant.people.agent!.token,
+    body: { to },
+  });
+  expect(response.status).toBe(200);
 }
 
 interface DecisionView {
@@ -209,5 +230,95 @@ describe('in shadow', () => {
     await triage(ticketId);
     expect((await decisionsFor(ticketId)).status).toBe(200);
     expect((await decisionsFor(ticketId, tenant.people.requester!.token)).status).toBe(403);
+  });
+});
+
+describe('wired to the ticket lifecycle', () => {
+  beforeAll(async () => {
+    await setFlag('ai.decision.triage', true);
+    await setSetting('ai.decision.triage.mode', 'shadow');
+  });
+
+  afterAll(async () => {
+    await setSetting('ai.decision.triage.mode', 'off');
+    await setFlag('ai.decision.triage', false);
+  });
+
+  it('queues triage for a ticket that arrived by a channel, once, and not for one an agent raised', async () => {
+    const portal = await raiseTicket('Cannot print to the third floor printer', 'Jobs sit in the queue.', 'portal');
+    const byAgent = await raiseTicket('Swap the monitor on desk 12', 'Agreed with the user.', 'api');
+    await drainEvents(tenant.id);
+
+    const queued = await queue('ai').getJob(`triage-${portal}`);
+    try {
+      expect(queued?.name).toBe('ai.decide');
+      expect((queued?.data as { payload: { ticketId: string } }).payload.ticketId).toBe(portal);
+      // An agent picked the fields themselves; there is nothing to learn.
+      expect(await queue('ai').getJob(`triage-${byAgent}`)).toBeUndefined();
+    } finally {
+      await queued?.remove();
+    }
+  });
+
+  it('decides a ticket once, however often it is asked', async () => {
+    registerAiProvider(stubProvider());
+    const ticketId = await raiseTicket('Laptop fan is loud', 'Constant noise since Monday.', 'email');
+    const first = await triage(ticketId);
+    const second = await triage(ticketId);
+    expect(second?.decisionId).toBe(first?.decisionId);
+    expect(await read((tx) => tx.aiDecision.count({ where: { subjectId: ticketId } }))).toBe(1);
+  });
+
+  it('settles its decisions with what the ticket was resolved as, and scores them', async () => {
+    registerAiProvider(stubProvider());
+    const ticket = await raise('The VPN drops every hour', 'Reconnecting works for a while.', 'portal');
+    await triage(ticket.id);
+
+    await move(ticket.number, 'in_progress');
+    await move(ticket.number, 'resolved');
+    await drainEvents(tenant.id);
+
+    const decision = await read((tx) => tx.aiDecision.findFirst({ where: { subjectId: ticket.id } }));
+    const resolved = await read((tx) => tx.ticket.findFirst({ where: { id: ticket.id } }));
+    expect(decision!.settledAt).not.toBeNull();
+    expect(decision!.settled).toEqual({
+      type: resolved!.type,
+      category: resolved!.categoryId,
+      group: resolved!.groupId,
+      priority: resolved!.priority,
+      majorIncident: false,
+    });
+
+    const score = await request<{ settled: number; questions: { question: string; scored: number }[]; mode: string }>(
+      '/api/v1/ai/decisions/score',
+      { token: tenant.people.admin!.token },
+    );
+    expect(score.status).toBe(200);
+    expect(score.body.mode).toBe('shadow');
+    expect(score.body.settled).toBeGreaterThanOrEqual(1);
+    expect(score.body.questions.find((question) => question.question === 'type')!.scored).toBeGreaterThanOrEqual(1);
+  });
+
+  it('keeps a worker to the tenant’s own regions, not the default its context was built with', async () => {
+    // The worker's context names the tenant and nothing else, so it carries
+    // the default region. The tenant allows only us-east; the provider is in
+    // the default region. Before the fix, the default won.
+    registerAiProvider({ ...stubProvider(), processingRegion: 'eu-west' });
+    await tenantService.setAiRegions(tenant.id, { regions: ['us-east'] });
+    try {
+      const ticketId = await raiseTicket('Keyboard missing keys', 'Two keys fell off.', 'email');
+      const worker = systemContext(tenant.id);
+      const run = await withContext(worker, () => runTriage(worker, ticketId));
+      expect(run).toMatchObject({ provider: 'rules', outcome: 'none' });
+      const decision = await read((tx) => tx.aiDecision.findFirst({ where: { subjectId: ticketId } }));
+      expect((decision!.attempts as { reason: string }[]).at(-1)!.reason).toBe('residency');
+    } finally {
+      await tenantService.setAiRegions(tenant.id, { regions: [] });
+    }
+  });
+
+  it('lists every decision only for someone who manages AI', async () => {
+    expect((await request('/api/v1/ai/decisions', { token: tenant.people.admin!.token })).status).toBe(200);
+    expect((await request('/api/v1/ai/decisions', { token: tenant.people.agent!.token })).status).toBe(403);
   });
 });

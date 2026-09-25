@@ -21,7 +21,7 @@ export const aiManifest: ModuleManifest = registerModule({
   name: 'AI capability service',
   version: '1.0.0',
   phase: 'PH-4',
-  dependsOn: ['MOD-01', 'MOD-04', 'MOD-09', 'MOD-09-KNOWLEDGE', 'MOD-13', 'MOD-14', 'MOD-15'],
+  dependsOn: ['MOD-01', 'MOD-04', 'MOD-09', 'MOD-09-KNOWLEDGE', 'MOD-13', 'MOD-14', 'MOD-15', 'MOD-21'],
   permissions: [
     { key: 'ai.suggest', scopes: ['any'], description: 'Ask for a suggestion, and say what you did with it.' },
     { key: 'ai.read', scopes: ['any'], description: 'See this tenant’s AI jobs, suggestions and spend.' },
@@ -38,7 +38,9 @@ export const aiManifest: ModuleManifest = registerModule({
     // A decision is audited, not evented, until something acts on one: in
     // shadow mode there is nothing for another module to react to.
     publishes: ['ai.suggestion.created', 'ai.budget.threshold'],
-    consumes: [],
+    // Shadow triage (ADR-0051): a new channel ticket is triaged, and a
+    // resolved one settles the decisions made about it.
+    consumes: ['ticket.created', 'ticket.status.changed'],
   },
   featureFlags: [
     {
@@ -149,6 +151,11 @@ export const aiManifest: ModuleManifest = registerModule({
       name: 'ai.suggest',
       queue: 'ai',
       description: 'Assemble the context, call the provider, and store the suggestion with its evidence.',
+    },
+    {
+      name: 'ai.decide',
+      queue: 'ai',
+      description: 'Ask the decision chain about a new ticket and record the answer (shadow triage).',
     },
     {
       name: 'ai.retention.sweep',

@@ -15,6 +15,7 @@
     "@itsm/module-knowledge": "workspace:*",
     "@itsm/module-problem": "workspace:*",
     "@itsm/module-search": "workspace:*",
+    "@itsm/module-tenancy": "workspace:*",
     "@itsm/module-ticket": "workspace:*",
     "@itsm/module-workflow": "workspace:*",
     "@itsm/platform": "workspace:*",

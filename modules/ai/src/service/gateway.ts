@@ -3,7 +3,7 @@ import { renderStrict } from '@itsm/module-workflow';
 import { CircuitBreakers, CircuitOpenError } from '@itsm/module-integrations';
 import { costOf, isPriced, pricedModels } from '../domain/budget.js';
 import type { Capability } from '../domain/capabilities.js';
-import { checkDecision, decisionDefinitionFor, timeoutFor, type DecisionPurpose } from '../domain/decisions.js';
+import { checkDecision, decisionDefinitionFor, decisionModelFor, timeoutFor, type DecisionPurpose } from '../domain/decisions.js';
 import { activeDefaultModel, activeProvider, providerNamed } from '../providers/registry.js';
 import type { AiProvider, Completion, Decision, DecisionQuestion } from '../providers/types.js';
 
@@ -239,11 +239,12 @@ class DecisionTimedOut extends Error {}
 export function skipReasonFor(
   entry: { provider: AiProvider; defaultModel: string } | null,
   call: Pick<DecideCall, 'allowedRegions' | 'budgetAvailable'>,
+  model: string | null = entry?.defaultModel ?? null,
 ): SkipReason | null {
   if (!entry) return 'not-registered';
   if (typeof entry.provider.decide !== 'function') return 'no-decide';
   if (!residencyPermits(entry.provider.processingRegion, call.allowedRegions)) return 'residency';
-  if (!isPriced(entry.defaultModel)) return 'unpriced';
+  if (!model || !isPriced(model)) return 'unpriced';
   if (!call.budgetAvailable) return 'budget';
   return null;
 }
@@ -295,13 +296,16 @@ export async function decide(call: DecideCall): Promise<DecideResult> {
 
   for (const name of chain) {
     const entry = providerNamed(name);
-    const skip = skipReasonFor(entry, call);
+    const candidate = entry ? decisionModelFor(definition, name, entry) : null;
+    const skip = skipReasonFor(entry, call, candidate);
     if (skip) {
-      attempts.push({ provider: name, outcome: 'skipped', reason: skip, model: entry?.defaultModel ?? null, ms: 0, costMicros: '0' });
+      attempts.push({ provider: name, outcome: 'skipped', reason: skip, model: candidate, ms: 0, costMicros: '0' });
       if (skip === 'residency') metrics.increment('ai_calls_refused_total', { reason: 'residency', provider: name });
       continue;
     }
-    const { provider, defaultModel: model } = entry!;
+    // `skipReasonFor` refuses a missing provider or model, so both are here.
+    const provider = entry!.provider;
+    const model = candidate!;
 
     try {
       decisionBreakers.assertClosed(BREAKER_SCOPE, name);

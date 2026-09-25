@@ -253,3 +253,46 @@ describe('the stub', () => {
     expect(first.decision?.answers.majorIncident).toEqual({ value: true, confidence: 0.7 });
   });
 });
+
+describe('the model a purpose asks with', () => {
+  it('uses the purpose’s choice when the provider offers it', async () => {
+    const seen: string[] = [];
+    registerModelPrices({ 'claude-sonnet-5': { inputPerThousand: 1n, outputPerThousand: 1n } });
+    addAiProvider({
+      ...provider('anthropic', async (request) => {
+        seen.push(request.model);
+        return answer(request.model);
+      }),
+      models: ['claude-opus-5', 'claude-sonnet-5'],
+    });
+
+    const result = await decide(call({ chain: ['anthropic'] }));
+    // Triage names Sonnet 5 for this provider, even though Opus 5 is its default.
+    expect(seen).toEqual(['claude-sonnet-5']);
+    expect(result.model).toBe('claude-sonnet-5');
+  });
+
+  it('falls back to the provider’s default when it does not offer the choice', async () => {
+    const seen: string[] = [];
+    registerModelPrices({ 'claude-opus-5': { inputPerThousand: 1n, outputPerThousand: 1n } });
+    addAiProvider({
+      ...provider('anthropic', async (request) => {
+        seen.push(request.model);
+        return answer(request.model);
+      }),
+      models: ['claude-opus-5'],
+    });
+
+    await decide(call({ chain: ['anthropic'] }));
+    expect(seen).toEqual(['claude-opus-5']);
+  });
+
+  it('skips the provider, naming the model, when the chosen model has no price', async () => {
+    registerModelPrices({ 'claude-opus-5': { inputPerThousand: 1n, outputPerThousand: 1n } });
+    addAiProvider({ ...provider('anthropic', async (request) => answer(request.model)), models: ['claude-opus-5', 'claude-sonnet-5'] });
+
+    const result = await decide(call({ chain: ['anthropic'] }));
+    expect(result.provider).toBe('rules');
+    expect(result.attempts[0]).toMatchObject({ reason: 'unpriced', model: 'claude-sonnet-5' });
+  });
+});
