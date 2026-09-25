@@ -8,6 +8,7 @@ import {
   autoGate,
   checkDecision,
   decisionModelFor,
+  pendingSuggestions,
   planDecision,
   problemWithThresholds,
   scoreAnswers,
@@ -28,8 +29,8 @@ import type { DecisionQuestion } from '../providers/types.js';
  */
 
 describe('the catalogue', () => {
-  it('lets a tenant choose only off or shadow in this release', () => {
-    expect([...SELECTABLE_MODES]).toEqual(['off', 'shadow']);
+  it('lets a tenant choose off, shadow or suggest — never auto — in this release', () => {
+    expect([...SELECTABLE_MODES]).toEqual(['off', 'shadow', 'suggest']);
   });
 
   it('never allows priority, impact, urgency or status to be applied without a person', () => {
@@ -304,5 +305,58 @@ describe('earning and losing auto', () => {
 
   it('does not step down on a short history', () => {
     expect(shouldStepDown([true, true, false])).toBe(false);
+  });
+});
+
+describe('which suggestions an agent sees', () => {
+  const base = {
+    plan: [
+      { question: 'category', field: 'categoryId', action: 'suggest' as const },
+      { question: 'group', field: 'groupId', action: 'suggest' as const },
+      { question: 'priority', field: 'priority', action: 'record' as const },
+      { question: 'type', field: 'type', action: 'suggest' as const },
+      { question: 'majorIncident', field: null, action: 'suggest' as const },
+    ],
+    answers: {
+      category: { value: 'Access / VPN', confidence: 0.85 },
+      group: { value: 'Network', confidence: 0.7 },
+      priority: { value: 'P2', confidence: 0.4 },
+      type: { value: 'request', confidence: 0.75 },
+      majorIncident: { value: true, confidence: 0.8 },
+    },
+    proposed: { category: 'c2', group: 'g3', priority: 'P2', type: 'request', majorIncident: true },
+    baseline: { categoryId: null, groupId: null, priority: 'P3', type: 'incident' } as Record<string, unknown>,
+    current: { categoryId: null, groupId: null, priority: 'P3', type: 'incident' } as Record<string, unknown>,
+    responded: new Set<string>(),
+  };
+  const questions = (input = base) => pendingSuggestions(input).map((entry) => entry.question);
+
+  it('shows the answers planned as suggestions, with what each would do', () => {
+    const pending = pendingSuggestions(base);
+    expect(pending.map((entry) => [entry.question, entry.kind])).toEqual([
+      ['category', 'apply'],
+      ['group', 'apply'],
+      ['type', 'info'],
+      ['majorIncident', 'warning'],
+    ]);
+    // The id is what would be set; the label is what a person reads.
+    expect(pending[0]).toMatchObject({ value: 'c2', display: 'Access / VPN' });
+  });
+
+  it('drops one somebody has already accepted or dismissed', () => {
+    expect(questions({ ...base, responded: new Set(['category']) })).not.toContain('category');
+  });
+
+  it('drops one the ticket already has', () => {
+    expect(questions({ ...base, current: { ...base.current, categoryId: 'c2' } })).not.toContain('category');
+  });
+
+  it('drops one a person has changed the field away from since the decision', () => {
+    expect(questions({ ...base, current: { ...base.current, groupId: 'g1' } })).not.toContain('group');
+  });
+
+  it('shows a major-incident answer only when it says yes', () => {
+    const no = { ...base, answers: { ...base.answers, majorIncident: { value: false, confidence: 0.9 } }, proposed: { ...base.proposed, majorIncident: false } };
+    expect(questions(no)).not.toContain('majorIncident');
   });
 });

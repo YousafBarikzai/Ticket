@@ -245,6 +245,74 @@
   gap: var(--itsm-space-2xs);
 }
 
+/* ---- Suggested triage (ADR-0051) ---------------------------------------- */
+
+.itsm-Triage {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-sm);
+}
+
+.itsm-Triage__heading {
+  font-size: var(--itsm-font-size-lg);
+  font-weight: var(--itsm-font-weight-semibold);
+  margin: 0;
+}
+
+.itsm-Triage__note,
+.itsm-Triage__line {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-font-size-sm);
+  margin: 0;
+}
+
+.itsm-Triage__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itsm-Triage__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+/*
+ * A major-incident answer is tinted as well as labelled: the badge says
+ * "Check this" in words, so the tint is never the only signal (SC 1.4.1).
+ */
+.itsm-Triage__item[data-kind='warning'] {
+  background: var(--itsm-colour-warning-subtle);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-warning-border);
+  border-radius: var(--itsm-radius-md);
+  padding: var(--itsm-space-xs);
+}
+
+.itsm-Triage__field {
+  align-items: center;
+  display: flex;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+}
+
+.itsm-Triage__actions {
+  display: flex;
+  gap: var(--itsm-space-2xs);
+}
+
+.itsm-Triage__error {
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-font-size-sm);
+  margin: 0;
+}
+
 /* ---- Sign in ------------------------------------------------------------ */
 
 .itsm-SignIn {

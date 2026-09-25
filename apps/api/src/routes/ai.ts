@@ -15,8 +15,11 @@ import {
   recordOutcome,
   requestSchema,
   requestSuggestion,
+  respondSchema,
+  respondToSuggestion,
   scoreDecisions,
   setBudget,
+  triageSuggestionFor,
 } from '@itsm/module-ai';
 import { contextOf } from '../plugins/context.js';
 
@@ -156,6 +159,36 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const score = await scoreDecisions(ctx, request.query as Record<string, unknown>);
     return { ...score, since: score.since.toISOString() };
+  });
+
+  /**
+   * The triage suggestions still waiting on one ticket, in `suggest` mode
+   * (ADR-0051). `data` is null when there is nothing to show — no decision,
+   * nothing confident enough, everything already dealt with, or the desk not
+   * in `suggest` mode at all.
+   */
+  app.get('/ai/triage/:ticketId', async (request) => {
+    const ctx = contextOf(request);
+    const { ticketId } = z.object({ ticketId: z.string().min(1).max(100) }).parse(request.params);
+    const view = await triageSuggestionFor(ctx, ticketId);
+    return { data: view ? { ...view, createdAt: view.createdAt.toISOString() } : null };
+  });
+
+  /**
+   * An agent's answer to one suggestion. Accept is the agent's own edit of the
+   * ticket, with the version they were looking at; dismiss changes nothing on
+   * the ticket. Both are recorded against the decision and audited.
+   */
+  const suggestionParams = z.object({ id: z.string().uuid(), question: z.string().min(1).max(40) });
+  app.post('/ai/decisions/:id/suggestions/:question/accept', async (request) => {
+    const ctx = contextOf(request);
+    const { id, question } = suggestionParams.parse(request.params);
+    return respondToSuggestion(ctx, id, question, 'accepted', respondSchema.parse(request.body ?? {}));
+  });
+  app.post('/ai/decisions/:id/suggestions/:question/dismiss', async (request) => {
+    const ctx = contextOf(request);
+    const { id, question } = suggestionParams.parse(request.params);
+    return respondToSuggestion(ctx, id, question, 'dismissed', respondSchema.parse(request.body ?? {}));
   });
 
   app.get('/ai/budget', async (request) => {

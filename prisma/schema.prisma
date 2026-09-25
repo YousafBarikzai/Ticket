@@ -357,6 +357,12 @@ model AiDecision {
   problems           Json      @default("[]")
   /// Questions left out of the set, and why.
   omitted            Json      @default("[]")
+  /// The ticket's triage fields when the decision was made. A suggestion is
+  /// withdrawn once a person changes the field away from this.
+  baseline           Json      @default("{}")
+  /// { question: { action: accepted | dismissed, by, at } } — what agents did
+  /// with each suggestion, in `suggest` mode.
+  responses          Json      @default("{}")
   /// shadowed | suggested | applied | none (nobody answered; rules stand).
   outcome            String
   /// { question: value } people settled on, filled in later, for scoring.

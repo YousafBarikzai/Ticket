@@ -120,12 +120,14 @@ export {
   DEFAULT_THRESHOLDS,
   SELECTABLE_MODES,
   STEP_DOWN,
+  SUGGESTION_KINDS,
   TRIAGE_CHANNELS,
   autoGate,
   checkDecision,
   decisionDefinitionFor,
   decisionModelFor,
   isDecisionPurpose,
+  pendingSuggestions,
   planDecision,
   problemWithThresholds,
   scoreAnswers,
@@ -134,6 +136,8 @@ export {
   triagesChannel,
   type DecisionMode,
   type DecisionPurpose,
+  type PendingSuggestion,
+  type SuggestionKind,
   type Thresholds,
 } from './domain/decisions.js';
 export {
@@ -159,6 +163,14 @@ export {
   type TriageRun,
 } from './service/decision-service.js';
 export { tenantAiRegions } from './service/residency-service.js';
+export {
+  respondSchema,
+  respondToSuggestion,
+  triageSuggestionFor,
+  type RespondInput,
+  type SuggestionResponse,
+  type TriageSuggestionView,
+} from './service/triage-suggestion-service.js';
 export { SHIPPED_DATASETS, SHIPPED_PROMPTS, type ShippedDataset, type ShippedPrompt } from './seed/prompts.js';
 import './jobs/index.js';
 import './handlers/index.js';

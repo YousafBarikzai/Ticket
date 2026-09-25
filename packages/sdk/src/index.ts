@@ -93,6 +93,8 @@ export type {
   SuggestionEvidence,
   SuggestionOutcome,
   Ticket,
+  TriageSuggestion,
+  TriageSuggestionItem,
   Timeline,
   TimelineAttachment,
   TimelineCommentEntry,

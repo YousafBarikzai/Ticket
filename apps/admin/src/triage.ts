@@ -99,10 +99,39 @@ export function calibrationRows(questions: readonly DecisionQuestionScore[]): Ca
 /** Whether the desk has anything to look at yet, and if not, why. */
 export function modeNotice(score: Pick<DecisionScore, 'mode' | 'decisions'>): string | null {
   if (score.mode === 'off') {
-    return 'Shadow triage is off for this desk. Turn on the ai.decision.triage flag and set ai.decision.triage.mode to shadow under Configuration.';
+    return 'AI triage is off for this desk. Turn on the ai.decision.triage flag and set ai.decision.triage.mode to shadow under Configuration.';
   }
   if (score.decisions === 0) {
-    return 'Shadow triage is on. Nothing has been decided yet: it runs on new email, chat, voice and portal tickets.';
+    return `AI triage is in ${score.mode} mode. Nothing has been decided yet: it runs on new email, chat, voice and portal tickets.`;
   }
   return null;
+}
+
+/** How often agents took a field's suggestion, when they have seen any. */
+export function acceptanceText(question: DecisionQuestionScore): string {
+  const { accepted, dismissed } = question.responses;
+  const total = accepted + dismissed;
+  if (total === 0) return '—';
+  return `${accepted} of ${total} accepted`;
+}
+
+/**
+ * What switching to `suggest` would put in front of agents, with the evidence
+ * beside it. Any time is allowed — a suggestion changes nothing until an
+ * agent accepts it — but the choice should be made looking at the numbers.
+ */
+export function suggestReadiness(score: Pick<DecisionScore, 'mode' | 'questions' | 'thresholds'>): string | null {
+  if (score.mode !== 'shadow') return null;
+  const shown = score.questions.filter((question) => ['type', 'category', 'group', 'priority'].includes(question.question));
+  const figures = shown
+    .filter((question) => question.scored > 0)
+    .map((question) => `${fieldLabel(question.question).toLowerCase()} ${asPercent(question.accuracy)}`);
+  const evidence =
+    figures.length > 0
+      ? `Right so far on resolved tickets: ${figures.join(', ')}.`
+      : 'Nothing has been scored yet, so there is no accuracy to judge by.';
+  return (
+    `Switching ai.decision.triage.mode to suggest shows agents every answer at or above ${Math.round(score.thresholds.suggest * 100)}% ` +
+    `confidence, to accept or dismiss. ${evidence}`
+  );
 }

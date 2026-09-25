@@ -570,6 +570,14 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'see the triage suggestions waiting on a ticket',
+    path: (t) => `/api/v1/ai/triage/${t.ticketIds[0]}`,
+    // Like the decisions about one ticket, this follows the ticket's own
+    // visibility; a desk not in suggest mode answers with no suggestion.
+    allowed: ['agent', 'lead', 'admin'],
+    deniedStatus: { requester: 403, otherAgent: 404 },
+  },
+  {
     what: 'see how well AI triage has matched people',
     path: () => '/api/v1/ai/decisions/score',
     // Totals only — no ticket, no answer — so every holder of `ai.read`.

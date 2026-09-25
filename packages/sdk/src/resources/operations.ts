@@ -301,6 +301,8 @@ export interface DecisionQuestionScore {
   brier: number | null;
   calibration: { from: number; to: number; count: number; accuracy: number | null; meanConfidence: number | null }[];
   autoGate: { eligible: boolean; considered: number; agreement: number | null; reason: string } | null;
+  /** What agents did with this field's suggestions, in `suggest` mode. */
+  responses: { accepted: number; dismissed: number };
 }
 
 export interface DecisionScore {

@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { DecisionQuestionScore } from '@itsm/sdk';
-import { asPercent, brierText, calibrationRows, fieldLabel, gateText, modeNotice, skipLabel, skipRows } from '../triage.js';
+import {
+  acceptanceText,
+  asPercent,
+  brierText,
+  calibrationRows,
+  fieldLabel,
+  gateText,
+  modeNotice,
+  skipLabel,
+  skipRows,
+  suggestReadiness,
+} from '../triage.js';
 
 /**
  * How the shadow triage page words its numbers. Each case is a way a number
@@ -18,6 +29,7 @@ function question(overrides: Partial<DecisionQuestionScore> = {}): DecisionQuest
       { from: 0.9, to: 1, count: 4, accuracy: 0.75, meanConfidence: 0.93 },
     ],
     autoGate: { eligible: false, considered: 4, agreement: null, reason: '4 scored answers at or above 0.9; 200 are needed' },
+    responses: { accepted: 0, dismissed: 0 },
     ...overrides,
   };
 }
@@ -89,10 +101,34 @@ describe('what the page says first', () => {
   });
 
   it('tells a desk in shadow with nothing yet what it is waiting for', () => {
-    expect(modeNotice({ mode: 'shadow', decisions: 0 })).toMatch(/new email, chat, voice and portal tickets/);
+    expect(modeNotice({ mode: 'shadow', decisions: 0 })).toMatch(/shadow mode.*new email, chat, voice and portal tickets/);
   });
 
   it('says nothing once there is something to show', () => {
     expect(modeNotice({ mode: 'shadow', decisions: 3 })).toBeNull();
+  });
+});
+
+describe('suggest mode', () => {
+  const thresholds = { auto: 0.9, suggest: 0.6 };
+
+  it('puts the accuracy beside the switch while the desk is in shadow', () => {
+    const text = suggestReadiness({ mode: 'shadow', thresholds, questions: [question(), question({ question: 'type', accuracy: 0.95 })] });
+    expect(text).toMatch(/at or above 60% confidence/);
+    expect(text).toMatch(/category 80\.0%, type 95\.0%/);
+  });
+
+  it('says there is nothing to judge by yet, rather than showing 0%', () => {
+    const text = suggestReadiness({ mode: 'shadow', thresholds, questions: [question({ scored: 0, accuracy: null })] });
+    expect(text).toMatch(/no accuracy to judge by/);
+  });
+
+  it('says nothing about switching once the desk is already suggesting', () => {
+    expect(suggestReadiness({ mode: 'suggest', thresholds, questions: [question()] })).toBeNull();
+  });
+
+  it('shows how often agents took a field’s suggestion, and a dash before any', () => {
+    expect(acceptanceText(question())).toBe('—');
+    expect(acceptanceText(question({ responses: { accepted: 7, dismissed: 3 } }))).toBe('7 of 10 accepted');
   });
 });

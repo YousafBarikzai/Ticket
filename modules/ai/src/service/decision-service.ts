@@ -178,11 +178,12 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
   const definition = decisionDefinitionFor(purpose);
   const selected = await modeFor(ctx, purpose);
   if (selected === 'off') return null;
-  // Only shadow is honoured in this release. The settings schema already
-  // refuses anything else; this is the second lock, so that a value written
-  // around the schema still cannot make this code act on a ticket.
-  const mode: DecisionMode = 'shadow';
-  if (selected !== mode) logger.warn('a decision mode this release does not honour was treated as shadow', { selected });
+  // Shadow and suggest are honoured in this release; neither changes a
+  // ticket. `auto` is refused by the settings schema, and this is the second
+  // lock: a value written around the schema is treated as suggest, which
+  // still waits for a person.
+  const mode: DecisionMode = selected === 'shadow' ? 'shadow' : 'suggest';
+  if (selected !== mode) logger.warn('a decision mode this release does not honour was treated as suggest', { selected });
   const thresholds = await thresholdsFor(ctx);
   const periodKey = periodFor(at);
 
@@ -260,7 +261,9 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     humanSet,
   });
 
-  const outcome = result.decision ? 'shadowed' : 'none';
+  // `suggested` only when there is something for an agent to see; a suggest
+  // decision whose every answer fell below the line is recorded like shadow.
+  const outcome = !result.decision ? 'none' : plan.some((entry) => entry.action === 'suggest') ? 'suggested' : 'shadowed';
   const decisionId = newId();
   await transaction(ctx, async (tx) => {
     await tx.aiDecision.create({
@@ -281,6 +284,7 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
         attempts: result.attempts as never,
         problems: result.problems as never,
         omitted: set.omitted as never,
+        baseline: current as never,
         outcome,
         latencyMs: result.latencyMs,
         inputTokens: result.inputTokens,
@@ -401,6 +405,8 @@ export interface QuestionScore extends Score {
   question: string;
   /** Present for the questions `auto` could apply. */
   autoGate: AutoGate | null;
+  /** What agents did with this field's suggestions, in `suggest` mode. */
+  responses: { accepted: number; dismissed: number };
 }
 
 export interface DecisionScore {
@@ -458,6 +464,7 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
         proposed: true,
         attempts: true,
         settled: true,
+        responses: true,
         latencyMs: true,
         costMicros: true,
       },
@@ -488,6 +495,16 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
   const settledRows = rows.filter((row) => row.settled !== null);
   const questionKeys = new Set<string>();
   for (const row of settledRows) for (const key of Object.keys((row.answers as object) ?? {})) questionKeys.add(key);
+  const responseCounts = new Map<string, { accepted: number; dismissed: number }>();
+  for (const row of rows) {
+    for (const [question, response] of Object.entries((row.responses as Record<string, { action?: string }>) ?? {})) {
+      questionKeys.add(question);
+      const counts = responseCounts.get(question) ?? { accepted: 0, dismissed: 0 };
+      if (response?.action === 'accepted') counts.accepted += 1;
+      if (response?.action === 'dismissed') counts.dismissed += 1;
+      responseCounts.set(question, counts);
+    }
+  }
 
   const questions: QuestionScore[] = [...questionKeys].sort().map((question) => {
     const scored: ScoredAnswer[] = settledRows.map((row) => {
@@ -504,6 +521,7 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
       question,
       ...scoreAnswers(scored),
       autoGate: GATED_QUESTIONS.includes(question) ? autoGate(scored, thresholds) : null,
+      responses: responseCounts.get(question) ?? { accepted: 0, dismissed: 0 },
     };
   });
 

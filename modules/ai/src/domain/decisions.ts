@@ -34,13 +34,93 @@ export type DecisionMode = (typeof DECISION_MODES)[number];
 /**
  * The modes a tenant can select in this release.
  *
- * `suggest` and `auto` exist in the vocabulary, the policy and the record so
- * that nothing about them is a schema change later — but nothing presents or
- * applies an answer yet, so offering them would be offering a setting that
- * does nothing. Shadow comes first because it is the only mode that produces
- * the evidence the other two are gated on.
+ * `auto` exists in the vocabulary, the policy and the record so that nothing
+ * about it is a schema change later — but nothing applies an answer without a
+ * person yet, so offering it would be offering a setting that does nothing.
+ * `suggest` shows answers to agents, who accept or dismiss each one; it may be
+ * chosen at any time, because a suggestion changes nothing until a person
+ * acts on it, and the AI triage page shows the accuracy beside the choice.
  */
-export const SELECTABLE_MODES = ['off', 'shadow'] as const satisfies readonly DecisionMode[];
+export const SELECTABLE_MODES = ['off', 'shadow', 'suggest'] as const satisfies readonly DecisionMode[];
+
+/**
+ * What an agent may do with each triage answer in `suggest` mode.
+ *
+ * - `apply`   — Accept sets the field, as the agent's own change.
+ * - `info`    — shown, and dismissable, but there is nothing to apply: a
+ *               ticket's type is fixed when it is raised.
+ * - `warning` — shown as a warning with a way to the right screen, never
+ *               applied: declaring a major incident pages people, and that is
+ *               not a one-click decision (ADR-0051).
+ */
+export type SuggestionKind = 'apply' | 'info' | 'warning';
+
+export const SUGGESTION_KINDS: Readonly<Record<string, SuggestionKind>> = {
+  category: 'apply',
+  group: 'apply',
+  priority: 'apply',
+  type: 'info',
+  majorIncident: 'warning',
+};
+
+export interface PendingSuggestion {
+  question: string;
+  field: string | null;
+  kind: SuggestionKind;
+  /** What would be set: an id for category and group, the value otherwise. */
+  value: string | number | boolean;
+  /** What the provider picked, for a person to read. */
+  display: string;
+  confidence: number;
+}
+
+export interface PendingInput {
+  plan: readonly { question: string; field: string | null; action: PlannedAction }[];
+  answers: Readonly<Record<string, { value: unknown; confidence: number }>>;
+  proposed: Readonly<Record<string, string | number | boolean | null>>;
+  /** The ticket's fields when the decision was made. */
+  baseline: Readonly<Record<string, unknown>>;
+  /** The ticket's fields now. */
+  current: Readonly<Record<string, unknown>>;
+  /** Questions a person has already accepted or dismissed. */
+  responded: ReadonlySet<string>;
+}
+
+/**
+ * The suggestions still worth showing on a ticket.
+ *
+ * A suggestion disappears once somebody has accepted or dismissed it, once the
+ * ticket already has that value, and once a person has changed the field
+ * since the decision was made — at that point the desk has decided, and an
+ * answer arguing with it is noise. A major-incident answer is shown only when
+ * it says yes: "this is not a major incident" is not something to act on.
+ */
+export function pendingSuggestions(input: PendingInput): PendingSuggestion[] {
+  const out: PendingSuggestion[] = [];
+  for (const entry of input.plan) {
+    if (entry.action !== 'suggest') continue;
+    if (input.responded.has(entry.question)) continue;
+    const kind = SUGGESTION_KINDS[entry.question];
+    if (!kind) continue;
+    const answer = input.answers[entry.question];
+    const value = input.proposed[entry.question];
+    if (!answer || value === null || value === undefined) continue;
+    if (kind === 'warning' && value !== true) continue;
+    if (entry.field !== null) {
+      if (input.current[entry.field] === value) continue;
+      if (input.current[entry.field] !== input.baseline[entry.field]) continue;
+    }
+    out.push({
+      question: entry.question,
+      field: entry.field,
+      kind,
+      value,
+      display: typeof answer.value === 'string' ? answer.value : String(answer.value),
+      confidence: answer.confidence,
+    });
+  }
+  return out;
+}
 
 /**
  * The ticket fields a decision may ever change without a person (ADR-0051).

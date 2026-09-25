@@ -240,6 +240,39 @@ data-processing terms have been verified. Until then `triage` runs
   (`tenantAiRegions`), so the last check before a prompt leaves is the
   tenant's own policy (ADR-0047).
 
+**Suggest mode (Phase 4, advisory only).**
+
+A desk may choose `suggest` at any time. A suggestion changes nothing until an
+agent accepts it, and the AI triage page puts current accuracy beside the
+choice. `auto` is still refused.
+
+- **What agents see:** answers at or above the suggest threshold appear as a
+  "Suggested triage" card on the ticket in the workbench
+  (`GET /ai/triage/:ticketId`). It needs `ai.read` and sight of the ticket.
+  Nothing is shown in `shadow` or `off`.
+- **Accept:** each answer says what an agent may do with it.
+  - Category and priority can be accepted through the ticket update, and the
+    team through assignment. Accepting is the agent's own edit, under their
+    name and permissions and with the version they loaded, so a ticket that
+    changed under them is a 409, not an overwrite.
+  - Type can only be dismissed, because a ticket's type is fixed when it is
+    raised.
+  - A major-incident answer is a warning and is never applied from a
+    suggestion. It is shown only when it says yes.
+- **When a suggestion disappears:** once it is accepted or dismissed, once
+  the ticket already has the value, or once a person changes the field away
+  from what it was when the decision was made. `ai_decision.baseline` records
+  those fields.
+- **What is recorded:** each response is kept on `ai_decision.responses`,
+  audited as `ai.suggestion.accepted` or `ai.suggestion.dismissed`, and
+  counted per field on the AI triage page.
+- **Where suggestions live:** triage suggestions stay on `ai_decision` rather
+  than `ai_suggestion`. They are typed answers with a decision's provenance,
+  not generated prose with evidence, and scoring reads them from one place.
+- **No declaration screen:** the workbench has no screen for declaring a
+  major incident, so the warning points the agent to the desk's own process
+  rather than linking to one.
+
 Three things differ from the plan, deliberately:
 
 - **Question sets live in code, versioned** (`questionSetVersion`), like the

@@ -5,7 +5,18 @@ import { currentActor } from '../../../server/session.js';
 import { read } from '../../../server/read.js';
 import { holds } from '../../../permissions.js';
 import { Panel } from '../../../components/Panel.js';
-import { asPercent, brierText, calibrationRows, fieldLabel, gateText, modeNotice, skipLabel, skipRows } from '../../../triage.js';
+import {
+  acceptanceText,
+  asPercent,
+  brierText,
+  calibrationRows,
+  fieldLabel,
+  gateText,
+  modeNotice,
+  skipLabel,
+  skipRows,
+  suggestReadiness,
+} from '../../../triage.js';
 
 export const metadata: Metadata = { title: 'AI triage' };
 export const dynamic = 'force-dynamic';
@@ -55,9 +66,10 @@ export default async function AiTriagePage({
       <header className="itsm-Admin__head">
         <h1>AI triage</h1>
         <p className="itsm-Admin__lede">
-          In shadow, the AI decides a type, category, team and priority for each new email, chat, voice and portal
-          ticket and records it. Nothing on the ticket changes. When the ticket is resolved, the answer is compared with
-          what the desk settled on — and that comparison is what would one day let a decision act on its own.
+          The AI decides a type, category, team and priority for each new email, chat, voice and portal ticket. In
+          shadow it only records the answer; in suggest, agents see it on the ticket and accept or dismiss it. Nothing
+          on a ticket changes unless an agent accepts. When the ticket is resolved, the answer is compared with what the
+          desk settled on — and that comparison is what would one day let a decision act on its own.
         </p>
       </header>
 
@@ -70,6 +82,7 @@ export default async function AiTriagePage({
               {modeNotice(score.value)}
             </p>
           ) : null}
+          {suggestReadiness(score.value) ? <p className="itsm-Admin__note">{suggestReadiness(score.value)}</p> : null}
 
           <MetricGrid>
             <Metric label={`Decisions, last ${days} days`} value={score.value.decisions} note={`Mode: ${score.value.mode}`} />
@@ -122,6 +135,7 @@ export default async function AiTriagePage({
                   { key: 'scored', header: 'Scored', cell: (row) => row.scored, align: 'end' },
                   { key: 'accuracy', header: 'Right', cell: (row) => asPercent(row.accuracy), align: 'end' },
                   { key: 'brier', header: 'Brier (lower is better)', cell: (row) => brierText(row.brier), align: 'end' },
+                  { key: 'agents', header: 'Agents', cell: (row) => acceptanceText(row), align: 'end' },
                   { key: 'gate', header: 'Auto-apply', cell: (row) => gateText(row) },
                 ]}
                 rows={questions}

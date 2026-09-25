@@ -134,8 +134,8 @@ describe('before a tenant switches it on', () => {
   });
 
   it('cannot be put into a mode this release does not honour', async () => {
+    // Nothing applies an answer without a person yet, so `auto` is refused.
     await expect(setSetting('ai.decision.triage.mode', 'auto')).rejects.toThrow();
-    await expect(setSetting('ai.decision.triage.mode', 'suggest')).rejects.toThrow();
   });
 });
 
@@ -320,5 +320,184 @@ describe('wired to the ticket lifecycle', () => {
   it('lists every decision only for someone who manages AI', async () => {
     expect((await request('/api/v1/ai/decisions', { token: tenant.people.admin!.token })).status).toBe(200);
     expect((await request('/api/v1/ai/decisions', { token: tenant.people.agent!.token })).status).toBe(403);
+  });
+});
+
+describe('in suggest mode', () => {
+  beforeAll(async () => {
+    await setFlag('ai.decision.triage', true);
+    await setSetting('ai.decision.triage.mode', 'suggest');
+  });
+
+  afterAll(async () => {
+    await setSetting('ai.decision.triage.mode', 'off');
+    await setFlag('ai.decision.triage', false);
+  });
+
+  /**
+   * The stub is too crude to be confident about anything on purpose, so this
+   * provider answers the way a confident one would: the agent's own team,
+   * priority P2, a request rather than an incident, and a major incident.
+   */
+  function confidentProvider() {
+    const stub = stubProvider();
+    return {
+      ...stub,
+      async decide(request: Parameters<NonNullable<typeof stub.decide>>[0]) {
+        const answers: Record<string, { value: string | boolean; confidence: number }> = {
+          type: { value: 'request', confidence: 0.9 },
+          priority: { value: 'P2', confidence: 0.85 },
+          majorIncident: { value: true, confidence: 0.8 },
+        };
+        if (request.questions.group) answers.group = { value: 'Service Desk', confidence: 0.9 };
+        return { answers, model: request.model, inputTokens: 100, outputTokens: 20, providerRequestId: null };
+      },
+    };
+  }
+
+  interface TriageView {
+    decisionId: string;
+    suggestions: { question: string; kind: string; value: unknown; display: string }[];
+  }
+
+  async function suggestionsFor(ticketId: string, token = tenant.people.agent!.token) {
+    return request<{ data: TriageView | null }>(`/api/v1/ai/triage/${ticketId}`, { token });
+  }
+
+  async function ticketVersion(number: string): Promise<number> {
+    const response = await request<{ version: number }>(`/api/v1/tickets/${number}`, { token: tenant.people.agent!.token });
+    return response.body.version;
+  }
+
+  it('shows an agent what the AI suggested, and what each one would do', async () => {
+    registerAiProvider(confidentProvider());
+    const ticket = await raise('Everyone on floor two lost the VPN', 'Nobody can connect.', 'portal');
+    const run = await triage(ticket.id);
+    expect(run).toMatchObject({ outcome: 'suggested', provider: 'stub' });
+
+    const view = await suggestionsFor(ticket.id);
+    expect(view.status).toBe(200);
+    const kinds = Object.fromEntries(view.body.data!.suggestions.map((item) => [item.question, item.kind]));
+    expect(kinds).toEqual({ group: 'apply', priority: 'apply', type: 'info', majorIncident: 'warning' });
+  });
+
+  it('applies an accepted suggestion as the agent’s own edit, and remembers it', async () => {
+    registerAiProvider(confidentProvider());
+    const ticket = await raise('Printer queue stuck', 'Jobs will not print.', 'email');
+    await triage(ticket.id);
+    const { decisionId } = (await suggestionsFor(ticket.id)).body.data!;
+
+    const accepted = await request(`/api/v1/ai/decisions/${decisionId}/suggestions/priority/accept`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { version: await ticketVersion(ticket.number) },
+    });
+    expect(accepted.status).toBe(200);
+
+    const after = await read((tx) => tx.ticket.findFirst({ where: { id: ticket.id } }));
+    expect(after!.priority).toBe('P2');
+    // The change is the agent's, not the AI's.
+    expect(after!.updatedBy).toBe(tenant.people.agent!.id);
+
+    const audit = await read((tx) =>
+      tx.auditEvent.findFirst({ where: { action: 'ai.suggestion.accepted', targetId: ticket.id } }),
+    );
+    expect(audit?.after).toMatchObject({ decisionId, question: 'priority', value: 'P2' });
+
+    // Dealt with, so it is no longer shown.
+    const remaining = (await suggestionsFor(ticket.id)).body.data!.suggestions.map((item) => item.question);
+    expect(remaining).not.toContain('priority');
+
+    const score = await request<{ questions: { question: string; responses: { accepted: number } }[] }>(
+      '/api/v1/ai/decisions/score',
+      { token: tenant.people.admin!.token },
+    );
+    expect(score.body.questions.find((question) => question.question === 'priority')!.responses.accepted).toBeGreaterThanOrEqual(1);
+  });
+
+  it('assigns the suggested team through the ordinary assignment', async () => {
+    registerAiProvider(confidentProvider());
+    const ticket = await raise('New starter needs an account', 'Starts Monday.', 'portal');
+    await triage(ticket.id);
+    const { decisionId } = (await suggestionsFor(ticket.id)).body.data!;
+
+    const accepted = await request(`/api/v1/ai/decisions/${decisionId}/suggestions/group/accept`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { version: await ticketVersion(ticket.number) },
+    });
+    expect(accepted.status).toBe(200);
+    const after = await read((tx) => tx.ticket.findFirst({ where: { id: ticket.id } }));
+    expect(after!.groupId).toBe(tenant.teamId);
+  });
+
+  it('refuses a stale version rather than overwriting somebody else’s change', async () => {
+    registerAiProvider(confidentProvider());
+    const ticket = await raise('Laptop battery drains fast', 'Two hours at most.', 'email');
+    await triage(ticket.id);
+    const { decisionId } = (await suggestionsFor(ticket.id)).body.data!;
+    const stale = (await ticketVersion(ticket.number)) - 1;
+
+    const refused = await request(`/api/v1/ai/decisions/${decisionId}/suggestions/priority/accept`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { version: stale < 1 ? 999 : stale },
+    });
+    expect(refused.status).toBe(409);
+  });
+
+  it('never declares a major incident or changes a type from a suggestion — only dismisses them', async () => {
+    registerAiProvider(confidentProvider());
+    const ticket = await raise('All phones are down', 'Nobody can call out.', 'voice');
+    await triage(ticket.id);
+    const { decisionId } = (await suggestionsFor(ticket.id)).body.data!;
+    const version = await ticketVersion(ticket.number);
+
+    for (const question of ['majorIncident', 'type']) {
+      const refused = await request(`/api/v1/ai/decisions/${decisionId}/suggestions/${question}/accept`, {
+        method: 'POST',
+        token: tenant.people.agent!.token,
+        body: { version },
+      });
+      // A request the API understood and will not carry out.
+      expect(refused.status).toBe(422);
+    }
+    expect(await read((tx) => tx.majorIncident.count({ where: { ticketId: ticket.id } }))).toBe(0);
+
+    const dismissed = await request(`/api/v1/ai/decisions/${decisionId}/suggestions/majorIncident/dismiss`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: {},
+    });
+    expect(dismissed.status).toBe(200);
+    const remaining = (await suggestionsFor(ticket.id)).body.data!.suggestions.map((item) => item.question);
+    expect(remaining).not.toContain('majorIncident');
+  });
+
+  it('keeps suggestions, and the answers to them, from a requester', async () => {
+    registerAiProvider(confidentProvider());
+    const ticket = await raise('Shared mailbox missing', 'Gone since this morning.', 'email');
+    await triage(ticket.id);
+    const { decisionId } = (await suggestionsFor(ticket.id)).body.data!;
+
+    expect((await suggestionsFor(ticket.id, tenant.people.requester!.token)).status).toBe(403);
+    const dismissed = await request(`/api/v1/ai/decisions/${decisionId}/suggestions/type/dismiss`, {
+      method: 'POST',
+      token: tenant.people.requester!.token,
+      body: {},
+    });
+    expect(dismissed.status).toBe(403);
+  });
+
+  it('shows agents nothing while the desk is only in shadow', async () => {
+    registerAiProvider(confidentProvider());
+    const ticket = await raise('Webcam not detected', 'Worked yesterday.', 'portal');
+    await triage(ticket.id);
+    await setSetting('ai.decision.triage.mode', 'shadow');
+    try {
+      expect((await suggestionsFor(ticket.id)).body.data).toBeNull();
+    } finally {
+      await setSetting('ai.decision.triage.mode', 'suggest');
+    }
   });
 });
