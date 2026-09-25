@@ -39,8 +39,9 @@ There was also a defect this work surfaced. The model a call used when it named
 none was the constant `stub-small`. That was right for the stub and refused by
 every real provider, so a deployment configured for Anthropic could not produce
 a single suggestion. It is fixed alongside this ADR. The default now belongs to
-the provider (`AI_DEFAULT_MODEL`, else the provider's first model), and it is
-validated, including its price, at boot.
+the provider (`AI_DEFAULT_MODEL`, else the provider's first model). A default
+the provider does not offer stops the boot, and a default with no price is
+logged as an error there.
 
 ## Decision
 

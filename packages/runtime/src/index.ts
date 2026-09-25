@@ -48,7 +48,6 @@ import {
   activeDefaultModel,
   aiManifest,
   anthropicProvider,
-  clearAiProvider,
   isPriced,
   parseModelPrices,
   registerAiProvider,
@@ -224,10 +223,15 @@ export function bootstrapModules(): BootstrapResult {
  * a budget that half-works, which is the worst of the three outcomes — worse
  * than no AI, and much worse than a process that will not start.
  *
- * **So does a default model that cannot be used.** `AI_DEFAULT_MODEL` must be
- * one the provider offers, and whichever model ends up the default must have a
- * price. Either mistake otherwise surfaces as every suggestion failing in a
- * worker, one at a time, long after the deploy that caused it.
+ * **So does a default model the provider does not offer.** `AI_DEFAULT_MODEL`
+ * naming a model outside the provider's list is an operator's typo, and it is
+ * refused here like a missing key rather than in a worker, one suggestion at a
+ * time, long after the deploy that caused it.
+ *
+ * **A default with no price is logged, not fatal.** Every call against it is
+ * already refused with a message naming `AI_MODEL_PRICES` (ADR-0042), and
+ * stopping the whole platform — tickets and all — over an AI price would be a
+ * bigger outage than the one it reports.
  */
 function registerAiPricesAndProvider(): void {
   const config = loadConfig();
@@ -242,11 +246,11 @@ function registerAiPricesAndProvider(): void {
   registerAiProvider(provider, config.AI_DEFAULT_MODEL ? { defaultModel: config.AI_DEFAULT_MODEL } : {});
   const model = activeDefaultModel();
   if (model && !isPriced(model)) {
-    clearAiProvider();
-    throw new Error(
-      `the default AI model ${model} has no price, so no call against it could be counted towards a budget. ` +
-        'Add it to AI_MODEL_PRICES, or set AI_DEFAULT_MODEL to a model that has one.',
-    );
+    logger.error('the default AI model has no price, so every call against it will be refused', {
+      provider: provider.name,
+      model,
+      fix: 'add it to AI_MODEL_PRICES, or set AI_DEFAULT_MODEL to a model that has a price',
+    });
   }
 }
 

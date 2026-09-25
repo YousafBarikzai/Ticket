@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { registerModule, type ModuleManifest } from '@itsm/platform';
+import { DEFAULT_THRESHOLDS, SELECTABLE_MODES } from './domain/decisions.js';
 
 /**
  * MOD-09 AI, as a governed capability service (ADR-0006).
@@ -20,7 +21,7 @@ export const aiManifest: ModuleManifest = registerModule({
   name: 'AI capability service',
   version: '1.0.0',
   phase: 'PH-4',
-  dependsOn: ['MOD-01', 'MOD-04', 'MOD-09', 'MOD-09-KNOWLEDGE', 'MOD-13', 'MOD-15'],
+  dependsOn: ['MOD-01', 'MOD-04', 'MOD-09', 'MOD-09-KNOWLEDGE', 'MOD-13', 'MOD-14', 'MOD-15'],
   permissions: [
     { key: 'ai.suggest', scopes: ['any'], description: 'Ask for a suggestion, and say what you did with it.' },
     { key: 'ai.read', scopes: ['any'], description: 'See this tenant’s AI jobs, suggestions and spend.' },
@@ -34,6 +35,8 @@ export const aiManifest: ModuleManifest = registerModule({
   events: {
     // A promotion is audited, not evented: an event is written into one
     // tenant's outbox, and a prompt belongs to none of them.
+    // A decision is audited, not evented, until something acts on one: in
+    // shadow mode there is nothing for another module to react to.
     publishes: ['ai.suggestion.created', 'ai.budget.threshold'],
     consumes: [],
   },
@@ -83,6 +86,16 @@ export const aiManifest: ModuleManifest = registerModule({
       // it can switch off does.
       expires: 'permanent',
     },
+    {
+      key: 'ai.decision.triage',
+      description:
+        'Structured triage decisions (ADR-0051). Off by default: nothing is sent anywhere until a tenant ' +
+        'switches this on and picks a mode.',
+      default: false,
+      owner: 'ai',
+      // A kill switch, not a rollout, for the same reason as the capabilities.
+      expires: 'permanent',
+    },
   ],
   settings: [
     {
@@ -105,6 +118,30 @@ export const aiManifest: ModuleManifest = registerModule({
       default: 30,
       scopes: ['tenant'],
       description: 'How long a rendered prompt and its completion are kept before the sweep removes them.',
+    },
+    {
+      key: 'ai.decision.triage.mode',
+      // Only the modes this release can honour. `suggest` and `auto` join the
+      // schema when something presents or applies an answer; offering them
+      // earlier would offer a setting that does nothing.
+      schema: z.enum(SELECTABLE_MODES),
+      default: 'off',
+      scopes: ['tenant'],
+      description: 'What triage decisions do: off sends nothing; shadow decides and records, and changes nothing.',
+    },
+    {
+      key: 'ai.decision.autoThreshold',
+      schema: z.number().gt(0).max(1),
+      default: DEFAULT_THRESHOLDS.auto,
+      scopes: ['tenant'],
+      description: 'The confidence at or above which an allow-listed field may be applied, in auto mode.',
+    },
+    {
+      key: 'ai.decision.suggestThreshold',
+      schema: z.number().gt(0).max(1),
+      default: DEFAULT_THRESHOLDS.suggest,
+      scopes: ['tenant'],
+      description: 'The confidence at or above which an answer is worth showing a person.',
     },
   ],
   jobs: [

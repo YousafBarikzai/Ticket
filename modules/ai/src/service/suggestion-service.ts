@@ -341,6 +341,8 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
           inputTokens: result.completion.inputTokens,
           outputTokens: result.completion.outputTokens,
           costMicros: result.costMicros,
+          latencyMs: result.latencyMs,
+          providerRequestId: result.completion.providerRequestId ?? null,
           promptText: retainDays > 0 ? result.promptText : null,
           completionText: retainDays > 0 ? result.completion.text : null,
         },

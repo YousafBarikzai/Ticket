@@ -272,6 +272,10 @@ model AiJob {
   /// evaluation and swept after the retention window.
   promptText      String?  @map("prompt_text")
   completionText  String?  @map("completion_text")
+  /// How long the provider took, in milliseconds. Null until it has answered.
+  latencyMs       Int?     @map("latency_ms")
+  /// The provider's own id for the call, so its support can find it.
+  providerRequestId String? @map("provider_request_id")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   startedAt       DateTime? @map("started_at") @db.Timestamptz(6)
   finishedAt      DateTime? @map("finished_at") @db.Timestamptz(6)
@@ -316,6 +320,61 @@ model AiSuggestion {
   @@index([tenantId, subjectType, subjectId, createdAt(sort: Desc)])
   @@index([tenantId, capability, outcome])
   @@map("ai_suggestion")
+}
+
+/// One structured decision (ADR-0051): who was asked, what they answered, how
+/// sure they said they were, what it cost, and what the platform did with it.
+///
+/// The durable record the shadow evidence, the `auto` gate and the step-down
+/// are all read from. Nothing about it is advisory text: every answer is one
+/// of a closed set, which is what lets it be scored against what people set.
+model AiDecision {
+  id                 String    @id @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  /// triage — the closed catalogue in domain/decisions.ts.
+  purpose            String
+  subjectType        String    @map("subject_type")
+  subjectId          String    @map("subject_id") @db.Uuid
+  /// The tenant's mode when it ran: shadow | suggest | auto.
+  mode               String
+  /// Which questions were asked. Scoring never mixes two sets.
+  questionSetVersion Int       @map("question_set_version")
+  /// Who answered, or `rules` when nobody did.
+  provider           String
+  model              String?
+  providerRequestId  String?   @map("provider_request_id")
+  /// { question: { value, confidence } }, already checked against the
+  /// questions: an answer that was not allowed is stored as no answer.
+  answers            Json      @default("{}")
+  /// { question: stored value } — what each answer would set, decoded from
+  /// the label the provider picked to the id the ticket stores.
+  proposed           Json      @default("{}")
+  /// [{ question, field, action, reason }] — what each answer was allowed to do.
+  plan               Json      @default("[]")
+  /// [{ provider, outcome, reason, model, ms }] — every link of the chain tried.
+  attempts           Json      @default("[]")
+  /// What was wrong with the answer that was used.
+  problems           Json      @default("[]")
+  /// Questions left out of the set, and why.
+  omitted            Json      @default("[]")
+  /// shadowed | suggested | applied | none (nobody answered; rules stand).
+  outcome            String
+  /// { question: value } people settled on, filled in later, for scoring.
+  settled            Json?
+  settledAt          DateTime? @map("settled_at") @db.Timestamptz(6)
+  latencyMs          Int       @default(0) @map("latency_ms")
+  inputTokens        Int       @default(0) @map("input_tokens")
+  outputTokens       Int       @default(0) @map("output_tokens")
+  /// Every attempt's cost, answered or not: a call that was charged for and
+  /// then thrown away still counts against the budget.
+  costMicros         BigInt    @default(0) @map("cost_micros")
+  periodKey          String    @map("period_key")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, subjectType, subjectId, createdAt(sort: Desc)])
+  @@index([tenantId, purpose, createdAt(sort: Desc)])
+  @@index([tenantId, periodKey])
+  @@map("ai_decision")
 }
 
 // ===========================================================================

@@ -15,6 +15,16 @@ import type { AiProvider } from './types.js';
 let provider: AiProvider | null = null;
 let defaultModel: string | null = null;
 
+/**
+ * Every provider this deployment can reach, by name (ADR-0051).
+ *
+ * Generation still has exactly one provider — `activeProvider` — and a tenant
+ * outside its regions is refused rather than routed. Decisions walk a chain of
+ * names and skip any that are missing here, which is how a deployment with a
+ * decision engine and one without run the same chain.
+ */
+const named = new Map<string, { provider: AiProvider; defaultModel: string }>();
+
 export interface ProviderRegistration {
   /**
    * The model a call gets when nothing names one. Must be one the provider
@@ -49,16 +59,33 @@ export function chooseDefaultModel(implementation: Pick<AiProvider, 'name' | 'mo
   return first;
 }
 
+/** Registers the provider that generates, which is also reachable by name. */
 export function registerAiProvider(implementation: AiProvider, options: ProviderRegistration = {}): void {
   // Chosen before anything is replaced, so a registration that throws leaves
   // the previous provider in place rather than a provider with no default.
   const chosen = chooseDefaultModel(implementation, options.defaultModel);
   provider = implementation;
   defaultModel = chosen;
+  named.set(implementation.name, { provider: implementation, defaultModel: chosen });
   logger.info('AI provider registered', {
     provider: implementation.name,
     models: implementation.models,
     defaultModel: chosen,
+  });
+}
+
+/**
+ * Registers a provider that is reachable by name only — a decision engine
+ * that writes no prose. It never becomes the generation provider.
+ */
+export function addAiProvider(implementation: AiProvider, options: ProviderRegistration = {}): void {
+  const chosen = chooseDefaultModel(implementation, options.defaultModel);
+  named.set(implementation.name, { provider: implementation, defaultModel: chosen });
+  logger.info('AI provider added', {
+    provider: implementation.name,
+    models: implementation.models,
+    defaultModel: chosen,
+    decides: typeof implementation.decide === 'function',
   });
 }
 
@@ -71,8 +98,17 @@ export function activeDefaultModel(): string | null {
   return defaultModel;
 }
 
-/** Test helper, and the way a deployment switches a provider off entirely. */
+export function providerNamed(name: string): { provider: AiProvider; defaultModel: string } | null {
+  return named.get(name) ?? null;
+}
+
+export function registeredProviderNames(): string[] {
+  return [...named.keys()];
+}
+
+/** Test helper, and the way a deployment switches every provider off entirely. */
 export function clearAiProvider(): void {
   provider = null;
   defaultModel = null;
+  named.clear();
 }

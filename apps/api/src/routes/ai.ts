@@ -8,6 +8,7 @@ import {
   budgetSchema,
   formatMicros,
   getJob,
+  listDecisions,
   listSuggestions,
   outcomeSchema,
   readBudget,
@@ -133,6 +134,17 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const body = outcomeSchema.strict().parse(request.body);
     const updated = await recordOutcome(ctx, id, body);
     return { id: updated.id, outcome: updated.outcome, outcomeAt: updated.outcomeAt?.toISOString() ?? null };
+  });
+
+  /**
+   * Which AI decided what, how confidently, at what cost, and which providers
+   * the chain passed over (ADR-0051). Read-only: a decision is corrected on
+   * the ticket, never here.
+   */
+  app.get('/ai/decisions', async (request) => {
+    const ctx = contextOf(request);
+    const rows = await listDecisions(ctx, request.query as Record<string, unknown>);
+    return { data: rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() })) };
   });
 
   app.get('/ai/budget', async (request) => {

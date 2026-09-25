@@ -1,4 +1,5 @@
 import type { Capability } from '../domain/capabilities.js';
+import type { DecisionPurpose } from '../domain/decisions.js';
 
 /**
  * The one interface every model provider is reached through (ADR-0006).
@@ -27,6 +28,8 @@ export interface Completion {
   outputTokens: number;
   /** stop | length | refusal — a refusal is an answer, not an error. */
   finishReason: 'stop' | 'length' | 'refusal';
+  /** The provider's own id for the call, so its support can find it. */
+  providerRequestId?: string | null;
 }
 
 export interface AiProvider {
@@ -52,4 +55,60 @@ export interface AiProvider {
    */
   readonly processingRegion: string | null;
   complete(request: CompletionRequest): Promise<Completion>;
+  /**
+   * Answers typed questions about a state (ADR-0051). Optional: a provider
+   * that only writes prose leaves it out, and the gateway skips it in a
+   * decision chain rather than asking it to pretend.
+   */
+  decide?(request: DecisionRequest): Promise<Decision>;
+}
+
+/**
+ * One question, in a shape every decision provider can answer.
+ *
+ * Three kinds and no more, because they are the three a decision engine and a
+ * general model can both be held to: pick one of a closed list, give a number
+ * in a range, say yes or no. Anything richer is prose, and prose is
+ * `complete`.
+ */
+export type DecisionQuestion =
+  | { readonly kind: 'choice'; readonly ask: string; readonly options: readonly string[] }
+  | { readonly kind: 'score'; readonly ask: string; readonly min: number; readonly max: number }
+  | { readonly kind: 'yesno'; readonly ask: string };
+
+export interface DecisionRequest {
+  purpose: DecisionPurpose;
+  model: string;
+  /**
+   * What is being decided about. Already masked under the classification
+   * registry: a provider is sent what the tenant's policy lets leave, never a
+   * raw row.
+   */
+  state: Readonly<Record<string, unknown>>;
+  questions: Readonly<Record<string, DecisionQuestion>>;
+  /** Fires when the gateway has stopped waiting. A provider passes it on. */
+  signal: AbortSignal;
+}
+
+export type DecisionValue = string | number | boolean;
+
+export interface DecisionAnswer {
+  /** Null when the provider declined this one question. */
+  value: DecisionValue | null;
+  /**
+   * 0 to 1, as the provider claims it. A claim, not a fact: what a 0.9 is
+   * worth is measured against what people set (ADR-0051), per provider.
+   */
+  confidence: number;
+}
+
+export interface Decision {
+  answers: Record<string, DecisionAnswer>;
+  /** What actually answered. */
+  model: string;
+  /** What the provider says it charged for. Never our own estimate. */
+  inputTokens: number;
+  outputTokens: number;
+  /** The provider's own id for the call, so support can find it. */
+  providerRequestId: string | null;
 }

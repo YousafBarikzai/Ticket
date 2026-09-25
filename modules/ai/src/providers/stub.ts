@@ -1,5 +1,5 @@
 import { approximateTokens } from '../domain/output.js';
-import type { AiProvider, Completion, CompletionRequest } from './types.js';
+import type { AiProvider, Completion, CompletionRequest, Decision, DecisionAnswer, DecisionQuestion, DecisionRequest } from './types.js';
 
 /**
  * A provider that answers without a model.
@@ -80,6 +80,58 @@ function answerFor(request: CompletionRequest): unknown {
   }
 }
 
+const WORD = /[a-z0-9]{3,}/g;
+const URGENT = /\b(down|outage|everyone|all users|nobody can|cannot work|critical)\b/i;
+
+function wordsOf(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(WORD) ?? []);
+}
+
+/**
+ * The stub's answer to one question: the option sharing most words with the
+ * state, and a confidence that says how much it shared.
+ *
+ * Crude on purpose. It proves the chain, the checks, the record and the
+ * scoring, and it must never be mistaken for triage — a stub that was good at
+ * this would hide how good the real provider is not.
+ */
+function stubAnswer(question: DecisionQuestion, text: string, words: Set<string>): DecisionAnswer {
+  switch (question.kind) {
+    case 'choice': {
+      let best = question.options[0] ?? null;
+      let bestOverlap = 0;
+      for (const option of question.options) {
+        const overlap = [...wordsOf(option)].filter((word) => words.has(word)).length;
+        if (overlap > bestOverlap) {
+          best = option;
+          bestOverlap = overlap;
+        }
+      }
+      return { value: best, confidence: bestOverlap === 0 ? 0.3 : Math.min(0.95, 0.55 + 0.15 * bestOverlap) };
+    }
+    case 'score':
+      return { value: (question.min + question.max) / 2, confidence: 0.5 };
+    case 'yesno':
+      return URGENT.test(text) ? { value: true, confidence: 0.7 } : { value: false, confidence: 0.6 };
+  }
+}
+
+function stubDecision(request: DecisionRequest): Decision {
+  const text = Object.values(request.state)
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n');
+  const words = wordsOf(text);
+  const answers: Decision['answers'] = {};
+  for (const [key, question] of Object.entries(request.questions)) answers[key] = stubAnswer(question, text, words);
+  return {
+    answers,
+    model: request.model,
+    inputTokens: approximateTokens(JSON.stringify(request.state)) + approximateTokens(JSON.stringify(request.questions)),
+    outputTokens: approximateTokens(JSON.stringify(answers)),
+    providerRequestId: null,
+  };
+}
+
 export function stubProvider(): AiProvider {
   return {
     name: 'stub',
@@ -101,6 +153,9 @@ export function stubProvider(): AiProvider {
         outputTokens: approximateTokens(text),
         finishReason: 'stop',
       };
+    },
+    async decide(request: DecisionRequest): Promise<Decision> {
+      return stubDecision(request);
     },
   };
 }

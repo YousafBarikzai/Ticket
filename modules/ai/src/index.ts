@@ -83,8 +83,11 @@ export {
   activeDefaultModel,
   activeProvider,
   chooseDefaultModel,
+  addAiProvider,
   clearAiProvider,
+  providerNamed,
   registerAiProvider,
+  registeredProviderNames,
   type ProviderRegistration,
 } from './providers/registry.js';
 export { stubProvider } from './providers/stub.js';
@@ -98,6 +101,54 @@ export {
   ProviderUnavailable,
   type AnthropicOptions,
 } from './providers/anthropic.js';
-export type { AiProvider, Completion, CompletionRequest } from './providers/types.js';
+export type {
+  AiProvider,
+  Completion,
+  CompletionRequest,
+  Decision,
+  DecisionAnswer,
+  DecisionQuestion,
+  DecisionRequest,
+  DecisionValue,
+} from './providers/types.js';
+export {
+  AUTO_APPLY_FIELDS,
+  AUTO_GATE,
+  DECISION_CATALOGUE,
+  DECISION_MODES,
+  DECISION_PURPOSES,
+  DEFAULT_THRESHOLDS,
+  SELECTABLE_MODES,
+  STEP_DOWN,
+  autoGate,
+  checkDecision,
+  decisionDefinitionFor,
+  isDecisionPurpose,
+  planDecision,
+  problemWithThresholds,
+  scoreAnswers,
+  shouldStepDown,
+  triageQuestions,
+  type DecisionMode,
+  type DecisionPurpose,
+  type Thresholds,
+} from './domain/decisions.js';
+export {
+  decide,
+  resetDecisionBreakers,
+  skipReasonFor,
+  type ChainAttempt,
+  type DecideCall,
+  type DecideResult,
+} from './service/gateway.js';
+export {
+  listDecisions,
+  modeFor,
+  runTriage,
+  thresholdsFor,
+  type DecisionListQuery,
+  type DecisionSummary,
+  type TriageRun,
+} from './service/decision-service.js';
 export { SHIPPED_DATASETS, SHIPPED_PROMPTS, type ShippedDataset, type ShippedPrompt } from './seed/prompts.js';
 import './jobs/index.js';

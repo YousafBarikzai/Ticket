@@ -159,9 +159,9 @@ constraint rather than a detail:
   priced in code.
 - **The default model belongs to the provider.** A call that names no model
   gets `AI_DEFAULT_MODEL`, or the provider's first model when that is unset.
-  Both are checked at boot: a default the provider does not offer, or one with
-  no price, stops the process. It used to be the constant `stub-small`, which
-  every real provider refused.
+  A default the provider does not offer stops the process at boot; one with no
+  price is logged as an error at boot, and every call against it is refused.
+  It used to be the constant `stub-small`, which every real provider refused.
 
 The prompt is also the reason the adapter does not go through the integration
 gateway, which is otherwise the only way out of the platform (ADR-0023): the
@@ -189,7 +189,37 @@ priority as a suggestion only).
 
 The JEV adapter is not written until its documentation, limits, region and
 data-processing terms have been verified. Until then `triage` runs
-`anthropic → rules`.
+`anthropic → rules` (and `stub` outside production).
+
+**What is built (foundation, no behaviour change).**
+
+- The decision contract (`DecisionRequest`, `Decision`) and optional
+  `AiProvider.decide`.
+- Named providers in the registry (`addAiProvider`, `providerNamed`).
+- The gateway's `decide`: chain walking, residency, price and budget skips,
+  per-provider timeouts, one retry, and a deployment-wide circuit breaker
+  reusing MOD-14's `CircuitBreakers`.
+- The pure policy in `domain/decisions.ts`: the catalogue, answer checking,
+  planning, scoring, the `auto` gate and the step-down.
+- `ai_decision`, with its cost counted in the monthly budget.
+- `runTriage` and the read-only `GET /ai/decisions`.
+- The Anthropic adapter now runs on the official SDK and answers `decide`
+  through structured outputs. The stub answers `decide` deterministically.
+
+Nothing calls `runTriage` yet. The `ticket.created` consumer is the next step,
+and it arrives with the purpose still `off` by default.
+
+Three things differ from the plan, deliberately:
+
+- **Question sets live in code, versioned** (`questionSetVersion`), like the
+  capability catalogue. They are not yet prompt-style tables. A tenant cannot
+  edit a question, so a table would add a promotion path with nothing to
+  promote.
+- **There is no combined usage view yet.** Cost per ticket is on
+  `ai_decision` and `ai_job`, and the month's total is on `ai_budget`. A
+  reporting view belongs with the analytics work that would read it.
+- **There is no `AI_PROVIDERS` list yet.** Its first use is registering a
+  second provider, which is the JEV adapter.
 
 ## 7. What PH-1 must include for this design
 
