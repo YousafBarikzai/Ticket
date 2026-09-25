@@ -1,8 +1,8 @@
 import { DependencyUnavailableError, ForbiddenError, ValidationError, logger, metrics } from '@itsm/platform';
 import { renderStrict } from '@itsm/module-workflow';
-import { DEFAULT_MODEL, costOf, isPriced, pricedModels } from '../domain/budget.js';
+import { costOf, isPriced, pricedModels } from '../domain/budget.js';
 import type { Capability } from '../domain/capabilities.js';
-import { activeProvider } from '../providers/registry.js';
+import { activeDefaultModel, activeProvider } from '../providers/registry.js';
 import type { Completion } from '../providers/types.js';
 
 /**
@@ -120,7 +120,9 @@ export async function callModel(call: GatewayCall): Promise<GatewayResult> {
     throw new ProviderOutsideResidency(provider.name, provider.processingRegion ?? 'unknown', call.allowedRegions);
   }
 
-  const model = call.model ?? DEFAULT_MODEL;
+  // A registered provider always has a default. The last fallback only
+  // satisfies the type, and the price check below would refuse it.
+  const model = call.model ?? activeDefaultModel() ?? 'none';
   if (!isPriced(model)) throw new ModelNotPriced(model);
   // Strict: a prompt rendered with a hole in it is a prompt that asks the
   // model to fill the hole, and it will. The workflow engine learned this

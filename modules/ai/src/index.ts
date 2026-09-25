@@ -52,7 +52,6 @@ export {
   type EvidenceKind,
 } from './domain/capabilities.js';
 export {
-  DEFAULT_MODEL,
   MICROS_PER_PENNY,
   clearModelPrices,
   isPriced,
@@ -80,7 +79,14 @@ export {
   type ConfidenceBand,
   type ParsedCompletion,
 } from './domain/output.js';
-export { activeProvider, clearAiProvider, registerAiProvider } from './providers/registry.js';
+export {
+  activeDefaultModel,
+  activeProvider,
+  chooseDefaultModel,
+  clearAiProvider,
+  registerAiProvider,
+  type ProviderRegistration,
+} from './providers/registry.js';
 export { stubProvider } from './providers/stub.js';
 export {
   anthropicProvider,

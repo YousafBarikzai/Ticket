@@ -80,8 +80,6 @@ export function pricedModels(): string[] {
   return [...new Set([...Object.keys(BUILT_IN_PRICES), ...registered.keys()])].sort();
 }
 
-export const DEFAULT_MODEL = 'stub-small';
-
 /**
  * Whether a call against this model can be costed at all.
  *

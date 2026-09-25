@@ -81,6 +81,11 @@ against a policy. The check runs *before* the prompt is rendered, so a tenant
 whose policy forbids the provider never has its ticket text interpolated into a
 prompt string at all.
 
+*Amended by ADR-0051.* A structured decision may move along a chain of
+providers, but only between providers that are **all** inside the tenant's
+allowed regions. One outside them is skipped, never used, and when none is
+left the ticket keeps what intake gave it. Generation still refuses with 403.
+
 **A provider that makes no external call has no region**, and `null` says so
 rather than inventing one. The stub is the only such provider. This is not a
 loophole — any provider that does make a call must name a region, `null` has to

@@ -45,10 +45,14 @@ import { statusPageManifest, seedStatusDefaults } from '@itsm/module-statuspage'
 import { migrationManifest } from '@itsm/module-migration';
 import { esmManifest } from '@itsm/module-esm';
 import {
+  activeDefaultModel,
   aiManifest,
   anthropicProvider,
+  clearAiProvider,
+  isPriced,
   parseModelPrices,
   registerAiProvider,
+  type AiProvider,
   registerModelPrices,
   seedAiDatasets,
   seedAiPrompts,
@@ -219,6 +223,11 @@ export function bootstrapModules(): BootstrapResult {
  * **A malformed price list stops the boot.** A half-loaded price list produces
  * a budget that half-works, which is the worst of the three outcomes — worse
  * than no AI, and much worse than a process that will not start.
+ *
+ * **So does a default model that cannot be used.** `AI_DEFAULT_MODEL` must be
+ * one the provider offers, and whichever model ends up the default must have a
+ * price. Either mistake otherwise surfaces as every suggestion failing in a
+ * worker, one at a time, long after the deploy that caused it.
  */
 function registerAiPricesAndProvider(): void {
   const config = loadConfig();
@@ -227,33 +236,45 @@ function registerAiPricesAndProvider(): void {
     registerModelPrices(parseModelPrices(config.AI_MODEL_PRICES));
   }
 
+  const provider = chooseAiProvider(config);
+  if (!provider) return;
+
+  registerAiProvider(provider, config.AI_DEFAULT_MODEL ? { defaultModel: config.AI_DEFAULT_MODEL } : {});
+  const model = activeDefaultModel();
+  if (model && !isPriced(model)) {
+    clearAiProvider();
+    throw new Error(
+      `the default AI model ${model} has no price, so no call against it could be counted towards a budget. ` +
+        'Add it to AI_MODEL_PRICES, or set AI_DEFAULT_MODEL to a model that has one.',
+    );
+  }
+}
+
+function chooseAiProvider(config: ReturnType<typeof loadConfig>): AiProvider | null {
   switch (config.AI_PROVIDER) {
     case 'anthropic': {
       if (!config.ANTHROPIC_API_KEY) {
         throw new Error('AI_PROVIDER is anthropic but ANTHROPIC_API_KEY is not set');
       }
-      registerAiProvider(
-        anthropicProvider({
-          apiKey: config.ANTHROPIC_API_KEY,
-          ...(config.ANTHROPIC_BASE_URL ? { baseUrl: config.ANTHROPIC_BASE_URL } : {}),
-        }),
-      );
-      return;
+      return anthropicProvider({
+        apiKey: config.ANTHROPIC_API_KEY,
+        ...(config.ANTHROPIC_BASE_URL ? { baseUrl: config.ANTHROPIC_BASE_URL } : {}),
+      });
     }
     case 'stub': {
       if (config.NODE_ENV === 'production') {
         throw new Error('AI_PROVIDER is stub, which answers without a model and is not a deployment option');
       }
-      registerAiProvider(stubProvider());
-      return;
+      return stubProvider();
     }
     default: {
       // Unset. Outside production the stub is registered anyway, so a
       // developer who has configured nothing still gets a working suggestion
       // surface; in production nothing is registered and every capability that
       // calls a model refuses with a 503 naming the configuration.
-      if (config.NODE_ENV !== 'production') registerAiProvider(stubProvider());
-      else logger.warn('no AI provider is configured; every capability that calls a model will refuse');
+      if (config.NODE_ENV !== 'production') return stubProvider();
+      logger.warn('no AI provider is configured; every capability that calls a model will refuse');
+      return null;
     }
   }
 }

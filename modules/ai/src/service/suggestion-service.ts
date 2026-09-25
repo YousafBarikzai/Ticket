@@ -25,10 +25,10 @@ import {
 import { events } from '@itsm/contracts';
 import { ticketService } from '@itsm/module-ticket';
 import { resolveActor } from '@itsm/module-identity';
-import { DEFAULT_MODEL, periodFor } from '../domain/budget.js';
+import { periodFor } from '../domain/budget.js';
 import { CAPABILITIES, callsAModel, definitionFor, type Capability, type Evidence } from '../domain/capabilities.js';
 import { UnparseableCompletion, parseCompletion } from '../domain/output.js';
-import { activeProvider } from '../providers/registry.js';
+import { activeDefaultModel, activeProvider } from '../providers/registry.js';
 import { assemble, renderable } from './context-service.js';
 import { assertWithinBudget, recordSpend } from './budget-service.js';
 import { NoProviderConfigured, ProviderOutsideResidency, callModel, residencyPermits } from './gateway.js';
@@ -152,7 +152,9 @@ export async function requestSuggestion(ctx: TenantContext, input: SuggestionReq
         // run finishes on the version it started on.
         promptVersion: version?.version ?? 0,
         provider: activeProvider()?.name ?? 'none',
-        model: needsAModel ? DEFAULT_MODEL : 'none',
+        // The provider's default, not a platform constant: a constant is right
+        // for exactly one provider and refused by every other.
+        model: needsAModel ? (activeDefaultModel() ?? 'none') : 'none',
         periodKey: periodFor(now),
       },
     });

@@ -13,17 +13,66 @@ import type { AiProvider } from './types.js';
  * from an error somebody fixes into answers somebody believes.
  */
 let provider: AiProvider | null = null;
+let defaultModel: string | null = null;
 
-export function registerAiProvider(implementation: AiProvider): void {
+export interface ProviderRegistration {
+  /**
+   * The model a call gets when nothing names one. Must be one the provider
+   * offers; left out, it is the first of them.
+   */
+  readonly defaultModel?: string;
+}
+
+/**
+ * Which model a call gets when it does not name one.
+ *
+ * Belongs to the provider, not to the platform. It used to be a constant —
+ * `stub-small` — which was right for exactly one provider: every other one
+ * was handed a model it had never heard of, and refused every suggestion with
+ * a message about a model nobody had configured. The provider's own list is
+ * what it will accept, so the default comes from that list or from the
+ * operator, and an operator's choice outside the list stops the boot rather
+ * than the first suggestion of the day.
+ */
+export function chooseDefaultModel(implementation: Pick<AiProvider, 'name' | 'models'>, configured?: string): string {
+  if (configured !== undefined && configured.length > 0) {
+    if (!implementation.models.includes(configured)) {
+      throw new Error(
+        `AI_DEFAULT_MODEL is ${configured}, which the ${implementation.name} provider does not offer; ` +
+          `it offers ${implementation.models.join(', ')}`,
+      );
+    }
+    return configured;
+  }
+  const first = implementation.models[0];
+  if (!first) throw new Error(`the ${implementation.name} provider offers no models, so nothing could be called`);
+  return first;
+}
+
+export function registerAiProvider(implementation: AiProvider, options: ProviderRegistration = {}): void {
+  // Chosen before anything is replaced, so a registration that throws leaves
+  // the previous provider in place rather than a provider with no default.
+  const chosen = chooseDefaultModel(implementation, options.defaultModel);
   provider = implementation;
-  logger.info('AI provider registered', { provider: implementation.name, models: implementation.models });
+  defaultModel = chosen;
+  logger.info('AI provider registered', {
+    provider: implementation.name,
+    models: implementation.models,
+    defaultModel: chosen,
+  });
 }
 
 export function activeProvider(): AiProvider | null {
   return provider;
 }
 
+/** The model a call gets when it names none. Null only when no provider is registered. */
+export function activeDefaultModel(): string | null {
+  return defaultModel;
+}
+
 /** Test helper, and the way a deployment switches a provider off entirely. */
 export function clearAiProvider(): void {
   provider = null;
+  defaultModel = null;
 }
