@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { registerModule, type ModuleManifest } from '@itsm/platform';
+import { DEFAULT_THRESHOLDS, SELECTABLE_MODES } from './domain/decisions.js';
 
 /**
  * MOD-09 AI, as a governed capability service (ADR-0006).
@@ -20,7 +21,7 @@ export const aiManifest: ModuleManifest = registerModule({
   name: 'AI capability service',
   version: '1.0.0',
   phase: 'PH-4',
-  dependsOn: ['MOD-01', 'MOD-04', 'MOD-09', 'MOD-09-KNOWLEDGE', 'MOD-13', 'MOD-15'],
+  dependsOn: ['MOD-01', 'MOD-04', 'MOD-09', 'MOD-09-KNOWLEDGE', 'MOD-11', 'MOD-13', 'MOD-14', 'MOD-15', 'MOD-21'],
   permissions: [
     { key: 'ai.suggest', scopes: ['any'], description: 'Ask for a suggestion, and say what you did with it.' },
     { key: 'ai.read', scopes: ['any'], description: 'See this tenant’s AI jobs, suggestions and spend.' },
@@ -34,8 +35,14 @@ export const aiManifest: ModuleManifest = registerModule({
   events: {
     // A promotion is audited, not evented: an event is written into one
     // tenant's outbox, and a prompt belongs to none of them.
-    publishes: ['ai.suggestion.created', 'ai.budget.threshold'],
-    consumes: [],
+    // A decision is audited, and evented only when it acts: `auto` publishes
+    // `ticket.classified` when it sets a routing field, so SLA can re-match,
+    // and `ai.decision.stepped_down` when it withdraws itself.
+    publishes: ['ai.suggestion.created', 'ai.budget.threshold', 'ticket.classified', 'ai.decision.stepped_down', 'config.published'],
+    // Triage (ADR-0051): a new channel ticket is triaged, a person changing a
+    // field `auto` set is a correction, and a resolved ticket settles the
+    // decisions made about it.
+    consumes: ['ticket.created', 'ticket.updated', 'ticket.assigned', 'ticket.status.changed'],
   },
   featureFlags: [
     {
@@ -83,6 +90,16 @@ export const aiManifest: ModuleManifest = registerModule({
       // it can switch off does.
       expires: 'permanent',
     },
+    {
+      key: 'ai.decision.triage',
+      description:
+        'Structured triage decisions (ADR-0051). Off by default: nothing is sent anywhere until a tenant ' +
+        'switches this on and picks a mode.',
+      default: false,
+      owner: 'ai',
+      // A kill switch, not a rollout, for the same reason as the capabilities.
+      expires: 'permanent',
+    },
   ],
   settings: [
     {
@@ -106,12 +123,49 @@ export const aiManifest: ModuleManifest = registerModule({
       scopes: ['tenant'],
       description: 'How long a rendered prompt and its completion are kept before the sweep removes them.',
     },
+    {
+      key: 'ai.decision.triage.mode',
+      // All four. `auto` may be chosen at any time because choosing it is not
+      // what lets an answer act: each field is applied only once this desk's
+      // record has earned it, checked on every decision.
+      schema: z.enum(SELECTABLE_MODES),
+      default: 'off',
+      scopes: ['tenant'],
+      description:
+        'What triage decisions do: off sends nothing; shadow decides and records, and changes nothing; suggest shows ' +
+        'confident answers to agents to accept or dismiss; auto also sets category and team on new tickets where they ' +
+        'are empty, field by field, once each has earned it — and steps itself back to suggest if people correct too many.',
+    },
+    {
+      key: 'ai.decision.autoThreshold',
+      schema: z.number().gt(0).max(1),
+      default: DEFAULT_THRESHOLDS.auto,
+      scopes: ['tenant'],
+      description: 'The confidence at or above which an allow-listed field may be applied, in auto mode.',
+    },
+    {
+      key: 'ai.decision.suggestThreshold',
+      schema: z.number().gt(0).max(1),
+      default: DEFAULT_THRESHOLDS.suggest,
+      scopes: ['tenant'],
+      description: 'The confidence at or above which an answer is worth showing a person.',
+    },
   ],
   jobs: [
     {
       name: 'ai.suggest',
       queue: 'ai',
       description: 'Assemble the context, call the provider, and store the suggestion with its evidence.',
+    },
+    {
+      name: 'ai.decide',
+      queue: 'ai',
+      description: 'Ask the decision chain about a new ticket, record the answer, and act on it as the mode allows.',
+    },
+    {
+      name: 'ai.decision.review',
+      queue: 'ai',
+      description: 'After a person corrects an applied value, step auto down to suggest if too many have been corrected.',
     },
     {
       name: 'ai.retention.sweep',

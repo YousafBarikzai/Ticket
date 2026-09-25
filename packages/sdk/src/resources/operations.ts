@@ -293,8 +293,75 @@ export interface AuditFilter {
   limit?: number;
 }
 
+/** One question's score against what people settled on (ADR-0051). */
+export interface DecisionQuestionScore {
+  question: string;
+  scored: number;
+  accuracy: number | null;
+  brier: number | null;
+  calibration: { from: number; to: number; count: number; accuracy: number | null; meanConfidence: number | null }[];
+  autoGate: { eligible: boolean; considered: number; agreement: number | null; reason: string } | null;
+  /** What agents did with this field's suggestions, in `suggest` mode. */
+  responses: { accepted: number; dismissed: number };
+  /** What the AI set by itself, in `auto` mode, and how much of it people changed or undid. */
+  applied: { applied: number; overridden: number };
+}
+
+export interface DecisionScore {
+  purpose: string;
+  mode: string;
+  thresholds: { auto: number; suggest: number };
+  since: string;
+  decisions: number;
+  settled: number;
+  fellToRules: number;
+  byProvider: Record<string, number>;
+  skips: Record<string, number>;
+  costMicros: string;
+  costDisplay: string;
+  meanLatencyMs: number | null;
+  questions: DecisionQuestionScore[];
+  autoEligible: boolean;
+  /** The automatic step-down's meter: corrections over the most recent applied decisions. */
+  stepDown: {
+    window: number;
+    considered: number;
+    overridden: number;
+    rate: number | null;
+    limit: number;
+    wouldStepDown: boolean;
+  };
+  /** The last time `auto` switched itself back to `suggest`, if ever. */
+  lastStepDown: { at: string; overridden: number; window: number } | null;
+}
+
+export interface DecisionRow {
+  id: string;
+  purpose: string;
+  subjectType: string;
+  subjectId: string;
+  mode: string;
+  outcome: string;
+  provider: string;
+  model: string | null;
+  latencyMs: number;
+  costMicros: string;
+  costDisplay: string;
+  answers: Record<string, { value: unknown; confidence: number }>;
+  attempts: { provider: string; outcome: string; reason: string | null; model: string | null; ms: number }[];
+  createdAt: string;
+}
+
+export interface AiDecisions {
+  /** Totals only; every holder of `ai.read`. */
+  score(filter?: { purpose?: string; days?: number }): Promise<DecisionScore>;
+  /** Every decision in the tenant needs `ai.manage`; one ticket's needs sight of the ticket. */
+  decisions(filter?: { purpose?: string; subjectId?: string; limit?: number }): Promise<DecisionRow[]>;
+}
+
 export interface Operations {
   readonly queues: Queues;
+  readonly ai: AiDecisions;
   readonly estate: Estate;
   readonly insights: Insights;
   readonly integrations: Integrations;
@@ -347,6 +414,12 @@ export function operations(client: Client): Operations {
       credentials: () => client.request<{ data: CredentialRow[] }>('/api/v1/credentials').then(unwrap),
       errorQueue: (status) =>
         client.request<{ data: ErrorQueueRow[] }>('/api/v1/error-queue', { query: { status } }).then(unwrap),
+    },
+
+    ai: {
+      score: (filter = {}) => client.request<DecisionScore>('/api/v1/ai/decisions/score', { query: { ...filter } }),
+      decisions: (filter = {}) =>
+        client.request<{ data: DecisionRow[] }>('/api/v1/ai/decisions', { query: { ...filter } }).then(unwrap),
     },
 
     securityAlerts: () => client.request<{ data: SecurityAlertRow[] }>('/api/v1/security/alerts').then(unwrap),

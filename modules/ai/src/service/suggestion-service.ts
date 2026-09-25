@@ -25,14 +25,15 @@ import {
 import { events } from '@itsm/contracts';
 import { ticketService } from '@itsm/module-ticket';
 import { resolveActor } from '@itsm/module-identity';
-import { DEFAULT_MODEL, periodFor } from '../domain/budget.js';
+import { periodFor } from '../domain/budget.js';
 import { CAPABILITIES, callsAModel, definitionFor, type Capability, type Evidence } from '../domain/capabilities.js';
 import { UnparseableCompletion, parseCompletion } from '../domain/output.js';
-import { activeProvider } from '../providers/registry.js';
+import { activeDefaultModel, activeProvider } from '../providers/registry.js';
 import { assemble, renderable } from './context-service.js';
 import { assertWithinBudget, recordSpend } from './budget-service.js';
 import { NoProviderConfigured, ProviderOutsideResidency, callModel, residencyPermits } from './gateway.js';
 import { currentVersionOf } from './prompt-service.js';
+import { tenantAiRegions } from './residency-service.js';
 
 /**
  * The suggestion lifecycle: asked for, generated, shown, decided.
@@ -152,7 +153,9 @@ export async function requestSuggestion(ctx: TenantContext, input: SuggestionReq
         // run finishes on the version it started on.
         promptVersion: version?.version ?? 0,
         provider: activeProvider()?.name ?? 'none',
-        model: needsAModel ? DEFAULT_MODEL : 'none',
+        // The provider's default, not a platform constant: a constant is right
+        // for exactly one provider and refused by every other.
+        model: needsAModel ? (activeDefaultModel() ?? 'none') : 'none',
         periodKey: periodFor(now),
       },
     });
@@ -323,7 +326,10 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
       template: version.template,
       context: renderable(assembled.context),
       model: job.model,
-      allowedRegions: aiRegions(ctx),
+      // The tenant's row, not the worker's context: a job envelope carries
+      // the tenant but not its regions, so `aiRegions(ctx)` here would be a
+      // default region rather than this tenant's policy.
+      allowedRegions: await tenantAiRegions(ctx),
     });
     const parsedOut = parseCompletion(capability, result.completion.text);
 
@@ -339,6 +345,8 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
           inputTokens: result.completion.inputTokens,
           outputTokens: result.completion.outputTokens,
           costMicros: result.costMicros,
+          latencyMs: result.latencyMs,
+          providerRequestId: result.completion.providerRequestId ?? null,
           promptText: retainDays > 0 ? result.promptText : null,
           completionText: retainDays > 0 ? result.completion.text : null,
         },

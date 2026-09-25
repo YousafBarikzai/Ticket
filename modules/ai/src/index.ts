@@ -52,7 +52,6 @@ export {
   type EvidenceKind,
 } from './domain/capabilities.js';
 export {
-  DEFAULT_MODEL,
   MICROS_PER_PENNY,
   clearModelPrices,
   isPriced,
@@ -80,7 +79,17 @@ export {
   type ConfidenceBand,
   type ParsedCompletion,
 } from './domain/output.js';
-export { activeProvider, clearAiProvider, registerAiProvider } from './providers/registry.js';
+export {
+  activeDefaultModel,
+  activeProvider,
+  chooseDefaultModel,
+  addAiProvider,
+  clearAiProvider,
+  providerNamed,
+  registerAiProvider,
+  registeredProviderNames,
+  type ProviderRegistration,
+} from './providers/registry.js';
 export { stubProvider } from './providers/stub.js';
 export {
   anthropicProvider,
@@ -92,6 +101,88 @@ export {
   ProviderUnavailable,
   type AnthropicOptions,
 } from './providers/anthropic.js';
-export type { AiProvider, Completion, CompletionRequest } from './providers/types.js';
+export type {
+  AiProvider,
+  Completion,
+  CompletionRequest,
+  Decision,
+  DecisionAnswer,
+  DecisionQuestion,
+  DecisionRequest,
+  DecisionValue,
+} from './providers/types.js';
+export {
+  AUTO_APPLY_FIELDS,
+  AUTO_GATE,
+  DECISION_CATALOGUE,
+  DECISION_MODES,
+  DECISION_PURPOSES,
+  DEFAULT_THRESHOLDS,
+  GATED_QUESTIONS,
+  SELECTABLE_MODES,
+  STEP_DOWN,
+  SUGGESTION_KINDS,
+  TRIAGE_CHANNELS,
+  autoGate,
+  checkDecision,
+  decisionDefinitionFor,
+  decisionModelFor,
+  isDecisionPurpose,
+  overrides,
+  pendingSuggestions,
+  planDecision,
+  problemWithThresholds,
+  scoreAnswers,
+  shouldStepDown,
+  standingApplied,
+  triageQuestions,
+  triagesChannel,
+  type AppliedEntry,
+  type DecisionMode,
+  type DecisionPurpose,
+  type PendingSuggestion,
+  type ResponseAction,
+  type StandingApplied,
+  type SuggestionKind,
+  type Thresholds,
+} from './domain/decisions.js';
+export {
+  decide,
+  resetDecisionBreakers,
+  skipReasonFor,
+  type ChainAttempt,
+  type DecideCall,
+  type DecideResult,
+} from './service/gateway.js';
+export {
+  GATE_WINDOW_DAYS,
+  gatesFor,
+  listDecisions,
+  modeFor,
+  runTriage,
+  scoreDecisions,
+  settleDecisions,
+  thresholdsFor,
+  type DecisionListQuery,
+  type DecisionScore,
+  type DecisionSummary,
+  type QuestionScore,
+  type ScoreQuery,
+  type StepDownNotice,
+  type TriageRun,
+} from './service/decision-service.js';
+export { recordOverrides, reviewAutoMode, stepDownState, type StepDownState } from './service/auto-service.js';
+export { tenantAiRegions } from './service/residency-service.js';
+export {
+  respondSchema,
+  respondToSuggestion,
+  triageSuggestionFor,
+  undoApplied,
+  type RespondInput,
+  type SuggestionResponse,
+  type TriageSuggestionView,
+} from './service/triage-suggestion-service.js';
 export { SHIPPED_DATASETS, SHIPPED_PROMPTS, type ShippedDataset, type ShippedPrompt } from './seed/prompts.js';
 import './jobs/index.js';
+import './handlers/index.js';
+import './notifications.js';
