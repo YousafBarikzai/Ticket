@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import { join, relative, resolve } from 'node:path';
 
 /**
@@ -14,6 +15,8 @@ import { join, relative, resolve } from 'node:path';
  *   5. Prisma writes stay with the module that owns the table.
  *   6. Outbound calls go through the integration gateway (ADR-0023).
  *   7. Every module package is declared at the root, so tests can import it.
+ *   8. JSON values are compared by value, not by stringifying them.
+ *   9. Every package the server bundles load at run time is a root dependency.
  *
  * Written as a script rather than an ESLint rule because it needs no plugin
  * resolution, runs in under a second, and gives an error a reviewer can act on.
@@ -298,6 +301,62 @@ for (const file of [...walk(join(root, 'modules')), ...walk(join(root, 'packages
         detail: 'compares JSON by stringifying it; use jsonEquals from @itsm/platform, which survives a jsonb round trip',
       });
     });
+}
+
+// ---------------------------------------------------------------------------
+// 9. Every package the API and worker import at run time is a root dependency.
+//
+// The server images are bundles: workspace code is compiled in, and every other
+// package stays external and is loaded from the image's `node_modules`, which
+// is installed from the root `package.json` with `--prod` and nothing else
+// (infra/scripts/bundle.ts, infra/docker/Dockerfile). A package declared only
+// in a module's own manifest builds, typechecks and passes every test — pnpm
+// links it for the workspace — and then the container dies on start with
+// ERR_MODULE_NOT_FOUND.
+//
+// `@anthropic-ai/sdk` did exactly that: declared by modules/ai, missing from
+// the root, and every worker crashed on the first deploy that carried it. Type
+// imports are erased by the bundler and need nothing at run time; the web apps
+// are traced by Next into their own standalone output and are not bundles.
+// ---------------------------------------------------------------------------
+const runtimeDependencies = new Set(Object.keys(rootManifest.dependencies ?? {}));
+const BUNDLED_SOURCES = [
+  'modules',
+  'packages/platform',
+  'packages/contracts',
+  'packages/expr',
+  'packages/business-time',
+  'packages/runtime',
+  'apps/api/src',
+  'apps/worker/src',
+];
+// A statement up to its `from`, which never crosses a `;` or a call: that is
+// what keeps a later string in the same file from being read as a specifier.
+const RUNTIME_IMPORT = /^\s*(?:import|export)\s+(type\s+)?(?:[^;()'"]*?\sfrom\s+)?['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\)/gm;
+const nodeBuiltins = new Set(builtinModules);
+
+for (const area of BUNDLED_SOURCES) {
+  const directory = join(root, area);
+  if (!existsSync(directory)) continue;
+  for (const file of walk(directory)) {
+    if (/\.test\.tsx?$/.test(file)) continue;
+    const source = readFileSync(file, 'utf8');
+    for (const match of source.matchAll(RUNTIME_IMPORT)) {
+      if (match[1]) continue;
+      const specifier = match[2] ?? match[3];
+      if (!specifier || specifier.startsWith('.') || specifier.startsWith('/')) continue;
+      if (specifier.startsWith('node:') || specifier.startsWith('@itsm/')) continue;
+      const parts = specifier.split('/');
+      const name = specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
+      if (nodeBuiltins.has(name) || runtimeDependencies.has(name)) continue;
+      violations.push({
+        file: relative(root, file),
+        line: source.slice(0, match.index).split('\n').length,
+        rule: 'runtime-dependency-at-root',
+        detail: `imports ${name}, which is not in the root package.json dependencies, so the server image cannot load it`,
+      });
+    }
+  }
 }
 
 if (violations.length > 0) {
