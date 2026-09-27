@@ -148,6 +148,21 @@ Set on **every** application and worker service:
 | `OIDC_ISSUER` | `https://auth.<your-domain>/realms/itsm` |
 | `NODE_ENV` | `production` |
 
+Set on **`portal`**, **`workbench`** and **`admin`** as well — each signs
+people in as its own Keycloak client, and none of the three can sign anybody
+in without these:
+
+| Variable | Value |
+|---|---|
+| `OIDC_CLIENT_ID` | `itsm-portal`, `itsm-workbench` or `itsm-admin` |
+| `OIDC_CLIENT_SECRET` | Keycloak → realm **itsm** → **Clients** → that client → **Credentials** → **Client secret** |
+
+The secrets exist once the first deploy has applied the realm, so this is the
+one step that comes after a deploy rather than before it. They stay the same
+from then on: the realm step carries each client's secret through the import
+that would otherwise replace it. Until they are set, the health check passes —
+it does not sign anybody in — and signing in fails with an error.
+
 Set on **`migrate`** only:
 
 | Variable | Value |

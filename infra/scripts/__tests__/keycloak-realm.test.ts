@@ -3,6 +3,7 @@ import { hostsFor, readCatalogue } from '../railway-deploy.js';
 import {
   PLACEHOLDER,
   authHost,
+  confidentialClients,
   partialImportBody,
   permissionHint,
   realmBody,
@@ -146,6 +147,19 @@ describe('what Keycloak is actually sent', () => {
     const body = partialImportBody(resolved) as { clients: { clientId: string }[]; clientScopes: { name: string }[] };
     expect(body.clients.map((client) => client.clientId)).toContain('itsm-admin');
     expect(body.clientScopes.map((scope) => scope.name)).toEqual(['itsm-claims']);
+  });
+
+  it('keeps each client secret it is given, so a deploy does not sign every application out of Keycloak', () => {
+    // OVERWRITE deletes and recreates each client, and a confidential client
+    // recreated without a secret gets a new one — which the three applications
+    // do not have. Carrying the current secret back in is what keeps them valid.
+    const body = partialImportBody(resolved, new Map([['itsm-admin', 'kept']])) as { clients: { clientId: string; secret?: string }[] };
+    expect(body.clients.find((client) => client.clientId === 'itsm-admin')?.secret).toBe('kept');
+    expect(body.clients.find((client) => client.clientId === 'itsm-portal')?.secret).toBeUndefined();
+  });
+
+  it('reads secrets for the three applications and not for the API, which has none', () => {
+    expect(confidentialClients(resolved).sort()).toEqual(['itsm-admin', 'itsm-portal', 'itsm-workbench']);
   });
 
   it('keeps the realm settings out of the import and the clients out of the settings', () => {
