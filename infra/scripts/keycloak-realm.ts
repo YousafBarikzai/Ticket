@@ -124,13 +124,28 @@ export function unresolvedPlaceholders(realm: Realm): string[] {
  * realm, and the realm holds the users. `OVERWRITE` so a changed redirect URI
  * actually changes — the default, `FAIL`, makes the second deploy of any
  * environment a no-op that reports success.
+ *
+ * `OVERWRITE` deletes each client and creates it again, and a confidential
+ * client created without a `secret` is given a new random one. So `secrets`
+ * carries each client's current secret back in: without it every deploy
+ * rotates the secret the portal, workbench and console sign in with, and all
+ * three stop being able to sign anybody in until a person copies the new ones
+ * across.
  */
-export function partialImportBody(realm: Realm): Record<string, unknown> {
+export function partialImportBody(realm: Realm, secrets: ReadonlyMap<string, string> = new Map()): Record<string, unknown> {
   return {
     ifResourceExists: 'OVERWRITE',
-    clients: realm.clients,
+    clients: realm.clients.map((client) => {
+      const secret = secrets.get(client.clientId);
+      return secret ? { ...client, secret } : client;
+    }),
     clientScopes: (realm as { clientScopes?: unknown[] }).clientScopes ?? [],
   };
+}
+
+/** The clients that sign people in with a secret: not public, and not a resource server. */
+export function confidentialClients(realm: Realm): string[] {
+  return realm.clients.filter((client) => client.publicClient === false && client.bearerOnly !== true).map((client) => client.clientId);
 }
 
 /**
@@ -238,6 +253,28 @@ async function applyUserProfile(realm: Realm, baseUrl: string, headers: Record<s
   console.log(`applied the user profile for ${realm.realm}`);
 }
 
+/**
+ * Each existing confidential client's secret, so the import can keep it.
+ *
+ * A client that does not exist yet has no secret to keep, and Keycloak makes
+ * one when the import creates it.
+ */
+async function currentSecrets(realm: Realm, baseUrl: string, headers: Record<string, string>): Promise<Map<string, string>> {
+  const secrets = new Map<string, string>();
+  for (const clientId of confidentialClients(realm)) {
+    const listed = await fetch(`${baseUrl}/admin/realms/${realm.realm}/clients?clientId=${encodeURIComponent(clientId)}`, { headers });
+    if (!listed.ok) throw new Error(`could not read client ${clientId}: ${listed.status}${permissionHint(listed.status)}`);
+    const [client] = (await listed.json()) as { id: string }[];
+    if (!client) continue;
+
+    const secret = await fetch(`${baseUrl}/admin/realms/${realm.realm}/clients/${client.id}/client-secret`, { headers });
+    if (!secret.ok) throw new Error(`could not read the secret of ${clientId}: ${secret.status}${permissionHint(secret.status)}`);
+    const { value } = (await secret.json()) as { value?: string };
+    if (value) secrets.set(clientId, value);
+  }
+  return secrets;
+}
+
 async function apply(realm: Realm, baseUrl: string, token: string): Promise<void> {
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const exists = await fetch(`${baseUrl}/admin/realms/${realm.realm}`, { headers });
@@ -258,10 +295,11 @@ async function apply(realm: Realm, baseUrl: string, token: string): Promise<void
   });
   if (!updated.ok) throw new Error(`could not update the realm: ${updated.status}${permissionHint(updated.status)} ${await updated.text()}`);
 
+  const secrets = await currentSecrets(realm, baseUrl, headers);
   const imported = await fetch(`${baseUrl}/admin/realms/${realm.realm}/partialImport`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(partialImportBody(realm)),
+    body: JSON.stringify(partialImportBody(realm, secrets)),
   });
   if (!imported.ok) throw new Error(`could not import the clients: ${imported.status}${permissionHint(imported.status)} ${await imported.text()}`);
 
