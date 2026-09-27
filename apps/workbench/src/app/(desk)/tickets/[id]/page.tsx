@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { ApiError, type Suggestion, type TimelineEntry } from '@itsm/sdk';
 import { Badge, EmptyState, SlaClock, Timeline, type TimelineEvent } from '@itsm/ui';
 import { TicketActions } from '../../../../components/TicketActions.js';
+import { TriageCard } from '../../../../components/TriageCard.js';
 import { TicketWorkArea } from '../../../../components/TicketWorkArea.js';
 import { categoryIntent, priorityEmphasis, priorityIntent, stateLabel, typeLabel } from '../../../../queue/presentation.js';
 import { transitionsFrom } from '../../../../queue/transitions.js';
@@ -49,11 +50,13 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   // In parallel, and each one allowed to fail on its own. SLA, time and AI are
   // supporting panes: a tenant without the time module, or an agent without
   // `ai.read`, should still get the ticket rather than an error page.
-  const [timers, time, capabilities, suggestions, me] = await Promise.all([
+  const [timers, time, capabilities, suggestions, triage, me] = await Promise.all([
     orNull(api.slaTimers(id)),
     orNull(api.timeOnTicket(ticket.id)),
     orNull(api.capabilities()),
     orNull(api.suggestions(ticket.id)),
+    // Null unless the desk is in `suggest` mode and something is waiting.
+    orNull(api.triageSuggestion(ticket.id)),
     orNull(api.me()),
   ]);
 
@@ -121,6 +124,10 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
               />
             ))}
           </div>
+        ) : null}
+
+        {triage?.data ? (
+          <TriageCard triage={triage.data} ticketVersion={ticket.version} canAct={held.has('ai.suggest')} />
         ) : null}
 
         <TicketActions

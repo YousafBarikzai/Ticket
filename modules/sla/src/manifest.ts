@@ -16,7 +16,7 @@ export const slaManifest: ModuleManifest = registerModule({
   ],
   events: {
     publishes: ['sla.timer.started', 'sla.timer.warning', 'sla.timer.breached', 'sla.timer.paused', 'sla.timer.resumed', 'sla.timer.met'],
-    consumes: ['ticket.created', 'ticket.status.changed', 'ticket.comment.added', 'ticket.updated'],
+    consumes: ['ticket.created', 'ticket.status.changed', 'ticket.comment.added', 'ticket.updated', 'ticket.classified'],
   },
   featureFlags: [],
   settings: [],

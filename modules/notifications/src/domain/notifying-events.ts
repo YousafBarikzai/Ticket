@@ -21,6 +21,7 @@ export const NOTIFYING_EVENTS = [
   'import.job.finished',
   'usage.limit.reached',
   'ai.budget.threshold',
+  'ai.decision.stepped_down',
 ] as const;
 
 const notifiable: ReadonlySet<string> = new Set(NOTIFYING_EVENTS);

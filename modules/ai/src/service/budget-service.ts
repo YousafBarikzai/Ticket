@@ -41,8 +41,8 @@ import {
  * What is shared is the refusal: `LimitReachedError`, the 402 MOD-21 already
  * established, because the caller is permitted and the obstacle is commercial.
  *
- * `spent` is a **cached sum of the jobs**, recomputed from `ai_job` whenever
- * one finishes, never an accumulator. A retried job cannot inflate it, and the
+ * `spent` is a **cached sum of the jobs and decisions**, recomputed from
+ * `ai_job` and `ai_decision` whenever one finishes, never an accumulator. A retried job cannot inflate it, and the
  * figure can always be rebuilt from the rows beneath it (ADR-0031).
  */
 
@@ -158,7 +158,21 @@ export async function assertWithinBudget(ctx: TenantContext, at = new Date()): P
 }
 
 /**
- * Recomputes the month's spend from the jobs, and announces what it crossed.
+ * Whether a decision may spend anything this month.
+ *
+ * The decision-path twin of `assertWithinBudget`, and deliberately not a
+ * refusal: a spent budget means triage falls through to rules and the ticket
+ * keeps what intake gave it. Intake is never refused for want of a decision.
+ */
+export async function budgetAllows(ctx: TenantContext, tx: Tx, at = new Date()): Promise<boolean> {
+  const row = await budgetFor(ctx, tx, at);
+  if (row.limitPence === null) return true;
+  return stateFor(row.spentMicros, linesOf(row)) !== 'blocked';
+}
+
+/**
+ * Recomputes the month's spend from the jobs and decisions, and announces
+ * what it crossed.
  *
  * Called after a job finishes, inside that job's own transaction. The sum is
  * over an indexed range in the worker, which is where counting is allowed;
@@ -169,7 +183,14 @@ export async function recordSpend(ctx: TenantContext, tx: Tx, periodKey: string)
     where: { periodKey, status: 'completed' },
     _sum: { costMicros: true },
   });
-  const spentMicros = total._sum.costMicros ?? 0n;
+  // Decisions spend from the same month (ADR-0051). Every decision row counts,
+  // including one that fell through to rules: a call that was charged for and
+  // then thrown away was still charged for.
+  const decided = await tx.aiDecision.aggregate({
+    where: { periodKey },
+    _sum: { costMicros: true },
+  });
+  const spentMicros = (total._sum.costMicros ?? 0n) + (decided._sum.costMicros ?? 0n);
 
   // Created if it is not there: a job can finish in a month nobody has read a
   // budget for, and a spend that landed nowhere is a spend nobody can see.

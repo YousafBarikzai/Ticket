@@ -29,6 +29,7 @@ export {
   type GatewayResponse,
   type GatewayDeps,
 } from './gateway/gateway.js';
+export { CircuitBreakers, type BreakerOptions, type CircuitState } from './gateway/circuit-breaker.js';
 export {
   AWS_ALGORITHM,
   EMPTY_PAYLOAD_SHA256,

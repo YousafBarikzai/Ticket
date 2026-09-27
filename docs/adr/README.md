@@ -63,6 +63,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0048](0048-a-custom-field-is-a-contract-not-a-bag.md) | A custom field is a contract, not a bag | Accepted | MOD-04, MOD-02, MOD-13 |
 | [0049](0049-one-console-two-audiences-and-the-gate-between-them.md) | One console, two audiences, and the gate between them | Accepted | MOD-13, MOD-01, MOD-04 |
 | [0050](0050-a-pipeline-that-runs-before-it-can-deploy.md) | A pipeline that runs before it can deploy | Accepted | OD-06, doc 16 |
+| [0051](0051-a-decision-is-not-a-generation.md) | A decision is not a generation | Accepted | ADR-06, MOD-09, MOD-07, doc 13 |
 
 ## Template
 

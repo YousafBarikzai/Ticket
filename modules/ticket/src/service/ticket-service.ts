@@ -946,7 +946,8 @@ const AUTOMATION_FIELDS = new Set([
 ]);
 
 export interface AutomationProvenance {
-  kind: 'rule' | 'workflow';
+  /** `ai` is a triage decision in `auto` mode (ADR-0051); `id` is the decision's. */
+  kind: 'rule' | 'workflow' | 'ai';
   id: string;
   key: string;
   version: number;
@@ -956,6 +957,13 @@ export interface AutomationProvenance {
 
 export interface AutomatedChange {
   patch?: Record<string, unknown>;
+  /**
+   * What each patched field must still hold for it to be written. A field
+   * that has moved since the change was decided is refused and the others go
+   * ahead: automation that decided on a ticket as it was must not write over
+   * what somebody made of it since.
+   */
+  expect?: Record<string, unknown>;
   tags?: string[];
   watchers?: string[];
   status?: { status: string; reason?: string };
@@ -1017,6 +1025,10 @@ export async function applyAutomatedChange(
       continue;
     }
     const before = (ticket as unknown as Record<string, unknown>)[field];
+    if (change.expect && field in change.expect && !jsonEquals(before, change.expect[field])) {
+      outcome.refused.push({ what: `setField ${field}`, why: 'the field changed after the change was decided' });
+      continue;
+    }
     if (jsonEquals(before, after)) continue;
     outcome.changed[field] = { before, after };
     data[field] = after;
@@ -1190,10 +1202,17 @@ export async function applyAutomatedChange(
  *
  * This is what stops a rule reacting to its own write: a consumer that sees a
  * `workflow` actor knows the change came from automation, and the rules engine
- * uses exactly that to avoid looping.
+ * uses exactly that to avoid looping. An AI decision acts as `ai`, which the
+ * rules engine does react to — a rule that routes by category should route a
+ * ticket the AI categorised, as it would one a person did — and which never
+ * loops, because triage runs once, on creation.
  */
 function automationActor(provenance: AutomationProvenance) {
-  return { type: 'workflow' as const, id: provenance.id, displayName: `${provenance.kind}:${provenance.key}` };
+  return {
+    type: provenance.kind === 'ai' ? ('ai' as const) : ('workflow' as const),
+    id: provenance.id,
+    displayName: `${provenance.kind}:${provenance.key}`,
+  };
 }
 
 /**

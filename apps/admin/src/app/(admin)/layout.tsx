@@ -56,6 +56,7 @@ const ENTRIES: readonly Entry[] = [
   },
   { id: 'sla', label: 'SLA management', href: '/sla', permissions: ['sla.policy.read', 'sla.policy.manage'] },
   { id: 'insights', label: 'Insights', href: '/insights', permissions: ['analytics.read', 'analytics.manage'] },
+  { id: 'ai-triage', label: 'AI triage', href: '/ai-triage', permissions: ['ai.read'] },
   {
     id: 'integrations',
     label: 'Integrations',

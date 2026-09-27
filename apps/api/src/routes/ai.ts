@@ -8,13 +8,19 @@ import {
   budgetSchema,
   formatMicros,
   getJob,
+  listDecisions,
   listSuggestions,
   outcomeSchema,
   readBudget,
   recordOutcome,
   requestSchema,
   requestSuggestion,
+  respondSchema,
+  respondToSuggestion,
+  scoreDecisions,
   setBudget,
+  triageSuggestionFor,
+  undoApplied,
 } from '@itsm/module-ai';
 import { contextOf } from '../plugins/context.js';
 
@@ -133,6 +139,69 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const body = outcomeSchema.strict().parse(request.body);
     const updated = await recordOutcome(ctx, id, body);
     return { id: updated.id, outcome: updated.outcome, outcomeAt: updated.outcomeAt?.toISOString() ?? null };
+  });
+
+  /**
+   * Which AI decided what, how confidently, at what cost, and which providers
+   * the chain passed over (ADR-0051). Read-only: a decision is corrected on
+   * the ticket, never here.
+   */
+  app.get('/ai/decisions', async (request) => {
+    const ctx = contextOf(request);
+    const rows = await listDecisions(ctx, request.query as Record<string, unknown>);
+    return { data: rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() })) };
+  });
+
+  /**
+   * How well the decisions matched what people settled on, per question, and
+   * whether `auto` has been earned. Computed from the rows on each request.
+   */
+  app.get('/ai/decisions/score', async (request) => {
+    const ctx = contextOf(request);
+    const score = await scoreDecisions(ctx, request.query as Record<string, unknown>);
+    return { ...score, since: score.since.toISOString() };
+  });
+
+  /**
+   * The triage suggestions still waiting on one ticket, and the values the AI
+   * set by itself that can still be undone, in `suggest` and `auto` modes
+   * (ADR-0051). `data` is null when there is nothing to show — no decision,
+   * nothing confident enough, everything already dealt with, or the desk in
+   * `off` or `shadow`.
+   */
+  app.get('/ai/triage/:ticketId', async (request) => {
+    const ctx = contextOf(request);
+    const { ticketId } = z.object({ ticketId: z.string().min(1).max(100) }).parse(request.params);
+    const view = await triageSuggestionFor(ctx, ticketId);
+    return { data: view ? { ...view, createdAt: view.createdAt.toISOString() } : null };
+  });
+
+  /**
+   * An agent's answer to one suggestion. Accept is the agent's own edit of the
+   * ticket, with the version they were looking at; dismiss changes nothing on
+   * the ticket. Both are recorded against the decision and audited.
+   */
+  const suggestionParams = z.object({ id: z.string().uuid(), question: z.string().min(1).max(40) });
+  app.post('/ai/decisions/:id/suggestions/:question/accept', async (request) => {
+    const ctx = contextOf(request);
+    const { id, question } = suggestionParams.parse(request.params);
+    return respondToSuggestion(ctx, id, question, 'accepted', respondSchema.parse(request.body ?? {}));
+  });
+  app.post('/ai/decisions/:id/suggestions/:question/dismiss', async (request) => {
+    const ctx = contextOf(request);
+    const { id, question } = suggestionParams.parse(request.params);
+    return respondToSuggestion(ctx, id, question, 'dismissed', respondSchema.parse(request.body ?? {}));
+  });
+
+  /**
+   * Undoes a value the AI set by itself in `auto` mode: puts back what the
+   * field held before, as the agent's own edit with the version they were
+   * looking at, and counts it as a correction towards the step-down.
+   */
+  app.post('/ai/decisions/:id/applied/:question/undo', async (request) => {
+    const ctx = contextOf(request);
+    const { id, question } = suggestionParams.parse(request.params);
+    return undoApplied(ctx, id, question, respondSchema.parse(request.body ?? {}));
   });
 
   app.get('/ai/budget', async (request) => {

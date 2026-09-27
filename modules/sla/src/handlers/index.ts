@@ -1,6 +1,13 @@
 import { defineHandler, logger } from '@itsm/platform';
 import { STATES } from '@itsm/module-ticket';
-import { meetTimer, pauseTimers, resumeTimers, startTimersForTicket, stopTimers } from '../service/timer-service.js';
+import {
+  meetTimer,
+  pauseTimers,
+  rematchTimersForTicket,
+  resumeTimers,
+  startTimersForTicket,
+  stopTimers,
+} from '../service/timer-service.js';
 
 /**
  * MOD-07 reacts to the ticket lifecycle.
@@ -18,6 +25,22 @@ defineHandler({
   async handle(ctx, event, tx) {
     const { ticketId } = event.payload as { ticketId: string };
     await startTimersForTicket(ctx, tx, ticketId);
+  },
+});
+
+/**
+ * A ticket classified after it was raised — an AI decision in `auto` mode
+ * setting its category or team (ADR-0051) — is matched again. The clock that
+ * started at creation keeps running; only the targets may change.
+ */
+defineHandler({
+  consumer: 'sla',
+  moduleId: 'MOD-07',
+  eventType: 'ticket.classified',
+  required: true,
+  async handle(ctx, event, tx) {
+    const { ticketId } = event.payload as { ticketId: string };
+    await rematchTimersForTicket(ctx, tx, ticketId);
   },
 });
 

@@ -1,5 +1,5 @@
 import type { Client, RequestOptions } from '../client.js';
-import type { AiCapability, AiJob, Me, Page, SlaTimers, Suggestion, Ticket, Timeline, TimeSummary } from './types.js';
+import type { AiCapability, AiJob, Me, Page, SlaTimers, Suggestion, Ticket, Timeline, TimeSummary, TriageSuggestion } from './types.js';
 
 /**
  * What the agent workbench asks the API for.
@@ -135,6 +135,38 @@ export function workbench(client: Client) {
 
     suggestions: (subjectId: string): Promise<{ data: Suggestion[] }> =>
       client.request('/api/v1/ai/suggestions', { query: { subjectId } }),
+
+    /** Triage suggestions still waiting on a ticket; null when there is nothing to show. */
+    triageSuggestion: (ticketId: string): Promise<{ data: TriageSuggestion | null }> =>
+      client.request(`/api/v1/ai/triage/${encodeURIComponent(ticketId)}`),
+
+    /**
+     * Accept one triage suggestion: the agent's own edit, sent with the ticket
+     * version they were looking at, so a ticket that changed under them is a
+     * 409 rather than an overwrite.
+     */
+    acceptTriage: (decisionId: string, question: string, version: number) =>
+      client.request<{ decisionId: string; question: string; response: string }>(
+        `/api/v1/ai/decisions/${encodeURIComponent(decisionId)}/suggestions/${encodeURIComponent(question)}/accept`,
+        { method: 'POST', body: { version } },
+      ),
+
+    dismissTriage: (decisionId: string, question: string) =>
+      client.request<{ decisionId: string; question: string; response: string }>(
+        `/api/v1/ai/decisions/${encodeURIComponent(decisionId)}/suggestions/${encodeURIComponent(question)}/dismiss`,
+        { method: 'POST', body: {} },
+      ),
+
+    /**
+     * Puts back what a field held before the AI set it, in `auto` mode. The
+     * agent's own edit, with the version they were looking at, and counted
+     * as a correction.
+     */
+    undoTriage: (decisionId: string, question: string, version: number) =>
+      client.request<{ decisionId: string; question: string; restored: string | number | boolean | null }>(
+        `/api/v1/ai/decisions/${encodeURIComponent(decisionId)}/applied/${encodeURIComponent(question)}/undo`,
+        { method: 'POST', body: { version } },
+      ),
 
     /**
      * What the person did with it. Recorded once, and the whole reason the
