@@ -210,7 +210,7 @@ describe('what each service is actually given', () => {
     // This deploy upserts without replacing, and these are the keys a person
     // sets once per environment. If one ever appears here, the deploy has
     // become something that can overwrite a database password.
-    const forbidden = /^(DATABASE_URL|DATABASE_URL_APP|DATABASE_URL_PLATFORM|DATABASE_URL_READONLY|REDIS_URL|OIDC_ISSUER|SMTP_URL|MEILISEARCH_API_KEY|ANTHROPIC_API_KEY|DEV_TOKEN_SECRET)$/;
+    const forbidden = /^(DATABASE_URL|DATABASE_URL_APP|DATABASE_URL_PLATFORM|DATABASE_URL_READONLY|REDIS_URL|OIDC_ISSUER|SMTP_URL|MEILISEARCH_API_KEY|ANTHROPIC_API_KEY|JEV_API_KEY|DEV_TOKEN_SECRET)$/;
     for (const service of catalogue.services) {
       for (const name of Object.keys(variablesFor(service, hostsFor(catalogue, domain, 'production')))) {
         expect(name, `${service.name} sets ${name}`).not.toMatch(forbidden);

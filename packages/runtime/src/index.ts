@@ -46,8 +46,10 @@ import { migrationManifest } from '@itsm/module-migration';
 import { esmManifest } from '@itsm/module-esm';
 import {
   activeDefaultModel,
+  addAiProvider,
   aiManifest,
   anthropicProvider,
+  jevProvider,
   isPriced,
   parseModelPrices,
   registerAiProvider,
@@ -238,6 +240,19 @@ function registerAiPricesAndProvider(): void {
 
   if (config.AI_MODEL_PRICES) {
     registerModelPrices(parseModelPrices(config.AI_MODEL_PRICES));
+  }
+
+  // The decision engine, beside whichever provider generates (ADR-0051). It
+  // is reachable by name only and never writes prose. Its key comes from the
+  // environment and nowhere else; with no key it is simply not in the chain,
+  // and triage falls through to rules.
+  if (config.JEV_API_KEY) {
+    addAiProvider(jevProvider({ apiKey: config.JEV_API_KEY }), { defaultModel: 'jev-latest' });
+    if (!isPriced('jev-latest')) {
+      logger.error('JEV is configured but jev-latest has no price, so triage will skip it', {
+        fix: 'add jev-latest to AI_MODEL_PRICES',
+      });
+    }
   }
 
   const provider = chooseAiProvider(config);

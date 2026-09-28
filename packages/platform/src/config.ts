@@ -55,6 +55,12 @@ const schema = z.object({
   AI_PROVIDER: z.enum(['none', 'stub', 'anthropic']).default('none'),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_BASE_URL: z.string().url().optional(),
+  /**
+   * TypeSafe's JEV decision engine (ADR-0051). Set, and triage asks JEV;
+   * unset, JEV is not in the chain. Independent of `AI_PROVIDER`: JEV decides
+   * and never generates.
+   */
+  JEV_API_KEY: z.string().optional(),
   /** The model a prompt version gets when it names none. */
   AI_DEFAULT_MODEL: z.string().optional(),
   /**

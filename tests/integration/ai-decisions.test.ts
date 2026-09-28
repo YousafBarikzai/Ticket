@@ -175,7 +175,6 @@ describe('in shadow', () => {
     // The chain passed over the providers this deployment does not have, and says so.
     expect(decision!.attempts.map((attempt) => [attempt.provider, attempt.reason])).toEqual([
       ['jev', 'not-registered'],
-      ['anthropic', 'not-registered'],
       ['stub', null],
     ]);
 
@@ -552,7 +551,7 @@ describe('in auto mode', () => {
    * answer matched what the desk settled on. Written straight to the table,
    * because two hundred resolved tickets is what earning it takes.
    */
-  async function earn(question: 'category' | 'group', value: string, label: string, count = 210): Promise<void> {
+  async function earn(question: 'category' | 'group', value: string, label: string, count = 210, provider = 'stub'): Promise<void> {
     await read((tx) =>
       tx.aiDecision.createMany({
         data: Array.from({ length: count }, () => ({
@@ -563,8 +562,8 @@ describe('in auto mode', () => {
           subjectId: randomUUID(),
           mode: 'shadow',
           questionSetVersion: 1,
-          provider: 'stub',
-          model: 'stub-small',
+          provider,
+          model: provider === 'stub' ? 'stub-small' : `${provider}-model`,
           answers: { [question]: { value: label, confidence: 0.95 } },
           proposed: { [question]: value },
           settled: { [question]: value },
@@ -593,6 +592,19 @@ describe('in auto mode', () => {
   async function decisionRow(ticketId: string) {
     return read((tx) => tx.aiDecision.findFirst({ where: { subjectId: ticketId }, orderBy: { createdAt: 'desc' } }));
   }
+
+  it('does not let one provider apply on another provider’s record', async () => {
+    // A record earned by a provider no longer in the chain. What its 0.9 was
+    // worth says nothing about the provider that answers now.
+    await earn('category', access.id, 'Access / VPN', 210, 'anthropic');
+    registerAiProvider(sureProvider());
+    const ticket = await raise('VPN is slow from the office', 'Pages time out.', 'email');
+    await triage(ticket.id);
+
+    expect(await ticketRow(ticket.id)).toMatchObject({ categoryId: null });
+    const plan = (await decisionRow(ticket.id))!.plan as { question: string; action: string; reason: string }[];
+    expect(plan.find((entry) => entry.question === 'category')!.reason).toMatch(/has not earned auto/);
+  });
 
   it('suggests, and sets nothing, until a field has earned it on this desk', async () => {
     registerAiProvider(sureProvider());

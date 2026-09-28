@@ -409,7 +409,7 @@ function boundedFetch(doFetch: typeof fetch): typeof fetch {
  * as much memory as the worker has. The gateway does the same thing for the
  * same reason (ADR-0023).
  */
-async function readBounded(response: Response): Promise<string> {
+export async function readBounded(response: Response): Promise<string> {
   const reader = response.body?.getReader();
   if (!reader) return response.text();
 

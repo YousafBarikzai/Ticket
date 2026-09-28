@@ -179,8 +179,10 @@ target port does, so the two cannot disagree.
 
 It will not set a credential, and that is enforced by a test. `DATABASE_URL`,
 `DATABASE_URL_APP`, `DATABASE_URL_PLATFORM`, `REDIS_URL`, `OIDC_ISSUER`,
-`SMTP_URL`, `MEILISEARCH_API_KEY` and the AI keys are set once per environment
-by a person. The variable upsert is `replace: false` for the same reason: an
+`SMTP_URL`, `MEILISEARCH_API_KEY` and the AI keys (`ANTHROPIC_API_KEY`,
+`JEV_API_KEY`) are set once per environment by a person. `JEV_API_KEY` goes on
+the services that carry `ANTHROPIC_API_KEY`: at least `api` (the triage page
+reads which provider leads) and `worker-data` (which runs the `ai` queue). The variable upsert is `replace: false` for the same reason: an
 upsert that replaced would delete every variable it did not name, which is a
 deploy that can empty an environment on a typo.
 

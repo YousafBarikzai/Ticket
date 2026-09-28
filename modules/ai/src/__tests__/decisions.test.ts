@@ -53,12 +53,18 @@ describe('the catalogue', () => {
     }
   });
 
-  it('asks Anthropic for triage with Sonnet 5, and anybody else with their default', () => {
+  it('asks JEV for triage with jev-latest, and anybody else with their default', () => {
     const triage = DECISION_CATALOGUE.triage;
-    const anthropic = { provider: { models: ['claude-opus-5', 'claude-sonnet-5'] }, defaultModel: 'claude-opus-5' };
-    expect(decisionModelFor(triage, 'anthropic', anthropic)).toBe('claude-sonnet-5');
-    expect(decisionModelFor(triage, 'anthropic', { ...anthropic, provider: { models: ['claude-opus-5'] } })).toBe('claude-opus-5');
+    const jev = { provider: { models: ['jev-1.13.0', 'jev-latest'] }, defaultModel: 'jev-1.13.0' };
+    expect(decisionModelFor(triage, 'jev', jev)).toBe('jev-latest');
+    expect(decisionModelFor(triage, 'jev', { ...jev, provider: { models: ['jev-1.13.0'] } })).toBe('jev-1.13.0');
     expect(decisionModelFor(triage, 'stub', { provider: { models: ['stub-small'] }, defaultModel: 'stub-small' })).toBe('stub-small');
+  });
+
+  it('asks JEV and then rules for triage, and never the general model', () => {
+    // `stub` is registered only outside production, so in production the
+    // chain is JEV and then rules (product owner, ADR-0051 Phase 2).
+    expect(DECISION_CATALOGUE.triage.chain).toEqual(['jev', 'stub']);
   });
 
   it('gives a decision engine two seconds and a general model longer', () => {
