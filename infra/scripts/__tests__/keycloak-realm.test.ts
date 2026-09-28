@@ -4,6 +4,7 @@ import {
   PLACEHOLDER,
   authHost,
   confidentialClients,
+  missingScopes,
   partialImportBody,
   permissionHint,
   realmBody,
@@ -146,7 +147,7 @@ describe('what Keycloak is actually sent', () => {
   it('imports the clients and the scope that carries the claims', () => {
     const body = partialImportBody(resolved) as { clients: { clientId: string }[]; clientScopes: { name: string }[] };
     expect(body.clients.map((client) => client.clientId)).toContain('itsm-admin');
-    expect(body.clientScopes.map((scope) => scope.name)).toEqual(['itsm-claims']);
+    expect(body.clientScopes.map((scope) => scope.name)).toContain('itsm-claims');
   });
 
   it('keeps each client secret it is given, so a deploy does not sign every application out of Keycloak', () => {
@@ -160,6 +161,30 @@ describe('what Keycloak is actually sent', () => {
 
   it('reads secrets for the three applications and not for the API, which has none', () => {
     expect(confidentialClients(resolved).sort()).toEqual(['itsm-admin', 'itsm-portal', 'itsm-workbench']);
+  });
+
+  it('declares every scope a client names, so a new realm is not created without them', () => {
+    // A realm created from a file that names any scope gets only those scopes.
+    // A client naming one that does not exist asks for a scope Keycloak then
+    // refuses, and every sign-in fails as invalid_scope.
+    const declared = new Set(((resolved as unknown as { clientScopes: { name: string }[] }).clientScopes).map((scope) => scope.name));
+    for (const client of resolved.clients) {
+      for (const scope of (client.defaultClientScopes as string[] | undefined) ?? []) expect(declared.has(scope), `${client.clientId}: ${scope}`).toBe(true);
+    }
+  });
+
+  it('puts sub, a name and an email address in the tokens', () => {
+    const mappers = ((resolved as unknown as { clientScopes: { protocolMappers: { protocolMapper: string; config: Record<string, string> }[] }[] }).clientScopes).flatMap(
+      (scope) => scope.protocolMappers,
+    );
+    expect(mappers.some((mapper) => mapper.protocolMapper === 'oidc-sub-mapper')).toBe(true);
+    const claims = mappers.map((mapper) => mapper.config['claim.name']);
+    expect(claims).toEqual(expect.arrayContaining(['preferred_username', 'email', 'tenant_id']));
+  });
+
+  it('creates only the scopes an existing realm is missing', () => {
+    expect(missingScopes(resolved, ['itsm-claims', 'profile']).map((scope) => scope.name).sort()).toEqual(['basic', 'email']);
+    expect(missingScopes(resolved, ['itsm-claims', 'basic', 'profile', 'email'])).toEqual([]);
   });
 
   it('keeps the realm settings out of the import and the clients out of the settings', () => {
