@@ -285,13 +285,15 @@ export const DECISION_CATALOGUE: Readonly<Record<DecisionPurpose, DecisionPurpos
     flagKey: 'ai.decision.triage',
     modeSetting: 'ai.decision.triage.mode',
     questionSetVersion: 1,
-    // The decision engine first when one exists (its adapter waits on its
-    // documentation), then the general model, then the stub outside production.
-    chain: ['jev', 'anthropic', 'stub'],
+    // The decision engine, then rules (product owner, Phase 2). The general
+    // model is no longer asked: a tenant JEV cannot serve — outside `us`, or
+    // JEV down — keeps what intake gave it. The stub answers only outside
+    // production, where JEV is not configured.
+    chain: ['jev', 'stub'],
     timeoutMs: { default: 20_000, jev: 2_000 },
-    // Chosen by the product owner for shadow triage: a strong classifier at
-    // about a third of the cost of the drafting model.
-    models: { anthropic: 'claude-sonnet-5' },
+    // The alias, by the product owner's choice. The version that answered is
+    // recorded on each decision, and the `auto` gate is read per provider.
+    models: { jev: 'jev-latest' },
     bindings: {
       type: { field: 'type' },
       category: { field: 'categoryId' },

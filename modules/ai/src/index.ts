@@ -101,6 +101,7 @@ export {
   ProviderUnavailable,
   type AnthropicOptions,
 } from './providers/anthropic.js';
+export { jevProvider, JEV_MODELS, type JevOptions } from './providers/jev.js';
 export type {
   AiProvider,
   Completion,
@@ -157,6 +158,7 @@ export {
 export {
   GATE_WINDOW_DAYS,
   gatesFor,
+  leadProvider,
   listDecisions,
   modeFor,
   runTriage,

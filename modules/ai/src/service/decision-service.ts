@@ -36,6 +36,7 @@ import {
   type ScoredAnswer,
   type Thresholds,
 } from '../domain/decisions.js';
+import { providerNamed } from '../providers/registry.js';
 import type { DecisionValue } from '../providers/types.js';
 import { budgetAllows, recordSpend } from './budget-service.js';
 import { stepDownState, type StepDownState } from './auto-service.js';
@@ -206,12 +207,16 @@ function scoredFor(row: SettledRow, question: string): ScoredAnswer {
 export async function gatesFor(
   tx: Tx,
   purpose: DecisionPurpose,
+  provider: string | null,
   thresholds: Thresholds,
   now = new Date(),
 ): Promise<Record<string, AutoGate>> {
   const since = new Date(now.getTime() - GATE_WINDOW_DAYS * 86_400_000);
-  const rows = await tx.aiDecision.findMany({
-    where: { purpose, settledAt: { not: null }, createdAt: { gte: since } },
+  // Only this provider's own answers count. What one provider's 0.9 is worth
+  // says nothing about another's, so a provider new to the chain starts with
+  // no record and earns `auto` on this desk from nothing (ADR-0051).
+  const rows = provider === null ? [] : await tx.aiDecision.findMany({
+    where: { purpose, provider, settledAt: { not: null }, createdAt: { gte: since } },
     select: { answers: true, proposed: true, settled: true },
     orderBy: { createdAt: 'desc' },
     take: SCORE_LIMIT,
@@ -219,6 +224,17 @@ export async function gatesFor(
   return Object.fromEntries(
     GATED_QUESTIONS.map((question) => [question, autoGate(rows.map((row) => scoredFor(row, question)), thresholds)]),
   );
+}
+
+/**
+ * The provider a purpose's gate is shown for: the first link of its chain
+ * that this deployment can ask. Null when there is none, and nothing is earned.
+ */
+export function leadProvider(purpose: DecisionPurpose): string | null {
+  for (const name of decisionDefinitionFor(purpose).chain) {
+    if (typeof providerNamed(name)?.provider.decide === 'function') return name;
+  }
+  return null;
 }
 
 /** The ticket fields whose gate is earned, from the gates by question. */
@@ -270,16 +286,12 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     if (earlier) return { earlier } as const;
     const ticket = await tx.ticket.findFirst({ where: { id: ticketId, deletedAt: null } });
     if (!ticket) throw new NotFoundError('ticket', ticketId);
-    const [categories, teams, budgetOk, gates] = await Promise.all([
+    const [categories, teams, budgetOk] = await Promise.all([
       tx.category.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, path: true }, orderBy: { path: 'asc' } }),
       tx.team.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       budgetAllows(ctx, tx, at),
-      // Only `auto` reads the gate, and it reads it on every decision: a field
-      // that stops being right stops being applied without anybody having to
-      // notice first.
-      mode === 'auto' ? gatesFor(tx, purpose, thresholds, at) : Promise.resolve({} as Record<string, AutoGate>),
     ]);
-    return { earlier: null, ticket, categories, teams, budgetOk, gates };
+    return { earlier: null, ticket, categories, teams, budgetOk };
   });
   if (read.earlier) {
     return { decisionId: read.earlier.id, outcome: read.earlier.outcome, provider: read.earlier.provider };
@@ -306,6 +318,15 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     allowedRegions,
     budgetAvailable: read.budgetOk,
   });
+
+  // Only `auto` reads the gate, and it reads it on every decision: a field
+  // that stops being right stops being applied without anybody having to
+  // notice first. Read after the call, because the gate belongs to whichever
+  // provider answered.
+  const gates =
+    mode === 'auto' && result.decision
+      ? await transaction(ctx, (tx) => gatesFor(tx, purpose, result.provider, thresholds, at))
+      : ({} as Record<string, AutoGate>);
 
   const answers = result.decision?.answers ?? {};
   const proposed: Record<string, string | number | boolean | null> = {};
@@ -334,7 +355,7 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
     values: proposed,
     current,
     humanSet,
-    earned: earnedFields(purpose, read.gates),
+    earned: earnedFields(purpose, gates),
   });
 
   // `suggested` when there is something for a person to see or for the AI to
@@ -651,6 +672,8 @@ export interface DecisionScore {
   costDisplay: string;
   meanLatencyMs: number | null;
   questions: QuestionScore[];
+  /** Whose record the gates above were read from: the chain's first available provider, or null. */
+  gateProvider: string | null;
   /** True only when every gated question has earned it. */
   autoEligible: boolean;
   /** The automatic step-down's meter: people's corrections over the last applied decisions. */
@@ -681,6 +704,7 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
   const parsed = scoreSchema.parse(query);
   const since = new Date(now.getTime() - parsed.days * 86_400_000);
   const [mode, thresholds] = await Promise.all([modeFor(ctx, parsed.purpose), thresholdsFor(ctx)]);
+  const gateProvider = leadProvider(parsed.purpose);
 
   const { rows, gates, stepDown, lastStepDown } = await transaction(ctx, async (tx) => {
     const [rows, gates, stepDown, notice] = await Promise.all([
@@ -700,7 +724,7 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
         orderBy: { createdAt: 'desc' },
         take: SCORE_LIMIT,
       }),
-      gatesFor(tx, parsed.purpose, thresholds, now),
+      gatesFor(tx, parsed.purpose, gateProvider, thresholds, now),
       stepDownState(tx, parsed.purpose),
       tx.auditEvent.findFirst({
         where: { action: 'ai.decision.stepped_down', targetId: parsed.purpose },
@@ -781,6 +805,7 @@ export async function scoreDecisions(ctx: TenantContext, query: ScoreQuery = {},
     costDisplay: formatMicros(cost),
     meanLatencyMs: answered > 0 ? Math.round(latencyTotal / answered) : null,
     questions,
+    gateProvider,
     autoEligible: gated.length > 0 && gated.every((question) => question.autoGate!.eligible),
     stepDown,
     lastStepDown,

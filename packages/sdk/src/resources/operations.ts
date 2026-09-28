@@ -321,6 +321,8 @@ export interface DecisionScore {
   costDisplay: string;
   meanLatencyMs: number | null;
   questions: DecisionQuestionScore[];
+  /** Whose record the `auto` gates were read from: the chain's first available provider, or null. */
+  gateProvider: string | null;
   autoEligible: boolean;
   /** The automatic step-down's meter: corrections over the most recent applied decisions. */
   stepDown: {

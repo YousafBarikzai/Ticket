@@ -352,7 +352,10 @@ export async function decide(call: DecideCall): Promise<DecideResult> {
     }
 
     decisionBreakers.recordSuccess(BREAKER_SCOPE, name);
-    const cost = costOf(answered.model, answered.inputTokens, answered.outputTokens);
+    // Charged against what answered. An alias resolves to a version the
+    // operator may not have priced separately, and an unpriced model would
+    // count as free, so the price asked with stands in for it.
+    const cost = costOf(isPriced(answered.model) ? answered.model : model, answered.inputTokens, answered.outputTokens);
     spent += cost;
     inputTokens += answered.inputTokens;
     outputTokens += answered.outputTokens;

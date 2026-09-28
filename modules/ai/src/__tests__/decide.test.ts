@@ -257,42 +257,53 @@ describe('the stub', () => {
 describe('the model a purpose asks with', () => {
   it('uses the purpose’s choice when the provider offers it', async () => {
     const seen: string[] = [];
-    registerModelPrices({ 'claude-sonnet-5': { inputPerThousand: 1n, outputPerThousand: 1n } });
+    registerModelPrices({ 'jev-latest': { inputPerThousand: 1n, outputPerThousand: 1n } });
     addAiProvider({
-      ...provider('anthropic', async (request) => {
+      ...provider('jev', async (request) => {
         seen.push(request.model);
         return answer(request.model);
       }),
-      models: ['claude-opus-5', 'claude-sonnet-5'],
+      models: ['jev-1.13.0', 'jev-latest'],
     });
 
-    const result = await decide(call({ chain: ['anthropic'] }));
-    // Triage names Sonnet 5 for this provider, even though Opus 5 is its default.
-    expect(seen).toEqual(['claude-sonnet-5']);
-    expect(result.model).toBe('claude-sonnet-5');
+    const result = await decide(call({ chain: ['jev'] }));
+    // Triage names jev-latest for this provider, even though jev-1.13.0 is its default.
+    expect(seen).toEqual(['jev-latest']);
+    expect(result.model).toBe('jev-latest');
   });
 
   it('falls back to the provider’s default when it does not offer the choice', async () => {
     const seen: string[] = [];
-    registerModelPrices({ 'claude-opus-5': { inputPerThousand: 1n, outputPerThousand: 1n } });
+    registerModelPrices({ 'jev-1.13.0': { inputPerThousand: 1n, outputPerThousand: 1n } });
     addAiProvider({
-      ...provider('anthropic', async (request) => {
+      ...provider('jev', async (request) => {
         seen.push(request.model);
         return answer(request.model);
       }),
-      models: ['claude-opus-5'],
+      models: ['jev-1.13.0'],
     });
 
-    await decide(call({ chain: ['anthropic'] }));
-    expect(seen).toEqual(['claude-opus-5']);
+    await decide(call({ chain: ['jev'] }));
+    expect(seen).toEqual(['jev-1.13.0']);
   });
 
   it('skips the provider, naming the model, when the chosen model has no price', async () => {
-    registerModelPrices({ 'claude-opus-5': { inputPerThousand: 1n, outputPerThousand: 1n } });
-    addAiProvider({ ...provider('anthropic', async (request) => answer(request.model)), models: ['claude-opus-5', 'claude-sonnet-5'] });
+    registerModelPrices({ 'jev-1.13.0': { inputPerThousand: 1n, outputPerThousand: 1n } });
+    addAiProvider({ ...provider('jev', async (request) => answer(request.model)), models: ['jev-1.13.0', 'jev-latest'] });
 
-    const result = await decide(call({ chain: ['anthropic'] }));
+    const result = await decide(call({ chain: ['jev'] }));
     expect(result.provider).toBe('rules');
-    expect(result.attempts[0]).toMatchObject({ reason: 'unpriced', model: 'claude-sonnet-5' });
+    expect(result.attempts[0]).toMatchObject({ reason: 'unpriced', model: 'jev-latest' });
+  });
+
+  it('charges an alias’s answer at the alias’s price when the version that answered has none', async () => {
+    // Pricing is checked on the model asked for; the answer names the version
+    // behind the alias. Unpriced, that version would otherwise cost nothing.
+    registerModelPrices({ 'jev-latest': { inputPerThousand: 1_000n, outputPerThousand: 0n } });
+    addAiProvider({ ...provider('jev', async () => answer('jev-1.13.0')), models: ['jev-latest'] });
+
+    const result = await decide(call({ chain: ['jev'] }));
+    expect(result.model).toBe('jev-1.13.0');
+    expect(result.costMicros).toBe(1_000n);
   });
 });

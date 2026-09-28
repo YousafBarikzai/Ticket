@@ -180,7 +180,7 @@ priority as a suggestion only).
 | Concern | Rule |
 |---|---|
 | When it runs | After the ticket exists, as a `ticket.created` consumer. Intake never waits for it and never fails because of it. |
-| Provider chain | Per purpose, for example `jev → anthropic → rules`. A provider is skipped when it is outside the tenant's regions, unpriced, open-circuited, timed out or over budget, and the reason is recorded. `rules` makes no call and leaves the ticket as intake left it. |
+| Provider chain | Per purpose; `triage` is `jev → rules`. A provider is skipped when it is outside the tenant's regions, unpriced, open-circuited, timed out or over budget, and the reason is recorded. `rules` makes no call and leaves the ticket as intake left it. |
 | Modes | `off` (default), `shadow` (record only), `suggest` (≥ 0.60 becomes an advisory suggestion), `auto` (≥ 0.90 may be applied). Thresholds are tenant settings; mode changes need `ai.manage` and are audited. |
 | What `auto` may change | Category (with subcategory) and assignment group, only when empty. Never a field that already has a value. Never type (fixed when a ticket is raised), priority, impact, urgency, major incident, escalation or status. |
 | Earning and losing `auto` | Earned per field, checked on every decision: ≥ 95% agreement with people over ≥ 200 settled decisions at or above the auto threshold in the last 90 days. Lost automatically when people correct > 5% of the last 100 applied decisions: the purpose steps down to `suggest`, and administrators are told in-app and by email. |
@@ -188,9 +188,12 @@ priority as a suggestion only).
 | Record | `ai_decision`: provider, model, question-set version, answers and confidences, latency, tokens, cost, chain attempts, outcome, and the value people settled on. Cost counts toward the AI budget. |
 | Credentials | Environment or secret store only. Never from a tenant, never stored, never logged. A decision provider must declare its processing region; none is assumed. |
 
-The JEV adapter is not written until its documentation, limits, region and
-data-processing terms have been verified. Until then `triage` runs
-`anthropic → rules` (and `stub` outside production).
+**Phase 2 (2026-09-28): the JEV adapter is written** (ADR-0051, amendment).
+TypeSafe's documentation, limits, region (`us`) and DPA were checked first.
+`triage` now runs `jev → rules` (and `stub` outside production). JEV is
+registered when `JEV_API_KEY` is set, beside whichever provider generates.
+It serves suggest mode at once, and it earns `auto` from its own record,
+because the gate is read per provider.
 
 **What is built (foundation, no behaviour change).**
 
@@ -330,8 +333,9 @@ Three things differ from the plan, deliberately:
 - **There is no combined usage view yet.** Cost per ticket is on
   `ai_decision` and `ai_job`, and the month's total is on `ai_budget`. A
   reporting view belongs with the analytics work that would read it.
-- **There is no `AI_PROVIDERS` list yet.** Its first use is registering a
-  second provider, which is the JEV adapter.
+- **There is no `AI_PROVIDERS` list.** The second provider, JEV, is
+  registered by its own key (`JEV_API_KEY`) rather than by a list, because it
+  only decides and never generates.
 
 ## 7. What PH-1 must include for this design
 

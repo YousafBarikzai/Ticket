@@ -238,3 +238,43 @@ read and its rule that nothing but shapes is logged.
 - **Compliance is checkable from data.** `GET /ai/decisions` is read-only and
   lists what decided, how confidently, at what cost and with what outcome. The
   audit log carries every application and every mode change.
+
+## Amendment 2026-09-28 · Phase 2: the JEV adapter
+
+The adapter the decision above waited for is written (`providers/jev.ts`).
+What was checked against TypeSafe's official documentation (docs.typesafe.ai,
+read 2026-09-28) and contract:
+
+| Item | What TypeSafe states | Where it lands |
+| --- | --- | --- |
+| Endpoint | `POST https://api.typesafe.ai/v1/systemone` | Fixed in the adapter, never set by a tenant. |
+| Authentication | Bearer token | `JEV_API_KEY`, from the environment only. Never logged, never in an error. |
+| Request | `state`, `model`, a map of named `choice` / `score` / `noul` questions | Platform `choice` → `choice`, `yesno` → `noul`, a whole `score` range of 2–10 steps → `score` levels. Anything else is left unasked. |
+| Response | One answer per question; `confidence` on choice and score; `noul` is P(yes) | A noul's confidence is `\|2p − 1\|`, TypeSafe's own formula for two outcomes. |
+| Limits | 64k tokens (32k for state plus the longest question); 255 options per choice; 10 levels per score; 1,200 requests/min and 250k tokens/s, which TypeSafe says may change without notice | Triage sends at most 4,000 characters of description and 200 options. A 429 or 529 is "try later", which the gateway retries once. |
+| Region | "The Services are hosted in the United States" (Privacy Policy); no narrower region is named | Declares `us`. A tenant is sent to JEV only when its allowed regions contain `us`. |
+| Data processing | DPA signed; transfers from the UK and EU under the EU SCCs with the UK Addendum | Recorded here. The region was reported to the product owner before any code was written, and they approved it. |
+
+Four product-owner decisions, which change the text above:
+
+1. **The triage chain is `jev → rules`**, not `jev → anthropic → rules`. The
+   general model is no longer asked for triage. A tenant JEV cannot serve,
+   because it is outside `us` or JEV is down, keeps what intake gave it.
+   `stub` stays in the chain for development and is never registered in
+   production.
+2. **JEV serves suggest mode from the start.** `auto` still has to be earned.
+3. **`jev-latest`, not a pinned version.** The version that answered
+   (`jev-1.13.0` today) is recorded on every decision. Cost is charged at that
+   version's price, or at the alias's price when that version has none.
+4. **The region label is `us`**, not `us-east`. TypeSafe does not say which US
+   region, and borrowing Anthropic's label would have opted every tenant that
+   allows Anthropic into JEV without anyone deciding it.
+
+**The `auto` gate is now read per provider.** It used to read every settled
+decision for the purpose, whichever provider made it. Switching providers
+would then have let JEV apply fields on Anthropic's record, which is the
+provider's claim standing in for its evidence, the thing "Confidence has to be
+calibrated, not trusted" rules out. `gatesFor` now takes the provider that
+answered, and the AI triage page shows the gate of the chain's lead provider
+(`gateProvider` on the score). The automatic step-down still reads every
+applied decision, because a safety brake should be conservative.
