@@ -189,6 +189,22 @@ deploy that can empty an environment on a typo.
 Run it with `--dry-run` to see the whole plan — every service, image, domain
 and variable — without a token.
 
+## A tenant's AI regions
+
+Which regions a tenant's AI calls may be processed in is a platform setting,
+not a tenant one (ADR-0047, ADR-0051). Set it from the **Console** tab of the
+`worker-data` (or `api`) service:
+
+```
+node dist/ai-regions.js <tenant-slug>                 # show the current list
+node dist/ai-regions.js <tenant-slug> eu-west us      # replace it
+node dist/ai-regions.js <tenant-slug> --clear         # back to the home region
+```
+
+The list you give replaces the old one. It is the same audited call as the
+platform API's `PUT /tenants/:id/ai-regions`. JEV declares `us`, so a tenant is
+triaged by JEV only once its list includes `us`.
+
 ## What is not automated, and is not pretending to be
 
 - **Alert rules and dashboards.** Doc 16 §4 says CI applies them. It does not;
