@@ -48,6 +48,10 @@ const targets = [
   // never delete anything, and separate from the migration because it connects
   // as the application role rather than `app_owner`.
   { entry: 'infra/scripts/bootstrap.ts', out: 'dist/bootstrap.js' },
+  // A tenant's AI regions, from a deployed console (ADR-0051). The running
+  // images have no `pnpm` for the platform CLI, and the API's door for this
+  // needs an operator token; this uses the same audited service call.
+  { entry: 'infra/scripts/ai-regions.ts', out: 'dist/ai-regions.js' },
 ];
 
 await rm(resolve(root, 'dist'), { recursive: true, force: true });
