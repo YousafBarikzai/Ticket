@@ -56,7 +56,11 @@
     "One shared scope carries the two claims the API reads, rather than four",
     "copies of the same two mappers on four clients. A mapper that exists on",
     "three clients out of four is the kind of fault that looks like 'only the",
-    "console is broken'."
+    "console is broken'.",
+    "basic, profile and email are Keycloak's own scopes, declared here because a",
+    "realm created from a file that names any scope gets only the scopes it names.",
+    "Without them every sign-in asking for 'openid profile email' is refused as",
+    "invalid_scope, and a token without basic carries no sub."
   ],
   "clientScopes": [
     {
@@ -106,6 +110,128 @@
           }
         }
       ]
+    },
+    {
+      "name": "basic",
+      "description": "The subject and the authentication time. Keycloak 25 moved sub here: without this scope an access token names nobody.",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+        },
+        {
+          "name": "auth_time",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "AUTH_TIME",
+            "claim.name": "auth_time",
+            "jsonType.label": "long",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "description": "The person's name, which the applications show",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": { "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true" }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "given name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "firstName",
+            "claim.name": "given_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "family name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "lastName",
+            "claim.name": "family_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "description": "The address an account is linked by on its first sign-in",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "email",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "email verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "emailVerified",
+            "claim.name": "email_verified",
+            "jsonType.label": "boolean",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "defaultDefaultClientScopes": ["itsm-claims"],
@@ -147,7 +273,7 @@
       "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://help.__DOMAIN__/*" },
       "redirectUris": ["https://help.__DOMAIN__/api/session/callback"],
       "webOrigins": ["+"],
-      "defaultClientScopes": ["openid", "profile", "email", "itsm-claims"]
+      "defaultClientScopes": ["basic", "profile", "email", "itsm-claims"]
     },
     {
       "clientId": "itsm-workbench",
@@ -162,7 +288,7 @@
       "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://desk.__DOMAIN__/*" },
       "redirectUris": ["https://desk.__DOMAIN__/api/session/callback"],
       "webOrigins": ["+"],
-      "defaultClientScopes": ["openid", "profile", "email", "itsm-claims"]
+      "defaultClientScopes": ["basic", "profile", "email", "itsm-claims"]
     },
     {
       "clientId": "itsm-admin",
@@ -178,7 +304,7 @@
       "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://admin.__DOMAIN__/*" },
       "redirectUris": ["https://admin.__DOMAIN__/api/session/callback"],
       "webOrigins": ["+"],
-      "defaultClientScopes": ["openid", "profile", "email", "itsm-claims"]
+      "defaultClientScopes": ["basic", "profile", "email", "itsm-claims"]
     }
   ]
 }

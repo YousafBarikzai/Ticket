@@ -143,6 +143,20 @@ export function partialImportBody(realm: Realm, secrets: ReadonlyMap<string, str
   };
 }
 
+/**
+ * The scopes the realm declares that Keycloak does not have yet.
+ *
+ * A partial import does not carry client scopes at all — it takes clients,
+ * roles, groups, users and identity providers — so a scope added to the file
+ * after the realm was created reaches Keycloak only if something creates it.
+ * Existing scopes are left as they are.
+ */
+export function missingScopes(realm: Realm, existing: readonly string[]): Record<string, unknown>[] {
+  const have = new Set(existing);
+  const declared = ((realm as { clientScopes?: { name: string }[] }).clientScopes ?? []) as ({ name: string } & Record<string, unknown>)[];
+  return declared.filter((scope) => !have.has(scope.name));
+}
+
 /** The clients that sign people in with a secret: not public, and not a resource server. */
 export function confidentialClients(realm: Realm): string[] {
   return realm.clients.filter((client) => client.publicClient === false && client.bearerOnly !== true).map((client) => client.clientId);
@@ -275,6 +289,29 @@ async function currentSecrets(realm: Realm, baseUrl: string, headers: Record<str
   return secrets;
 }
 
+/**
+ * Creates the declared scopes an existing realm is missing, before the clients
+ * that name them are imported — a client is linked only to scopes that exist
+ * when it is created.
+ */
+async function createMissingScopes(realm: Realm, baseUrl: string, headers: Record<string, string>): Promise<void> {
+  const listed = await fetch(`${baseUrl}/admin/realms/${realm.realm}/client-scopes`, { headers });
+  if (!listed.ok) throw new Error(`could not read the client scopes: ${listed.status}${permissionHint(listed.status)}`);
+  const existing = ((await listed.json()) as { name: string }[]).map((scope) => scope.name);
+
+  for (const scope of missingScopes(realm, existing)) {
+    const created = await fetch(`${baseUrl}/admin/realms/${realm.realm}/client-scopes`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(scope),
+    });
+    if (!created.ok) {
+      throw new Error(`could not create client scope ${String(scope.name)}: ${created.status}${permissionHint(created.status)} ${await created.text()}`);
+    }
+    console.log(`created client scope ${String(scope.name)}`);
+  }
+}
+
 async function apply(realm: Realm, baseUrl: string, token: string): Promise<void> {
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const exists = await fetch(`${baseUrl}/admin/realms/${realm.realm}`, { headers });
@@ -295,6 +332,7 @@ async function apply(realm: Realm, baseUrl: string, token: string): Promise<void
   });
   if (!updated.ok) throw new Error(`could not update the realm: ${updated.status}${permissionHint(updated.status)} ${await updated.text()}`);
 
+  await createMissingScopes(realm, baseUrl, headers);
   const secrets = await currentSecrets(realm, baseUrl, headers);
   const imported = await fetch(`${baseUrl}/admin/realms/${realm.realm}/partialImport`, {
     method: 'POST',
