@@ -144,9 +144,19 @@ export function effectsOf(from: CanonicalState, to: CanonicalState, at: Date = n
   };
 }
 
-/** True when the requester (rather than an agent) may make this transition. */
+/**
+ * True when the requester (rather than an agent) may make this transition.
+ *
+ * `resolved → closed` is theirs as well as reopening: the resolution was
+ * offered to them, so confirming it ("Yes, it's fixed") is as much their
+ * answer as rejecting it. Without it the only honest thing a portal could do
+ * with a confirmation was post a comment and leave the ticket for auto-close,
+ * which kept a finished ticket in the desk's resolved list for a week.
+ * Closing from anywhere else stays an agent's call.
+ */
 export function isRequesterTransition(from: CanonicalState, to: CanonicalState): boolean {
   if (to === 'reopened') return from === 'resolved';
+  if (to === 'closed') return from === 'resolved';
   if (to === 'resolved') return from !== 'closed' && from !== 'cancelled';
   if (to === 'cancelled') return from === 'new' || from === 'pending_requester';
   return false;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { callApi, credentialsFrom, explainRefusal, faultIn, hostFor, hostsFor, imageFor, phasesOf, readCatalogue, operationName, variablesFor, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
+import { callApi, credentialsFrom, explainRefusal, faultIn, hostFor, hostsFor, imageFor, inTwoPasses, phasesOf, portalChannels, readCatalogue, operationName, variablesFor, WEB_ORIGINS, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
 import { isPreview } from '../railway-teardown.js';
 
 /**
@@ -194,10 +194,59 @@ describe('what each service is actually given', () => {
     }
   });
 
+  it('tells every web application where the other two are', () => {
+    // C1: the app switcher, "Open in Workbench", "View as requester" and the
+    // portal links in an agent's reply are all built from these. Each BFF
+    // reads only its own by name, so the other two cannot move sign-in.
+    const hosts = hostsFor(catalogue, domain, 'production');
+    for (const app of ['portal', 'workbench', 'admin']) {
+      const variables = variablesFor(named(app), hosts);
+      expect(variables.PORTAL_ORIGIN, app).toBe(`https://help.${domain}`);
+      expect(variables.WORKBENCH_ORIGIN, app).toBe(`https://desk.${domain}`);
+      expect(variables.ADMIN_ORIGIN, app).toBe(`https://admin.${domain}`);
+    }
+    // One list, and it names exactly the web applications the catalogue has.
+    const web = catalogue.services.filter((service) => Object.hasOwn(WEB_ORIGINS, service.name)).map((service) => service.name);
+    expect(web.sort()).toEqual(['admin', 'portal', 'workbench']);
+  });
+
   it('gives the API its own public base URL and no origin it does not own', () => {
     const variables = variablesFor(named('api'), hostsFor(catalogue, domain, 'production'));
     expect(variables.PUBLIC_BASE_URL).toBe(`https://api.${domain}`);
     expect(variables.PORTAL_ORIGIN).toBeUndefined();
+    expect(variables.WORKBENCH_ORIGIN).toBeUndefined();
+    expect(variables.ADMIN_ORIGIN).toBeUndefined();
+  });
+
+  it('tells the portal which channels to mention, and only the portal', () => {
+    // C3: a requester cannot read the tenant's channel accounts, so the
+    // portal's "Good to know" line is configuration.
+    const hosts = hostsFor(catalogue, domain, 'production');
+    const settings = { portalChannels: ' Email, teams,,slack ,email ' };
+    expect(variablesFor(named('portal'), hosts, settings).PORTAL_CHANNELS).toBe('email,teams,slack');
+    for (const other of ['workbench', 'admin', 'api', 'worker-comms']) {
+      expect(variablesFor(named(other), hosts, settings).PORTAL_CHANNELS, other).toBeUndefined();
+    }
+  });
+
+  it('leaves PORTAL_CHANNELS alone when the deploy was not given one', () => {
+    // An unset GitHub variable arrives as an empty string. Setting nothing,
+    // rather than an empty list, keeps a value somebody set in Railway by hand
+    // — the upsert never removes a key it does not name.
+    const hosts = hostsFor(catalogue, domain, 'production');
+    expect('PORTAL_CHANNELS' in variablesFor(named('portal'), hosts)).toBe(false);
+    expect('PORTAL_CHANNELS' in variablesFor(named('portal'), hosts, { portalChannels: '' })).toBe(false);
+    expect('PORTAL_CHANNELS' in variablesFor(named('portal'), hosts, { portalChannels: ' , ' })).toBe(false);
+  });
+
+  it('refuses a channel list that is not a list of names', () => {
+    // Refused at deploy time, before the first call, rather than rendered
+    // verbatim on every requester's home page.
+    expect(portalChannels(undefined)).toBeNull();
+    expect(portalChannels('email')).toBe('email');
+    expect(() => portalChannels('email,<script>')).toThrow(/not a channel name: "<script>"/);
+    expect(() => portalChannels('email;teams')).toThrow(/PORTAL_CHANNELS/);
+    expect(() => portalChannels('microsoft teams')).toThrow(/"microsoft teams"/);
   });
 
   it('carries the environment into every hostname outside production', () => {
@@ -257,6 +306,9 @@ describe('a deployment with no domain of its own', () => {
     const portal = variablesFor(named('portal'), discovered);
     expect(portal.PORTAL_ORIGIN).toBe('https://itsm-portal-production-91bc.up.railway.app');
     expect(portal.API_BASE_URL).toBe('https://itsm-api-production-7f3a.up.railway.app');
+    // A sibling whose host is not known sets nothing, never `https://undefined`.
+    expect('WORKBENCH_ORIGIN' in portal).toBe(false);
+    expect('ADMIN_ORIGIN' in portal).toBe(false);
     // The queue split survives the other path too — it has nothing to do with
     // hostnames, and a refactor that lost it would be silent.
     expect(variablesFor(named('worker-comms'), discovered).WORKER_QUEUES).toBe('comms');
@@ -283,6 +335,69 @@ describe('a deployment with no domain of its own', () => {
       WORKER_QUEUES: 'events',
       OTEL_SERVICE_NAME: 'itsm-worker-events',
     });
+  });
+});
+
+describe('one phase, deployed in two passes', () => {
+  /*
+   * The three web applications share a phase and each carries the others'
+   * origins. Without a domain of our own a hostname exists only once it has
+   * been asked for, so every hostname in the phase has to be known before any
+   * service's variables are computed — or the portal gets whichever siblings
+   * happened to answer first.
+   */
+  const web = ['portal', 'workbench', 'admin'].map(named);
+
+  it('knows every hostname in the phase before it sets anyone\'s variables', async () => {
+    const hosts = new Map([['api', 'api.up.railway.app']]);
+    const seen: Record<string, string>[] = [];
+    await inTwoPasses(
+      web,
+      async (service) => {
+        // Answers arrive in a different order from the requests.
+        await new Promise((resolve) => setTimeout(resolve, service.name === 'portal' ? 20 : 1));
+        hosts.set(service.name, `${service.name}.up.railway.app`);
+        return service.name;
+      },
+      async (service) => {
+        seen.push(variablesFor(service, hosts));
+      },
+    );
+    expect(seen).toHaveLength(3);
+    for (const variables of seen) {
+      expect(variables.PORTAL_ORIGIN).toBe('https://portal.up.railway.app');
+      expect(variables.WORKBENCH_ORIGIN).toBe('https://workbench.up.railway.app');
+      expect(variables.ADMIN_ORIGIN).toBe('https://admin.up.railway.app');
+    }
+  });
+
+  it('hands each service what its own first pass returned', async () => {
+    const released: string[] = [];
+    await inTwoPasses(
+      web,
+      async (service) => `id-of-${service.name}`,
+      async (service, id) => {
+        released.push(`${service.name}:${id}`);
+      },
+    );
+    expect(released.sort()).toEqual(['admin:id-of-admin', 'portal:id-of-portal', 'workbench:id-of-workbench']);
+  });
+
+  it('redeploys nothing in a phase whose first pass failed', async () => {
+    // Better a phase that stopped before any redeploy than one where two of
+    // three applications came up with the new origins and one did not.
+    const release = vi.fn(async () => undefined);
+    await expect(
+      inTwoPasses(
+        web,
+        async (service) => {
+          if (service.name === 'admin') throw new Error('no Railway service named admin in this project');
+          return service.name;
+        },
+        release,
+      ),
+    ).rejects.toThrow(/admin/);
+    expect(release).not.toHaveBeenCalled();
   });
 });
 

@@ -2,3 +2,4 @@
 export { adminManifest } from './manifest.js';
 export * as settingsService from './service/settings-service.js';
 export { syncInstalledModules, listInstalledModules, listDeclaredSettings, listDeclaredFlags } from './service/settings-service.js';
+export { describeSchema, type SettingType } from './service/describe-schema.js';

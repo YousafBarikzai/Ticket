@@ -14,12 +14,22 @@
  *
  * It costs nothing at first paint — a client component is still rendered to
  * HTML on the server; the directive decides what is hydrated afterwards.
+ *
+ * The redesign makes one deliberate exception: components the catalogue marks
+ * server-safe (`Kbd` here; `Icon`, the skeletons, `Spinner` and others in
+ * their own folders) carry no directive, so a server component renders them
+ * with no client JavaScript at all. The rule that stops one of them growing a
+ * hook is then a guard test rather than a build error in an application.
+ *
+ * This barrel is the internal "everything in `web/`" entry the tests import;
+ * applications import the curated root entry instead.
  */
 
 export * from './cx.js';
 export * from './stylesheet.js';
 export * from './ThemeProvider.js';
 export * from './VisuallyHidden.js';
+export * from './Kbd.js';
 
 export * from './Button.js';
 export * from './IconButton.js';

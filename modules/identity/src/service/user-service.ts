@@ -3,6 +3,7 @@ import {
   type TenantContext,
   type Tx,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
   assertWithinLimit,
@@ -16,6 +17,7 @@ import {
 } from '@itsm/platform';
 import { events } from '@itsm/contracts';
 import { denySession, denySessions } from './session-denylist.js';
+import { SYSTEM_ROLES } from '../seed/roles.js';
 
 /** MOD-01 user, team and role administration, plus just-in-time provisioning. */
 
@@ -166,7 +168,20 @@ export async function getUser(ctx: TenantContext, id: string) {
   });
 }
 
-export async function listUsers(ctx: TenantContext, options: { search?: string; limit: number; status?: string }) {
+/** The most ids one directory lookup resolves: a page of people, not the tenant. */
+export const MAX_LOOKUP_IDS = 200;
+
+/**
+ * Lists people, narrowed by the caller's scope.
+ *
+ * `ids` resolves a known set of people at once — the names beside a page of
+ * tickets or an audit trail — in place of one `GET /users/:id` per person.
+ * It is a filter like any other, not a way round the scope: an id the caller
+ * may not read is simply absent, as it would be from the directory, and
+ * deactivated people are included, because the history they appear in still
+ * needs their name.
+ */
+export async function listUsers(ctx: TenantContext, options: { search?: string; limit: number; status?: string; ids?: string[] }) {
   authz.require(ctx, 'identity.user.read');
 
   // A directory listing must honour the caller's scope, not merely the fact
@@ -181,20 +196,32 @@ export async function listUsers(ctx: TenantContext, options: { search?: string; 
         ? { OR: [{ id: ctx.actor.id ?? '' }, ...(ctx.organisationIds.length ? [{ primaryOrgId: { in: ctx.organisationIds } }] : [])] }
         : { id: ctx.actor.id ?? '' };
 
+  if (options.ids && options.ids.length > MAX_LOOKUP_IDS) {
+    throw new ValidationError(`at most ${MAX_LOOKUP_IDS} ids can be looked up at once`);
+  }
+
   return transaction(ctx, async (tx) =>
     tx.user.findMany({
       where: {
         deletedAt: null,
-        ...scopeFilter,
-        ...(options.status ? { status: options.status } : {}),
-        ...(options.search
-          ? {
-              OR: [
-                { displayName: { contains: options.search, mode: 'insensitive' as const } },
-                { email: { contains: options.search, mode: 'insensitive' as const } },
-              ],
-            }
-          : {}),
+        // Each narrowing is its own element of `AND`. They used to be spread
+        // into one object, and the search's `OR` then replaced the scope's
+        // `OR` under the same key — so an agent limited to their own
+        // organisations who typed a name was shown matching people from
+        // every organisation in the tenant.
+        AND: [
+          scopeFilter,
+          options.status ? { status: options.status } : {},
+          options.ids ? { id: { in: options.ids } } : {},
+          options.search
+            ? {
+                OR: [
+                  { displayName: { contains: options.search, mode: 'insensitive' as const } },
+                  { email: { contains: options.search, mode: 'insensitive' as const } },
+                ],
+              }
+            : {},
+        ],
       },
       orderBy: { displayName: 'asc' },
       take: options.limit,
@@ -254,15 +281,26 @@ export async function deactivateUser(ctx: TenantContext, id: string, reason?: st
  * were revoked, and a person who is back signs in again — and role
  * assignments are not either: whoever reactivates decides what they get, or
  * SCIM does from their groups.
+ *
+ * Team memberships were never removed, so a person who comes back is back in
+ * their teams. Returns whether anything changed: reactivating somebody who is
+ * already active is not an error, and is not audited twice.
  */
-export async function reactivateUser(ctx: TenantContext, id: string): Promise<boolean> {
+export async function reactivateUser(ctx: TenantContext, id: string, reason?: string): Promise<boolean> {
   authz.require(ctx, 'identity.user.manage');
   return transaction(ctx, async (tx) => {
     const user = await tx.user.findFirst({ where: { id, deletedAt: null } });
     if (!user) throw new NotFoundError('user', id);
     if (user.status === 'active') return false;
     await tx.user.update({ where: { id }, data: { status: 'active', updatedBy: ctx.actor.id, version: { increment: 1 } } });
-    await recordAudit(tx, ctx, { action: 'user.reactivated', targetType: 'user', targetId: id, before: { status: user.status }, after: { status: 'active' } });
+    await recordAudit(tx, ctx, {
+      action: 'user.reactivated',
+      targetType: 'user',
+      targetId: id,
+      before: { status: user.status },
+      after: { status: 'active' },
+      reason: reason ?? null,
+    });
     await publish(tx, ctx, { definition: events.userUpdated, aggregateId: id, payload: { userId: id, changed: ['status'] } });
     await invalidatePermissions(ctx.tenantId, id);
     return true;
@@ -423,6 +461,156 @@ export async function addTeamMember(ctx: TenantContext, teamId: string, userId: 
     await recordAudit(tx, ctx, { action: 'team.member.added', targetType: 'team', targetId: teamId, after: { userId, isLead } });
     await invalidatePermissions(ctx.tenantId, userId);
     return membership;
+  });
+}
+
+/** The most teams one listing returns. A tenant with more has a directory problem, not a paging one. */
+export const MAX_TEAMS = 1000;
+
+/**
+ * How far a caller may see the team directory: every team, their own
+ * organisations' teams, or none.
+ *
+ * Deliberately wider than `identity.org.read`, which only administrators
+ * hold. An agent routes work between teams all day — the team on a ticket,
+ * the team views in their inbox, "move to the network team" — and a
+ * directory only administrators could read left the workbench showing team
+ * ids. Anyone who works the desk (`ticket.read` beyond their own tickets) or
+ * reads the tenant's structure (`tenant.read`) sees every team; a requester,
+ * whose `ticket.read` is their own tickets only, sees none, because the portal
+ * names "the service desk" and never a team or the people in it.
+ */
+function teamReach(ctx: TenantContext): 'all' | 'organisations' {
+  if (authz.effectiveScope(ctx, 'identity.org.read') === 'any') return 'all';
+  if (authz.effectiveScope(ctx, 'tenant.read') === 'any') return 'all';
+  const tickets = authz.effectiveScope(ctx, 'ticket.read');
+  if (tickets === 'team' || tickets === 'any') return 'all';
+  if (authz.effectiveScope(ctx, 'identity.org.read') === 'own') return 'organisations';
+  throw new ForbiddenError('identity.org.read', 'reading teams needs identity.org.read, tenant.read or ticket.read beyond your own tickets');
+}
+
+/**
+ * A membership that counts today. The same test the actor resolver uses, so a
+ * team's members here are exactly the people whose queues include it — and
+ * only people who are active: a deactivated person keeps their membership
+ * (reactivating brings them back into their teams) but cannot take work, so
+ * they are neither counted nor listed.
+ */
+function currentMembership() {
+  return {
+    OR: [{ validTo: null }, { validTo: { gt: new Date() } }],
+    user: { status: 'active', deletedAt: null },
+  };
+}
+
+export async function listTeams(ctx: TenantContext) {
+  const reach = teamReach(ctx);
+  return transaction(ctx, async (tx) => {
+    const teams = await tx.team.findMany({
+      where: { deletedAt: null, ...(reach === 'organisations' ? { orgId: { in: ctx.organisationIds } } : {}) },
+      orderBy: [{ name: 'asc' }, { key: 'asc' }],
+      take: MAX_TEAMS,
+    });
+    if (teams.length === 0) return [];
+
+    const counts = await tx.teamMembership.groupBy({
+      by: ['teamId'],
+      where: { teamId: { in: teams.map((team) => team.id) }, ...currentMembership() },
+      _count: { _all: true },
+    });
+    const countByTeam = new Map(counts.map((row) => [row.teamId, row._count._all]));
+    return teams.map((team) => ({ ...team, memberCount: countByTeam.get(team.id) ?? 0 }));
+  });
+}
+
+/**
+ * A team's current members, leads first. Names only: this answers "who is in
+ * the network team" for someone assigning work, and a person's address and
+ * organisation stay behind `identity.user.read` and its scope.
+ */
+export async function listTeamMembers(ctx: TenantContext, teamId: string) {
+  const reach = teamReach(ctx);
+  return transaction(ctx, async (tx) => {
+    const team = await tx.team.findFirst({ where: { id: teamId, deletedAt: null } });
+    // Not found rather than forbidden for a team outside the caller's
+    // organisations: the listing would not have shown it to them either.
+    if (!team || (reach === 'organisations' && !ctx.organisationIds.includes(team.orgId))) {
+      throw new NotFoundError('team', teamId);
+    }
+    const memberships = await tx.teamMembership.findMany({
+      where: { teamId, ...currentMembership() },
+      include: { user: { select: { id: true, displayName: true } } },
+    });
+    return memberships
+      .map((membership) => ({
+        userId: membership.user.id,
+        displayName: membership.user.displayName,
+        isLead: membership.isLead,
+        since: membership.validFrom,
+      }))
+      .sort((a, b) => Number(b.isLead) - Number(a.isLead) || a.displayName.localeCompare(b.displayName));
+  });
+}
+
+/**
+ * The tenant's roles with what each grants, system roles first in the order
+ * the seed declares them (least access to most), then the tenant's own by
+ * name. Read with `identity.role.read`: the list is how an administrator
+ * chooses what to grant, and it says exactly what every role can do.
+ */
+export async function listRoles(ctx: TenantContext) {
+  authz.require(ctx, 'identity.role.read');
+  const seedOrder = new Map(SYSTEM_ROLES.map((role, index) => [role.key, index]));
+  const rank = (role: { key: string; isSystem: boolean }) => (role.isSystem ? (seedOrder.get(role.key) ?? SYSTEM_ROLES.length) : Number.MAX_SAFE_INTEGER);
+
+  return transaction(ctx, async (tx) => {
+    const roles = await tx.role.findMany({ include: { permissions: true } });
+    return roles
+      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+      .map((role) => ({
+        id: role.id,
+        key: role.key,
+        name: role.name,
+        description: role.description,
+        isSystem: role.isSystem,
+        permissions: role.permissions
+          .map((permission) => ({ key: permission.permissionKey, scope: permission.scope }))
+          .sort((a, b) => a.key.localeCompare(b.key) || a.scope.localeCompare(b.scope)),
+      }));
+  });
+}
+
+/**
+ * One person's role assignments, with the assignment ids that
+ * `DELETE /role-assignments/:id` takes — without them a role could be granted
+ * from the console but never taken away again.
+ *
+ * Expired assignments are listed with their `validTo` rather than hidden:
+ * one still occupies its slot, and granting the same role again returns it
+ * unchanged, which is inexplicable if the list pretends it is not there.
+ */
+export async function listRoleAssignments(ctx: TenantContext, userId: string) {
+  authz.require(ctx, 'identity.role.read');
+  return transaction(ctx, async (tx) => {
+    const user = await tx.user.findFirst({ where: { id: userId, deletedAt: null }, select: { id: true } });
+    if (!user) throw new NotFoundError('user', userId);
+    const assignments = await tx.roleAssignment.findMany({
+      where: { userId },
+      include: { role: { select: { key: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return assignments.map((assignment) => ({
+      id: assignment.id,
+      roleKey: assignment.role.key,
+      roleName: assignment.role.name,
+      scopeType: assignment.scopeType,
+      scopeId: assignment.scopeId,
+      validFrom: assignment.validFrom,
+      validTo: assignment.validTo,
+      // Granted by the identity provider's group mapping: removing it by hand
+      // lasts only until the next sync, so the console should say so.
+      viaScim: assignment.viaScimTeamId !== null,
+    }));
   });
 }
 

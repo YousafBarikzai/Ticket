@@ -118,3 +118,42 @@ every typed setting at once. Rejected because a text box that posts JSON is a
 worse answer than none — it invites an administrator to break a tenant's
 configuration in a way that reads as a syntax error rather than a decision, and
 it makes the console's job look done when it is not.
+
+## Addendum · 2026-09-29, with ADR-0052
+
+The redesign changes the console's frame and leaves every decision above
+standing. Recorded here because each change touches something this ADR argued
+for, and a reader of the code would otherwise wonder whether the argument still
+holds.
+
+**One shell for both audiences.** The two route groups now sit inside one
+persistent shell, `(console)`: `(console)/(admin)/…` for the tenant screens and
+`(console)/(platform)/…` for the operator's, with the sidebar, the command
+palette and the account menu mounted once in `(console)/layout.tsx`. The
+platform gate has not moved — it is still the `(platform)` layout, it still
+calls `notFound()`, and a page added under it is still gated by construction.
+What changed is only that a platform operator no longer steps into a different
+application to reach it: the two operator items appear in the same sidebar,
+and only for somebody who holds `platform.tenant.manage`. No `loading.tsx` may
+sit above the gate, because a streamed loading state commits a 200 before the
+layout can answer 404 — the render pass asserts `/tenants` is a 404 for a
+tenant administrator for exactly that reason.
+
+**Writes a person cannot make are hidden, and the page says so once.** The
+first slice put a note under each list that could not be edited. The redesign
+hides a write the reader lacks the permission for, and puts a *View only*
+button in the page header whose popover names the permission to ask for ("You
+can see Rules but not change them. Ask an administrator for **Manage rules**.",
+with the key to copy). The reasoning is this ADR's own — tell somebody which
+permission a screen needs, and they ask for the permission — applied to every
+screen rather than written out on each. A control that exists but cannot be
+used right now for a reason of *state* (offline, an invalid form, a request
+type with no published form) stays visible and disabled, with the reason.
+
+**Live badges, still no service worker.** The console now listens to the event
+stream for its sidebar badges and open drawers, through the same
+`@itsm/pwa/live` provider the workbench uses. It imports that subpath and
+nothing else from `@itsm/pwa`: no service worker is registered, nothing is
+cached, and nothing is queued offline. A live notice only ever causes a
+re-read from the API, so the concern above — a console answering from a cache
+while somebody changes a permission — does not arise.

@@ -83,17 +83,25 @@ export function indexedDbOutboxStore(): OutboxStore {
  *
  * Tried once and remembered. A browser that refuses IndexedDB refuses it every
  * time, and probing on each call would turn one failure into a failure per
- * queued item.
+ * queued item. Remembering matters more for the fallback than for IndexedDB:
+ * a fresh in-memory store per call is a queue that forgets an item the moment
+ * it is put there, so the screen that queued it and the screen that lists the
+ * queue must be handed the same one.
  */
-export async function outboxStore(): Promise<OutboxStore> {
-  if (typeof indexedDB === 'undefined') return memoryOutboxStore();
-  const candidate = indexedDbOutboxStore();
-  try {
-    await candidate.all();
-    return candidate;
-  } catch {
-    return memoryOutboxStore();
-  }
+let chosen: Promise<OutboxStore> | null = null;
+
+export function outboxStore(): Promise<OutboxStore> {
+  chosen ??= (async () => {
+    if (typeof indexedDB === 'undefined') return memoryOutboxStore();
+    const candidate = indexedDbOutboxStore();
+    try {
+      await candidate.all();
+      return candidate;
+    } catch {
+      return memoryOutboxStore();
+    }
+  })();
+  return chosen;
 }
 
 /** Adds something to the queue. The idempotency key is minted here, now. */

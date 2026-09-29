@@ -21,6 +21,7 @@ import { settingsService } from '@itsm/module-admin';
 import { webhookService } from '@itsm/module-integrations';
 import { tenantService } from '@itsm/module-tenancy';
 import { contextOf } from '../plugins/context.js';
+import { booleanQuery } from './query.js';
 import { ticketRoutes } from './tickets.js';
 import { ruleRoutes } from './rules.js';
 import { approvalRoutes } from './approvals.js';
@@ -143,6 +144,32 @@ async function authorisedTopic(ctx: TenantContext, requested: string): Promise<s
   }
 }
 
+/** One person as every user route returns them. */
+function userRow(user: { id: string; email: string; displayName: string; status: string; primaryOrgId: string | null; isExternal: boolean }) {
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    status: user.status,
+    primaryOrgId: user.primaryOrgId,
+    isExternal: user.isExternal,
+  };
+}
+
+/**
+ * A comma-separated list of ids in one query parameter, each a UUID, with
+ * repeats dropped. More than `max` is refused rather than cut short: a caller
+ * that silently got names for the first two hundred of its ids would show
+ * "Unknown person" for the rest and never know why.
+ */
+function idList(max: number) {
+  return z
+    .string()
+    .max(max * 40)
+    .transform((value) => [...new Set(value.split(',').map((id) => id.trim()).filter(Boolean))])
+    .pipe(z.array(z.string().uuid()).min(1).max(max));
+}
+
 async function identityRoutes(app: FastifyInstance): Promise<void> {
   /** Everything a client needs to render itself: identity, permissions, tenant. */
   app.get('/me', async (request) => {
@@ -166,23 +193,24 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
   app.get('/users', async (request) => {
     const ctx = contextOf(request);
     const query = z
-      .object({ q: z.string().max(200).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), status: z.string().optional() })
+      .object({
+        q: z.string().max(200).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+        status: z.string().optional(),
+        /** `ids=<uuid>,<uuid>,…` — resolve these people (up to 200) rather than browse. */
+        ids: idList(userService.MAX_LOOKUP_IDS).optional(),
+      })
       .parse(request.query);
 
     const users = await userService.listUsers(ctx, {
-      limit: query.limit,
+      // A lookup by ids answers for every id asked about, so its natural page
+      // is the number of ids rather than the directory's default of fifty.
+      limit: query.limit ?? query.ids?.length ?? 50,
       ...(query.q ? { search: query.q } : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.ids ? { ids: query.ids } : {}),
     });
-    return {
-      data: users.map((user) => ({
-        id: user.id,
-        email: user.email,
-        displayName: user.displayName,
-        status: user.status,
-        primaryOrgId: user.primaryOrgId,
-      })),
-    };
+    return { data: users.map(userRow) };
   });
 
   app.post('/users', async (request, reply) => {
@@ -195,8 +223,7 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
   app.get('/users/:id', async (request) => {
     const ctx = contextOf(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const user = await userService.getUser(ctx, id);
-    return { id: user.id, email: user.email, displayName: user.displayName, status: user.status, primaryOrgId: user.primaryOrgId };
+    return userRow(await userService.getUser(ctx, id));
   });
 
   app.post('/users/:id/deactivate', async (request) => {
@@ -205,6 +232,38 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
     const body = z.object({ reason: z.string().max(1000).optional() }).parse(request.body ?? {});
     const user = await userService.deactivateUser(ctx, id, body.reason);
     return { id: user.id, status: user.status };
+  });
+
+  /**
+   * The undo for deactivation. Sessions, keys and roles are not restored —
+   * deactivating removed them and whoever brings a person back decides what
+   * they get — so the answer is only the new status. Reactivating somebody
+   * already active succeeds and changes nothing.
+   */
+  app.post('/users/:id/reactivate', async (request) => {
+    const ctx = contextOf(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = z.object({ reason: z.string().max(1000).optional() }).strict().parse(request.body ?? {});
+    await userService.reactivateUser(ctx, id, body.reason);
+    return { id, status: 'active' };
+  });
+
+  app.get('/users/:id/role-assignments', async (request) => {
+    const ctx = contextOf(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const assignments = await userService.listRoleAssignments(ctx, id);
+    return {
+      data: assignments.map((assignment) => ({
+        ...assignment,
+        validFrom: assignment.validFrom.toISOString(),
+        validTo: assignment.validTo?.toISOString() ?? null,
+      })),
+    };
+  });
+
+  app.get('/roles', async (request) => {
+    const ctx = contextOf(request);
+    return { data: await userService.listRoles(ctx) };
   });
 
   app.post('/role-assignments', async (request, reply) => {
@@ -285,6 +344,25 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
     return { id: org.id, name: org.name, code: org.code, path: org.path };
   });
 
+  /**
+   * The team directory. Readable by anyone who works the desk, not only by
+   * administrators: see `teamReach` in the identity module for who sees what.
+   */
+  app.get('/teams', async (request) => {
+    const ctx = contextOf(request);
+    const teams = await userService.listTeams(ctx);
+    return {
+      data: teams.map((team) => ({ id: team.id, key: team.key, name: team.name, orgId: team.orgId, memberCount: team.memberCount })),
+    };
+  });
+
+  app.get('/teams/:id/members', async (request) => {
+    const ctx = contextOf(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const members = await userService.listTeamMembers(ctx, id);
+    return { data: members.map((member) => ({ ...member, since: member.since.toISOString() })) };
+  });
+
   app.post('/teams', async (request, reply) => {
     const ctx = contextOf(request);
     const body = z
@@ -306,10 +384,13 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
 }
 
 async function adminRoutes(app: FastifyInstance): Promise<void> {
+  /** Every declared setting with its value, provenance and a type descriptor (`describeSchema`). */
   app.get('/settings', async (request) => {
     const ctx = contextOf(request);
-    authz.require(ctx, 'admin.setting.read');
-    return { data: settingsService.listDeclaredSettings() };
+    const settings = await settingsService.listSettings(ctx);
+    return {
+      data: settings.map((setting) => ({ ...setting, publishedAt: setting.publishedAt?.toISOString() ?? null })),
+    };
   });
 
   app.get('/settings/:key', async (request) => {
@@ -357,10 +438,10 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
     return settingsService.rollbackSetting(ctx, { key, ...body });
   });
 
+  /** Every declared flag with the tenant's override (`tenantValue`) and what the tenant gets (`value`). */
   app.get('/feature-flags', async (request) => {
     const ctx = contextOf(request);
-    authz.require(ctx, 'admin.setting.read');
-    return { data: settingsService.listDeclaredFlags() };
+    return { data: await settingsService.listFlags(ctx) };
   });
 
   app.put('/feature-flags/:key', async (request) => {
@@ -444,7 +525,7 @@ async function supportingRoutes(app: FastifyInstance): Promise<void> {
   app.get('/notifications', async (request) => {
     const ctx = contextOf(request);
     const query = z
-      .object({ limit: z.coerce.number().int().min(1).max(100).default(50), unread: z.coerce.boolean().default(false) })
+      .object({ limit: z.coerce.number().int().min(1).max(100).default(50), unread: booleanQuery(false) })
       .parse(request.query);
     const inbox = await notificationService.listInbox(ctx, { limit: query.limit, unreadOnly: query.unread });
     return {

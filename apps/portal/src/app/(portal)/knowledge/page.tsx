@@ -41,7 +41,8 @@ export default async function KnowledgePage({
   }
 
   try {
-    const results = await apiFor(session).search(q, { types: 'article', limit: 20 });
+    // The index is named `knowledge`; `article` matches nothing in the API.
+    const results = await apiFor(session).search(q, { types: 'knowledge', limit: 20 });
     return (
       <div className="itsm-Page">
         <h1 className="itsm-Page__heading">Help articles</h1>

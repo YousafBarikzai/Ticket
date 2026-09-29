@@ -74,10 +74,24 @@ export interface ClientOptions {
 
 const CREATES = new Set(['POST', 'PUT']);
 
+/**
+ * The query string, with nothing in it that could be misread.
+ *
+ * Empty values are dropped because `status=` filters on the empty string. A
+ * `false` boolean is dropped too, and that is the one worth explaining: until
+ * the API read its boolean parameters as exactly `true` or `false`, several
+ * routes coerced them, and `Boolean('false')` is `true` — so
+ * `?includeDecided=false` listed every approval ever decided and
+ * `?includeRetired=false` listed retired items. Where the API reads an absent
+ * boolean as false, leaving `false` out means the same thing to an old route
+ * and a new one. The one kind of parameter where `false` says something an
+ * absence does not — `open=false`, closed ones only — is sent by its wrapper
+ * as the string `'false'`, which passes through untouched.
+ */
 function queryString(query: RequestOptions['query']): string {
   if (!query) return '';
   const parts = Object.entries(query)
-    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .filter(([, value]) => value !== undefined && value !== null && value !== '' && value !== false)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }

@@ -125,8 +125,19 @@ export async function listTickets(tx: Tx, filter: ListFilter, options: ListOptio
   }) as Promise<TicketRow[]>;
 }
 
-export async function countTickets(tx: Tx, filter: ListFilter, scope?: Prisma.TicketWhereInput): Promise<number> {
-  return tx.ticket.count({ where: buildWhere(filter, scope) });
+/**
+ * Counts matching tickets. With `limit`, stops after that many rows — Prisma
+ * turns `take` into a `LIMIT` inside the count's subquery — so a capped count
+ * stops reading after `limit` matching rows however many tickets match.
+ */
+export async function countTickets(tx: Tx, filter: ListFilter, scope?: Prisma.TicketWhereInput, limit?: number): Promise<number> {
+  return tx.ticket.count({ where: buildWhere(filter, scope), ...(limit !== undefined ? { take: limit } : {}) });
+}
+
+/** Several tickets by id, skipping deleted ones; order is not preserved. */
+export async function findManyById(tx: Tx, ids: string[]): Promise<TicketRow[]> {
+  if (ids.length === 0) return [];
+  return tx.ticket.findMany({ where: { id: { in: ids }, deletedAt: null } }) as Promise<TicketRow[]>;
 }
 
 /**
@@ -194,9 +205,14 @@ export async function listAttachments(tx: Tx, ticketId: string, onlyClean: boole
 }
 
 export async function listWatchers(tx: Tx, ticketId: string) {
-  return tx.ticketWatcher.findMany({ where: { ticketId } });
+  return tx.ticketWatcher.findMany({ where: { ticketId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
 }
 
+/**
+ * The links this ticket is the source of. Every link is stored from both ends
+ * with the inverse type (`linkTickets`), so these are all of its relationships,
+ * each once; reading the target side as well would list every one twice.
+ */
 export async function listLinks(tx: Tx, ticketId: string) {
-  return tx.ticketLink.findMany({ where: { OR: [{ sourceId: ticketId }, { targetId: ticketId }] } });
+  return tx.ticketLink.findMany({ where: { sourceId: ticketId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
 }

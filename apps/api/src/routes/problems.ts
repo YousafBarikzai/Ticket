@@ -9,6 +9,7 @@ import {
   publishSchema,
 } from '@itsm/module-problem';
 import { contextOf } from '../plugins/context.js';
+import { booleanQuery } from './query.js';
 
 /**
  * MOD-08-E2 problems and known errors.
@@ -22,7 +23,7 @@ export async function problemRoutes(app: FastifyInstance): Promise<void> {
   app.get('/problems', async (request) => {
     const ctx = contextOf(request);
     const query = z
-      .object({ status: z.string().optional(), serviceId: z.string().uuid().optional(), open: z.coerce.boolean().optional() })
+      .object({ status: z.string().optional(), serviceId: z.string().uuid().optional(), open: booleanQuery().optional() })
       .parse(request.query);
     const problems = await problemService.listProblems(ctx, query);
     return {

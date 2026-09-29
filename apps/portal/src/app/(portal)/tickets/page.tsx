@@ -31,7 +31,9 @@ export default async function MyTicketsPage({
   let tickets: readonly Ticket[];
   try {
     const page = await apiFor(session).myTickets(
-      showAll ? { limit: 100 } : { statusCategory: 'new,open,pending,resolved', limit: 100 },
+      // Categories, not states: `new` and `pending` are not categories, so the
+      // old list quietly dropped everything paused (waiting on the requester).
+      showAll ? { limit: 100 } : { statusCategory: 'open,paused,resolved', limit: 100 },
     );
     tickets = page.data;
   } catch (error) {

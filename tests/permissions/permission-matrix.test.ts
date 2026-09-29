@@ -115,6 +115,64 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },
   {
+    what: 'look people up by id',
+    path: (t) => `/api/v1/users?ids=${t.people.agent!.id},${t.people.requester!.id}`,
+    // Like the directory: everyone may ask, and scope decides who comes back.
+    allowed: ALL_PERSONAS,
+  },
+  {
+    what: 'reactivate a user',
+    method: 'POST',
+    // The spare person is active, so an allowed call changes nothing.
+    path: (t) => `/api/v1/users/${t.people.spare!.id}/reactivate`,
+    body: () => ({}),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'read the roles',
+    path: () => '/api/v1/roles',
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'read somebody’s role assignments',
+    path: (t) => `/api/v1/users/${t.people.agent!.id}/role-assignments`,
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'list the teams',
+    path: () => '/api/v1/teams',
+    // Anyone who works the desk routes work between teams; a requester is
+    // never shown one.
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'list a team’s members',
+    path: (t) => `/api/v1/teams/${t.teamId}/members`,
+    allowed: ['agent', 'lead', 'otherAgent', 'admin'],
+    deniedStatus: { requester: 403 },
+  },
+  {
+    what: 'read the settings with their values',
+    path: () => '/api/v1/settings',
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'read the feature flags with their values',
+    path: () => '/api/v1/feature-flags',
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'read their own notifications',
+    path: () => '/api/v1/notifications?unread=false',
+    allowed: ALL_PERSONAS,
+  },
+  {
     what: 'read the audit trail',
     path: () => '/api/v1/audit-events?limit=5',
     allowed: ['admin'],
@@ -177,6 +235,23 @@ const MATRIX: MatrixEntry[] = [
       conditions: { always: true },
       actions: [{ type: 'addTag', tag: 'matrix' }],
     }),
+    allowed: ['admin'],
+    deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
+  },
+  {
+    what: 'dry-run an unsaved business rule',
+    method: 'POST',
+    path: () => '/api/v1/rules/dry-run',
+    body: () => ({
+      definition: {
+        event: 'ticket.created',
+        conditions: { always: true },
+        actions: [{ type: 'addTag', tag: 'matrix-dry-run' }],
+      },
+      sampleSize: 5,
+    }),
+    // It writes nothing, but it is the builder's "Try it": the same gate as the
+    // stored rule's test panel (managing rules), not a lead's read of them.
     allowed: ['admin'],
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403 },
   },

@@ -82,7 +82,10 @@ export function queueViewFrom(params: SearchParams): QueueView {
       limit: 50,
       sort,
       // Closed tickets are not work; a queue that shows them buries what is.
-      ...(status ? { status } : { statusCategory: 'new,open,pending' }),
+      // The categories are MOD-04's (`open`, `paused`, `resolved`, `closed`),
+      // not state names: the old `new,open,pending` matched only `open`, so
+      // every ticket waiting on a customer or supplier fell out of the queue.
+      ...(status ? { status } : { statusCategory: 'open,paused' }),
       ...(useAssignee ? { assignee: useAssignee } : {}),
       ...(q ? { q } : {}),
       ...(cursor ? { cursor } : {}),

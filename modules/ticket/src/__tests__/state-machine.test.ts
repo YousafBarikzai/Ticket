@@ -145,12 +145,31 @@ describe('effects', () => {
 });
 
 describe('requester transitions', () => {
-  it('lets a requester reopen, resolve or withdraw, and nothing else', () => {
+  it('lets a requester reopen, resolve, confirm or withdraw, and nothing else', () => {
     expect(isRequesterTransition('resolved', 'reopened')).toBe(true);
     expect(isRequesterTransition('in_progress', 'resolved')).toBe(true);
     expect(isRequesterTransition('new', 'cancelled')).toBe(true);
     expect(isRequesterTransition('new', 'in_progress')).toBe(false);
     expect(isRequesterTransition('in_progress', 'cancelled')).toBe(false);
     expect(isRequesterTransition('closed', 'reopened')).toBe(false);
+  });
+
+  it('lets a requester close a resolved ticket, and close nothing else', () => {
+    // "Yes, it's fixed": confirming a resolution is the requester's answer to
+    // it, as reopening is. Closing a ticket nobody has resolved is not.
+    expect(isRequesterTransition('resolved', 'closed')).toBe(true);
+    for (const from of CANONICAL_STATES.filter((state) => state !== 'resolved')) {
+      expect(isRequesterTransition(from, 'closed')).toBe(false);
+    }
+  });
+
+  it('only ever offers a requester moves the machine allows', () => {
+    // A requester transition the machine then refused would be a button that
+    // always fails.
+    for (const from of CANONICAL_STATES) {
+      for (const to of CANONICAL_STATES) {
+        if (from !== to && isRequesterTransition(from, to)) expect(canTransition(from, to), `${from} → ${to}`).toBe(true);
+      }
+    }
   });
 });

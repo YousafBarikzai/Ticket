@@ -1,7 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { needsAttention, pendingCount, type OutboxItem, type QueueInput } from './outbox.js';
+import { OUTBOX_DRAINED } from './messages.js';
+import {
+  isQueueable,
+  needsAttention,
+  newIdempotencyKey,
+  pendingCount,
+  type OutboxItem,
+  type OutboxStore,
+  type QueueInput,
+} from './outbox.js';
 import { enqueue, forgetSent, outboxStore } from './store.js';
 import { drainOutbox, retryable } from './sync.js';
 
@@ -24,6 +33,12 @@ import { drainOutbox, retryable } from './sync.js';
  *
  * **Nothing is queued silently.** A caller has to name the action, and the
  * action has to be one of the three doc 14 §5 allows.
+ *
+ * **One key per intent.** `submitOrQueue` mints the idempotency key once and
+ * sends that same key online, stores it with the queued copy, and hands it
+ * back so a Retry after a 503 can send it again. It used to send none online
+ * and mint a fresh one for the queue, so a request whose answer was lost on
+ * the way back — sent, created, then "failed" — raised a second ticket.
  */
 
 const DRAIN_TAG = 'itsm-outbox';
@@ -42,9 +57,16 @@ export async function registerServiceWorker(url = '/sw.js'): Promise<ServiceWork
 
 /** Asks the browser to drain when the network returns, or drains here if it will not. */
 export async function requestDrain(): Promise<void> {
-  const registration = await navigator.serviceWorker?.ready.catch(() => null);
-  const sync = (registration as (ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }) | null)
-    ?.sync;
+  // `getRegistration()`, not `ready`: `ready` never settles on a page with no
+  // active worker — an insecure origin, a refused registration — and a drain
+  // waiting on it would wait for ever, with the queue it was meant to empty.
+  const registration =
+    typeof navigator === 'undefined'
+      ? undefined
+      : await navigator.serviceWorker?.getRegistration().catch(() => undefined);
+  const sync = registration?.active
+    ? (registration as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync
+    : undefined;
 
   if (sync) {
     try {
@@ -65,6 +87,20 @@ export interface SubmitResult {
   /** True when it went into the outbox instead of to the server. */
   readonly queued: boolean;
   readonly response?: Response;
+  /**
+   * The key this attempt carried, online or queued. Pass it back as
+   * `idempotencyKey` to retry the same thing — after a 503, say — so the
+   * retry cannot become a second copy.
+   */
+  readonly idempotencyKey: string;
+}
+
+/** Seams for the tests; a page passes nothing. */
+export interface SubmitDeps {
+  readonly fetchImpl?: typeof fetch;
+  readonly store?: OutboxStore;
+  /** What to do once something is queued. Defaults to `requestDrain`. */
+  readonly afterQueue?: () => Promise<void>;
 }
 
 /**
@@ -73,27 +109,37 @@ export interface SubmitResult {
  * A *server* answer — any answer, including a refusal — is returned to the
  * caller unchanged, because a 422 is something the person has to fix now and
  * queuing it would hide that. Only "no answer at all" queues.
+ *
+ * The key is minted here only when the caller has not already minted one for
+ * this intent, and the same key rides the online attempt, the queued copy and
+ * every drain of it.
  */
-export async function submitOrQueue(input: QueueInput): Promise<SubmitResult> {
-  const store = await outboxStore();
-  const item = { ...input, idempotencyKey: input.idempotencyKey ?? undefined };
+export async function submitOrQueue(input: QueueInput, deps: SubmitDeps = {}): Promise<SubmitResult> {
+  // The type already says so; this is for the caller whose `action` arrived
+  // as a string. Refused before anything is sent, not only when it would be
+  // queued, so the mistake shows up online rather than on a train.
+  if (!isQueueable(input.action)) throw new TypeError(`"${String(input.action)}" is not an action the outbox may hold`);
+  const idempotencyKey = input.idempotencyKey ?? newIdempotencyKey();
+  const doFetch = deps.fetchImpl ?? fetch;
 
+  let response: Response;
   try {
-    const response = await fetch(input.path, {
+    response = await doFetch(input.path, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         accept: 'application/json',
-        ...(item.idempotencyKey ? { 'idempotency-key': item.idempotencyKey } : {}),
+        'idempotency-key': idempotencyKey,
       },
       body: JSON.stringify(input.body),
     });
-    return { ok: response.ok, queued: false, response };
   } catch {
-    await enqueue(store, input);
-    void requestDrain();
-    return { ok: false, queued: true };
+    const store = deps.store ?? (await outboxStore());
+    await enqueue(store, { ...input, idempotencyKey });
+    void (deps.afterQueue ?? requestDrain)().catch(() => undefined);
+    return { ok: false, queued: true, idempotencyKey };
   }
+  return { ok: response.ok, queued: false, response, idempotencyKey };
 }
 
 export interface OutboxView {
@@ -154,11 +200,20 @@ export function useOutbox(pollMs = 15_000): OutboxView {
     window.addEventListener('offline', goOffline);
 
     const listener = (event: MessageEvent): void => {
-      if ((event.data as { type?: string } | null)?.type === 'itsm-outbox-drained') void refresh();
+      if ((event.data as { type?: string } | null)?.type === OUTBOX_DRAINED) void refresh();
     };
     navigator.serviceWorker?.addEventListener('message', listener);
 
-    const timer = setInterval(() => void refresh(), pollMs);
+    // Each tick also sends whatever is due. Background sync exists only in
+    // Chromium, and `online` fires only after an `offline` — so a request that
+    // failed while the machine still believed it was connected (the tunnel,
+    // the dropped VPN) would otherwise wait for a person to press Retry. The
+    // drain respects each item's backoff, so this is not a retry every tick.
+    const tick = async (): Promise<void> => {
+      if (navigator.onLine) await drainOutbox(await outboxStore()).catch(() => undefined);
+      await refresh();
+    };
+    const timer = setInterval(() => void tick(), pollMs);
 
     return () => {
       window.removeEventListener('online', goOnline);

@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": { ".": "./src/index.ts", "./forms": "./src/forms/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json", "test": "vitest run" },
   "dependencies": { "@itsm/expr": "workspace:*", "zod": "^3.24.1" }
 }

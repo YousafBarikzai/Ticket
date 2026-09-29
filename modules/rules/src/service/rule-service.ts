@@ -292,32 +292,74 @@ export async function testRule(ctx: TenantContext, idOrKey: string, sampleSize =
       mode: rule.mode as 'stop' | 'continue',
       version: rule.version,
     };
-
-    const tickets = await tx.ticket.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(Math.max(sampleSize, 1), 500),
-    });
-
-    const result: TestResult = { sampled: tickets.length, wouldChange: [], errors: [] };
-    for (const ticket of tickets) {
-      const decision = decide([candidate], factsForTicket(ticket as never));
-      result.errors.push(...decision.errors);
-      if (decision.matched.length === 0) continue;
-      result.wouldChange.push({
-        ticketId: ticket.id,
-        number: ticket.number,
-        title: ticket.title,
-        matched: decision.matched.map((m) => m.ruleKey),
-        effects: effectsOf(decision),
-      });
-    }
-    // One broken condition produces one error per sampled ticket; the author
-    // needs to see it once.
-    result.errors = result.errors.filter(
-      (error, index, all) => all.findIndex((other) => other.ruleKey === error.ruleKey && other.message === error.message) === index,
-    );
-    return result;
+    return replay(tx, candidate, sampleSize);
   });
+}
+
+/**
+ * A definition the dry run accepts: the one `POST /rules` takes, with the key
+ * and name optional. An author trying out a rule has usually not named it yet,
+ * and neither is read by the evaluation; where they are given they must still
+ * be valid, so the definition that tested clean is one that will save.
+ */
+export const dryRunDefinitionSchema = ruleDefinitionSchema.partial({ key: true, name: true });
+
+/**
+ * The test panel for a rule that has not been saved (A8).
+ *
+ * `testRule` can only replay what is stored, and storing an edit to a published
+ * rule takes it offline until somebody publishes it again — so an author who
+ * wanted to test a change first had to take the live rule down to do it. This
+ * replays the definition in the request instead: the same checks as saving it
+ * (a 422 names the condition or action at fault), the same replay as
+ * `testRule`, and nothing written — no rule row, no version, no audit entry.
+ */
+export async function dryRunDefinition(ctx: TenantContext, input: unknown, sampleSize = 100): Promise<TestResult> {
+  authz.require(ctx, 'rules.rule.manage');
+  const definition = dryRunDefinitionSchema.parse(input);
+  validateDefinition(definition.conditions, definition.actions as RuleAction[]);
+
+  const candidate: LoadedRule = {
+    // Never stored, so it has no id; the key is what the report names it by.
+    id: '',
+    key: definition.key ?? 'unsaved-rule',
+    name: definition.name ?? 'Unsaved rule',
+    event: definition.event,
+    conditions: definition.conditions,
+    actions: definition.actions as RuleAction[],
+    order: definition.order,
+    mode: definition.mode,
+    version: 0,
+  };
+  return transaction(ctx, (tx) => replay(tx, candidate, sampleSize));
+}
+
+/** Runs one candidate rule over the most recent tickets, reading only. */
+async function replay(tx: Tx, candidate: LoadedRule, sampleSize: number): Promise<TestResult> {
+  const tickets = await tx.ticket.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: Math.min(Math.max(sampleSize, 1), 500),
+  });
+
+  const result: TestResult = { sampled: tickets.length, wouldChange: [], errors: [] };
+  for (const ticket of tickets) {
+    const decision = decide([candidate], factsForTicket(ticket as never));
+    result.errors.push(...decision.errors);
+    if (decision.matched.length === 0) continue;
+    result.wouldChange.push({
+      ticketId: ticket.id,
+      number: ticket.number,
+      title: ticket.title,
+      matched: decision.matched.map((m) => m.ruleKey),
+      effects: effectsOf(decision),
+    });
+  }
+  // One broken condition produces one error per sampled ticket; the author
+  // needs to see it once.
+  result.errors = result.errors.filter(
+    (error, index, all) => all.findIndex((other) => other.ruleKey === error.ruleKey && other.message === error.message) === index,
+  );
+  return result;
 }
 
 /** The published rule set for one event, in evaluation order. */

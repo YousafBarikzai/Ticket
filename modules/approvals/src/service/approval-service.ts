@@ -26,6 +26,7 @@ import {
   type SubjectType,
 } from '../domain/policy.js';
 import { approverSlotFor, resolveApprovers } from './approver-resolver.js';
+import { describeRequest, describeRequests } from './approval-context.js';
 
 /**
  * MOD-17 approvals.
@@ -441,6 +442,10 @@ async function subjectContextFor(tx: Tx, request: { ticketId: string | null }): 
 // Reading
 // ---------------------------------------------------------------------------
 
+/**
+ * What is waiting on me: the approvals I am named on, with their progress and
+ * what each one is about (approval-context.ts).
+ */
 export async function listMyApprovals(ctx: TenantContext, options: { includeDecided?: boolean } = {}) {
   authz.require(ctx, 'approval.read');
   const userId = ctx.actor.id;
@@ -454,10 +459,60 @@ export async function listMyApprovals(ctx: TenantContext, options: { includeDeci
     });
     const requestIds = [...new Set(steps.map((step) => step.requestId))];
     if (requestIds.length === 0) return [];
-    return tx.approvalRequest.findMany({ where: { id: { in: requestIds } }, orderBy: { requestedAt: 'desc' } });
+    const requests = await tx.approvalRequest.findMany({
+      where: { id: { in: requestIds } },
+      orderBy: { requestedAt: 'desc' },
+    });
+    return describeRequests(tx, userId, requests);
   });
 }
 
+/**
+ * The approvals on one ticket, for the person the ticket is for: how far their
+ * request has got ("Step 1 of 2 · Line manager · due Friday").
+ *
+ * Only the ticket's requester or the person it affects — the people the portal
+ * shows it to — or a reader holding `approval.read` at `any`. Anybody else gets
+ * an empty list, the same answer as a ticket with no approvals, so the parameter
+ * cannot be used to learn which of other people's tickets are waiting on a
+ * decision. An agent working the ticket is deliberately not included: approvals
+ * are not part of the workbench, and reading a ticket is not the same as being
+ * party to the decisions about it.
+ *
+ * The rows carry progress only. The subject and answers stay with approvers
+ * (approval-context.ts), and nobody approves their own request.
+ */
+export async function listApprovalsForTicket(
+  ctx: TenantContext,
+  ticketId: string,
+  options: { includeDecided?: boolean } = {},
+) {
+  authz.require(ctx, 'approval.read');
+  const userId = ctx.actor.id;
+
+  return transaction(ctx, async (tx) => {
+    if (!ctx.permissions.has('approval.read', 'any')) {
+      if (!userId) return [];
+      const ticket = await tx.ticket.findFirst({
+        where: { id: ticketId, deletedAt: null },
+        select: { requesterId: true, affectedUserId: true },
+      });
+      if (!ticket || (ticket.requesterId !== userId && ticket.affectedUserId !== userId)) return [];
+    }
+
+    const requests = await tx.approvalRequest.findMany({
+      where: { ticketId, ...(options.includeDecided ? {} : { status: 'pending' }) },
+      orderBy: { requestedAt: 'desc' },
+      take: 50,
+    });
+    return describeRequests(tx, userId, requests);
+  });
+}
+
+/**
+ * One approval with its steps and decisions, its progress, and — for the
+ * people named as its approvers — the subject and the catalogue answers.
+ */
 export async function getApproval(ctx: TenantContext, requestId: string) {
   authz.require(ctx, 'approval.read');
   return transaction(ctx, async (tx) => {
@@ -478,7 +533,7 @@ export async function getApproval(ctx: TenantContext, requestId: string) {
     }
 
     return {
-      ...request,
+      ...(await describeRequest(tx, ctx.actor.id, request)),
       steps: steps.map((step) => ({
         ...step,
         decisions: decisions.filter((decision) => decision.stepId === step.id),

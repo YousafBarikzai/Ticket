@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
-import { uiStylesheet } from '@itsm/ui';
+import { uiStylesheet } from '@itsm/ui/styles';
 import { Chrome } from '../components/Chrome.js';
 import './globals.css';
 

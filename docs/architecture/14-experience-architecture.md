@@ -12,23 +12,37 @@
 
 All web apps share: `packages/ui` (design system), `packages/sdk` (API client), `packages/contracts` (types, expression language, form schema), `packages/i18n`, an auth/session module (BFF token handler), analytics and error reporting (Sentry), feature-flag hooks, deep-link conventions.
 
-## 2. Design system (ADR-0005)
+## 2. Design system (ADR-0005, ADR-0052)
 
 ```
 packages/ui/
-  tokens/         # colour, type, spacing, radius, elevation, motion → CSS variables (web) + RN theme (native)
-  web/            # React components (shadcn/ui-style on Radix primitives + Tailwind)
-  native/         # React Native components with the same props and a11y behaviour
-  icons/
-  a11y/           # focus management, live regions, keyboard helpers
-  forms/          # FormRenderer: renders a FormVersion (JSON Schema + UI schema) on web and native
-  ai/             # AiSuggestionCard, EvidenceList (PH-4)
-  stories/        # Storybook (web + native via react-native-web)
+  fonts/          # Inter Variable, self-hosted (CSP font-src 'self'); the system font comes first
+  src/
+    index.ts      # the root entry: provider and hooks, actions, inputs, form kit, feedback, display
+                  # — free of Radix, TanStack and sonner, so it can never carry them into a route
+    tokens/       # colour, type, spacing, radius, elevation, motion → CSS variables (web) + RN theme (native)
+    styles/       # the stylesheet, in cascade layers, served as /itsm-ui.css by each app
+    theme/        # four audited themes, preferences, and the pre-paint script that applies them
+    a11y/         # focus management, live regions, keyboard helpers, hotkeys
+    provider/     # ItsmProvider: the app's Link, router and hooks handed in; commands, notify()
+    icons/        # lucide data behind a server-safe <Icon>
+    format/       # Intl formatting: dates, durations, counts
+    web/          # the original components, kept where they are
+    controls/ formkit/ feedback/ display/
+    overlays/     # @itsm/ui/overlays — menus, popovers, sheets, dialogs, toasts (Radix, sonner)
+    data/         # @itsm/ui/data — DataTable (TanStack Table), filters, load-more, virtual lists
+    charts/       # @itsm/ui/charts — static SVG charts with a small client hover layer
+    shell/        # @itsm/ui/shell — the frame: sidebar, top bar, tab bar, command palette
+    forms/        # @itsm/ui/forms — FormRenderer, over @itsm/contracts/forms
+    workbench/    # @itsm/ui/workbench — AiSuggestionCard, SlaClock
 ```
 
-- Tokens defined once; light, dark and high-contrast themes; RTL supported by logical CSS properties.
-- The 20 core components from MOD-16-E1 each ship with a story, an axe-core test and a keyboard-interaction test; the package is versioned and published to the workspace.
+- Tokens defined once; four themes — light, dark and a high-contrast version of each — chosen by the person (appearance, and an *Increase contrast* switch) or by the operating system; RTL supported by logical CSS properties.
+- **Weight is isolated by subpath** (ADR-0052). Third-party libraries are reached only through `@itsm/ui` subpaths, never imported by an application directly (the workbench's query cache is the one exception); `@itsm/ui` and `@itsm/contracts` declare `"sideEffects": false`, and the root entry does not re-export `@itsm/contracts`.
+- **The design system never imports `next`**, and a component file without `'use client'` stays safe to render from a server component: no hooks, no context, no event handlers. `packages/ui/src/__tests__/guards.test.ts` enforces both.
+- The 20 core components from MOD-16-E1 each ship with an axe-core test and a keyboard-interaction test; every new export has a behaviour test and an axe case in its group's audit test.
 - `FormRenderer` is the single implementation that renders catalogue forms in the portal, the Slack/Teams modal builders (server-side transformation to Block Kit / Adaptive Cards), mobile and the admin preview, using the expression language for conditions so behaviour is identical everywhere.
+- A native component set (`native/`) and Storybook (`stories/`) remain planned; see §10.2.
 
 ## 3. Authentication and session on the client
 
@@ -38,10 +52,11 @@ packages/ui/
 
 ## 4. Data fetching and state
 
-- Server components fetch initial data for first paint via the SDK (server-side, with the session token).
-- Client state uses TanStack Query keyed by the SDK's route signatures; mutations use optimistic updates only where the server response cannot differ materially (e.g. adding a watcher), otherwise "optimistic but honest" pending states.
-- **Realtime:** one SSE connection per tab (`useRealtime(topics)`); notices invalidate the relevant queries; timeline updates appear within 2 s.
-- **Conflicts:** `409` responses surface the other user's change with a merge dialog (ticket workspace) or a reload prompt (admin builders).
+- Server components fetch initial data for first paint via the SDK (server-side, with the session token). Independent reads start together, and `me()` is read once per request.
+- **The workbench keeps a client cache** (TanStack Query, ADR-0052), seeded by the server render, so moving between tickets does not wait on the server. Three same-origin aggregation handlers — `GET /api/desk/list`, `GET /api/desk/tickets/[id]`, `GET /api/desk/counts` — make one screen one request; they answer 401 as JSON when the session has ended. The portal and the admin console keep server components and re-read with `router.refresh()` inside a transition after a mutation.
+- Mutations are optimistic where the server's answer cannot differ materially (e.g. adding a watcher), with rollback; otherwise "optimistic but honest" pending states.
+- **Realtime:** one SSE connection per tab, opened by `@itsm/pwa/live` and shared by everything on the page that listens (topics merged, at most 20); a notice invalidates the query for what it names, and timeline updates appear within 2 s. The admin console uses the same provider for its badges, without a service worker (ADR-0049).
+- **Conflicts:** `409` responses surface the other person's change in a conflict dialog (inline for a single-field edit).
 - **Drafts:** portal forms autosave to `/drafts/{formKey}` every 5 s (server-side, so drafts follow the user across devices) and to local storage as a fallback.
 
 ## 5. PWA and offline
@@ -90,12 +105,12 @@ sentences are which.
 
 | Piece | State |
 |---|---|
-| `packages/ui` | Tokens, a11y primitives, 26 web components, `FormRenderer`, and the two workbench components (`AiSuggestionCard`, `SlaClock`). Every component file carries `'use client'` (ADR-0041); the tokens and `uiStylesheet()` do not, so an application can emit the stylesheet during server rendering. |
+| `packages/ui` | Tokens (four themes), a11y primitives, the original 26 web components, `FormRenderer`, and the two workbench components (`AiSuggestionCard`, `SlaClock`), being rebuilt for the redesign under ADR-0052 as subpath groups (§2). Most component files carry `'use client'`; the ones that do not — `Table`, `Icon`, the skeletons and the other server-safe components — are held to it by a guard test, and the tokens and `uiStylesheet()` need no directive, so an application can emit the stylesheet during server rendering. |
 | `packages/sdk` | The typed API client: problem-details errors, idempotency keys on creates, `If-Match` on conditional updates, cursor paging, and one resource module per application. |
 | `packages/bff` | The backend-for-frontend, once: sign-in, the session store, and the proxy. Handlers speak `Request` and `Response` rather than a framework's types, so a route handler in an application is three lines. Sessions are namespaced per application. |
 | `apps/workbench` | Next.js App Router. The queue, and the three-pane ticket workspace with timeline, composer, transitions, assignment, SLA clocks, time totals and the AI suggestion surface. |
 | `apps/portal` | Next.js App Router. Home, report an issue, the catalogue with `FormRenderer`, my tickets, one ticket with reply and reopen, the approvals inbox, and knowledge search with articles. |
-| `packages/pwa` | The offline layer: a service worker with four caching strategies, and an IndexedDB outbox for the three writes §5 allows to be queued. The rules — what may be queued, what an HTTP answer means, when to stop retrying — are pure functions. |
+| `packages/pwa` | The offline layer: a service worker with four caching strategies, and an IndexedDB outbox for the three writes §5 allows to be queued. The rules — what may be queued, what an HTTP answer means, when to stop retrying — are pure functions. `@itsm/pwa/live` is the one event stream per tab (§4). |
 | The development sign-in | `POST /api/v1/auth/dev-session`, registered only outside production and only with no `OIDC_ISSUER` (ADR-0041). |
 
 ### 10.2 Deviations from sections 1 to 9
@@ -103,20 +118,29 @@ sentences are which.
 These are decisions, not omissions, and each is one somebody may reasonably
 reverse later:
 
-- **No Tailwind and no Radix** (§2). `packages/ui` is built on one generated
-  stylesheet driven by the token variables, and on hand-written ARIA patterns
-  with keyboard tests. What §2 describes is a reasonable stack; what exists has
-  no build-time CSS step and no third-party component semantics to keep in step
-  with the product's own.
+- **No Tailwind** (§2). `packages/ui` is built on one generated stylesheet
+  driven by the token variables, in cascade layers, with no build-time CSS
+  step. Radix, which this bullet once also ruled out, is now used for menus,
+  popovers, sheets and dialogs behind `@itsm/ui/overlays` (ADR-0052): the
+  hand-written ARIA patterns had reached the long tail — collision, layered
+  dismissal, typeahead — where a maintained primitive has already met the bugs.
 - **The two applications use different words for the same ticket** (§1), which
   is not a deviation but is worth stating because it looks like one.
   `pending_requester` reads to an agent as "Waiting on requester" — a queue
   they can ignore — and to the person who raised it as "Waiting for you",
   which is the most important sentence on their screen. Each table has a test
   asserting it covers every canonical state MOD-04 defines.
-- **No TanStack Query** (§4). Server components fetch for first paint and
-  `router.refresh()` re-reads after a mutation. A cache layer is worth adding
-  when there is a screen that needs one; the queue and the ticket page do not.
+- **TanStack Query in the workbench only** (§4). This bullet used to say "no
+  TanStack Query", because a cache was worth adding when a screen needed one
+  and the queue did not. The inbox does (ADR-0052): `j`/`k` between tickets
+  without a round trip, prefetched neighbours, invalidation by a live notice.
+  The portal and the admin console still re-read with `router.refresh()`.
+- **The performance budgets of §8 are checked in CI.** Every change builds the
+  three applications with `next build --webpack`, and
+  `infra/scripts/check-bundles.ts` measures each route's first-load
+  JavaScript against `infra/bundle-budgets.json`: over budget, or more than
+  10 kB over the recorded baseline without recording a new one, fails the
+  build. The LCP and Lighthouse half of §8 is still unmeasured.
 - **No Storybook, no `packages/i18n`, no `packages/ui/native`, no
   `packages/ui/icons`** (§2, §6, §7). None of these has been built. The
   accessibility tests §2 promises exist as keyboard and ARIA tests in

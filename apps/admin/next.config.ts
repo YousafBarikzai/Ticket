@@ -47,8 +47,21 @@ const nextConfig: NextConfig = {
    */
   output: 'standalone',
   outputFileTracingRoot: join(import.meta.dirname, '..', '..'),
-  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/contracts', '@itsm/expr'],
+  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/pwa', '@itsm/contracts', '@itsm/expr'],
   poweredByHeader: false,
+  /**
+   * Server components import the design system from its root entry
+   * (`import { Badge } from '@itsm/ui'`), and Next's client-reference pass
+   * then takes every `'use client'` module that entry re-exports — the form
+   * renderer and, through it, zod among them — into every route's first load,
+   * used or not. `sideEffects: false` does not help there, because the pass
+   * reads the import graph before anything is shaken out. Naming the package
+   * here makes Next rewrite each such import to the module that defines the
+   * name, so a route ships the client components it renders and no others
+   * (SPEC §3.7; 24–30 kB off every route of all three applications when this
+   * was added).
+   */
+  experimental: { optimizePackageImports: ['@itsm/ui'] },
   /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension, which is what ECMAScript modules require and what `tsx`,

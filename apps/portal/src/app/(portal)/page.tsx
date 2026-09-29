@@ -32,7 +32,9 @@ export default async function HomePage(): Promise<ReactNode> {
   const api = apiFor(session);
 
   const [mine, approvals] = await Promise.all([
-    orNull(api.myTickets({ statusCategory: 'new,open,pending', limit: 20 })),
+    // Status categories (`open`, `paused`, `resolved`, `closed`), not states:
+    // `resolved` is here so a fix waiting on "Yes, it's fixed" is on Home.
+    orNull(api.myTickets({ statusCategory: 'open,paused,resolved', limit: 20 })),
     orNull(api.approvals()),
   ]);
 

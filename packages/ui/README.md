@@ -100,10 +100,36 @@ against the same props and the same `logic.ts`, prioritised by the mobile
 journeys rather than implemented wholesale — a native `Table` would be a
 pretence.
 
-The web components depend on `react` and `react-dom` and nothing else. No
-Radix, no shadcn, no Tailwind, no class-name library: a `cx` helper is three
-lines, and the portal's 250 kB initial-JS budget is real. Components are styled
-by one stylesheet (`web/stylesheet.ts`) in which every colour, space, type,
+### The dependency rule
+
+The portal's 250 kB initial-JS budget is real, so what this package depends on
+is decided library by library ([ADR-0052](../../docs/adr/0052-redesign-ui-primitives-and-frame.md))
+and reached one way only:
+
+- **The root entry, `@itsm/ui`, depends on `react` and `react-dom` and nothing
+  else** — no Radix, no TanStack, no sonner. A root component that needs an
+  overlay loads it on intent with `React.lazy`.
+- **Third-party weight lives behind a subpath**: Radix and sonner in
+  `@itsm/ui/overlays`, TanStack Table and Virtual in `@itsm/ui/data`; lucide
+  icon data in `@itsm/ui/icons`, rendered on the server. Applications import
+  the subpath, never the library, so a version changes in one place.
+- **`"sideEffects": false`**, and the root entry does not re-export
+  `@itsm/contracts`: a route pays only for what it imports.
+- **No `next`, ever.** Routing reaches components through `ItsmProvider`,
+  which the application hands its `Link`, router and hooks. A file without
+  `'use client'` stays server-safe — no hooks, no context, no event handlers
+  unless the exception is written down with its reason.
+  `src/__tests__/guards.test.ts` enforces both.
+- No shadcn, no Tailwind, no class-name library: a `cx` helper is three lines.
+
+CI builds all three applications and fails a route over its budget, or more
+than 10 kB over its recorded baseline (`infra/scripts/check-bundles.ts`). So a
+new dependency, or a heavy import into the root entry, shows up in the change
+that adds it rather than in a phone on a train.
+
+Components are styled
+by one stylesheet — assembled from a `<Name>.styles.ts` module beside each
+component, in cascade layers (`styles/registry.ts`) — in which every colour, space, type,
 radius, shadow and duration is a token variable — only a component's own fixed
 geometry (the diameter of a radio, the width of a switch) is stated there
 directly. A stylesheet rather than inline styles, because `:hover`, `:focus-visible`, `::placeholder` and
@@ -207,10 +233,17 @@ design system must not know about the SDK, the session or tenancy.
 ## Tests
 
 ```bash
-pnpm --filter @itsm/ui test        # this package (79 tests)
+pnpm --filter @itsm/ui test        # this package (22 files, 366 tests at the time of writing)
 pnpm --filter @itsm/ui typecheck
 pnpm test:unit                     # the workspace's unit project
 ```
+
+Besides the component tests, three suites guard the package as a whole:
+`src/__tests__/guards.test.ts` (no `next`; server-safe files stay server-safe),
+`src/__tests__/catalogue.test.tsx` (every subpath exports what the
+specification names, and the root entry's import graph reaches no Radix,
+TanStack or sonner) and `web/__tests__/stylesheet-vars.test.ts` (every style
+module is registered and references only variables the token pipeline emits).
 
 The package's `test` script points back at the root Vitest configuration
 (`--root ../.. --project unit packages/ui`), because the workspace defines its

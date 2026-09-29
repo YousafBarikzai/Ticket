@@ -100,6 +100,55 @@ jobs:
           # load is a loud error instead of a silently stricter scan.
           GITLEAKS_CONFIG: .gitleaks.toml
 
+      # The three web applications, built the way their images build them.
+      #
+      # Until this step nothing in CI ran `next build`, and a type-check and a
+      # render test are not a build: a server component handed a function, a
+      # hook in a file without 'use client', a route that opts out of static
+      # rendering, a module webpack cannot resolve — each passes everything
+      # above and fails here, or in the image build of a deploy. Last in the
+      # job so the fast checks report first.
+      #
+      # Next's own compiler cache is kept between runs, keyed on the lockfile
+      # and falling back to the newest cache for it, which is most of the
+      # difference between a cold webpack build and a warm one. One at a time
+      # rather than in parallel: three webpack builds at once is more memory
+      # than a hosted runner has, and a build killed for memory reads as a
+      # flaky one.
+      - name: Restore the Next build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/admin/.next/cache
+            apps/workbench/.next/cache
+            apps/portal/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - name: Build the admin console
+        run: pnpm --filter @itsm/admin build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: Build the workbench
+        run: pnpm --filter @itsm/workbench build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: Build the portal
+        run: pnpm --filter @itsm/portal build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      # First-load JavaScript per route against infra/bundle-budgets.json
+      # (SPEC §3.7): the portal under 250 kB and the workbench under 500 kB
+      # gzipped, and neither growing more than 10 kB over its recorded baseline
+      # unless the same change records the new one. The admin console is
+      # reported, not budgeted. The table also lands in the job summary.
+      - name: Bundle budgets
+        run: pnpm exec tsx infra/scripts/check-bundles.ts
+
   integration:
     name: 3 · Integration, isolation and permissions
     runs-on: ubuntu-latest

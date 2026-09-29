@@ -25,6 +25,15 @@
  * **Static assets are stale-while-revalidate.** They are content-hashed, so a
  * stale one is not a wrong one; it is a previous build's file that the page
  * referencing it no longer asks for.
+ *
+ * Two same-origin routes are named rather than left to the patterns. The
+ * workbench's aggregation handlers (`/api/desk/*`) answer reads the way the
+ * proxy does — one person's inbox, one ticket — so they are API reads,
+ * network-first and in the API cache that sign-out clears; left to the
+ * default they were never cached, and "showing the copy from 10:42" could not
+ * happen. The design system's stylesheet (`/itsm-ui.css?v=<hash>`) is
+ * versioned by its query string, so it is a static asset however its name
+ * happens to end.
  */
 
 export type Strategy =
@@ -56,6 +65,9 @@ export interface Routed {
 
 const NEVER_CACHED: Routed = { strategy: 'network-only', cache: null };
 
+/** The design system's stylesheet, served by each app's route handler. */
+const STYLESHEET_PATH = '/itsm-ui.css';
+
 export function routeFor(request: { method: string; url: string; mode?: string }): Routed {
   const url = new URL(request.url, 'http://localhost');
   const method = request.method.toUpperCase();
@@ -78,6 +90,16 @@ export function routeFor(request: { method: string; url: string; mode?: string }
     if (path.includes('/events/')) return NEVER_CACHED;
     return { strategy: 'network-first', cache: 'api' };
   }
+
+  // The workbench's aggregation handlers: an inbox, a ticket, the counts. A
+  // person's data, like the proxy's, so it goes where sign-out can find it.
+  if (path.startsWith('/api/desk/')) return { strategy: 'network-first', cache: 'api' };
+
+  // Anything else under `/api/` is a route handler with its own reasons —
+  // health checks, sessions — and none of it is worth keeping.
+  if (path.startsWith('/api/')) return NEVER_CACHED;
+
+  if (path === STYLESHEET_PATH) return { strategy: 'stale-while-revalidate', cache: 'assets' };
 
   // Next's build output is content-hashed, so a cached copy is never a wrong
   // copy — it is a file the current page does not reference.

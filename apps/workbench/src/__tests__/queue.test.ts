@@ -7,7 +7,9 @@ import { queueHref, queueViewFrom } from '../queue/view.js';
 describe('the queue view, read from the URL', () => {
   it('shows open work by default, not everything ever raised', () => {
     const view = queueViewFrom({});
-    expect(view.filter.statusCategory).toBe('new,open,pending');
+    // Status categories, not states: paused work (waiting on a customer or a
+    // supplier) is still work, and `new`/`pending` are not categories at all.
+    expect(view.filter.statusCategory).toBe('open,paused');
     expect(view.filter.sort).toBe('-createdAt');
     expect(view.title).toBe('Open tickets');
   });
@@ -38,7 +40,7 @@ describe('the queue view, read from the URL', () => {
   it('caps and cleans a status list', () => {
     expect(queueViewFrom({ status: 'new,in_progress' }).filter.status).toBe('new,in_progress');
     expect(queueViewFrom({ status: 'new, in_progress ,' }).filter.status).toBe('new,in_progress');
-    expect(queueViewFrom({ status: '<script>' }).filter.statusCategory).toBe('new,open,pending');
+    expect(queueViewFrom({ status: '<script>' }).filter.statusCategory).toBe('open,paused');
     expect(queueViewFrom({ status: Array.from({ length: 40 }, (_, i) => `s${i}`).join(',') }).filter.status)
       .toBe(Array.from({ length: 10 }, (_, i) => `s${i}`).join(','));
   });

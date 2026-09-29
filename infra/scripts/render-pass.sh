@@ -4,9 +4,17 @@
 #
 # Signs in as a real seeded person through the development sign-in, then asks
 # for each route and checks two things: that it answered 200, and that what
-# came back is not Next's error boundary. The second check is the point — a
-# server component that throws still answers 200 in some configurations, and a
-# status-code sweep would call that a pass.
+# came back is not an error boundary — Next's, or one of ours. The second check
+# is the point — a server component that throws still answers 200 in some
+# configurations, and a status-code sweep would call that a pass. Our own
+# boundaries (`ProblemState` in each `error.tsx`) say something friendly rather
+# than "Application error", so they carry a `data-itsm-error-boundary`
+# attribute for this script to find.
+#
+# Two more kinds of route are checked for what they must *not* be: a redirect
+# is asked where it goes (`redirects`), and a gated route is asked for its
+# exact status (`answers`) — `/tenants` is a 404 for anybody who is not a
+# platform operator, not a 403 that would confirm it exists.
 #
 # It exists because a whole class of fault is invisible to everything else we
 # run. `Table` carried a `'use client'` directive while its columns took a
@@ -55,6 +63,21 @@ sign_in() { # label origin email
   echo "== $label as $email =="
 }
 
+# What an error boundary leaves in a page body. Next renders the first set on a
+# server-component throw, with a 200 in front of them often enough to matter;
+# the marker is on the root element of every error page of ours.
+NEXT_ERROR_TEXT='Application error|a server-side exception|Unhandled Runtime'
+ITSM_ERROR_MARKER='data-itsm-error-boundary'
+
+# Which error boundary a body shows, or nothing.
+boundary_in() { # body
+  if grep -qiE "$NEXT_ERROR_TEXT" <<<"$1"; then
+    echo " ERROR-BOUNDARY"
+  elif grep -qF "$ITSM_ERROR_MARKER" <<<"$1"; then
+    echo " ERROR-BOUNDARY (ours)"
+  fi
+}
+
 check() { # origin route...
   local origin="$1"; shift
   local route body status marker
@@ -62,14 +85,55 @@ check() { # origin route...
     [ -n "$route" ] || continue
     body=$(curl -s -b "$jar" -c "$jar" -w $'\n%{http_code}' -m 30 "$origin$route")
     status="${body##*$'\n'}"
-    marker=""
-    # Next renders these into the page body on a server-component throw, with
-    # a 200 in front of them often enough to matter.
-    if grep -qiE "Application error|a server-side exception|Unhandled Runtime" <<<"$body"; then
-      marker=" ERROR-BOUNDARY"
-    fi
+    marker=$(boundary_in "$body")
     if [ "$status" != "200" ] || [ -n "$marker" ]; then
       echo "  FAIL $status $route$marker"
+      failures=$((failures + 1))
+    else
+      echo "  ok   $status $route"
+    fi
+  done
+}
+
+# A route that must redirect, and where to. curl is not told to follow (no
+# -L), so the 3xx itself is what is checked, and `%{redirect_url}` is the
+# absolute URL it would have gone to next. The target is a path on the same
+# origin and matches as a prefix, so `/inbox` accepts `/inbox/mine?t=12`.
+redirects() { # origin route target
+  local origin="$1" route="$2" target="$3" out status location
+  out=$(curl -s -o /dev/null -b "$jar" -c "$jar" -w '%{http_code} %{redirect_url}' -m 30 "$origin$route")
+  status="${out%% *}"
+  location="${out#* }"
+  case "$status" in
+    301 | 302 | 303 | 307 | 308) ;;
+    *)
+      echo "  FAIL $status $route (expected a redirect to $target)"
+      failures=$((failures + 1))
+      return
+      ;;
+  esac
+  case "$location" in
+    "$origin$target"*) echo "  ok   $status $route -> ${location#"$origin"}" ;;
+    *)
+      echo "  FAIL $status $route -> $location (expected $target)"
+      failures=$((failures + 1))
+      ;;
+  esac
+}
+
+# Routes that must answer exactly this status, and not render a boundary on the
+# way. For gates: a 404 where a 200 or a 403 would each leak something.
+answers() { # origin status route...
+  local origin="$1" expected="$2"; shift 2
+  local route body status marker
+  for route in "$@"; do
+    body=$(curl -s -b "$jar" -c "$jar" -w $'\n%{http_code}' -m 30 "$origin$route")
+    status="${body##*$'\n'}"
+    marker=$(boundary_in "$body")
+    # Next's own not-found page is not an error boundary, but ours might carry
+    # the marker on a 404, so only a mismatch in status fails here.
+    if [ "$status" != "$expected" ]; then
+      echo "  FAIL $status $route (expected $expected)$marker"
       failures=$((failures + 1))
     else
       echo "  ok   $status $route"
@@ -95,6 +159,7 @@ if sign_in portal "$PORTAL" "ada.requester@$TENANT.test"; then
 fi
 
 if sign_in workbench "$WORKBENCH" "sam.agent@$TENANT.test"; then
+  redirects "$WORKBENCH" / /queue
   check "$WORKBENCH" /queue /offline
   check "$WORKBENCH" "$(first_link "$WORKBENCH" /queue '/tickets/')"
 fi
@@ -105,6 +170,9 @@ if sign_in admin "$ADMIN" "alex.admin@$TENANT.test"; then
   # The status filter is a link rather than a control, so it is a route too.
   check "$ADMIN" '/tickets?status=open' '/tickets?status=closed' '/tickets?status=open&assignee=none' \
     '/audit?action=ticket.created'
+  # The platform screens do not exist for a tenant administrator: a 404, not
+  # a 403 that would confirm there is something behind the door.
+  answers "$ADMIN" 404 /tenants /plans
 fi
 
 echo

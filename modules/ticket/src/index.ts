@@ -8,6 +8,7 @@
 export { ticketManifest } from './manifest.js';
 export * as ticketService from './service/ticket-service.js';
 export * as fieldService from './service/field-service.js';
+export * as categoryService from './service/category-service.js';
 export {
   fieldSchema,
   CLASSIFICATIONS,

@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "sideEffects": [
+    "./src/sw.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
+    "./live": "./src/live/index.ts",
     "./sw": "./src/sw.ts"
   },
   "scripts": {

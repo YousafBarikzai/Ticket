@@ -1,0 +1,32 @@
+/**
+ * `@itsm/ui/shell` — the application frame: shell, navigation and the command
+ * palette.
+ *
+ * Its own subpath because the frame is the heaviest thing a page mounts and
+ * the only thing that adapts to the viewport rather than its container.
+ */
+export { BottomDock, type BottomDockProps } from './BottomDock.js';
+export { Breadcrumbs, type BreadcrumbsProps } from './Breadcrumbs.js';
+export { HierNav, type HierNavItem, type HierNavProps } from './HierNav.js';
+export type { AppSwitcherItem, NavBadge, NavItem, NavMatch, NavModel, NavSection, ShellBrand } from './nav.js';
+export {
+  NotificationCenter,
+  type NotificationCenterProps,
+  type NotificationItem,
+} from './NotificationCenter.js';
+export { PageHeader, type PageHeaderProps } from './PageHeader.js';
+export { RouteFocus } from './RouteFocus.js';
+export { RouteProgress, type RouteProgressProps } from './RouteProgress.js';
+export { SearchTrigger, type SearchTriggerProps } from './SearchTrigger.js';
+export { ShortcutsDialog, type ShortcutsDialogProps } from './ShortcutsDialog.js';
+export { SkipLinks, type SkipLinksProps } from './SkipLinks.js';
+export { SplitView, type SplitPane, type SplitViewProps } from './SplitView.js';
+export { TabBar, type TabBarProps } from './TabBar.js';
+export { TabNav, type TabNavItem, type TabNavProps } from './TabNav.js';
+export { TopBar, type TopBarProps } from './TopBar.js';
+export { UserMenu, type UserMenuProps, type UserMenuSignOut } from './UserMenu.js';
+
+// The in-house components, rebuilt in place.
+export { AppShell, type AppShellNavItem, type AppShellProps } from '../web/AppShell.js';
+export { CommandPalette, rankCommands, type CommandItem, type CommandPaletteProps } from '../web/CommandPalette.js';
+export type { CommandProvider } from '../provider/commands.js';

@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { DRAIN_OUTBOX, OUTBOX_DRAINED, SKIP_WAITING } from './messages.js';
 import { isCacheable, routeFor } from './routing.js';
 import { drainOutbox } from './sync.js';
 import { indexedDbOutboxStore } from './store.js';
@@ -24,6 +25,14 @@ import { indexedDbOutboxStore } from './store.js';
  * worker that never cleans up accumulates every build it has ever seen in the
  * user's storage quota, and the first thing that breaks is the thing it was
  * supposed to protect.
+ *
+ * **A new version waits to be asked.** It installs, then waits until the page
+ * posts `SKIP_WAITING` — which the page does when the person chooses "Reload"
+ * on "A new version is ready". Taking over the moment it installed swapped the
+ * caching rules underneath a tab that was half-way through a reply, and the
+ * next navigation could fetch pages from a build the open page's code had
+ * never seen. The very first install has nothing to wait for and activates
+ * straight away.
  */
 
 declare const self: ServiceWorkerGlobalScope;
@@ -50,9 +59,8 @@ self.addEventListener('install', (event) => {
       // it offline — an honest limit, and better than a precache manifest that
       // goes stale.
       await shell.add(new Request(OFFLINE_URL, { cache: 'reload' })).catch(() => undefined);
-      // Take over as soon as this is ready: waiting for every tab to close
-      // means a fix ships when somebody reboots.
-      await self.skipWaiting();
+      // No `skipWaiting()` here. An update waits for the page to ask (see the
+      // `message` listener), so nobody's open tab changes underneath them.
     })(),
   );
 });
@@ -78,13 +86,13 @@ self.addEventListener('fetch', (event) => {
       event.respondWith(navigate(request));
       return;
     case 'network-first':
-      event.respondWith(networkFirst(request, CACHES.api));
+      event.respondWith(networkFirst(request, CACHES[route.cache ?? 'api']));
       return;
     case 'cache-first':
-      event.respondWith(cacheFirst(request, CACHES.assets));
+      event.respondWith(cacheFirst(request, CACHES[route.cache ?? 'assets']));
       return;
     case 'stale-while-revalidate':
-      event.respondWith(staleWhileRevalidate(request, CACHES.assets));
+      event.respondWith(staleWhileRevalidate(request, CACHES[route.cache ?? 'assets']));
       return;
     default:
       // `network-only` and `queueable` both go to the network untouched. The
@@ -173,13 +181,26 @@ self.addEventListener('sync', (event) => {
   sync.waitUntil(drainOutbox(indexedDbOutboxStore()).then(() => undefined));
 });
 
-/** The page asking for a drain now — after a sign-in, or on `online`. */
+/**
+ * The page talking to the worker: "take over now", or "drain the outbox now"
+ * (after a sign-in, or on `online`).
+ */
 self.addEventListener('message', (event) => {
-  if ((event.data as { type?: string } | null)?.type !== 'itsm-drain-outbox') return;
+  const type = (event.data as { type?: string } | null)?.type;
+
+  if (type === SKIP_WAITING) {
+    // The person chose to reload. `activate` then claims the open tabs, and
+    // the one that asked reloads on `controllerchange` (see `applyUpdate`);
+    // any other keeps its prompt, and its Reload now reloads at once.
+    event.waitUntil?.(self.skipWaiting());
+    return;
+  }
+
+  if (type !== DRAIN_OUTBOX) return;
   event.waitUntil?.(
     drainOutbox(indexedDbOutboxStore()).then(async (report) => {
       for (const client of await self.clients.matchAll()) {
-        client.postMessage({ type: 'itsm-outbox-drained', report });
+        client.postMessage({ type: OUTBOX_DRAINED, report });
       }
     }),
   );

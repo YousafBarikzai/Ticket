@@ -124,6 +124,20 @@ function newKey(): string {
   return `pwa-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 }
 
+/**
+ * A key for one intent: one report, one reply, one decision.
+ *
+ * Minted by the screen when the person presses Send, and passed to every
+ * attempt at that same thing — the online one, the queued copy and a Retry
+ * after a 503. The API answers a repeated key with the first answer, so a
+ * response lost on the way back cannot become a second ticket. A person who
+ * *edits* what they wrote is making a new intent and needs a new key: the API
+ * refuses a known key with a different body.
+ */
+export function newIdempotencyKey(): string {
+  return newKey();
+}
+
 export function newItem(input: QueueInput, now = Date.now()): OutboxItem {
   return {
     id: newKey(),
@@ -141,10 +155,21 @@ export function newItem(input: QueueInput, now = Date.now()): OutboxItem {
   };
 }
 
+/**
+ * How long an item may sit in `sending` before it is presumed abandoned.
+ *
+ * A drain marks an item `sending` before its request, and a tab closed or a
+ * worker stopped mid-request never comes back to say how it went. Without a
+ * lease that item would wait in `sending` for ever, counted as "on its way"
+ * and never tried again. Two minutes is longer than any request worth waiting
+ * for; a second send after it is harmless, because it carries the same key.
+ */
+export const SENDING_LEASE_MS = 2 * 60_000;
+
 /** Everything due, oldest first — so a comment written before another arrives first. */
 export function dueNow(items: readonly OutboxItem[], now = Date.now()): OutboxItem[] {
   return items
-    .filter((item) => item.status === 'pending' && item.nextAttemptAt <= now)
+    .filter((item) => (item.status === 'pending' || item.status === 'sending') && item.nextAttemptAt <= now)
     .sort((a, b) => a.queuedAt - b.queuedAt);
 }
 
@@ -188,8 +213,12 @@ export function afterAttempt(item: OutboxItem, attempt: Attempt, now = Date.now(
     return { ...item, status: 'failed', attempts, problem: attempt.detail ?? 'This was refused and will not be retried.' };
   }
 
-  // Worth trying again — unless it has already had its five.
-  if (attempts >= MAX_ATTEMPTS) {
+  // Worth trying again — unless the *server* has already had its five. No
+  // answer at all is the tunnel rather than the server, and a train that is
+  // underground for ten minutes must not turn somebody's message into a
+  // failure they have to notice and retry; the backoff still grows, to its
+  // ten-minute cap.
+  if (attempts >= MAX_ATTEMPTS && attempt.status !== 0) {
     return {
       ...item,
       status: 'failed',

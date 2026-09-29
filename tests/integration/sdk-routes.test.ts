@@ -1,10 +1,11 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeHarness, createTestTenant, deleteTestTenant, request } from '../support/harness.js';
+import { closeHarness, createTestTenant, deleteTestTenant, getApp, request, type TestTenant } from '../support/harness.js';
+import { distinctCalls, METHODS, sdkCallsIn, UUID, type Method, type RouteCall, type RouteCallScan } from '../support/route-reader.js';
 
 /**
- * Every endpoint `@itsm/sdk` calls exists.
+ * Every endpoint `@itsm/sdk` calls exists, **with the method the SDK uses.**
  *
  * The same check as `walking-skeleton-routes.test.ts`, pointed at the other
  * thing in this repository that hard-codes the API's paths. It is worth having
@@ -16,6 +17,27 @@ import { closeHarness, createTestTenant, deleteTestTenant, request } from '../su
  * rather than from `apps/api/src/routes`, and got three things wrong. Paths
  * were not among them — but only because nothing had checked.
  *
+ * It used to try every verb over HTTP, unauthenticated, and pass on the first
+ * answer that was not "route not found". That checked nothing at all, twice
+ * over: authentication is a `preHandler` hook, and Fastify runs it for the
+ * not-found handler too, so a path that does not exist answers 401 exactly as
+ * one that does; and the not-found handler says "no route for GET /x", which
+ * the pattern it was matched against never matched. Every path passed.
+ *
+ * So two things changed. The router is asked directly — `findRoute` is the
+ * lookup a request goes through, without the hooks, the handler or a token —
+ * and one calibration case proves that its answer is the answer HTTP gives.
+ * And the method is read out of the source — the `method` beside each
+ * `/api/v1` literal, `GET` when there is none — and only that method is
+ * looked up: a `PATCH` sent where only `PUT` is mounted is a screen that 404s.
+ * The redesign adds SDK calls for every new route, and this is the check that
+ * each of them is spelled the way the API reads it.
+ *
+ * The source is read with the TypeScript parser (`tests/support/route-reader.ts`,
+ * shared with the skeleton's check) rather than a regular expression, and a
+ * literal in a shape the reader does not recognise fails the suite instead of
+ * being skipped.
+ *
  * Its limit is the same one, and worth restating: this asks whether a route is
  * mounted, not whether the request body or the response shape is right. Those
  * are covered by the unit tests in `packages/sdk` for the grammar, and by
@@ -23,30 +45,33 @@ import { closeHarness, createTestTenant, deleteTestTenant, request } from '../su
  */
 
 const RESOURCES = 'packages/sdk/src/resources';
-const UUID = '00000000-0000-4000-8000-000000000000';
 
-/** Every `/api/v1/...` literal in the SDK's resource files, with variables filled in. */
-export function apiPathsIn(source: string): string[] {
-  const found = new Set<string>();
-  for (const match of source.matchAll(/(['`])(\/api\/v1\/[^'`]*)\1/g)) {
-    // `${encodeURIComponent(id)}` becomes something shaped like what it holds,
-    // so a parametric route matches and its parser does not reject the value.
-    found.add(match[2]!.replace(/\$\{[^}]*\}/g, () => UUID));
-  }
-  return [...found].sort();
-}
-
-function sdkPaths(): string[] {
+function sdkCalls(): RouteCallScan {
   const files = readdirSync(RESOURCES).filter((name) => name.endsWith('.ts'));
-  const all = new Set<string>();
+  const calls: RouteCall[] = [];
+  const unreadable: string[] = [];
   for (const file of files) {
-    for (const path of apiPathsIn(readFileSync(join(RESOURCES, file), 'utf8'))) all.add(path);
+    const scan = sdkCallsIn(readFileSync(join(RESOURCES, file), 'utf8'), file);
+    calls.push(...scan.calls);
+    unreadable.push(...scan.unreadable);
   }
-  return [...all].sort();
+  return { calls: distinctCalls(calls), unreadable };
 }
+
+/**
+ * Whether the router has a route for this method and concrete path. The same
+ * lookup a request makes, so parametric segments match the UUIDs filled in
+ * above; nothing is sent, so no hook or handler runs and nothing is written.
+ */
+async function mounted(method: Method, path: string): Promise<boolean> {
+  const app = await getApp();
+  return app.findRoute({ method, url: path }) !== null;
+}
+
+let tenant: TestTenant;
 
 beforeAll(async () => {
-  await createTestTenant('sdkroutes');
+  tenant = await createTestTenant('sdkroutes');
 }, 120_000);
 
 afterAll(async () => {
@@ -54,35 +79,94 @@ afterAll(async () => {
   await closeHarness();
 });
 
-describe('the SDK calls routes that exist', () => {
-  const paths = sdkPaths();
-
-  it('finds the paths it is supposed to check', () => {
-    // A regex that quietly matched nothing would make every assertion below
-    // pass while checking nothing at all.
-    expect(paths.length).toBeGreaterThan(10);
-    expect(paths).toContain('/api/v1/me');
-    expect(paths).toContain('/api/v1/tickets');
+describe('reading the SDK', () => {
+  it('reads the method beside a path, in both shapes the SDK writes', () => {
+    const source = `
+      const a = () => client.request('/api/v1/me');
+      const b = (id) => client.request<X>(\`/api/v1/tickets/\${encodeURIComponent(id)}\`, { method: 'PATCH', body: {} });
+      const c = (on) => client.request('/api/v1/flags', { method: on ? 'PUT' : 'DELETE' });
+      const d = () => ({ path: '/api/v1/tickets', method: 'POST', body: {} });
+      const e = () => client.request('/api/v1/users', { query: { q: 'method' } });
+    `;
+    expect(sdkCallsIn(source)).toEqual({
+      calls: [
+        { method: 'GET', path: '/api/v1/me', where: 'source.ts:2' },
+        { method: 'PATCH', path: `/api/v1/tickets/${UUID}`, where: 'source.ts:3' },
+        { method: 'PUT', path: '/api/v1/flags', where: 'source.ts:4' },
+        { method: 'DELETE', path: '/api/v1/flags', where: 'source.ts:4' },
+        { method: 'POST', path: '/api/v1/tickets', where: 'source.ts:5' },
+        { method: 'GET', path: '/api/v1/users', where: 'source.ts:6' },
+      ],
+      unreadable: [],
+    });
   });
 
-  /** Unauthenticated: a mounted route refuses at the door, so no handler runs. */
-  async function mounted(path: string): Promise<{ ok: boolean; detail: string }> {
-    const tried: string[] = [];
-    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const) {
-      const response = await request<Record<string, unknown>>(path, { method });
-      const body = JSON.stringify(response.body ?? {});
-      if (!(response.status === 404 && /route .* not found/i.test(body))) {
-        return { ok: true, detail: `${method} ${response.status}` };
-      }
-      tried.push(method);
-    }
-    return { ok: false, detail: `no route at all: ${tried.join(', ')} each answered route-not-found` };
-  }
+  it('refuses to guess rather than defaulting to GET', () => {
+    const source = `
+      const a = (verb) => client.request('/api/v1/me', { method: verb });
+      const b = (options) => client.request('/api/v1/me', options);
+      const c = (rest) => client.request('/api/v1/me', { ...rest });
+      const d = '/api/v1/me';
+    `;
+    expect(sdkCallsIn(source).unreadable).toEqual([
+      'source.ts:2 /api/v1/me',
+      'source.ts:3 /api/v1/me',
+      'source.ts:4 /api/v1/me',
+      'source.ts:5 /api/v1/me',
+    ]);
+  });
+});
 
-  for (const path of sdkPaths()) {
-    it(`mounts ${path}`, async () => {
-      const result = await mounted(path);
-      expect(result.ok, `${path} — ${result.detail}`).toBe(true);
+describe('the SDK calls routes that exist, with the method it uses', () => {
+  const { calls, unreadable } = sdkCalls();
+
+  it('finds the calls it is supposed to check', () => {
+    // A reader that quietly matched nothing would make every assertion below
+    // pass while checking nothing at all.
+    expect(calls.length).toBeGreaterThan(100);
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/v1/me' }));
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/api/v1/tickets' }));
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/v1/tickets' }));
+    // Every verb the SDK uses is represented, so none of them is being read wrong across the board.
+    expect(new Set(calls.map((call) => call.method))).toEqual(new Set(METHODS));
+  });
+
+  it('can read the method of every call', () => {
+    // A call whose method cannot be read would otherwise be checked as a GET.
+    expect(unreadable).toEqual([]);
+  });
+
+  it('asks the router the same question a request does', async () => {
+    // Calibration: the lookup must agree with what HTTP answers, or every
+    // assertion below is measuring something else. Authenticated, because an
+    // unauthenticated request is refused at the door whether or not a route
+    // exists — which is exactly how the previous version of this test passed
+    // for every path.
+    const token = tenant.people.requester!.token;
+    const found = await request<{ detail?: string }>('/api/v1/me', { token });
+    expect(found.status).toBe(200);
+    expect(await mounted('GET', '/api/v1/me')).toBe(true);
+
+    const missing = await request<{ detail?: string }>('/api/v1/me', { method: 'DELETE', token });
+    expect(missing.status).toBe(404);
+    expect(missing.body.detail).toBe('no route for DELETE /api/v1/me');
+    expect(await mounted('DELETE', '/api/v1/me')).toBe(false);
+  });
+
+  it('fails a call made with the wrong method', async () => {
+    // The test of the test: a planted literal whose path is mounted under a
+    // different verb must be caught, or the method is not being measured.
+    const planted = sdkCallsIn(`client.request('/api/v1/me', { method: 'DELETE' });`).calls;
+    expect(planted).toEqual([{ method: 'DELETE', path: '/api/v1/me', where: 'source.ts:1' }]);
+    for (const call of planted) expect(await mounted(call.method, call.path)).toBe(false);
+    // And one parametric path under the wrong verb, so the UUID filling is not what passes it.
+    expect(await mounted('GET', `/api/v1/tickets/${UUID}/comments`)).toBe(false);
+    expect(await mounted('POST', `/api/v1/tickets/${UUID}/comments`)).toBe(true);
+  });
+
+  for (const call of calls) {
+    it(`mounts ${call.method} ${call.path}`, async () => {
+      expect(await mounted(call.method, call.path), `${call.method} ${call.path} (${call.where}) has no route`).toBe(true);
     });
   }
 });

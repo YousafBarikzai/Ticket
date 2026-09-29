@@ -1,3 +1,4 @@
+import type { FormDefinition } from '@itsm/contracts';
 import type { Client } from '../client.js';
 
 /**
@@ -22,7 +23,6 @@ import type { Client } from '../client.js';
  */
 
 const unwrap = <T>(body: { data: T }): T => body.data;
-const path = (...parts: string[]): string => parts.map(encodeURIComponent).join('/');
 
 /* ------------------------------------------------------------------ rules */
 
@@ -69,6 +69,22 @@ export interface RuleTestResult {
   errors: { ruleKey: string; message: string }[];
 }
 
+/**
+ * A rule as the builder holds it before saving: the `POST /rules` shape, with
+ * `key` and `name` optional because an unsaved rule may not have them yet.
+ */
+export interface RuleDefinition {
+  key?: string;
+  name?: string;
+  description?: string;
+  event: string;
+  conditions: unknown;
+  actions: unknown[];
+  order?: number;
+  mode?: 'stop' | 'continue';
+  orgId?: string | null;
+}
+
 export interface Rules {
   list(filter?: { event?: string; status?: string }): Promise<RuleRow[]>;
   facts(): Promise<RuleFacts>;
@@ -79,30 +95,44 @@ export interface Rules {
   archive(idOrKey: string): Promise<RuleRow>;
   /** Writes nothing. A POST because the sample size belongs in a body. */
   test(idOrKey: string, sampleSize?: number): Promise<RuleTestResult>;
+  /**
+   * The same test for a definition that has not been saved: what is on the
+   * canvas. Saving an edit to a published rule takes it offline, so this is
+   * how a change to a live rule is tried before anyone commits to it. The
+   * same 422s as saving; nothing written.
+   */
+  dryRun(definition: RuleDefinition, sampleSize?: number): Promise<RuleTestResult>;
+  /** Publishes an earlier version's definition as the next version: the history reads forwards. */
+  rollback(idOrKey: string, toVersion: number): Promise<RuleRow>;
 }
 
 function rules(client: Client): Rules {
   return {
-    list: (filter = {}) => {
-      const query = new URLSearchParams();
-      if (filter.event) query.set('event', filter.event);
-      if (filter.status) query.set('status', filter.status);
-      const suffix = query.size > 0 ? `?${query.toString()}` : '';
-      return client.request<{ data: RuleRow[] }>(`/api/v1/rules${suffix}`).then(unwrap);
-    },
+    list: (filter = {}) =>
+      client.request<{ data: RuleRow[] }>('/api/v1/rules', { query: { event: filter.event, status: filter.status } }).then(unwrap),
     facts: () => client.request<{ data: RuleFacts }>('/api/v1/rules/facts').then(unwrap),
-    get: (idOrKey) => client.request<RuleRow>(`/api/v1/${path('rules', idOrKey)}`),
+    get: (idOrKey) => client.request<RuleRow>(`/api/v1/rules/${encodeURIComponent(idOrKey)}`),
     create: (input) => client.request<RuleRow>('/api/v1/rules', { method: 'POST', body: input }),
     update: (idOrKey, input) =>
-      client.request<RuleRow>(`/api/v1/${path('rules', idOrKey)}`, { method: 'PATCH', body: input }),
+      client.request<RuleRow>(`/api/v1/rules/${encodeURIComponent(idOrKey)}`, { method: 'PATCH', body: input }),
     publish: (idOrKey) =>
-      client.request<RuleRow>(`/api/v1/${path('rules', idOrKey)}/publish`, { method: 'POST', body: {} }),
+      client.request<RuleRow>(`/api/v1/rules/${encodeURIComponent(idOrKey)}/publish`, { method: 'POST', body: {} }),
     archive: (idOrKey) =>
-      client.request<RuleRow>(`/api/v1/${path('rules', idOrKey)}/archive`, { method: 'POST', body: {} }),
+      client.request<RuleRow>(`/api/v1/rules/${encodeURIComponent(idOrKey)}/archive`, { method: 'POST', body: {} }),
     test: (idOrKey, sampleSize) =>
-      client.request<RuleTestResult>(`/api/v1/${path('rules', idOrKey)}/test`, {
+      client.request<RuleTestResult>(`/api/v1/rules/${encodeURIComponent(idOrKey)}/test`, {
         method: 'POST',
         body: sampleSize === undefined ? {} : { sampleSize },
+      }),
+    dryRun: (definition, sampleSize) =>
+      client.request<RuleTestResult>('/api/v1/rules/dry-run', {
+        method: 'POST',
+        body: sampleSize === undefined ? { definition } : { definition, sampleSize },
+      }),
+    rollback: (idOrKey, toVersion) =>
+      client.request<RuleRow>(`/api/v1/rules/${encodeURIComponent(idOrKey)}/rollback`, {
+        method: 'POST',
+        body: { toVersion },
       }),
   };
 }
@@ -165,7 +195,7 @@ function sla(client: Client): Sla {
     policies: () => client.request<{ data: SlaPolicyRow[] }>('/api/v1/sla-policies').then(unwrap),
     createPolicy: (input) => client.request<SlaPolicyRow>('/api/v1/sla-policies', { method: 'POST', body: input }),
     setTargets: (idOrKey, targets) =>
-      client.request<SlaPolicyRow>(`/api/v1/${path('sla-policies', idOrKey)}/targets`, {
+      client.request<SlaPolicyRow>(`/api/v1/sla-policies/${encodeURIComponent(idOrKey)}/targets`, {
         method: 'PUT',
         body: { targets },
       }),
@@ -204,11 +234,23 @@ export interface RequestTypeRow {
   publishedAt: string | null;
 }
 
+/**
+ * A form as `GET /forms` returns it: the whole record, document included, so
+ * an editor opens without a second request.
+ */
 export interface FormRow {
+  id: string;
   key: string;
   name: string;
+  description: string | null;
+  /** `draft` or `published`. */
   status: string;
-  version?: number;
+  version: number;
+  document: FormDefinition;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+  publishedBy: string | null;
 }
 
 export interface Catalogue {
@@ -232,31 +274,28 @@ function catalogue(client: Client): Catalogue {
   return {
     browse: () => client.request<{ data: unknown[] }>('/api/v1/catalogue').then(unwrap),
     services: () => client.request<{ data: ServiceRow[] }>('/api/v1/services').then(unwrap),
-    requestTypes: (filter = {}) => {
-      const query = new URLSearchParams();
-      if (filter.status) query.set('status', filter.status);
-      if (filter.serviceId) query.set('serviceId', filter.serviceId);
-      const suffix = query.size > 0 ? `?${query.toString()}` : '';
-      return client.request<{ data: RequestTypeRow[] }>(`/api/v1/request-types${suffix}`).then(unwrap);
-    },
+    requestTypes: (filter = {}) =>
+      client
+        .request<{ data: RequestTypeRow[] }>('/api/v1/request-types', {
+          query: { status: filter.status, serviceId: filter.serviceId },
+        })
+        .then(unwrap),
     createService: (input) => client.request<ServiceRow>('/api/v1/services', { method: 'POST', body: input }),
     updateService: (key, patch) =>
-      client.request<ServiceRow>(`/api/v1/${path('services', key)}`, { method: 'PATCH', body: patch }),
+      client.request<ServiceRow>(`/api/v1/services/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch }),
     createRequestType: (input) =>
       client.request<RequestTypeRow>('/api/v1/request-types', { method: 'POST', body: input }),
     updateRequestType: (key, patch) =>
-      client.request<RequestTypeRow>(`/api/v1/${path('request-types', key)}`, { method: 'PATCH', body: patch }),
+      client.request<RequestTypeRow>(`/api/v1/request-types/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch }),
     publishRequestType: (key) =>
-      client.request<RequestTypeRow>(`/api/v1/${path('request-types', key)}/publish`, { method: 'POST', body: {} }),
+      client.request<RequestTypeRow>(`/api/v1/request-types/${encodeURIComponent(key)}/publish`, { method: 'POST', body: {} }),
     forms: (status) =>
-      client
-        .request<{ data: FormRow[] }>(`/api/v1/forms${status ? `?status=${status}` : ''}`)
-        .then(unwrap),
+      client.request<{ data: FormRow[] }>('/api/v1/forms', { query: { status } }).then(unwrap),
     createForm: (input) => client.request<FormRow>('/api/v1/forms', { method: 'POST', body: input }),
     updateForm: (key, patch) =>
-      client.request<FormRow>(`/api/v1/${path('forms', key)}`, { method: 'PATCH', body: patch }),
+      client.request<FormRow>(`/api/v1/forms/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch }),
     publishForm: (key) =>
-      client.request<FormRow>(`/api/v1/${path('forms', key)}/publish`, { method: 'POST', body: {} }),
+      client.request<FormRow>(`/api/v1/forms/${encodeURIComponent(key)}/publish`, { method: 'POST', body: {} }),
   };
 }
 
@@ -318,35 +357,33 @@ export interface Workflows {
 function workflows(client: Client): Workflows {
   return {
     list: (status) =>
-      client.request<{ data: WorkflowRow[] }>(`/api/v1/workflows${status ? `?status=${status}` : ''}`).then(unwrap),
-    get: (key) => client.request<WorkflowRow & { versions?: unknown[] }>(`/api/v1/${path('workflows', key)}`),
+      client.request<{ data: WorkflowRow[] }>('/api/v1/workflows', { query: { status } }).then(unwrap),
+    get: (key) => client.request<WorkflowRow & { versions?: unknown[] }>(`/api/v1/workflows/${encodeURIComponent(key)}`),
     create: (input) => client.request<WorkflowRow>('/api/v1/workflows', { method: 'POST', body: input }),
     saveDraft: (key, graph, changeNote) =>
-      client.request(`/api/v1/${path('workflows', key)}`, {
+      client.request(`/api/v1/workflows/${encodeURIComponent(key)}`, {
         method: 'PATCH',
         body: changeNote === undefined ? { graph } : { graph, changeNote },
       }),
     validate: (key) =>
-      client.request<WorkflowValidation>(`/api/v1/${path('workflows', key)}/validate`, { method: 'POST', body: {} }),
-    publish: (key) => client.request(`/api/v1/${path('workflows', key)}/publish`, { method: 'POST', body: {} }),
+      client.request<WorkflowValidation>(`/api/v1/workflows/${encodeURIComponent(key)}/validate`, { method: 'POST', body: {} }),
+    publish: (key) => client.request(`/api/v1/workflows/${encodeURIComponent(key)}/publish`, { method: 'POST', body: {} }),
     rollback: (key, toVersion) =>
-      client.request(`/api/v1/${path('workflows', key)}/rollback`, { method: 'POST', body: { toVersion } }),
+      client.request(`/api/v1/workflows/${encodeURIComponent(key)}/rollback`, { method: 'POST', body: { toVersion } }),
     test: (key, context) =>
-      client.request(`/api/v1/${path('workflows', key)}/test`, { method: 'POST', body: { context } }),
-    runs: (filter = {}) => {
-      const query = new URLSearchParams();
-      if (filter.status) query.set('status', filter.status);
-      if (filter.ticketId) query.set('ticketId', filter.ticketId);
-      if (filter.limit !== undefined) query.set('limit', String(filter.limit));
-      const suffix = query.size > 0 ? `?${query.toString()}` : '';
-      return client.request<{ data: WorkflowRunRow[] }>(`/api/v1/workflow-runs${suffix}`).then(unwrap);
-    },
-    run: (id) => client.request<WorkflowRunRow & { steps?: unknown[] }>(`/api/v1/${path('workflow-runs', id)}`),
-    retry: (id) => client.request(`/api/v1/${path('workflow-runs', id)}/retry`, { method: 'POST', body: {} }),
+      client.request(`/api/v1/workflows/${encodeURIComponent(key)}/test`, { method: 'POST', body: { context } }),
+    runs: (filter = {}) =>
+      client
+        .request<{ data: WorkflowRunRow[] }>('/api/v1/workflow-runs', {
+          query: { status: filter.status, ticketId: filter.ticketId, limit: filter.limit },
+        })
+        .then(unwrap),
+    run: (id) => client.request<WorkflowRunRow & { steps?: unknown[] }>(`/api/v1/workflow-runs/${encodeURIComponent(id)}`),
+    retry: (id) => client.request(`/api/v1/workflow-runs/${encodeURIComponent(id)}/retry`, { method: 'POST', body: {} }),
     skip: (id, reason) =>
-      client.request(`/api/v1/${path('workflow-runs', id)}/skip`, { method: 'POST', body: { reason } }),
+      client.request(`/api/v1/workflow-runs/${encodeURIComponent(id)}/skip`, { method: 'POST', body: { reason } }),
     cancel: (id, reason) =>
-      client.request(`/api/v1/${path('workflow-runs', id)}/cancel`, { method: 'POST', body: { reason } }),
+      client.request(`/api/v1/workflow-runs/${encodeURIComponent(id)}/cancel`, { method: 'POST', body: { reason } }),
   };
 }
 

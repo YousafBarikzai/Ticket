@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { PreconditionRequiredError, ValidationError, authz, type TenantContext } from '@itsm/platform';
-import { fieldService, ticketService, type TicketRow } from '@itsm/module-ticket';
+import { PreconditionRequiredError, ValidationError, jsonEquals, type TenantContext } from '@itsm/platform';
+import { categoryService, fieldService, ticketService, type TicketRow } from '@itsm/module-ticket';
 import { timerService } from '@itsm/module-sla';
 import { canonicalStateSchema, linkTypeSchema } from '@itsm/contracts';
 import { contextOf } from '../plugins/context.js';
+import { booleanQuery } from './query.js';
 
 /**
  * MOD-04 routes.
@@ -15,10 +16,11 @@ import { contextOf } from '../plugins/context.js';
  * a channel adapter or the worker.
  */
 
-const listQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  cursor: z.string().max(500).optional(),
-  sort: z.enum(['createdAt', '-createdAt', 'dueAt', '-dueAt']).default('-createdAt'),
+/**
+ * The list's filter grammar, shared by `GET /tickets` and `GET /tickets/count`
+ * so a view's badge counts exactly what its list shows.
+ */
+const filterQuerySchema = z.object({
   'filter[status]': z.string().optional(),
   'filter[statusCategory]': z.string().optional(),
   'filter[type]': z.string().optional(),
@@ -30,8 +32,14 @@ const listQuerySchema = z.object({
   q: z.string().max(200).optional(),
 });
 
+const listQuerySchema = filterQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().max(500).optional(),
+  sort: z.enum(['createdAt', '-createdAt', 'dueAt', '-dueAt']).default('-createdAt'),
+});
+
 /** Turns the public filter grammar into the repository's filter shape. */
-function toFilter(query: z.infer<typeof listQuerySchema>, actorId: string | null) {
+function toFilter(query: z.infer<typeof filterQuerySchema>, actorId: string | null) {
   const csv = (value?: string): string[] | undefined => (value ? value.split(',').filter(Boolean) : undefined);
   const assignee = query['filter[assignee]'];
   const requester = query['filter[requester]'];
@@ -64,14 +72,14 @@ interface Lens {
  * `worksTheDesk` is a `ticket.read` scope of `team` or `any`. A requester
  * reads their own tickets and sees only `public` fields; anybody working the
  * desk sees `internal` too, and a `restricted` field additionally needs one of
- * the permissions it names.
+ * the permissions it names. The definition is the ticket service's, because
+ * the timeline uses the same one to decide who sees events.
  */
 async function lensFor(ctx: TenantContext): Promise<Lens> {
-  const scope = authz.effectiveScope(ctx, 'ticket.read');
   return {
     fields: await fieldService.listFields(ctx),
     reader: {
-      worksTheDesk: scope === 'team' || scope === 'any',
+      worksTheDesk: ticketService.worksTheDesk(ctx),
       holds: (permission: string) => ctx.permissions.scopeFor(permission) !== undefined,
     },
   };
@@ -109,6 +117,29 @@ function present(ticket: TicketRow, lens?: Lens) {
   };
 }
 
+/**
+ * An event's payload as this reader may see it.
+ *
+ * Only a desk reader is given events at all (`getTimeline`), but the desk is
+ * not uniform: an `updated` event records the whole `custom` object before
+ * and after the change, so a restricted field an agent is not shown on the
+ * ticket would otherwise be readable in its history. Both sides go through the
+ * same lens as the ticket; if nothing the reader may see changed, the entry
+ * says only that something was updated.
+ */
+function lensedPayload(type: string, payload: unknown, lens: Lens): unknown {
+  if (type !== 'updated' || !payload || typeof payload !== 'object') return payload;
+  const changed = (payload as { changed?: Record<string, { before?: unknown; after?: unknown }> }).changed;
+  if (!changed?.custom) return payload;
+
+  const view = (value: unknown): unknown =>
+    value && typeof value === 'object' ? fieldService.visibleCustom(lens.fields, value as Record<string, unknown>, lens.reader) : value;
+  const before = view(changed.custom.before);
+  const after = view(changed.custom.after);
+  const { custom: _hidden, ...others } = changed;
+  return { ...payload, changed: jsonEquals(before, after) ? others : { ...others, custom: { before, after } } };
+}
+
 /** `If-Match` carries the version the client last saw (specification §7). */
 function ifMatch(header: string | undefined, required: boolean): number | undefined {
   if (!header) {
@@ -139,7 +170,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/field-definitions', async (request) => {
     const ctx = contextOf(request);
-    const query = z.object({ includeInactive: z.coerce.boolean().default(false) }).strict().parse(request.query);
+    const query = z.object({ includeInactive: booleanQuery(false) }).strict().parse(request.query);
     return { data: await fieldService.listFields(ctx, { includeInactive: query.includeInactive }) };
   });
 
@@ -163,6 +194,23 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     return fieldService.deactivateField(ctx, key);
   });
 
+  /** Undoes the DELETE above. Idempotent: an active field comes back as it is. */
+  app.post('/field-definitions/:key/reactivate', async (request) => {
+    const ctx = contextOf(request);
+    const { key } = z.object({ key: z.string().min(1).max(64) }).parse(request.params);
+    return fieldService.reactivateField(ctx, key);
+  });
+
+  /**
+   * Ticket categories (WA2), for naming a ticket's category and picking one.
+   * Read-only: nothing maintains categories through the API yet.
+   */
+  app.get('/categories', async (request) => {
+    const ctx = contextOf(request);
+    const query = z.object({ includeInactive: booleanQuery(false) }).strict().parse(request.query);
+    return { data: await categoryService.listCategories(ctx, { includeInactive: query.includeInactive }) };
+  });
+
   app.get('/tickets', async (request) => {
     const ctx = contextOf(request);
     const query = listQuerySchema.parse(request.query);
@@ -173,6 +221,22 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     });
     const lens = await lensFor(ctx);
     return { data: result.data.map((row) => present(row, lens)), nextCursor: result.nextCursor };
+  });
+
+  /**
+   * How many tickets the list would show for the same filters (WA1), for a
+   * view's badge: `{ count, capped }`, where `capped` means "at least
+   * `count`". Paging and sorting parameters are ignored rather than refused,
+   * so a client may send a view's list query unchanged.
+   *
+   * `/tickets/count` and `/tickets/:idOrNumber` do not compete: the router
+   * prefers a static segment to a parameter whatever the registration order,
+   * and no ticket number is the word `count`.
+   */
+  app.get('/tickets/count', async (request) => {
+    const ctx = contextOf(request);
+    const query = filterQuerySchema.parse(request.query);
+    return ticketService.countTicketsUpTo(ctx, toFilter(query, ctx.actor.id));
   });
 
   app.get('/tickets/:idOrNumber', async (request, reply) => {
@@ -269,12 +333,18 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
     const timeline = await ticketService.getTimeline(ctx, idOrNumber);
+    const lens = await lensFor(ctx);
 
     return {
-      ticket: present(timeline.ticket),
-      // Internal notes are filtered in the service; the flag tells the client
-      // whether it is seeing the agent view or the requester view.
+      // Lensed like every other ticket read. Unlensed, this was the one door
+      // through which a requester received every custom field on their
+      // ticket, internal and restricted ones included.
+      ticket: present(timeline.ticket, lens),
+      // Internal notes, and events for anybody who does not work the desk,
+      // are filtered in the service; the flags tell the client which view it
+      // is seeing, so an empty history is not mistaken for no history.
       includesInternal: timeline.includeInternal,
+      includesEvents: timeline.includeEvents,
       entries: timeline.entries.map((entry) => {
         if (entry.kind === 'comment') {
           return {
@@ -295,7 +365,7 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
             type: entry.event.type,
             actorType: entry.event.actorType,
             actorId: entry.event.actorId,
-            payload: entry.event.payload,
+            payload: lensedPayload(entry.event.type, entry.event.payload, lens),
           };
         }
         return {
@@ -373,6 +443,41 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
     const link = await ticketService.linkTickets(ctx, idOrNumber, body.target, body.linkType);
     reply.status(201);
     return { sourceId: link.sourceId, targetId: link.targetId, linkType: link.linkType };
+  });
+
+  /** What this ticket is linked to (WA5), from its own side; see `listLinks`. */
+  app.get('/tickets/:idOrNumber/links', async (request) => {
+    const ctx = contextOf(request);
+    const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
+    const links = await ticketService.listLinks(ctx, idOrNumber);
+    return {
+      data: links.map((link) => ({
+        linkType: link.linkType,
+        createdAt: link.createdAt.toISOString(),
+        ticket: {
+          id: link.ticket.id,
+          number: link.ticket.number,
+          type: link.ticket.type,
+          title: link.ticket.title,
+          status: link.ticket.status,
+          statusCategory: link.ticket.statusCategory,
+        },
+      })),
+    };
+  });
+
+  /** Who is watching (WA5): everybody for the desk, themselves for a requester. */
+  app.get('/tickets/:idOrNumber/watchers', async (request) => {
+    const ctx = contextOf(request);
+    const { idOrNumber } = z.object({ idOrNumber: z.string().min(1).max(100) }).parse(request.params);
+    const watchers = await ticketService.listWatchers(ctx, idOrNumber);
+    return {
+      data: watchers.map((watcher) => ({
+        userId: watcher.userId,
+        reason: watcher.reason,
+        createdAt: watcher.createdAt.toISOString(),
+      })),
+    };
   });
 
   app.post('/tickets/:idOrNumber/watchers', async (request, reply) => {

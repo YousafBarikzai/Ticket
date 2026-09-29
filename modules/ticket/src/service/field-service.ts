@@ -256,6 +256,35 @@ export async function deactivateField(ctx: TenantContext, key: string): Promise<
   });
 }
 
+/**
+ * Undoes `deactivateField` (A11): the field can be set on tickets again.
+ *
+ * Deactivating leaves every stored value where it was, so there is nothing to
+ * restore but the flag. Without this the only way back from retiring a field
+ * by mistake was a new key, and every ticket already holding a value under the
+ * old one would have kept it under a name no form offered any more.
+ */
+export async function reactivateField(ctx: TenantContext, key: string): Promise<FieldRow> {
+  authz.require(ctx, 'ticket.config.manage');
+  return transaction(ctx, async (tx) => {
+    const existing = await tx.fieldDefinition.findFirst({ where: { key } });
+    if (!existing) throw new NotFoundError('field definition', key);
+    // Already active is an answer, not an error: a retry after a lost
+    // response must not fail, and there is no audit entry for a change that
+    // did not happen.
+    if (existing.isActive) return toRow(existing);
+    const row = await tx.fieldDefinition.update({ where: { id: existing.id }, data: { isActive: true } });
+    await recordAudit(tx, ctx, {
+      action: 'ticket.field.reactivated',
+      targetType: 'field_definition',
+      targetId: row.id,
+      before: { isActive: false },
+      after: { isActive: true },
+    });
+    return toRow(row);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // What the ticket service uses
 // ---------------------------------------------------------------------------

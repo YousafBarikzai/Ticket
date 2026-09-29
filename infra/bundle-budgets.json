@@ -1,0 +1,74 @@
+{
+  "$comment": [
+    "First-load JavaScript per route, gzip -9, in bytes (1 kB = 1,000 bytes). Read by infra/scripts/check-bundles.ts; SPEC §3.7.",
+    "budget: a route over it fails CI (null = report only). enforceGrowth: a route more than growthTolerance over its baseline fails CI.",
+    "Baselines are the sizes last recorded. A change that grows a route on purpose records the new size in the same change: pnpm tsx infra/scripts/check-bundles.ts --update"
+  ],
+  "growthTolerance": 10000,
+  "apps": {
+    "portal": {
+      "budget": 250000,
+      "enforceGrowth": true,
+      "baselines": {
+        "/": 142067,
+        "/_global-error": 142067,
+        "/_not-found": 142067,
+        "/approvals": 145993,
+        "/catalogue": 142777,
+        "/catalogue/[key]": 166635,
+        "/knowledge": 143699,
+        "/knowledge/[key]": 147223,
+        "/offline": 142232,
+        "/profile": 150657,
+        "/report": 147470,
+        "/sign-in": 142742,
+        "/signed-out": 142232,
+        "/tickets": 142820,
+        "/tickets/[id]": 147909
+      }
+    },
+    "workbench": {
+      "budget": 500000,
+      "enforceGrowth": true,
+      "baselines": {
+        "/": 139725,
+        "/_global-error": 139725,
+        "/_not-found": 139725,
+        "/offline": 143458,
+        "/queue": 149208,
+        "/sign-in": 140400,
+        "/signed-out": 143458,
+        "/tickets/[id]": 152274
+      }
+    },
+    "admin": {
+      "budget": null,
+      "enforceGrowth": false,
+      "baselines": {
+        "/": 139364,
+        "/_global-error": 139364,
+        "/_not-found": 139364,
+        "/ai-triage": 140401,
+        "/audit": 140013,
+        "/automation": 140555,
+        "/catalogue": 147136,
+        "/cmdb": 140224,
+        "/fields": 146689,
+        "/insights": 140218,
+        "/integrations": 140218,
+        "/people": 140215,
+        "/plans": 140215,
+        "/queues": 140218,
+        "/rules": 148565,
+        "/security": 140224,
+        "/settings": 144640,
+        "/sign-in": 140039,
+        "/signed-out": 139526,
+        "/sla": 147686,
+        "/tenants": 140215,
+        "/tickets": 140218,
+        "/workflows": 146754
+      }
+    }
+  }
+}

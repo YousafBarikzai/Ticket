@@ -15,6 +15,7 @@ import {
   writeSettingVersion,
 } from '@itsm/platform';
 import { events } from '@itsm/contracts';
+import { describeSchema } from './describe-schema.js';
 
 /**
  * MOD-13 configuration control plane (ADR-0018).
@@ -47,6 +48,101 @@ export function listDeclaredFlags() {
       description: flag.description ?? null,
     })),
   );
+}
+
+/**
+ * Every declared setting with the value that applies to the caller, where it
+ * came from, and what kind of value it takes — the whole settings page in one
+ * read, where the console used to make one `GET /settings/:key` per setting.
+ *
+ * `value`, `source`, `scopeId` and `version` are what `describeSetting`
+ * answers for the same key: organisation (the caller's) before tenant before
+ * the manifest default, and a stored value that no longer passes the schema
+ * reads as the default. Resolved here from one query rather than thirty
+ * transactions, so the rule is restated below; the integration suite compares
+ * this list with `GET /settings/:key` for every key, which is what keeps the
+ * two from drifting apart. `publishedAt` and `publishedBy` belong to the
+ * version in force, so the page can say who changed a setting without asking
+ * for its history.
+ */
+export async function listSettings(ctx: TenantContext) {
+  authz.require(ctx, 'admin.setting.read');
+  const declared = modules().flatMap((module) => module.settings.map((setting) => ({ module: module.id, setting })));
+
+  const rows = await transaction(ctx, (tx) =>
+    tx.setting.findMany({
+      where: {
+        key: { in: declared.map(({ setting }) => setting.key) },
+        OR: [{ scopeType: 'organisation', scopeId: { in: ctx.organisationIds } }, { scopeType: 'tenant' }],
+      },
+      include: { versions: { orderBy: { version: 'desc' }, take: 1 } },
+    }),
+  );
+
+  // With several of the caller's organisations holding a value, the first in
+  // the caller's own order wins, so the answer does not depend on row order.
+  const orgRank = new Map(ctx.organisationIds.map((id, index) => [id, index]));
+  const chosenFor = (key: string) => {
+    const candidates = rows.filter((row) => row.key === key);
+    const organisation = candidates
+      .filter((row) => row.scopeType === 'organisation')
+      .sort((a, b) => (orgRank.get(a.scopeId ?? '') ?? Infinity) - (orgRank.get(b.scopeId ?? '') ?? Infinity))[0];
+    return organisation ?? candidates.find((row) => row.scopeType === 'tenant');
+  };
+
+  return declared.map(({ module, setting }) => {
+    const declaration = {
+      key: setting.key,
+      module,
+      scopes: setting.scopes,
+      default: setting.default,
+      description: setting.description ?? null,
+      type: describeSchema(setting.schema),
+    };
+    const fallback = { ...declaration, value: setting.default, source: 'platform-default' as const, scopeId: null, version: null, publishedAt: null, publishedBy: null };
+
+    const chosen = chosenFor(setting.key);
+    const version = chosen?.versions[0];
+    if (!chosen || !version) return fallback;
+    const parsed = setting.schema.safeParse(version.value);
+    if (!parsed.success) return fallback;
+    return {
+      ...declaration,
+      value: parsed.data as unknown,
+      source: chosen.scopeType === 'organisation' ? ('organisation' as const) : ('tenant' as const),
+      scopeId: chosen.scopeId,
+      version: version.version,
+      publishedAt: version.publishedAt,
+      publishedBy: version.publishedBy,
+    };
+  });
+}
+
+/**
+ * Every declared flag with its tenant-wide state: `tenantValue` is the
+ * tenant's own override (null when there is none) and `value` is what the
+ * tenant gets, the override or else the manifest default.
+ *
+ * Tenant-wide on purpose, not the caller's: `isEnabled` also honours an
+ * organisation override for people in that organisation, but a switch on the
+ * features page sets the tenant's value, so it has to show the tenant's value
+ * — an administrator in an overridden organisation would otherwise see a
+ * switch that disagrees with what everyone else gets.
+ */
+export async function listFlags(ctx: TenantContext) {
+  authz.require(ctx, 'admin.setting.read');
+  const declared = listDeclaredFlags();
+  const overrides = await transaction(ctx, (tx) =>
+    tx.featureFlagOverride.findMany({ where: { key: { in: declared.map((flag) => flag.key) }, scopeType: 'tenant' } }),
+  );
+  return declared.map((flag) => {
+    // `setFlag` writes the tenant row with no scope id; prefer that row if an
+    // odd write ever left a second one beside it.
+    const own = overrides.filter((override) => override.key === flag.key);
+    const override = own.find((row) => row.scopeId === null) ?? own[0];
+    const tenantValue = override?.value ?? null;
+    return { ...flag, tenantValue, value: tenantValue ?? flag.default };
+  });
 }
 
 export async function getSettingWithProvenance(ctx: TenantContext, key: string) {

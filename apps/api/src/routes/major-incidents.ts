@@ -12,6 +12,7 @@ import {
   actionUpdateSchema,
 } from '@itsm/module-incident';
 import { contextOf } from '../plugins/context.js';
+import { booleanQuery } from './query.js';
 
 /**
  * MOD-08-E1 major incidents.
@@ -27,7 +28,7 @@ export async function majorIncidentRoutes(app: FastifyInstance): Promise<void> {
   app.get('/major-incidents', async (request) => {
     const ctx = contextOf(request);
     const query = z
-      .object({ status: z.string().optional(), severity: z.string().optional(), open: z.coerce.boolean().optional() })
+      .object({ status: z.string().optional(), severity: z.string().optional(), open: booleanQuery().optional() })
       .parse(request.query);
     const incidents = await majorIncidentService.listIncidents(ctx, query);
     return {

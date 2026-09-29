@@ -264,6 +264,30 @@ describe('a retired configuration item', () => {
     expect(still.status).toBe(200);
     expect(still.body.status).toBe('retired');
   }, 30_000);
+
+  it('is left out of the list unless asked for, and `false` means false', async () => {
+    const retired = await makeCi('retired-listing');
+    await request(`/api/v1/cis/${retired.id}/retire`, {
+      method: 'POST',
+      token: asAdmin(),
+      body: { reason: 'Replaced.' },
+    });
+    const listed = async (query: string) => {
+      const response = await request<{ data: Ci[] }>(`/api/v1/cis?search=${retired.name}${query}`, { token: asAgent() });
+      expect(response.status, query).toBe(200);
+      return response.body.data.map((item) => item.id);
+    };
+
+    expect(await listed('')).toEqual([]);
+    expect(await listed('&includeRetired=true')).toEqual([retired.id]);
+    // The regression: a coerced boolean read the word `false` as true.
+    expect(await listed('&includeRetired=false')).toEqual([]);
+    // A spelling that is neither is refused rather than guessed at.
+    for (const spelling of ['1', 'yes', '']) {
+      const refused = await request(`/api/v1/cis?includeRetired=${spelling}`, { token: asAgent() });
+      expect(refused.status, spelling).toBe(422);
+    }
+  }, 30_000);
 });
 
 describe('what touched this', () => {
