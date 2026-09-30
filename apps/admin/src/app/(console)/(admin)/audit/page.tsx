@@ -1,124 +1,110 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { EmptyState, Table } from '@itsm/ui';
-import { pageAccess } from '../../../../server/session.js';
+import { formatDateTime } from '@itsm/ui/format';
+import { AuditView, type ChainBreak } from '../../../../components/audit/AuditView.js';
+import {
+  auditFilter,
+  cursorAt,
+  dayKeyOf,
+  readAuditQuery,
+  seqOf,
+  type AuditChange,
+  type AuditRowView,
+} from '../../../../components/audit/presentation.js';
+import { brokenAtSeq } from '../../../../components/security/presentation.js';
 import { Forbidden } from '../../../../components/Forbidden.js';
-import { read } from '../../../../server/read.js';
 import { holds } from '../../../../permissions.js';
-import { Panel } from '../../../../components/Panel.js';
+import { resolvePeople } from '../../../../server/people.js';
+import { read } from '../../../../server/read.js';
+import { pageAccess } from '../../../../server/session.js';
+import { auditRows } from './data.js';
+import '../../../../components/audit/audit.css';
 
 export const metadata: Metadata = { title: 'Audit log' };
 export const dynamic = 'force-dynamic';
 
+type SearchParams = Record<string, string | string[] | undefined>;
+
+/** `?open=event:<seq>` → the seq, or null. */
+function drawerSeq(value: string | string[] | undefined): string | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const match = raw ? /^event:(\d{1,19})$/.exec(raw) : null;
+  return match ? match[1]! : null;
+}
+
 /**
- * What has been done on this desk, and by whom.
+ * Audit log (SPEC §6.1 `/audit`, B §3.17, F32): what has been done on this
+ * desk, by whom, newest first, a hundred at a time.
  *
- * The audit log is the one record in the platform that is never edited and
- * never deleted, and until now it had no reader — which made it a record kept
- * for a regulator rather than one that helps anybody run the desk.
+ * The record is append-only and chained — each event carries the
+ * fingerprint of the one before it — so this page is where an administrator
+ * (or an auditor) reads it. The query string is the state: the filters, the
+ * cursor and `open=event:<seq>`.
  *
- * `seq` is shown because it is the point: the sequence is contiguous per
- * tenant, so a gap is evidence of tampering in a way a timestamp is not. An
- * administrator who can see the numbers can check them.
- *
- * `before` and `after` are held on every row and are not shown. They are
- * arbitrarily large JSON documents, frequently containing the personal data
- * the change was about, and rendering them into a table would turn a list of
- * activity into a bulk disclosure. What each change *was* belongs on a screen
- * for one event, with the permission check that goes with it.
+ * `before` and `after` are held on every event and deliberately **not**
+ * sent with the list: they are arbitrarily large, often personal, and a page
+ * of them is a bulk disclosure. The one event whose drawer is open is the
+ * exception — its own before and after, and nothing else.
  */
-export default async function AuditPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ action?: string; cursor?: string }>;
-}): Promise<ReactNode> {
+export default async function AuditPage({ searchParams }: { searchParams: Promise<SearchParams> }): Promise<ReactNode> {
   const access = await pageAccess('/audit');
   if (!access.allowed) return <Forbidden route="/audit" />;
   const { me, api } = access;
 
-  if (!holds(me, 'audit.read')) {
-    return (
-      <EmptyState
-        tone="error"
-        title="Your account cannot read the audit log"
-        description="It needs audit.read. That permission is deliberately narrow — the log records everybody."
-      />
-    );
+  const params = await searchParams;
+  const query = readAuditQuery(params);
+  const timeZone = me.timeZone || 'UTC';
+  const locale = me.locale || 'en-GB';
+  const openSeq = drawerSeq(params.open);
+
+  const [page, alerts] = await Promise.all([
+    read(() => api.observe.auditEvents(auditFilter(query, timeZone))),
+    holds(me, 'security.alert.read') ? read(() => api.observe.securityAlerts()) : Promise.resolve(null),
+  ]);
+
+  const events = page.ok ? page.value.data : [];
+  const [rows, actorName] = await Promise.all([
+    auditRows(me, api, events),
+    query.actor ? resolvePeople(api, [query.actor]).then((people) => people.get(query.actor!)?.name ?? null) : Promise.resolve(null),
+  ]);
+
+  // The open event: from this page when it is on it, otherwise exactly that one event.
+  let initialEvent: { row: AuditRowView; change: AuditChange } | undefined;
+  if (openSeq) {
+    let event = events.find((entry) => seqOf(entry) === openSeq);
+    let row = rows.find((entry) => entry.seq === openSeq);
+    if (!event) {
+      const single = await read(() => api.observe.auditEvents({ cursor: cursorAt(openSeq), limit: 1 }));
+      event = single.ok ? single.value.data.find((entry) => seqOf(entry) === openSeq) : undefined;
+      row = event ? (await auditRows(me, api, [event]))[0] : undefined;
+    }
+    if (event && row) initialEvent = { row, change: { seq: openSeq, before: event.before ?? null, after: event.after ?? null } };
   }
 
-  const params = await searchParams;
-  const action = params.action?.trim() || undefined;
-
-  const events = await read(() => api.observe.auditEvents({ action, cursor: params.cursor, limit: 100 }));
+  // What the nightly chain check said, for people who may read security alerts.
+  const chain: ChainBreak[] | null = alerts?.ok
+    ? alerts.value
+        .filter((alert) => alert.type === 'audit.chain.broken')
+        .map((alert) => ({
+          alertId: alert.id,
+          seq: brokenAtSeq(alert),
+          createdAt: alert.createdAt,
+          createdLabel: formatDateTime(alert.createdAt, { locale, timeZone, style: 'datetime' }),
+        }))
+    : null;
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Audit log</h1>
-        <p className="itsm-Admin__lede">
-          Every change this desk has recorded, newest first. Entries are written in the same transaction as the change
-          itself, so there is no state the log missed.
-        </p>
-      </header>
-
-      <form className="itsm-Filters" method="get" action="/audit">
-        <label className="itsm-Filters__label" htmlFor="audit-action">
-          Action
-        </label>
-        <input
-          className="itsm-Input"
-          id="audit-action"
-          name="action"
-          type="search"
-          defaultValue={action ?? ''}
-          placeholder="ticket.updated"
-        />
-        <button className="itsm-Button itsm-Button--secondary" type="submit">
-          Filter
-        </button>
-      </form>
-
-      <Panel
-        title={action ? `Events matching “${action}”` : 'Recent events'}
-        result={events}
-        empty={action ? 'Nothing matches that action.' : 'Nothing has been recorded yet.'}
-      >
-        {(page) =>
-          page.data.length === 0 ? (
-            <EmptyState
-              title={action ? 'Nothing matches that action' : 'Nothing recorded yet'}
-              description={action ? 'Action names are exact, and look like ticket.updated.' : undefined}
-            />
-          ) : (
-            <>
-              <Table
-                caption="Audit events"
-                columns={[
-                  { key: 'seq', header: '#', cell: (row) => row.seq, align: 'end' },
-                  { key: 'when', header: 'When', cell: (row) => new Date(row.occurredAt).toLocaleString() },
-                  { key: 'action', header: 'Action', cell: (row) => <code>{row.action}</code> },
-                  {
-                    key: 'actor',
-                    header: 'Who',
-                    cell: (row) => (row.actorType === 'system' ? 'The platform' : (row.actorId ?? row.actorType)),
-                  },
-                  { key: 'target', header: 'On', cell: (row) => `${row.targetType} ${row.targetId}` },
-                  { key: 'reason', header: 'Reason', cell: (row) => row.reason ?? '—' },
-                ]}
-                rows={page.data}
-                rowKey={(row) => row.id}
-              />
-              {page.nextCursor ? (
-                <p className="itsm-Admin__note">
-                  <a href={`/audit?${new URLSearchParams({ ...(action ? { action } : {}), cursor: page.nextCursor })}`}>
-                    Older events
-                  </a>
-                </p>
-              ) : null}
-            </>
-          )
-        }
-      </Panel>
-    </div>
+    <AuditView
+      rows={rows}
+      query={query}
+      nextCursor={page.ok ? page.value.nextCursor : null}
+      {...(page.ok ? {} : { problem: page.problem })}
+      {...(query.actor ? { actorOption: { value: query.actor, label: actorName ?? 'Unknown person' } } : {})}
+      canExport={holds(me, 'audit.export')}
+      chain={chain}
+      {...(initialEvent ? { initialEvent } : {})}
+      workspace={me.tenant?.slug ?? me.tenant?.name ?? 'workspace'}
+      today={dayKeyOf(new Date().toISOString(), timeZone)}
+    />
   );
 }

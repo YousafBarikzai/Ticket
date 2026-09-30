@@ -1,105 +1,89 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { ApiError } from '@itsm/sdk';
-import { Badge, EmptyState, Table } from '@itsm/ui';
-import { pageAccess } from '../../../../server/session.js';
+import { PeopleView } from '../../../../components/people/PeopleView.js';
+import {
+  PEOPLE_SCOPES,
+  cappedCaption,
+  organisationOptions,
+  peopleScopeHref,
+  personRow,
+  readPeopleQuery,
+  usersQuery,
+  type PersonRowView,
+} from '../../../../components/people/presentation.js';
 import { Forbidden } from '../../../../components/Forbidden.js';
-import { holds } from '../../../../permissions.js';
+import { isPending, mayOpen } from '../../../../navigation.js';
+import { read } from '../../../../server/read.js';
+import { pageAccess } from '../../../../server/session.js';
+import { drawerId, orgNamesOf, organisationsFor, peopleAbilities, peopleHeader, rolesFor, teamsFor } from './data.js';
+import '../../../../components/people/people.css';
 
 export const metadata: Metadata = { title: 'People' };
 export const dynamic = 'force-dynamic';
 
+type SearchParams = Record<string, string | string[] | undefined>;
+
 /**
- * Who is on this desk.
+ * People (SPEC §6.1 `/people`, B §3.16, F31): the directory, its roles and
+ * teams, and the two writes that matter most on it — adding someone and
+ * taking their access away.
  *
- * Read-only in this slice, and saying so is better than a disabled button:
- * creating a user, assigning a role and adding somebody to a team are three
- * writes with three different failure modes, and a half-built form that posts
- * one of them is worse than a list plus an honest note. The API has all three
- * doors; what is missing is the screen, and doc 23 carries that rather than
- * this page implying otherwise.
+ * The query string is the state: `q`, `status` (Active by default),
+ * `open=person:<id>` for the drawer and `new=1` for *Add person*. The API
+ * answers at most 200 people per call and has no total; a full page says so
+ * (it used to stop at 50 without a word).
  *
- * What it does give an administrator is the thing that is genuinely hard to
- * get at today: seeing every account at once, including the deactivated ones,
- * and seeing which permissions their own role actually carries.
+ * Organisation names, roles and teams are each read for themselves and may
+ * fail alone: without the organisation list the column goes, without roles
+ * the drawer shows no roles section — never an id in place of a name.
  */
-export default async function PeoplePage(): Promise<ReactNode> {
+export default async function PeoplePage({ searchParams }: { searchParams: Promise<SearchParams> }): Promise<ReactNode> {
   const access = await pageAccess('/people');
   if (!access.allowed) return <Forbidden route="/people" />;
   const { me, api } = access;
 
-  if (!holds(me, 'identity.user.read') && !holds(me, 'identity.user.manage')) {
-    return (
-      <EmptyState
-        tone="error"
-        title="Your account cannot read the people on this desk"
-        description="It needs identity.user.read. Ask an administrator."
-      />
-    );
+  const params = await searchParams;
+  const query = readPeopleQuery(params);
+  const openId = drawerId(params.open, 'person');
+  const abilities = peopleAbilities(me);
+
+  const [users, orgs, roles, teams] = await Promise.all([
+    read(() => api.tenant.users(usersQuery(query))),
+    organisationsFor(me, api),
+    rolesFor(me, api),
+    teamsFor(api),
+  ]);
+
+  const orgNames = orgNamesOf(orgs, me);
+  const meId = me.actor.id;
+  const rows: PersonRowView[] = users.ok ? users.value.map((user) => personRow(user, orgNames, meId)) : [];
+
+  // A pasted link to someone outside this list (another scope, past the first 200).
+  let initialPerson: PersonRowView | undefined;
+  if (openId && !rows.some((row) => row.id === openId)) {
+    const one = await read(() => api.tenant.user(openId));
+    if (one.ok) initialPerson = personRow(one.value, orgNames, meId);
   }
 
-  let users: Awaited<ReturnType<typeof api.tenant.users>>;
-  try {
-    users = await api.tenant.users();
-  } catch (error) {
-    return (
-      <EmptyState
-        tone="error"
-        title="The people on this desk could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The API could not be reached.'}
-      />
-    );
-  }
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) if (typeof value === 'string') search.set(name, value);
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>People</h1>
-        <p className="itsm-Admin__lede">
-          {users.length} {users.length === 1 ? 'account' : 'accounts'} on this desk. Accounts arrive from the identity
-          provider, by SCIM or on first sign-in; this is what the platform holds for each of them.
-        </p>
-      </header>
-
-      {users.length === 0 ? (
-        <EmptyState
-          title="Nobody yet"
-          description="An account appears here the first time somebody signs in, or when SCIM provisions one."
-        />
-      ) : (
-        <Table
-          caption="People on this desk"
-          columns={[
-            { key: 'name', header: 'Name', cell: (row) => row.displayName },
-            { key: 'email', header: 'Email', cell: (row) => row.email },
-            {
-              key: 'status',
-              header: 'Status',
-              cell: (row) => (
-                <Badge intent={row.status === 'active' ? 'success' : 'neutral'} srPrefix="Status">
-                  {row.status}
-                </Badge>
-              ),
-            },
-            {
-              key: 'kind',
-              header: 'Kind',
-              cell: (row) => (row.isExternal ? 'External' : 'Internal'),
-            },
-          ]}
-          rows={users}
-          rowKey={(row) => row.id}
-        />
-      )}
-
-      <section className="itsm-Admin__note" aria-label="What this screen cannot do yet">
-        <h2>Not built yet</h2>
-        <p>
-          Creating an account, assigning a role and adding somebody to a team are all reachable through the API and have
-          no screen here. They are three writes with three different ways to go wrong, and a form that does one of them
-          would be worse than this note.
-        </p>
-      </section>
-    </div>
+    <PeopleView
+      header={peopleHeader(me, 'identity.user.manage')}
+      rows={rows}
+      query={query}
+      scopes={PEOPLE_SCOPES.map((scope) => ({ ...scope, href: peopleScopeHref('/people', search, scope.value) }))}
+      caption={users.ok ? cappedCaption(rows.length, query) : null}
+      {...(users.ok ? {} : { problem: users.problem })}
+      abilities={abilities}
+      meId={meId}
+      roles={roles?.ok ? roles.value : null}
+      teams={teams.ok ? teams.value.map((team) => ({ id: team.id, name: team.name, orgId: team.orgId })) : null}
+      organisations={orgs?.ok ? organisationOptions(orgs.value) : null}
+      orgNames={Object.fromEntries(orgNames)}
+      {...(!isPending('/workforce') && mayOpen(me, '/workforce') ? { workforceHref: '/workforce' } : {})}
+      {...(initialPerson ? { initialPerson } : {})}
+    />
   );
 }

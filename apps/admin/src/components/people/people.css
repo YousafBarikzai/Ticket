@@ -1,0 +1,230 @@
+/*
+ * People (SPEC §6.1 `/people/**`): table cells, the person and team drawers,
+ * the organisation tree and the skeletons. Arrangement only, tokens
+ * throughout; the design system draws the table, sheets, pills and forms.
+ */
+
+/* ---- Shared bits ------------------------------------------------------------- */
+
+.app-People__quiet {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-People__count {
+  color: var(--itsm-colour-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.app-People__link {
+  color: var(--itsm-colour-text-link);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-People__link:hover {
+    text-decoration: underline;
+  }
+}
+
+/* ---- The person drawer (also the team drawer's sections) --------------------------- */
+
+.app-PersonDrawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xl);
+}
+
+.app-PersonDrawer__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-PersonDrawer__heading {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+}
+
+.app-PersonDrawer__subheading {
+  margin: 0;
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-PersonDrawer__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-PersonDrawer__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+.app-PersonDrawer__quiet,
+.app-PersonDrawer__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-PersonDrawer__note {
+  margin-inline-end: auto;
+}
+
+.app-PersonDrawer__error {
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-PersonDrawer__retry,
+.app-PersonDrawer__availability {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+/* Role grants and team places: one line each, the remove button at the end. */
+.app-Grants,
+.app-Members {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--itsm-radius-lg);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Grant,
+.app-Member {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  min-block-size: var(--itsm-row-height);
+  padding: var(--itsm-space-2xs) var(--itsm-space-sm);
+}
+
+.app-Grant + .app-Grant,
+.app-Member + .app-Member {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Grant__text,
+.app-Member__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-Grant__role {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Grant__scope {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Grant[data-expired] .app-Grant__role {
+  color: var(--itsm-colour-text-secondary);
+  text-decoration: line-through;
+}
+
+/* The Add person sheet's roles read as cards: one bordered choice each. */
+.app-RoleCards label {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-lg);
+  padding: var(--itsm-space-sm);
+}
+
+/* ---- Organisations ----------------------------------------------------------------- */
+
+.app-Orgs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Orgs[data-depth]:not([data-depth='0']) {
+  margin-inline-start: var(--itsm-space-md);
+  padding-inline-start: var(--itsm-space-md);
+  border-inline-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Org__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs) var(--itsm-space-md);
+  min-block-size: var(--itsm-row-height);
+  padding-block: var(--itsm-space-2xs);
+}
+
+.app-Org__text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+  min-inline-size: 0;
+}
+
+.app-Org__name {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Org__code {
+  color: var(--itsm-colour-text-secondary);
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Org__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+/* ---- Loading ------------------------------------------------------------------------- */
+
+.app-PeopleSkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-PeopleSkeleton__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}
+
+.app-PeopleSkeleton__tabs,
+.app-PeopleSkeleton__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-lg);
+}
+
+.app-PeopleSkeleton__toolbar {
+  gap: var(--itsm-space-xs);
+}

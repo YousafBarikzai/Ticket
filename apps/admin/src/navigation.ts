@@ -307,7 +307,9 @@ export const NAV: readonly AdminNavItem[] = [
     tabs: [
       tab('people', 'People', '/people', PEOPLE_READ),
       tab('teams', 'Teams', '/people/teams', PEOPLE_READ, { keywords: ['groups'] }),
-      tab('organisations', 'Organisations', '/people/organisations', PEOPLE_READ, { keywords: ['departments', 'companies'] }),
+      // `GET /organisations` checks `identity.org.read`, not the directory's permissions: an agent who reads
+      // people (their teams' only) would open a tab the API refuses, so the tab is gated on what it reads.
+      tab('organisations', 'Organisations', '/people/organisations', ['identity.org.read'], { keywords: ['departments', 'companies'] }),
     ],
   }),
   withTabs({
@@ -397,9 +399,6 @@ export const EXCLUDED: readonly { readonly route: string; readonly read: readonl
  * the same change.
  */
 export const PENDING: ReadonlySet<string> = new Set([
-  '/people/teams',
-  '/people/organisations',
-  '/security/access',
   '/settings/features',
   '/settings/ai',
   '/settings/modules',
@@ -652,6 +651,8 @@ export const CREATE_COMMANDS: readonly CreateCommand[] = [
   { id: 'new-sla-policy', label: 'New SLA policy', href: '/sla?new=1', permission: 'sla.policy.manage', icon: 'sla', keywords: ['service level'] },
   { id: 'new-calendar', label: 'New calendar', href: '/sla/calendars?new=1', permission: 'sla.policy.manage', icon: 'calendar', keywords: ['business hours'] },
   { id: 'add-person', label: 'Add person', href: '/people?new=1', permission: 'identity.user.manage', icon: 'user-plus', keywords: ['invite', 'user'] },
+  { id: 'new-team', label: 'New team', href: '/people/teams?new=1', permission: 'identity.org.manage', icon: 'people', keywords: ['group', 'support group'] },
+  { id: 'new-organisation', label: 'New organisation', href: '/people/organisations?new=1', permission: 'tenant.org.manage', icon: 'people', keywords: ['department', 'company'] },
   { id: 'add-credential', label: 'Add credential', href: '/integrations/credentials?new=1', permission: 'integration.credential.manage', icon: 'key' },
   { id: 'new-ci', label: 'New configuration item', href: '/cmdb?new=1', permission: 'cmdb.manage', icon: 'cmdb', keywords: ['cmdb', 'ci', 'server', 'application'] },
   { id: 'add-asset', label: 'Add asset', href: '/cmdb/assets?new=1', permission: 'asset.manage', icon: 'assets', keywords: ['laptop', 'hardware', 'inventory'] },
