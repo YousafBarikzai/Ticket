@@ -65,6 +65,11 @@ export interface ColumnSpec {
   readonly empty?: string;
   /** Hidden unless the person shows technical keys (X-81). */
   readonly technical?: boolean;
+  /**
+   * Keeps the header for assistive technology but not on screen — an actions
+   * or icon column whose visible header would only add noise.
+   */
+  readonly headerHidden?: boolean;
 }
 
 /** One choice of a select-like filter. */
@@ -92,6 +97,15 @@ export interface FilterSpec {
   readonly defaultValue?: FilterValue;
   /** Client only: options that depend on what is typed (people, services). */
   readonly loadOptions?: (query: string, signal: AbortSignal) => Promise<readonly FilterOption[]>;
+  /**
+   * Who applies it. `client` (default): the table narrows the rows it has and
+   * keeps the value in the URL without a server round trip. `server`: the
+   * value goes into the URL through the router and the page asks the API for
+   * the matching rows (D12); the table does not filter them again.
+   */
+  readonly mode?: 'client' | 'server';
+  /** The row's dot path a `client` filter compares; the filter's `id` by default. */
+  readonly field?: string;
 }
 
 /** The scope switch above a list ("Open · Needs you · All"): links, each with an optional count. */

@@ -1,12 +1,11 @@
 import { css, layer } from '../styles/css.js';
 
 /**
- * `InteractiveTable` (deprecated wrapper): the sortable column header it adds to `Table`.
+ * `InteractiveTable` (deprecated): no rules of its own any more. It renders a
+ * `DataTable`, whose module styles it; the old `.itsm-Table__sort` header
+ * button went with the old implementation, and nothing else drew it.
+ *
+ * The module stays registered until Stage 5 deletes the wrapper, so the
+ * registry and the files on disk keep matching.
  */
-export const interactiveTableStyles = layer(
-  'components',
-  css`
-.itsm-Table__sort { display: inline-flex; align-items: center; gap: var(--itsm-space-3xs); background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
-.itsm-Table__sortIndicator { font-size: var(--itsm-font-size-2xs); color: var(--itsm-colour-text-muted); }
-`,
-);
+export const interactiveTableStyles = layer('components', css``);
