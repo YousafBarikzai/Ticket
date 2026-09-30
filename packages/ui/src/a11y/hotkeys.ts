@@ -336,7 +336,8 @@ export function useHotkey(options: HotkeyOptions): void {
   const { keys, description, group, enabled, hidden } = options;
   useEffect(() => {
     entry.shortcut = parseShortcut(keys);
-    if (entry.shortcut.length === 0 && typeof process !== 'undefined' && process.env.NODE_ENV === 'development') {
+    // An empty `keys` is a field with no shortcut (`SearchField` without one), not a typo.
+    if (entry.shortcut.length === 0 && keys !== '' && typeof process !== 'undefined' && process.env.NODE_ENV === 'development') {
       console.warn(`@itsm/ui: useHotkey could not read the shortcut "${keys}".`);
     }
     return register(entry);

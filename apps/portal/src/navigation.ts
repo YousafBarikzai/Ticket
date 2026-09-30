@@ -89,8 +89,7 @@ export const ROUTES: readonly PortalRoute[] = [
   { route: '/profile', label: 'Profile', read: [], section: 'me' },
   { route: '/approvals', label: 'Approvals', read: ['approval.read'], section: 'approvals' },
   { route: '/report', label: 'Report an issue', read: ['ticket.create'], section: null },
-  // WP26 builds the results page ("Results for 'vpn'").
-  { route: '/search', label: 'Results', read: ['search.query'], section: null, pending: true },
+  { route: '/search', label: 'Results', read: ['search.query'], section: null },
 ];
 
 function segmentsMatch(pattern: string, pathname: string): boolean {

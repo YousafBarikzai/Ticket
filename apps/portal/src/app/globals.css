@@ -10,7 +10,7 @@
  *
  * New rules use the `app-` prefix (SPEC §8.0 rule 6). The `itsm-` blocks
  * further down belong to the pre-redesign page bodies, which still render
- * inside the new frame, and leave with them (WP26–WP29).
+ * inside the new frame, and leave with them (WP27–WP29).
  *
  * Logical properties throughout (`inline-size`, `margin-block`,
  * `padding-inline`), so the right-to-left locales mirror rather than needing
@@ -276,10 +276,10 @@
 
 /*
  * ===========================================================================
- * The pre-redesign page bodies (→ WP26 Home and report, WP27 requests,
- * WP28 services and knowledge, WP29 approvals and profile). They render
- * inside the new frame until each page is rebuilt; each block leaves with
- * its page. One measure runs through them: `65ch`, the line length at which
+ * The pre-redesign page bodies (→ WP27 requests, WP28 services and
+ * knowledge, WP29 approvals and profile). They render inside the new frame
+ * until each page is rebuilt; each block leaves with its page. One measure
+ * runs through them: `65ch`, the line length at which
  * the eye stops losing its place on the return sweep. The side gutters are
  * the frame's now (`--itsm-page-gutter`), so these no longer add their own.
  * ===========================================================================
@@ -303,68 +303,6 @@
 
 .itsm-Page__footnote {
   margin-block-start: var(--itsm-space-lg);
-}
-
-/* ---- Home --------------------------------------------------------------- */
-
-.itsm-Home {
-  margin-inline: auto;
-  max-inline-size: 65ch;
-}
-
-.itsm-Home__heading {
-  font-size: var(--itsm-font-size-3xl);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: var(--itsm-space-lg) var(--itsm-space-md);
-}
-
-/*
- * The two things somebody came to do. The columns come from `.itsm-TileGrid`
- * in the design system, which reflows on its own at the width the tiles stop
- * fitting — this only adds the space beneath. Repeating the columns here would
- * mean a tile that changed size needed two files edited to keep working, and
- * one of them would be forgotten.
- *
- * Source order still matters and is unchanged: "something is broken" is the
- * more urgent of the two and is first, which is what a single column shows.
- */
-.itsm-Home__actions {
-  margin-block-end: var(--itsm-space-xl);
-}
-
-.itsm-Home__waiting,
-.itsm-Home__recent {
-  margin-block-end: var(--itsm-space-xl);
-}
-
-.itsm-Home__waiting h2,
-.itsm-Home__recent h2 {
-  font-size: var(--itsm-font-size-lg);
-  font-weight: var(--itsm-font-weight-semibold);
-}
-
-.itsm-Home__waiting ul,
-.itsm-Home__recent ul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Home__waiting li,
-.itsm-Home__recent li {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Home__meta,
-.itsm-Home__empty {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
 }
 
 /* ---- Catalogue ---------------------------------------------------------- */
@@ -461,7 +399,6 @@
 
 /* ---- Forms and replies -------------------------------------------------- */
 
-.itsm-Report,
 .itsm-Request,
 .itsm-Reply,
 .itsm-Decision {
@@ -488,7 +425,6 @@
   color: var(--itsm-colour-text-secondary);
 }
 
-.itsm-Report__error,
 .itsm-Request__error,
 .itsm-Reply__error,
 .itsm-Decision__error {
@@ -578,7 +514,6 @@
 
 /* ---- Queued work (doc 14 §5) --------------------------------------------- */
 
-.itsm-Report__queued,
 .itsm-Reply__queued,
 .itsm-Decision__queued {
   background: var(--itsm-colour-info-subtle);

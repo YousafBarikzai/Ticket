@@ -1,55 +1,81 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { useFullScreenFlow } from '@itsm/ui/shell';
+import { useItsm } from '@itsm/ui';
 import { Sheet } from '@itsm/ui/overlays';
-import { ReportForm } from '../components/ReportForm.js';
+import { useFullScreenFlow } from '@itsm/ui/shell';
 import type { HelpFlowRequest } from '../components/PortalShell.js';
+import { HelpFlow } from './HelpFlow.js';
+import type { HelpCan } from './model.js';
+import './help.css';
 
 /**
- * "How can we help?" — the portal's one way in to getting help (SPEC D17,
- * §6.3, X-40). **Stub from WP14, owned by WP26**, which builds the real
- * two-step flow (Describe with answers inline → Details → confirmation with
- * the expected reply time) in place of this file's body.
+ * "How can we help?" as a sheet (SPEC D17, §6.3, X-40, X-92): from the end
+ * edge at 768 px and up, the whole screen on a phone with the tab bar out
+ * of the way. The frame loads it on first use (and prefetches it when idle)
+ * through the default export, and opens it from *New request*, "Report 'x'
+ * as an issue" and "Report it again" (`useHelpFlow().open(…)`).
  *
- * The contract the frame relies on, and which WP26 keeps:
- *
- *   - the **default export**, so the frame can load it with `next/dynamic` on
- *     first use (and prefetch it when idle) — it is a sheet and a form the
- *     first paint of every page does not need;
- *   - `open` / `onOpenChange`, and `request` — where to start (`describe`,
- *     or `details` for "Report 'vpn' as an issue") and the text to start
- *     with;
- *   - it hides the tab bar while open (a full-screen flow on phones, X-92)
- *     and closes itself when the page changes underneath it (after a
- *     successful report the form moves to the new request).
- *
- * Until then it is the existing report form in a sheet, so *New request* is
- * never a dead end.
+ * Each opening is a fresh flow, started where it was asked to start: a
+ * plain *New request* picks up the draft left on this device, "Report 'vpn'
+ * as an issue" starts at the details with "vpn" as the title. Closing keeps
+ * what was typed (as the draft), so it is never a question of discarding.
+ * A page change underneath — *Track it*, a service or an answer opened from
+ * the results — closes it.
  */
 
 export interface HelpSheetProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** Where to start, and with what text. The stub always starts at the details it has: the report form. */
+  /** Where to start, and with what text. */
   readonly request?: HelpFlowRequest;
+  /** What the person may search while describing; everything, when the frame does not say. */
+  readonly can?: HelpCan;
 }
 
-export default function HelpSheet({ open, onOpenChange }: HelpSheetProps): ReactNode {
+export default function HelpSheet({ open, onOpenChange, request, can }: HelpSheetProps): ReactNode {
   const pathname = usePathname();
   const shownOn = useRef(pathname);
+  const userId = useItsm().storageScope ?? null;
   useFullScreenFlow(open);
 
-  // A report that went through navigates to the new request: the sheet's job is done.
+  // A new flow each time the sheet opens (derived from the previous render, not an effect: no frame shows the old one).
+  const [session, setSession] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setSession((count) => count + 1);
+  }
+
+  // The page changed underneath (a report went through, or they followed a result): the sheet's job is done.
   useEffect(() => {
     if (shownOn.current !== pathname && open) onOpenChange(false);
     shownOn.current = pathname;
   }, [pathname, open, onOpenChange]);
 
   return (
-    <Sheet open={open} onOpenChange={(next) => onOpenChange(next)} title="How can we help?" description="Tell us what’s wrong in your own words.">
-      <ReportForm />
-    </Sheet>
+    <HelpFlow
+      key={session}
+      variant="sheet"
+      userId={userId}
+      {...(can ? { can } : {})}
+      {...(request ? { start: request } : {})}
+      onClose={() => onOpenChange(false)}
+    >
+      {(parts) => (
+        <Sheet
+          open={open}
+          onOpenChange={(next) => onOpenChange(next)}
+          title={parts.title}
+          {...(parts.stepLabel ? { description: parts.stepLabel } : {})}
+          initialFocusRef={parts.initialFocusRef}
+          footer={<div className="app-HelpFlow__footer">{parts.footer}</div>}
+          className="app-HelpSheet"
+        >
+          {parts.body}
+        </Sheet>
+      )}
+    </HelpFlow>
   );
 }

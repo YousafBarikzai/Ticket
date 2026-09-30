@@ -1,120 +1,99 @@
-import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { Badge, Tile, TileGrid } from '@itsm/ui';
-import { apiFor, requireSession } from '../../server/session.js';
-import { needsYou, raisedAgo, requesterState } from '../../tickets/presentation.js';
+import { Suspense, type ReactNode } from 'react';
+import type { Metadata } from 'next';
+import { KnownIssuesSource } from '../../help/known-issues.js';
+import { knownIssuesFrom } from '../../help/model.js';
+import { followUrlFor, readStatus } from '../../help/status.js';
+import { HomeHero } from '../../home/HomeHero.js';
+import { greetingFor, parseChannels, todayLabel, updatedLabel } from '../../home/model.js';
+import {
+  GoodToKnowSection,
+  GoodToKnowSkeleton,
+  IncidentBanner,
+  Topics,
+  TopicsSkeleton,
+  YourRequests,
+  YourRequestsSkeleton,
+} from '../../home/sections.js';
+import { settle } from '../../home/settle.js';
+import { portalCan } from '../../navigation.js';
+import { apiFor, currentApprovals, currentMe, heldPermissions, requireSession } from '../../server/session.js';
+import '../../home/home.css';
 
 export const dynamic = 'force-dynamic';
 
+export const metadata: Metadata = { title: 'Home' };
+
 /**
- * The home page.
+ * Home (SPEC §6.3 `/`, X-34, D17): what every member of staff sees first, so
+ * it asks one question and answers the next few before they are asked.
  *
- * Ordered by what a person came here to do, not by what the platform has:
- * report something, ask for something, then — and only then — the tickets that
- * are waiting on *them*. A portal that opens on a list of everything you have
- * ever raised buries the one row that needs an answer today.
+ *   1. **The hero** — today's date, a greeting in their own time zone, one
+ *      sentence, the "How can we help?" search and *New request*, the page's
+ *      one primary action.
+ *   2. **An open incident**, when there is one ("VPN is degraded. We're on
+ *      it"), so nobody reports what the desk already knows.
+ *   3. **Your requests** — one list, what needs them pinned first with its
+ *      action right there (Reply · "Yes, it's fixed" / "No" · Review), five
+ *      at most, "See all" always.
+ *   4. **Three topics** for somebody who would rather pick than type.
+ *   5. **Good to know** — service status, popular answers, other ways in.
  *
- * Everything below the two actions fails softly. A requester whose approvals
- * module is unavailable should still be able to report an issue, which is the
- * thing they are here for.
+ * Every read starts at once. The status page is waited for (briefly — it is
+ * bounded) because the incident banner sits near the top and should not push
+ * the page down after it has drawn; everything else streams into its own
+ * section with a skeleton of its own shape, and fails on its own. The
+ * approvals come from the frame's call (`cache()`), not a second one.
  */
-
-async function orNull<T>(work: Promise<T>): Promise<T | null> {
-  try {
-    return await work;
-  } catch {
-    return null;
-  }
-}
-
 export default async function HomePage(): Promise<ReactNode> {
   const session = await requireSession();
+  const me = await currentMe();
+  const can = portalCan(heldPermissions(me));
   const api = apiFor(session);
+  const now = new Date();
 
-  const [mine, approvals] = await Promise.all([
-    // Status categories (`open`, `paused`, `resolved`, `closed`), not states:
-    // `resolved` is here so a fix waiting on "Yes, it's fixed" is on Home.
-    orNull(api.myTickets({ statusCategory: 'open,paused,resolved', limit: 20 })),
-    orNull(api.approvals()),
-  ]);
+  // Everything starts now; each section waits only for its own.
+  const requests = settle(api.myTickets({ statusCategory: 'open,paused,resolved', limit: 20 }));
+  const approvals = can.readApprovals ? currentApprovals() : Promise.resolve(null);
+  const catalogue = can.readCatalogue ? settle(api.catalogue()) : null;
+  const articles = can.readKnowledge ? settle(api.knowledge({ status: 'published', limit: 200 })) : null;
+  const status = await readStatus(api, me.tenant?.slug);
 
-  const tickets = mine?.data ?? [];
-  const yours = tickets.filter((ticket) => needsYou(ticket.status));
-  const waiting = approvals?.data ?? [];
+  const issues = knownIssuesFrom(status.status);
+  const followUrl = followUrlFor(status.status);
+  const channels = parseChannels(process.env.PORTAL_CHANNELS);
 
   return (
-    <div className="itsm-Home">
-      <h1 className="itsm-Home__heading">How can we help?</h1>
+    <div className="app-Page app-Home">
+      <KnownIssuesSource issues={issues} followUrl={followUrl} />
 
-      {/*
-        Tiles rather than cards with links inside them. A card is a container
-        that may happen to be interactive; a tile *is* the action, so the whole
-        surface is the target and a keyboard user gets the same large hit area
-        a mouse user does instead of a small link inside a big box.
-      */}
-      <TileGrid className="itsm-Home__actions">
-        <Tile title="Something is broken" description="Report an issue and we will pick it up." href="/report" />
-        <Tile title="I need something" description="Software, access, hardware, a change." href="/catalogue" />
-      </TileGrid>
+      <header className="app-Home__hero">
+        <p className="app-Home__date">{todayLabel(now, me.locale, me.timeZone)}</p>
+        <h1 className="app-Home__greeting" tabIndex={-1}>
+          {greetingFor(now, me.timeZone, me.actor.displayName)}
+        </h1>
+        <p className="app-Home__lede">Search for an answer, or tell us what’s wrong.</p>
+        <HomeHero
+          can={{ search: can.search, readKnowledge: can.readKnowledge, readCatalogue: can.readCatalogue, createTickets: can.createTickets }}
+        />
+      </header>
 
-      {/*
-        First, because it is the only thing on this page that is somebody's to
-        act on. Announced as a region rather than styled as an alert: it is
-        news, not an emergency.
-      */}
-      {yours.length > 0 ? (
-        <section className="itsm-Home__waiting" aria-label="Waiting for you">
-          <h2>We are waiting on you</h2>
-          <ul>
-            {yours.map((ticket) => (
-              <li key={ticket.id}>
-                <Link href={`/tickets/${ticket.number}`}>{ticket.title}</Link>
-                <span className="itsm-Home__meta">{requesterState(ticket.status).detail}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      {issues.length > 0 ? <IncidentBanner issues={issues} followUrl={followUrl} updatedLabel={updatedLabel(issues[0]!.updatedAt, now, me.locale, me.timeZone)} /> : null}
 
-      {waiting.length > 0 ? (
-        <section className="itsm-Home__waiting" aria-label="Approvals">
-          <h2>
-            Approvals <Badge intent="warning">{waiting.length}</Badge>
-          </h2>
-          <p>
-            <Link href="/approvals">Somebody is waiting on your decision</Link>
-          </p>
-        </section>
-      ) : null}
-
-      <section className="itsm-Home__recent" aria-label="Your open tickets">
-        <h2>Your open tickets</h2>
-        {tickets.length === 0 ? (
-          <p className="itsm-Home__empty">Nothing open. That is the goal.</p>
-        ) : (
-          <ul>
-            {tickets.slice(0, 8).map((ticket) => {
-              const state = requesterState(ticket.status);
-              return (
-                <li key={ticket.id}>
-                  <Link href={`/tickets/${ticket.number}`}>{ticket.title}</Link>
-                  <Badge intent={state.intent} srPrefix="Status">
-                    {state.label}
-                  </Badge>
-                  <time className="itsm-Home__meta" dateTime={ticket.createdAt} title={ticket.createdAt}>
-                    {raisedAgo(ticket.createdAt)}
-                  </time>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {tickets.length > 8 ? (
-          <p>
-            <Link href="/tickets">See all of your tickets</Link>
-          </p>
-        ) : null}
-      </section>
+      <div className="app-Home__grid">
+        <div className="app-Home__main">
+          <Suspense fallback={<YourRequestsSkeleton />}>
+            <YourRequests requests={requests} approvals={approvals} />
+          </Suspense>
+          {catalogue ? (
+            <Suspense fallback={<TopicsSkeleton />}>
+              <Topics catalogue={catalogue} />
+            </Suspense>
+          ) : null}
+        </div>
+        <Suspense fallback={<GoodToKnowSkeleton />}>
+          <GoodToKnowSection status={status} articles={articles} channels={channels} canBrowseKnowledge={can.readKnowledge} drawnAt={now.toISOString()} />
+        </Suspense>
+      </div>
     </div>
   );
 }

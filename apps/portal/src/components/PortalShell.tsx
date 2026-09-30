@@ -48,6 +48,8 @@ export interface HelpFlowRequest {
   readonly step?: 'describe' | 'details';
   /** What the person typed, for step 1's field or step 2's title. */
   readonly text?: string;
+  /** Step 2's details, already begun: "Related to INC-000123", "I read 'Set up the VPN' and it didn't help:". */
+  readonly details?: string;
 }
 
 export interface HelpFlow {
@@ -311,7 +313,14 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
       >
         {children}
         {paletteWanted ? <LazyPalette open={paletteOpen} onOpenChange={setPaletteOpen} deps={paletteDeps} /> : null}
-        {helpWanted ? <LazyHelpSheet open={helpOpen} onOpenChange={setHelpOpen} {...(helpRequest ? { request: helpRequest } : {})} /> : null}
+        {helpWanted ? (
+          <LazyHelpSheet
+            open={helpOpen}
+            onOpenChange={setHelpOpen}
+            can={{ search: can.search, readKnowledge: can.readKnowledge, readCatalogue: can.readCatalogue }}
+            {...(helpRequest ? { request: helpRequest } : {})}
+          />
+        ) : null}
         {discarding ? (
           <LazyConfirmDialog
             open
