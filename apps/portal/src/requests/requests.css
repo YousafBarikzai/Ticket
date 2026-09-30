@@ -1,0 +1,492 @@
+/*
+ * My requests and a request's own page (SPEC §6.3 `/tickets`,
+ * `/tickets/[id]`, X-35). Arrangement only, from the design system's
+ * tokens; unlayered, so it wins over `@layer itsm.*` without `!important`.
+ * Design-system parts are only ever placed in context here, never
+ * restyled on their own.
+ */
+
+/* ---- My requests ------------------------------------------------------------ */
+
+.app-Requests {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  max-inline-size: var(--itsm-content-medium);
+  padding-block: var(--itsm-space-lg) var(--itsm-space-3xl);
+}
+
+.app-Requests__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+}
+
+.app-Requests__title {
+  margin: 0;
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+}
+
+.app-Requests__title:focus {
+  outline: none;
+}
+
+.app-Requests__new {
+  flex: none;
+}
+
+.app-Requests__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Requests__search {
+  min-inline-size: 0;
+}
+
+/*
+ * On a narrow phone the four scopes share the width by their words rather
+ * than in equal quarters, so "Needs you 2" and "Resolved" are read whole
+ * instead of cut short.
+ */
+@media (max-width: 29.9375rem) {
+  .app-Requests__scopes .itsm-SegmentedControl__list {
+    grid-auto-columns: auto;
+  }
+
+  .app-Requests__scopes .itsm-SegmentedControl__segment {
+    padding-inline: var(--itsm-space-xs);
+  }
+}
+
+@media (min-width: 48rem) {
+  .app-Requests__controls {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .app-Requests__scopes {
+    flex: 0 1 28rem;
+    inline-size: auto;
+  }
+
+  .app-Requests__search {
+    flex: 1 1 16rem;
+  }
+}
+
+/* The list, with the thin progress line on its top edge while it updates: nothing dims. */
+.app-Requests__results {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Requests__progress {
+  position: absolute;
+  inset-block-start: calc(-1 * var(--itsm-space-xs));
+  inset-inline: 0;
+}
+
+.app-Requests__more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  padding-block-start: var(--itsm-space-xs);
+}
+
+.app-Requests__caption {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-Requests__caption--problem {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-Requests__thanks {
+  margin: 0;
+  color: var(--itsm-colour-success-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+/* ---- A request -------------------------------------------------------------- */
+
+.app-Request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  padding-block: var(--itsm-space-md) var(--itsm-space-3xl);
+}
+
+.app-Request__back {
+  align-self: flex-start;
+  margin-inline-start: calc(-1 * var(--itsm-space-xs));
+  margin-block-end: calc(-1 * var(--itsm-space-sm));
+}
+
+.app-Request__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Request__meta {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-Request__number {
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.app-Request__title {
+  margin: 0;
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.app-Request__title:focus {
+  outline: none;
+}
+
+.app-Request__sectionTitle {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+/* ---- The hero card ------------------------------------------------------------ */
+
+/*
+ * One card, tinted by the state (the intent's `subtle`, audited for primary
+ * and muted text): the state, the sentence, the one thing to do, the four
+ * steps and the sentence about time.
+ */
+.app-RequestHero {
+  --app-hero-tint: var(--itsm-colour-neutral-subtle);
+  --app-hero-ink: var(--itsm-colour-neutral-subtleText);
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  box-sizing: border-box;
+  padding: var(--itsm-space-ml);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--app-hero-tint);
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-RequestHero[data-tone='info'] {
+  --app-hero-tint: var(--itsm-colour-info-subtle);
+  --app-hero-ink: var(--itsm-colour-info-subtleText);
+}
+
+.app-RequestHero[data-tone='success'] {
+  --app-hero-tint: var(--itsm-colour-success-subtle);
+  --app-hero-ink: var(--itsm-colour-success-subtleText);
+}
+
+.app-RequestHero[data-tone='warning'] {
+  --app-hero-tint: var(--itsm-colour-warning-subtle);
+  --app-hero-ink: var(--itsm-colour-warning-subtleText);
+}
+
+.app-RequestHero[data-tone='danger'] {
+  --app-hero-tint: var(--itsm-colour-danger-subtle);
+  --app-hero-ink: var(--itsm-colour-danger-subtleText);
+}
+
+.app-RequestHero--loading {
+  --app-hero-tint: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-RequestHero__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+}
+
+/* The state's glyph on a raised disc, in the tint's own ink: the state reads without its colour. */
+.app-RequestHero__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--itsm-control-height-lg);
+  block-size: var(--itsm-control-height-lg);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-surface-raised);
+  color: var(--app-hero-ink);
+}
+
+.app-RequestHero__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-RequestHero__title {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+  letter-spacing: var(--itsm-text-title3-tracking);
+}
+
+.app-RequestHero__title:focus {
+  outline: none;
+}
+
+.app-RequestHero__sentence {
+  margin: 0;
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  letter-spacing: var(--itsm-text-body-tracking);
+  text-wrap: pretty;
+}
+
+.app-RequestHero__fact {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-RequestHero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-RequestHero__more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs) var(--itsm-space-xs);
+  margin: calc(-1 * var(--itsm-space-xs)) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-RequestHero__more[hidden] {
+  display: none;
+}
+
+/* A move, confirmed in the card: on the raised surface, so the words are on white (or the dark raised grey). */
+.app-RequestHero__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-RequestHero__panelTitle {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+.app-RequestHero__panelText {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-RequestHero__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-RequestHero__steps {
+  padding-block-start: var(--itsm-space-2xs);
+}
+
+.app-RequestHero__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-RequestHero__facts > li {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+@media (max-width: 29.9375rem) {
+  .app-RequestHero {
+    padding: var(--itsm-space-md);
+  }
+}
+
+@media (forced-colors: active) {
+  .app-RequestHero,
+  .app-RequestHero__panel {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}
+
+/* ---- The conversation --------------------------------------------------------- */
+
+.app-Conversation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+/* A message keeps its own line breaks, and a long link wraps rather than widening the page. */
+.app-Conversation__words {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.app-Conversation__files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Conversation__filesTitle {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+  letter-spacing: var(--itsm-text-subheadline-tracking);
+}
+
+.app-Conversation__fileList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Conversation__closed {
+  margin: 0;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+/* ---- The composer ---------------------------------------------------------------- */
+
+.app-Composer {
+  scroll-margin-block: var(--itsm-space-2xl);
+}
+
+.app-Composer__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-Composer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Composer__note {
+  flex: 1 1 12rem;
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* At rest: one line that looks like the field it becomes, found by its words. */
+.app-Composer__rest {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--itsm-control-height-lg);
+  margin: 0;
+  padding-inline: var(--itsm-space-md);
+  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  color: var(--itsm-colour-text-muted);
+  font: inherit;
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  text-align: start;
+  cursor: text;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+@media (hover: hover) {
+  .app-Composer__rest:hover {
+    background: var(--itsm-colour-surface-hover);
+  }
+}
+
+@media (forced-colors: active) {
+  .app-Composer__rest,
+  .app-Composer__form {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}
+
+/* ---- Details ------------------------------------------------------------------------ */
+
+.app-RequestDetails {
+  padding-block-start: var(--itsm-space-xs);
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}

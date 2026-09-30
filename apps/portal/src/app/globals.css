@@ -10,7 +10,7 @@
  *
  * New rules use the `app-` prefix (SPEC §8.0 rule 6). The `itsm-` blocks
  * further down belong to the pre-redesign page bodies, which still render
- * inside the new frame, and leave with them (WP27–WP29).
+ * inside the new frame, and leave with them (WP28, WP29).
  *
  * Logical properties throughout (`inline-size`, `margin-block`,
  * `padding-inline`), so the right-to-left locales mirror rather than needing
@@ -276,8 +276,8 @@
 
 /*
  * ===========================================================================
- * The pre-redesign page bodies (→ WP27 requests, WP28 services and
- * knowledge, WP29 approvals and profile). They render inside the new frame
+ * The pre-redesign page bodies (→ WP28 services and knowledge, WP29
+ * approvals and profile). They render inside the new frame
  * until each page is rebuilt; each block leaves with its page. One measure
  * runs through them: `65ch`, the line length at which
  * the eye stops losing its place on the return sweep. The side gutters are
@@ -311,86 +311,8 @@
   margin-block-end: var(--itsm-space-lg);
 }
 
-/* ---- Tickets ------------------------------------------------------------ */
+/* ---- Articles ------------------------------------------------------------ */
 
-.itsm-Tickets {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Tickets__row {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  border-radius: var(--itsm-radius-md);
-  padding: var(--itsm-space-sm);
-}
-
-/*
- * The one row on the page that is somebody's to act on. The border says so as
- * well as the badge and the sentence, because a person scanning for "which of
- * these is mine to do" reads the shape before the words.
- */
-.itsm-Tickets__row[data-needs-you='true'] {
-  border-color: var(--itsm-colour-warning-border);
-  border-inline-start-width: var(--itsm-border-thick);
-}
-
-.itsm-Tickets__title {
-  font-weight: var(--itsm-font-weight-medium);
-}
-
-.itsm-Tickets__meta {
-  align-items: baseline;
-  color: var(--itsm-colour-text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: var(--itsm-font-size-sm);
-  gap: var(--itsm-space-2xs);
-  margin-block: var(--itsm-space-3xs);
-}
-
-.itsm-Tickets__number {
-  font-family: var(--itsm-font-family-mono);
-}
-
-.itsm-Tickets__detail {
-  margin: 0;
-}
-
-/* ---- One ticket --------------------------------------------------------- */
-
-.itsm-Ticket__raised {
-  background: var(--itsm-colour-success-subtle);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-success-subtleText);
-  padding: var(--itsm-space-sm);
-}
-
-.itsm-Ticket__number {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-  margin-block-end: 0;
-}
-
-.itsm-Ticket__state {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Ticket__description {
-  border-inline-start: var(--itsm-border-thick) solid var(--itsm-colour-border-subtle);
-  color: var(--itsm-colour-text-secondary);
-  margin-block: var(--itsm-space-md);
-  padding-inline-start: var(--itsm-space-sm);
-  white-space: pre-wrap;
-}
-
-.itsm-Ticket__historyHeading,
 .itsm-Article h2 {
   font-size: var(--itsm-font-size-lg);
   font-weight: var(--itsm-font-weight-semibold);
@@ -400,33 +322,23 @@
 /* ---- Forms and replies -------------------------------------------------- */
 
 .itsm-Request,
-.itsm-Reply,
 .itsm-Decision {
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-sm);
 }
 
-.itsm-Reply {
-  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  margin-block-start: var(--itsm-space-lg);
-  padding-block-start: var(--itsm-space-md);
-}
-
-.itsm-Reply__actions,
 .itsm-Decision__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--itsm-space-2xs);
 }
 
-.itsm-Reply__closed,
 .itsm-Request__noForm {
   color: var(--itsm-colour-text-secondary);
 }
 
 .itsm-Request__error,
-.itsm-Reply__error,
 .itsm-Decision__error {
   color: var(--itsm-colour-danger-subtleText);
 }
@@ -514,7 +426,6 @@
 
 /* ---- Queued work (doc 14 §5) --------------------------------------------- */
 
-.itsm-Reply__queued,
 .itsm-Decision__queued {
   background: var(--itsm-colour-info-subtle);
   border-radius: var(--itsm-radius-md);

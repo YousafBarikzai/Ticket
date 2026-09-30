@@ -1,134 +1,152 @@
 import type { ReactNode } from 'react';
-import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { ApiError, type TimelineEntry } from '@itsm/sdk';
-import { Badge, EmptyState, Timeline, type TimelineEvent } from '@itsm/ui';
-import { TicketReply } from '../../../../components/TicketReply.js';
-import { apiFor, requireSession } from '../../../../server/session.js';
-import { raisedAgo, requesterState, typeLabel } from '../../../../tickets/presentation.js';
+import { notFound, redirect } from 'next/navigation';
+import type { ApprovalRequest } from '@itsm/sdk';
+import { Button, RelativeTime } from '@itsm/ui';
+import { formatDateTime } from '@itsm/ui/format';
+import { LiveRefresh } from '../../../../client/live.js';
+import { settle } from '../../../../home/settle.js';
+import { Conversation } from '../../../../requests/Conversation.js';
+import { MarkSeen } from '../../../../requests/MarkSeen.js';
+import {
+  approvalLine,
+  conversationOf,
+  heroFor,
+  slaSentence,
+  stepsFor,
+  taskProgress,
+} from '../../../../requests/model.js';
+import { RequestDetails } from '../../../../requests/RequestDetails.js';
+import { RequestHero } from '../../../../requests/RequestHero.js';
+import { RetryBanner } from '../../../../requests/RetryBanner.js';
+import { readTicket } from '../../../../requests/server.js';
+import { apiFor, currentMe, heldPermissions, loginHref, requireSession } from '../../../../server/session.js';
+import { typeLabel } from '../../../../tickets/presentation.js';
+import '../../../../requests/requests.css';
 
 export const dynamic = 'force-dynamic';
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  return { title: (await params).id };
+type Params = Promise<{ id: string }>;
+type Search = Promise<Record<string, string | string[] | undefined>>;
+
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const { id } = await params;
+  const read = await readTicket(id);
+  return { title: read.ok ? read.ticket.title : id };
 }
 
 /**
- * One ticket, as the person who raised it sees it.
+ * One request, as the person who raised it follows it (SPEC §6.3
+ * `/tickets/[id]`, X-35): the reference and when it was raised, its title,
+ * then **one card** that says where it is and what they can do about it,
+ * then the conversation and the composer, then the details folded away.
  *
- * The history is filtered by the API, not here: `includesInternal` comes back
- * false for a requester and the internal notes are simply absent. A portal
- * that received them and hid them in the browser would be one `view-source`
- * away from a serious problem — so the filtering is in MOD-04 and this page
- * renders whatever it was given.
+ * Reads start together: the request itself (lensed, `GET /tickets/:id`), its
+ * timeline — read for public comments and task states only, never events or
+ * their payloads — its service-level timers (best effort), and who is
+ * reading. A request waiting for approval also asks how far the approval
+ * has got. A request opened by its id (a notification) moves to its number.
  *
- * Events are not shown at all. "status.changed", "sla.timer.paused" and
- * "rule.applied" are the desk's own record of its work; to a requester they
- * are noise that makes the two replies that matter harder to find. What
- * changed is said in one sentence at the top instead.
+ * Nothing on this page reads a priority or an impact.
  */
-export default async function TicketPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}): Promise<ReactNode> {
+export default async function RequestPage({ params, searchParams }: { params: Params; searchParams: Search }): Promise<ReactNode> {
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  const justRaised = query.raised === '1';
   const session = await requireSession();
-
   const api = apiFor(session);
+  const [me, read, timeline] = await Promise.all([currentMe(), readTicket(id), settle(api.timeline(id))]);
+  const held = heldPermissions(me);
 
-  let timeline: Awaited<ReturnType<typeof api.timeline>>;
-  try {
-    timeline = await api.timeline(id);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) notFound();
+  if (!read.ok) {
+    if (read.status === 404) notFound();
+    if (read.status === 401) redirect(await loginHref());
     return (
-      <EmptyState
-        tone="error"
-        title="This ticket could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The service could not be reached.'}
-      />
+      <div className="app-Page app-Page--reading app-Request">
+        <Button variant="ghost" size="sm" iconStart="chevron-left" href="/tickets" className="app-Request__back">
+          My requests
+        </Button>
+        <h1 className="app-Request__title" tabIndex={-1}>
+          {/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) ? 'Your request' : id}
+        </h1>
+        <RetryBanner what="this request" />
+      </div>
     );
   }
 
-  // Who is reading, so their own messages read as theirs. Allowed to fail:
-  // the page is still correct without it, every message simply reads as the
-  // desk's.
-  const me = await api.me().catch(() => null);
-  const readerId = me?.actor.id ?? null;
+  const ticket = read.ticket;
+  // Opened by its id (a notification, an old link): the number is the address people share.
+  if (id !== ticket.number) {
+    const fixed = typeof query.fixed === 'string' ? `?fixed=${encodeURIComponent(query.fixed)}` : '';
+    redirect(`/tickets/${encodeURIComponent(ticket.number)}${fixed}`);
+  }
 
-  const ticket = timeline.ticket;
-  const state = requesterState(ticket.status);
-  const conversation = timeline.entries.filter((entry) => entry.kind === 'comment');
+  const status = ticket.status;
+  const now = new Date();
+  const { locale, timeZone } = me;
+  const readerId = me.actor.id;
+  const [sla, approvals] = await Promise.all([
+    held.has('sla.read') ? settle(api.slaTimers(ticket.id)) : Promise.resolve(null),
+    status === 'pending_approval' && held.has('approval.read') ? settle(api.approvals({ ticketId: ticket.id })) : Promise.resolve(null),
+  ]);
+
+  const hero = heroFor(status);
+  const canMove = held.has('ticket.transition');
+  const canReply = held.has('ticket.comment.public');
+  const day = (at: string | null): string | null => (at ? formatDateTime(at, { locale, timeZone, style: 'monthDay' }) : null);
+  const entries = timeline.ok ? timeline.value.entries : null;
+  const approval: ApprovalRequest | undefined = approvals?.ok ? approvals.value.data[0] : undefined;
+  const conversation = conversationOf(ticket, entries, readerId);
+
+  // The card asks for something (Reply, Is it fixed?): the composer rests as one line under it.
+  const heroAsks = (hero.primary === 'reply' && canReply) || (hero.primary === 'confirm' && canMove);
+  const composer = hero.finished || !canReply ? 'hidden' : heroAsks ? 'collapsed' : 'open';
 
   return (
-    <article className="itsm-Page itsm-Ticket">
-      {/*
-        Announced once, for somebody who has just been redirected here from the
-        form and needs to know the thing they typed actually arrived.
-      */}
-      {justRaised ? (
-        <p className="itsm-Ticket__raised" role="status">
-          Thanks — we have it. Your reference is {ticket.number}.
+    <div className="app-Page app-Page--reading app-Request">
+      <LiveRefresh entity="ticket" id={ticket.id} />
+      {held.has('notification.read') ? <MarkSeen ticketId={ticket.id} messages={conversation.length} /> : null}
+      <Button variant="ghost" size="sm" iconStart="chevron-left" href="/tickets" className="app-Request__back">
+        My requests
+      </Button>
+      <header className="app-Request__header">
+        <p className="app-Request__meta">
+          {typeLabel(ticket.type)} · <span className="app-Request__number">{ticket.number}</span> · raised{' '}
+          <RelativeTime date={ticket.createdAt} relativeStyle="long" absoluteStyle="date" />
         </p>
-      ) : null}
+        <h1 className="app-Request__title" tabIndex={-1}>
+          {ticket.title}
+        </h1>
+      </header>
 
-      <p className="itsm-Ticket__number">
-        {typeLabel(ticket.type)} · {ticket.number} · raised{' '}
-        <time dateTime={ticket.createdAt} title={ticket.createdAt}>
-          {raisedAgo(ticket.createdAt)}
-        </time>
-      </p>
-      <h1 className="itsm-Page__heading">{ticket.title}</h1>
-
-      <p className="itsm-Ticket__state">
-        <Badge intent={state.intent} srPrefix="Status">
-          {state.label}
-        </Badge>
-        <span>{state.detail}</span>
-      </p>
-
-      {ticket.description ? <p className="itsm-Ticket__description">{ticket.description}</p> : null}
-
-      <h2 className="itsm-Ticket__historyHeading">What has happened</h2>
-      <Timeline
-        label="Conversation"
-        events={conversation.map((entry) => toEvent(entry, readerId))}
-        emptyMessage="Nobody has replied yet. We will let you know when they do."
-      />
-
-      <TicketReply
-        ticketNumber={ticket.number}
+      <RequestHero
+        number={ticket.number}
+        title={ticket.title}
+        status={status}
         version={ticket.version}
-        status={ticket.status}
-        canReopen={ticket.status === 'resolved'}
+        hero={hero}
+        steps={stepsFor(status, { raised: day(ticket.createdAt) ?? '', resolved: day(ticket.resolvedAt), closed: day(ticket.closedAt) })}
+        sla={slaSentence(status, sla?.ok ? sla.value.timers : null, now, locale, timeZone)}
+        tasks={taskProgress(entries)}
+        approval={approvalLine(approval, now, locale, timeZone)}
+        canMove={canMove}
+        canReply={canReply}
+        startWithNo={query.fixed === 'no'}
+        readerId={readerId}
       />
-    </article>
+
+      <Conversation
+        number={ticket.number}
+        readerId={readerId}
+        entries={conversation}
+        attachments={
+          timeline.ok ? timeline.value.attachments.map((file) => ({ id: file.id, name: file.filename, size: file.size, mime: file.mime })) : []
+        }
+        composer={composer}
+        sendIsPrimary={!heroAsks && hero.primary === null}
+        finished={hero.finished}
+        unavailable={!timeline.ok}
+      />
+
+      <RequestDetails number={ticket.number} kind={typeLabel(ticket.type)} raisedAt={ticket.createdAt} updatedAt={ticket.updatedAt} />
+    </div>
   );
-}
-
-/**
- * Two authors, not many: "You" and "The service desk".
- *
- * A requester does not need to know which of four agents replied, and an
- * individual's name attached to bad news invites a reply addressed to a person
- * rather than to the ticket — which is how a thread ends up in one agent's
- * inbox while they are on leave.
- */
-function toEvent(entry: TimelineEntry, readerId: string | null): TimelineEvent {
-  // Only comments reach here, but the type is a union and narrowing it in one
-  // place is cheaper than asserting at the call site.
-  if (entry.kind !== 'comment') return { id: entry.id, timestamp: entry.at, title: 'Update' };
-
-  const mine = readerId !== null && entry.authorId === readerId;
-  return {
-    id: entry.id,
-    timestamp: entry.at,
-    title: mine ? 'You' : 'The service desk',
-    body: entry.body,
-    ...(mine ? {} : { intent: 'info' as const }),
-  };
 }

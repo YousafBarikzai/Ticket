@@ -75,6 +75,8 @@ export const stepperStyles = layer(
 
 .itsm-Stepper__step {
   display: grid;
+  /* Rows at the top: a step with no description, stretched to its neighbours' height, keeps its dot on their line. */
+  align-content: start;
   row-gap: var(--itsm-space-xs);
   min-inline-size: 0;
 }
