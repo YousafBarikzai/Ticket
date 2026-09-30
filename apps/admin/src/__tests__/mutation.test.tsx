@@ -77,6 +77,18 @@ describe('useMutation', () => {
   beforeEach(() => {
     mutation = null;
     ended = null;
+    // A success refreshes one task later (address.ts). On fake timers that task
+    // runs when a test says so, and a test that leaves one pending has it run
+    // below, before the mocks are cleared, rather than inside the next test.
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    resetAddress();
+    vi.useRealTimers();
   });
 
   it('toasts, refreshes the server data and resolves ok on success', async () => {
@@ -91,45 +103,39 @@ describe('useMutation', () => {
     // The refresh waits one task, for the caller to change the address first.
     expect(router.refresh).not.toHaveBeenCalled();
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      vi.advanceTimersByTime(1);
     });
     expect(router.refresh).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes only after a sheet closed by going Back has landed on its new address', async () => {
-    vi.useFakeTimers();
-    try {
-      const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
-      render(<Probe fn={async (key) => ({ key })} />);
-      await act(async () => {
-        await mutation!.run('vip');
-        goBack(); // what a create sheet's close does after a success
-      });
-      await act(async () => {
-        vi.advanceTimersByTime(10);
-      });
-      expect(back).toHaveBeenCalled();
-      // Refreshing now would be answered for the sheet's address, and Next would put it back.
-      expect(router.refresh).not.toHaveBeenCalled();
-      await act(async () => {
-        window.dispatchEvent(new PopStateEvent('popstate'));
-        vi.advanceTimersByTime(1);
-      });
-      expect(router.refresh).toHaveBeenCalledTimes(1);
-      // A Back that never lands is not waited for for ever.
-      render(<Probe fn={async (key) => ({ key })} />);
-      await act(async () => {
-        await mutation!.run('rules');
-        goBack();
-      });
-      await act(async () => {
-        vi.advanceTimersByTime(GIVE_UP_MS + 10);
-      });
-      expect(router.refresh).toHaveBeenCalledTimes(2);
-    } finally {
-      resetAddress();
-      vi.useRealTimers();
-    }
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    render(<Probe fn={async (key) => ({ key })} />);
+    await act(async () => {
+      await mutation!.run('vip');
+      goBack(); // what a create sheet's close does after a success
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(back).toHaveBeenCalled();
+    // Refreshing now would be answered for the sheet's address, and Next would put it back.
+    expect(router.refresh).not.toHaveBeenCalled();
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      vi.advanceTimersByTime(1);
+    });
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+    // A Back that never lands is not waited for for ever.
+    render(<Probe fn={async (key) => ({ key })} />);
+    await act(async () => {
+      await mutation!.run('rules');
+      goBack();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(GIVE_UP_MS + 10);
+    });
+    expect(router.refresh).toHaveBeenCalledTimes(2);
   });
 
   it('offers Undo only when there is a safe inverse', async () => {
@@ -159,6 +165,10 @@ describe('useMutation', () => {
     });
     expect(result?.ok).toBe(false);
     expect(mutation!.fieldErrors).toEqual({ name: 'Give it a longer name' });
+    // Past every wait a refresh could be deferred by, so a late one is seen too.
+    await act(async () => {
+      vi.advanceTimersByTime(GIVE_UP_MS + 10);
+    });
     expect(notify).not.toHaveBeenCalled();
     expect(router.refresh).not.toHaveBeenCalled();
   });
