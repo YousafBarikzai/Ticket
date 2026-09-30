@@ -7,16 +7,23 @@ export interface SkipLinksProps {
 }
 
 /**
- * "Skip to content" and friends: the first focusable elements on the page.
- * Server-safe.
+ * "Skip to content" and friends — the first focusable things on the page, so
+ * a keyboard user is not walked through the whole navigation on every page
+ * (WCAG 2.4.1). Out of sight until focused, then a solid pill at the top
+ * start corner, above everything. The workbench adds "Skip to ticket list",
+ * "Skip to conversation" and "Skip to reply".
  *
- * Stub (SPEC §4.9): renders the links; the shell package hides them until focused.
+ * Each target must be focusable (`tabindex="-1"`, as the frame's `main` is),
+ * or the browser scrolls to it but leaves focus behind.
+ *
+ * Server-safe: plain anchors, no script.
  */
 export function SkipLinks({ links, className }: SkipLinksProps): ReactNode {
+  if (links.length === 0) return null;
   return (
     <div className={cx('itsm-SkipLinks', className)}>
       {links.map((link) => (
-        <a key={link.targetId} href={`#${link.targetId}`}>
+        <a key={link.targetId} className="itsm-SkipLinks__link" href={`#${link.targetId}`}>
           {link.label}
         </a>
       ))}
