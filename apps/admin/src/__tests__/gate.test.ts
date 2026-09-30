@@ -46,7 +46,7 @@ describe('holding a permission', () => {
     const administrator = person([
       'identity.user.manage',
       'ticket.config.manage',
-      'admin.settings.manage',
+      'admin.flag.manage',
       'identity.session.manage',
     ]);
     expect(holds(administrator, 'platform.tenant.manage')).toBe(false);
@@ -65,5 +65,15 @@ describe('holding a permission', () => {
 
   it('matches exactly, including case', () => {
     expect(holds(person(['Platform.Tenant.Manage']), 'platform.tenant.manage')).toBe(false);
+  });
+});
+
+describe('the feature switches (F3)', () => {
+  it('are gated on the permission the API checks, which the old page misspelt', () => {
+    // `admin.settings.manage` is in no manifest: the old page checked it, so
+    // no administrator could ever move a switch.
+    expect(holds(person(['admin.flag.manage']), 'admin.flag.manage')).toBe(true);
+    expect(holds(person(['admin.settings.manage']), 'admin.flag.manage')).toBe(false);
+    expect(holds(person(['admin.setting.manage']), 'admin.flag.manage')).toBe(false);
   });
 });

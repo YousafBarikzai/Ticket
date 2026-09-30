@@ -172,7 +172,7 @@ export function useMutation<A extends unknown[], R>(fn: (...args: A) => Promise<
             ...(response.description ? { description: response.description } : {}),
             ...(response.retryAt ? { retryAt: response.retryAt } : {}),
             ...(response.retry ? { action: { label: 'Retry', onClick: () => void run(...args) } } : {}),
-            ...(response.usage ? { action: { label: 'See usage', onClick: () => router.push('/settings') } } : {}),
+            ...(response.usage ? { action: { label: 'See usage', onClick: () => router.push('/settings/usage') } } : {}),
           });
           if (response.refresh) refresh();
         }

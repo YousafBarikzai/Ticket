@@ -1,65 +1,56 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { ApiError } from '@itsm/sdk';
-import { EmptyState } from '@itsm/ui';
-import { pageAccess } from '../../../../server/session.js';
+import { Card } from '@itsm/ui';
+import { PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../components/Forbidden.js';
-import { holds } from '../../../../permissions.js';
-import { FlagList } from '../../../../components/FlagList.js';
+import { GeneralView } from '../../../../components/settings/GeneralView.js';
+import { holds, viewOnlyFor } from '../../../../permissions.js';
+import { pageAccess } from '../../../../server/session.js';
+import { loadSettings, reachable, searchState, searchableTabs, settingsTabs } from './data.js';
+import '../../../../components/command-centre/shared.css';
+import '../../../../components/settings/settings.css';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
 
 /**
- * What is switched on.
+ * Settings › General (SPEC §6.1 `/settings`, X-11, MOD-13-E1-S1): how this
+ * desk behaves, one typed control per setting, grouped by what it is about,
+ * with the search first. Every change is a new version: History in a row's ⋯
+ * shows them and restores one; Undo in the toast takes a change back.
  *
- * Feature flags are the only thing here that this slice lets an administrator
- * change, and they are the right first one: a flag is a single boolean with a
- * single blast radius, and every other setting on this desk is a value whose
- * validity depends on what it is for.
+ * `?q=` is the search (the Command centre sends `/settings?q=email`, the
+ * palette a setting's key) and `?changed=1` shows only what differs from the
+ * default. `?open=setting:<key>` is the history sheet.
  */
-export default async function SettingsPage(): Promise<ReactNode> {
+export default async function SettingsPage({ searchParams }: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<ReactNode> {
   const access = await pageAccess('/settings');
   if (!access.allowed) return <Forbidden route="/settings" />;
   const { me, api } = access;
-  const canManage = holds(me, 'admin.settings.manage');
+  const viewOnly = viewOnlyFor(me, 'these settings', 'admin.setting.manage');
+  const header = <PageHeader title="Settings" tabs={settingsTabs(me)} {...(viewOnly ? { viewOnly } : {})} />;
 
-  let flags: Awaited<ReturnType<typeof api.tenant.flags>>;
-  try {
-    flags = await api.tenant.flags();
-  } catch (error) {
+  const [data, params] = await Promise.all([loadSettings(me, api, { settings: true, flags: holds(me, 'admin.setting.read') }), searchParams]);
+  if (!data.settings) {
     return (
-      <EmptyState
-        tone="error"
-        title="The settings could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The API could not be reached.'}
-      />
+      <div className="app-Page app-Settings">
+        {header}
+        <Card title="General" titleAs="h2" {...(data.settingsProblem ? { problem: data.settingsProblem } : {})} />
+      </div>
     );
   }
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Settings</h1>
-        <p className="itsm-Admin__lede">
-          What this desk has switched on. A flag takes effect for everybody on the tenant as soon as it is saved.
-        </p>
-      </header>
-
-      {flags.length === 0 ? (
-        <EmptyState title="No feature flags" description="Nothing on this deployment is behind one." />
-      ) : (
-        <FlagList flags={flags} canManage={canManage} />
-      )}
-
-      <section className="itsm-Admin__note" aria-label="What this screen cannot do yet">
-        <h2>Not built yet</h2>
-        <p>
-          Tenant settings with typed values — the auto-close window, the default priority, the AI budget and its
-          residency regions — are readable and writable through the API and have no controls here. Each needs a control
-          shaped to its own value, and a text box that posts JSON would be a worse answer than none.
-        </p>
-      </section>
+    <div className="app-Page app-Settings">
+      {header}
+      <GeneralView
+        items={data.settings.filter((item) => item.group !== 'ai')}
+        index={data.index}
+        initial={searchState(params)}
+        tabs={searchableTabs(me)}
+        canManage={holds(me, 'admin.setting.manage')}
+        reachable={['/ai-triage'].filter((href) => reachable(me, href) !== undefined)}
+      />
     </div>
   );
 }

@@ -1,79 +1,75 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { ApiError } from '@itsm/sdk';
-import { Badge, EmptyState, Table } from '@itsm/ui';
+import { Card, EmptyState, StatusPill } from '@itsm/ui';
+import { PageHeader } from '@itsm/ui/shell';
+import { planView, plansInOrder } from '../../../../components/platform/presentation.js';
+import { read } from '../../../../server/read.js';
 import { requirePlatformOperator } from '../../../../server/session.js';
+import '../../../../components/platform/platform.css';
 
 export const metadata: Metadata = { title: 'Plans' };
 export const dynamic = 'force-dynamic';
 
 /**
- * The price list (OD-05, ADR-0047).
- *
- * `pricePerAgentMicros` is micro-pence and arrives as a string, because a
- * bigint does not survive JSON and a number loses precision on an annual
- * figure for a large tenant. It is formatted here and nowhere else.
+ * Platform › Plans (SPEC §6.1 `/plans`): the price list every tenant is sold
+ * against, as cards side by side — price per agent, what each plan allows
+ * and warns at, what it includes, and which are no longer sold. Nothing here
+ * charges anybody: these are the numbers a plan is sold against and the
+ * limits it enforces, not a billing system (OD-05, ADR-0047).
  */
-export function formatPrice(micros: string | null, currency: string): string {
-  if (micros === null) return 'Negotiated';
-  const pence = Number(BigInt(micros) / 10_000n) / 100;
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(pence);
-}
-
 export default async function PlansPage(): Promise<ReactNode> {
-  const { api } = await requirePlatformOperator();
+  const { me, api } = await requirePlatformOperator();
+  const plans = await read(() => api.platform.plans());
+  const header = <PageHeader title="Plans" className="app-PlatformHeader" status={<StatusPill tone="info" icon="platform" label="Operator" />} />;
 
-  let plans: Awaited<ReturnType<typeof api.platform.plans>>;
-  try {
-    plans = await api.platform.plans();
-  } catch (error) {
+  if (!plans.ok) {
     return (
-      <EmptyState
-        tone="error"
-        title="The plans could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The API could not be reached.'}
-      />
+      <div className="app-Page app-Platform">
+        {header}
+        <Card title="Plans" titleAs="h2" problem={plans.problem} />
+      </div>
     );
   }
+  const views = plansInOrder(plans.value).map((plan) => planView(plan, me.locale));
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Plans</h1>
-        <p className="itsm-Admin__lede">
-          Per agent, per month. <strong>Nothing in this platform charges anybody</strong> — these are the numbers a
-          plan is sold against and the limits it enforces, not a billing system.
-        </p>
-      </header>
-
-      <Table
-        caption="Plans on this deployment"
-        columns={[
-          { key: 'name', header: 'Plan', cell: (row) => row.name },
-          { key: 'price', header: 'Per agent', align: 'end', cell: (row) => formatPrice(row.pricePerAgentMicros, row.currency) },
-          {
-            key: 'agents',
-            header: 'Agents',
-            align: 'end',
-            cell: (row) => {
-              const limit = row.limits.find((entry) => entry.meter === 'agents');
-              if (!limit) return 'No limit';
-              return limit.hard === null ? `${limit.soft ?? '—'} then warned` : `${limit.hard} hard`;
-            },
-          },
-          {
-            key: 'retired',
-            header: 'Sold',
-            cell: (row) => (
-              <Badge intent={row.isRetired ? 'neutral' : 'success'} srPrefix="Sold">
-                {row.isRetired ? 'Retired' : 'Yes'}
-              </Badge>
-            ),
-          },
-        ]}
-        rows={[...plans].sort((a, b) => a.sortOrder - b.sortOrder)}
-        rowKey={(row) => row.key}
-      />
+    <div className="app-Page app-Platform">
+      {header}
+      {views.length === 0 ? (
+        <EmptyState icon="layers-2" title="No plans yet" description="Plans are written to the deployment when it is first set up." />
+      ) : (
+        <>
+          <p className="app-Plans__lede">Per agent, per month. Limits are what each plan refuses at; tenants are warned before them.</p>
+          <ul className="app-Plans" aria-label="Plans">
+            {views.map((plan) => (
+              <li key={plan.key} className="app-Plans__item">
+                <Card
+                  title={plan.name}
+                  titleAs="h2"
+                  className="app-PlanCard"
+                  {...(plan.retired ? { meta: <StatusPill size="sm" tone="neutral" label="Retired" srPrefix="Sold" /> } : {})}
+                >
+                  <p className="app-PlanCard__price">
+                    <span className="app-PlanCard__amount">{plan.price}</span>
+                    {plan.price === 'Negotiated' ? null : <span className="app-PlanCard__per"> per agent a month</span>}
+                  </p>
+                  {plan.description ? <p className="app-PlanCard__description">{plan.description}</p> : null}
+                  <dl className="app-PlanCard__limits">
+                    {plan.limits.map((limit) => (
+                      <div key={limit.label} className="app-PlanCard__limit">
+                        <dt>{limit.label}</dt>
+                        <dd>{limit.text}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="app-PlanCard__features">{plan.features.length > 0 ? `Includes ${plan.features.join(', ')}.` : 'The core desk, nothing extra.'}</p>
+                  {plan.retired ? <p className="app-PlanCard__features">No longer sold; tenants already on it keep it.</p> : null}
+                </Card>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

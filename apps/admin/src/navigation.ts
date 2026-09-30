@@ -343,7 +343,6 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'settings',
     group: 'footer',
     description: 'How this desk behaves: settings, features, AI, modules, usage and plan.',
-    // "flags" too: until Features has its own tab, the flags live on General.
     keywords: ['configuration', 'preferences', 'options', 'flags', 'feature flags'],
     shortcut: 'g s',
     tabs: [
@@ -399,10 +398,6 @@ export const EXCLUDED: readonly { readonly route: string; readonly read: readonl
  * the same change.
  */
 export const PENDING: ReadonlySet<string> = new Set([
-  '/settings/features',
-  '/settings/ai',
-  '/settings/modules',
-  '/settings/usage',
 ]);
 
 export function isPending(route: string): boolean {
