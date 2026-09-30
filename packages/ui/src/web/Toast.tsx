@@ -4,9 +4,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import { cx } from './cx.js';
 import { announce } from '../a11y/announcer.js';
+import { Icon } from '../icons/Icon.js';
+import type { IconName } from '../types.js';
 import { IconButton } from './IconButton.js';
 
 export type ToastIntent = 'info' | 'success' | 'warning' | 'danger';
+
+/** Each intent's shape, so the tone is never carried by colour alone (SPEC §1.1). */
+const intentIcon: Readonly<Record<ToastIntent, IconName>> = {
+  info: 'info',
+  success: 'circle-check',
+  warning: 'triangle-alert',
+  danger: 'circle-alert',
+};
 
 export interface ToastOptions {
   readonly title: string;
@@ -110,6 +120,7 @@ export function ToastProvider({ children, label = 'Notifications' }: ToastProvid
                     if (timer) clearTimeout(timer);
                   }}
                 >
+                  <Icon name={intentIcon[item.intent ?? 'info']} size="md" className="itsm-Toast__icon" />
                   <div className="itsm-Toast__body">
                     <div className="itsm-Toast__title">{item.title}</div>
                     {item.description ? <div className="itsm-Toast__description">{item.description}</div> : null}
@@ -126,7 +137,7 @@ export function ToastProvider({ children, label = 'Notifications' }: ToastProvid
                       </button>
                     ) : null}
                   </div>
-                  <IconButton size="sm" label={`Dismiss: ${item.title}`} icon="✕" onClick={() => dismiss(item.id)} />
+                  <IconButton size="sm" variant="ghost" label={`Dismiss: ${item.title}`} icon="x" onClick={() => dismiss(item.id)} />
                 </div>
               ))}
             </div>,

@@ -80,9 +80,15 @@ describe('Banner', () => {
     );
     await act(async () => {
       click(button(container, 'Discard both')!);
-      // The dialog is loaded on demand from the overlays subpath.
-      await new Promise((resolve) => setTimeout(resolve, 50));
     });
+    // The dialog is loaded on demand from the overlays subpath, and the first
+    // load of that chunk (Radix and all) takes as long as it takes: wait for
+    // it rather than for a fixed time.
+    for (let waited = 0; waited < 3000 && !document.querySelector('[role="alertdialog"], [role="dialog"]'); waited += 25) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+    }
     expect(onAction).not.toHaveBeenCalled();
     expect(document.querySelector('[role="alertdialog"], [role="dialog"]')).not.toBeNull();
   });

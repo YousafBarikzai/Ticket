@@ -1,49 +1,25 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import * as RadixPopover from '@radix-ui/react-popover';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { Icon } from '../icons/Icon.js';
+import { Calendar } from '../overlays/Calendar.js';
+import {
+  datePattern,
+  displayIsoDate,
+  formatIsoDate,
+  formatLocaleDate,
+  parseIsoDate,
+  parseLocaleDate,
+  todayUtc,
+} from '../overlays/calendar-dates.js';
+import { useOptionalItsm } from '../provider/ItsmProvider.js';
+import type { Size } from '../types.js';
 import { cx } from './cx.js';
-import { useStableId } from '../a11y/ids.js';
-import { IconButton } from './IconButton.js';
+import { mergeFieldProps, useFieldControl } from './FormField.js';
+import { useMergedRefs } from './refs.js';
 
-/**
- * Date helpers.
- *
- * Everything is computed in UTC and exchanged as an ISO calendar date
- * (`yyyy-mm-dd`). A local-time `Date` shifts by a day either side of midnight
- * for users east or west of the server, which is how "due tomorrow" tickets end
- * up breaching a day early.
- */
-export function parseIsoDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const [, year, month, day] = match;
-  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-export function formatIsoDate(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-}
-
-function addDays(date: Date, days: number): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
-}
-
-function addMonths(date: Date, months: number): Date {
-  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), Math.min(date.getUTCDate(), lastDay)));
-}
-
-function startOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-}
-
-function todayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
+export { formatIsoDate, parseIsoDate } from '../overlays/calendar-dates.js';
 
 export interface DatePickerProps {
   /** ISO calendar date, or null when empty. */
@@ -54,23 +30,44 @@ export interface DatePickerProps {
   readonly max?: string;
   readonly disabled?: boolean;
   readonly required?: boolean;
-  /** BCP-47 tag; drives month and weekday names, and the first day of the week. */
+  /** BCP-47 tag; drives how dates are typed and shown, and month and weekday names. Defaults to the provider's. */
   readonly locale?: string;
+  /** 0 Sunday, 1 Monday. Defaults to the locale's. */
   readonly weekStartsOn?: 0 | 1;
+  /** Named shortcuts beside the calendar ("Today", "End of the month"). */
+  readonly presets?: readonly { readonly label: string; readonly value: string }[];
+  /** Defaults to the locale's pattern, "dd/mm/yyyy". */
+  readonly placeholder?: string;
+  readonly size?: Size;
   readonly className?: string;
+  readonly ref?: Ref<HTMLInputElement>;
   readonly 'aria-describedby'?: string;
   readonly 'aria-invalid'?: true;
   readonly 'aria-label'?: string;
+  readonly 'aria-labelledby'?: string;
+}
+
+/** Whether typed text already says which year it means, so it can be taken as the person types. */
+function hasYear(text: string): boolean {
+  return /\d{4}/.test(text) || text.trim().split(/[\s/.,\-]+/).filter(Boolean).length === 3;
 }
 
 /**
- * A text field plus a calendar.
+ * A date field with a calendar beside it.
  *
- * The text field is the primary input — typing `2026-03-14` is faster than any
- * grid, and it is the only route that works with voice control. The calendar is
- * an optional aid: a `dialog` containing a `grid`, with one tab stop, arrow
- * keys between days, PageUp/PageDown between months, Escape to dismiss, and
- * focus returned to the toggle either way (SC 2.1.2, 2.4.3).
+ * The text field is the primary input — typing is faster than any grid and is
+ * the only route that works with voice control — and it reads dates the way
+ * the person's locale writes them (`14/03/2026`, `14 Mar 2026`, or ISO), then
+ * shows them back in the locale's medium style once they leave the field.
+ * What is exchanged is always an ISO calendar date. Text that is not one real
+ * day is kept as typed, marked invalid, and reported as no date — never
+ * silently guessed.
+ *
+ * The calendar is an aid, in a Radix popover anchored to the field: a
+ * `dialog` holding a keyboard grid (`Calendar`), with presets when given,
+ * opened by the calendar button or Alt+↓, closed by Escape (as the top
+ * layer, so the dialog around it stays open), and focus back on the button
+ * either way (SC 2.1.2, 2.4.3).
  */
 export function DatePicker({
   value,
@@ -80,230 +77,214 @@ export function DatePicker({
   max,
   disabled = false,
   required = false,
-  locale = 'en-GB',
-  weekStartsOn = 1,
+  locale: localeProp,
+  weekStartsOn,
+  presets,
+  placeholder,
+  size = 'md',
   className,
+  ref,
   'aria-describedby': ariaDescribedBy,
   'aria-invalid': ariaInvalid,
   'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
 }: DatePickerProps): ReactNode {
-  const generatedId = useStableId('itsm-datepicker');
-  const inputId = id ?? generatedId;
-  const dialogId = `${generatedId}-dialog`;
-  const captionId = `${generatedId}-caption`;
+  const itsm = useOptionalItsm();
+  const locale = localeProp ?? itsm?.locale ?? 'en-GB';
+  const field = useFieldControl();
+  const wired = mergeFieldProps(field, { id, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid, required });
 
+  const [text, setText] = useState(() => displayIsoDate(value, locale));
+  const [editing, setEditing] = useState(false);
+  const [unreadable, setUnreadable] = useState(false);
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState(value ?? '');
-  const selected = parseIsoDate(value);
-  const [focusedDate, setFocusedDate] = useState<Date>(() => selected ?? todayUtc());
+  const [focusedDate, setFocusedDate] = useState<Date>(() => parseIsoDate(value) ?? todayUtc());
+  const [focusRequest, setFocusRequest] = useState(0);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const mergedRef = useMergedRefs<HTMLInputElement>(ref, inputRef);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
-  const gridRef = useRef<HTMLTableElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => setText(value ?? ''), [value]);
+  // The field follows the value when it changes from outside — not while the
+  // person is typing, and not for a change this field made itself (its text
+  // already says it, including text kept because it could not be read).
+  const own = useRef<{ readonly value: string | null } | null>(null);
+  const seen = useRef({ value, locale });
+  useEffect(() => {
+    if (seen.current.value === value && seen.current.locale === locale) return;
+    seen.current = { value, locale };
+    if (own.current && own.current.value === value) {
+      own.current = null;
+      return;
+    }
+    own.current = null;
+    if (editing) return;
+    setText(displayIsoDate(value, locale));
+    setUnreadable(false);
+  }, [value, locale, editing]);
 
   const minDate = parseIsoDate(min);
   const maxDate = parseIsoDate(max);
-  const isOutOfRange = (date: Date): boolean =>
+  const outOfRange = (date: Date): boolean =>
     (minDate !== null && date.getTime() < minDate.getTime()) || (maxDate !== null && date.getTime() > maxDate.getTime());
 
-  const monthFormatter = useMemo(
-    () => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }),
-    [locale],
-  );
-  const dayFormatter = useMemo(
-    () => new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }),
-    [locale],
-  );
-  const weekdayNames = useMemo(() => {
-    const short = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' });
-    const long = new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' });
-    // 2024-01-01 was a Monday, which gives a stable anchor for any week start.
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(Date.UTC(2024, 0, 1 + ((index + (weekStartsOn === 1 ? 0 : 6)) % 7)));
-      return { short: short.format(date), long: long.format(date) };
-    });
-  }, [locale, weekStartsOn]);
+  const publish = (next: string | null): void => {
+    if (next === value) return;
+    own.current = { value: next };
+    onChange(next);
+  };
 
-  const weeks = useMemo(() => {
-    const first = startOfMonth(focusedDate);
-    const offset = (first.getUTCDay() - weekStartsOn + 7) % 7;
-    const start = addDays(first, -offset);
-    return Array.from({ length: 6 }, (_, week) => Array.from({ length: 7 }, (_, day) => addDays(start, week * 7 + day)));
-  }, [focusedDate, weekStartsOn]);
+  /** Reads what is in the field as final: on leaving it, or on Enter. */
+  const settle = (): void => {
+    const trimmed = text.trim();
+    if (trimmed === '') {
+      setUnreadable(false);
+      publish(null);
+      return;
+    }
+    const parsed = parseLocaleDate(trimmed, locale);
+    if (parsed && !outOfRange(parsed)) {
+      setUnreadable(false);
+      setText(formatLocaleDate(parsed, locale));
+      publish(formatIsoDate(parsed));
+    } else {
+      setUnreadable(true);
+      publish(null);
+    }
+  };
 
-  // Moving the focused date moves DOM focus with it, so the screen reader
-  // follows the caret through the grid.
-  useEffect(() => {
-    if (!open) return;
-    const iso = formatIsoDate(focusedDate);
-    gridRef.current?.querySelector<HTMLButtonElement>(`[data-date="${iso}"]`)?.focus();
-  }, [open, focusedDate]);
-
-  const closeAndReturnFocus = (): void => {
+  const setOpenState = (next: boolean): void => {
+    if (next) {
+      setFocusedDate(parseIsoDate(value) ?? todayUtc());
+      setFocusRequest((count) => count + 1);
+      setOpen(true);
+      return;
+    }
+    // Back to the button, in the same frame, when focus was in the calendar.
+    if (popoverRef.current?.contains(document.activeElement)) toggleRef.current?.focus();
     setOpen(false);
-    toggleRef.current?.focus();
   };
 
   const commit = (date: Date): void => {
-    if (isOutOfRange(date)) return;
-    onChange(formatIsoDate(date));
-    closeAndReturnFocus();
+    if (outOfRange(date)) return;
+    setUnreadable(false);
+    setText(formatLocaleDate(date, locale));
+    publish(formatIsoDate(date));
+    toggleRef.current?.focus();
+    setOpen(false);
   };
 
-  const onGridKeyDown = (event: KeyboardEvent<HTMLTableElement>): void => {
-    let next: Date | null = null;
-    switch (event.key) {
-      case 'ArrowRight':
-        next = addDays(focusedDate, 1);
-        break;
-      case 'ArrowLeft':
-        next = addDays(focusedDate, -1);
-        break;
-      case 'ArrowDown':
-        next = addDays(focusedDate, 7);
-        break;
-      case 'ArrowUp':
-        next = addDays(focusedDate, -7);
-        break;
-      case 'Home':
-        next = addDays(focusedDate, -((focusedDate.getUTCDay() - weekStartsOn + 7) % 7));
-        break;
-      case 'End':
-        next = addDays(focusedDate, 6 - ((focusedDate.getUTCDay() - weekStartsOn + 7) % 7));
-        break;
-      case 'PageUp':
-        next = addMonths(focusedDate, event.shiftKey ? -12 : -1);
-        break;
-      case 'PageDown':
-        next = addMonths(focusedDate, event.shiftKey ? 12 : 1);
-        break;
-      case 'Escape':
-        event.preventDefault();
-        event.stopPropagation();
-        closeAndReturnFocus();
-        return;
-      default:
-        return;
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'ArrowDown' && event.altKey) {
+      event.preventDefault();
+      setOpenState(true);
+    } else if (event.key === 'Enter') {
+      settle();
     }
-    event.preventDefault();
-    setFocusedDate(next);
   };
+
+  const invalid = wired['aria-invalid'] === true || unreadable;
 
   return (
-    <div className={cx('itsm-DatePicker', className)}>
-      <input
-        id={inputId}
-        className="itsm-Input"
-        type="text"
-        inputMode="numeric"
-        placeholder="yyyy-mm-dd"
-        autoComplete="off"
-        disabled={disabled}
-        required={required}
-        aria-describedby={ariaDescribedBy}
-        aria-invalid={ariaInvalid}
-        aria-label={ariaLabel}
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          const parsed = parseIsoDate(event.target.value);
-          // Only publish a complete, in-range date: half-typed text must not
-          // clear a field the user has not finished editing.
-          if (parsed && !isOutOfRange(parsed)) {
-            onChange(formatIsoDate(parsed));
-            setFocusedDate(parsed);
-          } else if (event.target.value === '') {
-            onChange(null);
-          }
-        }}
-      />
-      <IconButton
-        ref={toggleRef}
-        size="sm"
-        label={open ? 'Close calendar' : 'Choose date from calendar'}
-        icon="📅"
-        disabled={disabled}
-        aria-expanded={open}
-        aria-controls={open ? dialogId : undefined}
-        onClick={() => {
-          setFocusedDate(parseIsoDate(value) ?? todayUtc());
-          setOpen((current) => !current);
-        }}
-      />
-      {open ? (
+    <RadixPopover.Root open={open && !disabled} onOpenChange={setOpenState}>
+      <RadixPopover.Anchor asChild>
         <div
-          id={dialogId}
-          role="dialog"
-          aria-modal="false"
-          aria-labelledby={captionId}
-          className="itsm-DatePicker__panel"
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-          }}
+          className={cx('itsm-InputGroup', 'itsm-DatePicker', size !== 'md' && `itsm-InputGroup--${size}`, className)}
+          data-disabled={disabled ? '' : undefined}
+          data-invalid={invalid ? '' : undefined}
         >
-          <div className="itsm-DatePicker__header">
-            <IconButton
-              size="sm"
-              label="Previous month"
-              icon="‹"
-              onClick={() => setFocusedDate(addMonths(focusedDate, -1))}
-            />
-            {/* aria-live so that changing month is announced without moving focus. */}
-            <span className="itsm-DatePicker__month" id={captionId} aria-live="polite">
-              {monthFormatter.format(focusedDate)}
-            </span>
-            <IconButton size="sm" label="Next month" icon="›" onClick={() => setFocusedDate(addMonths(focusedDate, 1))} />
-          </div>
-          <table
-            ref={gridRef}
-            role="grid"
-            className="itsm-DatePicker__grid"
-            aria-labelledby={captionId}
-            onKeyDown={onGridKeyDown}
-          >
-            <thead>
-              <tr>
-                {weekdayNames.map((weekday) => (
-                  <th key={weekday.long} scope="col" abbr={weekday.long}>
-                    {weekday.short}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {weeks.map((week) => (
-                <tr key={formatIsoDate(week[0] as Date)}>
-                  {week.map((date) => {
-                    const iso = formatIsoDate(date);
-                    const isSelected = value === iso;
-                    const outside = date.getUTCMonth() !== focusedDate.getUTCMonth();
-                    return (
-                      <td key={iso} role="gridcell">
-                        <button
-                          type="button"
-                          className="itsm-DatePicker__day"
-                          data-date={iso}
-                          data-today={formatIsoDate(todayUtc()) === iso}
-                          data-outside={outside}
-                          aria-selected={isSelected}
-                          aria-label={dayFormatter.format(date)}
-                          // One tab stop for the whole grid: Tab leaves the
-                          // calendar rather than walking 42 days.
-                          tabIndex={formatIsoDate(focusedDate) === iso ? 0 : -1}
-                          disabled={isOutOfRange(date)}
-                          onClick={() => commit(date)}
-                        >
-                          {date.getUTCDate()}
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <input
+            ref={mergedRef}
+            id={wired.id}
+            className="itsm-InputGroup__input itsm-DatePicker__input"
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={placeholder ?? datePattern(locale)}
+            disabled={disabled}
+            required={wired.required}
+            aria-required={wired.required || undefined}
+            aria-describedby={wired['aria-describedby']}
+            aria-invalid={invalid || undefined}
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
+            value={text}
+            onFocus={() => setEditing(true)}
+            onBlur={() => {
+              setEditing(false);
+              settle();
+            }}
+            onChange={(event) => {
+              const next = event.target.value;
+              setText(next);
+              setUnreadable(false);
+              if (next.trim() === '') {
+                publish(null);
+                return;
+              }
+              // A complete date is taken as it is typed; one without a year
+              // waits until the field is left, when "14/3" means this year.
+              if (!hasYear(next)) return;
+              const parsed = parseLocaleDate(next, locale);
+              if (parsed && !outOfRange(parsed)) {
+                publish(formatIsoDate(parsed));
+                setFocusedDate(parsed);
+              }
+            }}
+            onKeyDown={onKeyDown}
+          />
+          <RadixPopover.Trigger asChild>
+            <button ref={toggleRef} type="button" className="itsm-DatePicker__toggle" aria-label="Choose date" disabled={disabled}>
+              <Icon name="calendar" size="sm" />
+            </button>
+          </RadixPopover.Trigger>
         </div>
-      ) : null}
-    </div>
+      </RadixPopover.Anchor>
+      <RadixPopover.Portal>
+        <RadixPopover.Content
+          ref={popoverRef}
+          className="itsm-DatePicker__popover"
+          aria-label="Choose date"
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionPadding={8}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+        >
+          {presets && presets.length > 0 ? (
+            <div className="itsm-DatePicker__presets" role="group" aria-label="Quick picks">
+              {presets.map((preset) => {
+                const date = parseIsoDate(preset.value);
+                const unavailable = !date || outOfRange(date);
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    className="itsm-DatePicker__preset"
+                    aria-pressed={preset.value === value}
+                    disabled={unavailable}
+                    onClick={() => date && commit(date)}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <Calendar
+            focusedDate={focusedDate}
+            onFocusedDateChange={setFocusedDate}
+            onSelect={commit}
+            mark={(date) => (value === formatIsoDate(date) ? 'single' : null)}
+            isDisabled={outOfRange}
+            locale={locale}
+            weekStartsOn={weekStartsOn}
+            focusRequest={focusRequest}
+          />
+        </RadixPopover.Content>
+      </RadixPopover.Portal>
+    </RadixPopover.Root>
   );
 }
