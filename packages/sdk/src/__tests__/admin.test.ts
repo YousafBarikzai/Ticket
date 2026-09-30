@@ -230,3 +230,31 @@ describe('observe', () => {
     expect(calls[0]!.body).toEqual({ reason: 'Supplier retired' });
   });
 });
+
+describe('the platform surface', () => {
+  const id = '01a0ee8e-2e36-7705-b28e-80a403f83962';
+
+  it('reads one tenant’s usage under the platform prefix', async () => {
+    const { calls, api } = recording({ planKey: 'none', meters: [] });
+    await api.platform.tenantUsage(id);
+    expect(calls[0]).toMatchObject({ method: 'GET', url: `http://api.test/api/platform/v1/tenants/${id}/usage` });
+  });
+
+  it('suspends with a reason when there is one, and resumes with an empty body', async () => {
+    const { calls, api } = recording({ id, status: 'suspended' });
+    await api.platform.suspendTenant(id, 'Unpaid since June');
+    await api.platform.suspendTenant(id);
+    await api.platform.resumeTenant(id);
+    expect(calls.map((call) => [call.method, call.url.replace('http://api.test', ''), call.body])).toEqual([
+      ['POST', `/api/platform/v1/tenants/${id}/suspend`, { reason: 'Unpaid since June' }],
+      ['POST', `/api/platform/v1/tenants/${id}/suspend`, {}],
+      ['POST', `/api/platform/v1/tenants/${id}/resume`, {}],
+    ]);
+  });
+
+  it('moves a tenant between plans with the strict body the route takes', async () => {
+    const { calls, api } = recording({ id, planKey: 'growth' });
+    await api.platform.assignPlan(id, 'growth');
+    expect(calls[0]).toMatchObject({ method: 'PUT', url: `http://api.test/api/platform/v1/tenants/${id}/plan`, body: { planKey: 'growth' } });
+  });
+});

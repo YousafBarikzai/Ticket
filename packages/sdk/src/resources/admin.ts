@@ -239,6 +239,26 @@ export interface TenantRow {
   status: string;
   region: string;
   createdAt: string;
+  /** The plan the tenant is sold on; null when it has none. Absent from an API that predates it. */
+  planKey?: string | null;
+  /** Where the tenant's prompts may be processed; empty means "where its data lives". */
+  aiAllowedRegions?: string[];
+  suspendedAt?: string | null;
+}
+
+/** One tenant's meters, as the platform sees them (`GET /api/platform/v1/tenants/:id/usage`). */
+export interface PlatformTenantUsage {
+  /** `none` when the tenant is on no plan. */
+  planKey: string;
+  meters: {
+    meter: UsageMeterKey;
+    value: number;
+    display: string;
+    state: 'ok' | 'warned' | 'blocked';
+    period: string;
+    soft: number | null;
+    hard: number | null;
+  }[];
 }
 
 export interface PlanRow {
@@ -353,6 +373,12 @@ export interface Admin {
     tenants(): Promise<TenantRow[]>;
     plans(): Promise<PlanRow[]>;
     setAiRegions(tenantId: string, regions: string[]): Promise<{ id: string; aiAllowedRegions: string[] }>;
+    tenantUsage(tenantId: string): Promise<PlatformTenantUsage>;
+    /** Every call for the tenant is refused until it is resumed. The reason is kept on the audit trail. */
+    suspendTenant(tenantId: string, reason?: string): Promise<{ id: string; status: 'suspended' }>;
+    resumeTenant(tenantId: string): Promise<{ id: string; status: 'active' }>;
+    /** Refused (409) for a retired plan the tenant is not already on. */
+    assignPlan(tenantId: string, planKey: string): Promise<{ id: string; planKey: string | null }>;
   };
 }
 
@@ -468,6 +494,22 @@ export function admin(client: Client): Admin {
           `/api/platform/v1/tenants/${encodeURIComponent(tenantId)}/ai-regions`,
           { method: 'PUT', body: { regions } },
         ),
+      tenantUsage: (tenantId) => client.request<PlatformTenantUsage>(`/api/platform/v1/tenants/${encodeURIComponent(tenantId)}/usage`),
+      suspendTenant: (tenantId, reason) =>
+        client.request<{ id: string; status: 'suspended' }>(`/api/platform/v1/tenants/${encodeURIComponent(tenantId)}/suspend`, {
+          method: 'POST',
+          body: reason ? { reason } : {},
+        }),
+      resumeTenant: (tenantId) =>
+        client.request<{ id: string; status: 'active' }>(`/api/platform/v1/tenants/${encodeURIComponent(tenantId)}/resume`, {
+          method: 'POST',
+          body: {},
+        }),
+      assignPlan: (tenantId, planKey) =>
+        client.request<{ id: string; planKey: string | null }>(`/api/platform/v1/tenants/${encodeURIComponent(tenantId)}/plan`, {
+          method: 'PUT',
+          body: { planKey },
+        }),
     },
   };
 }

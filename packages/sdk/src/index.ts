@@ -11,6 +11,7 @@ export {
   type OrganisationRow,
   type PermissionRow,
   type PlanRow,
+  type PlatformTenantUsage,
   type ResolvedSetting,
   type RoleAssignmentRow,
   type RoleRow,
