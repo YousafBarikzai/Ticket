@@ -1,9 +1,7 @@
 'use client';
 
-import * as RadixPopover from '@radix-ui/react-popover';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 import { Icon } from '../icons/Icon.js';
-import { Calendar } from '../overlays/Calendar.js';
 import {
   datePattern,
   displayIsoDate,
@@ -17,6 +15,7 @@ import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import type { Size } from '../types.js';
 import { cx } from './cx.js';
 import { mergeFieldProps, useFieldControl } from './FormField.js';
+import { useEscapeBeforeLayer, usePopoverLayer } from './popover-layer.js';
 import { useMergedRefs } from './refs.js';
 
 export { formatIsoDate, parseIsoDate } from '../overlays/calendar-dates.js';
@@ -67,7 +66,11 @@ function hasYear(text: string): boolean {
  * `dialog` holding a keyboard grid (`Calendar`), with presets when given,
  * opened by the calendar button or Alt+↓, closed by Escape (as the top
  * layer, so the dialog around it stays open), and focus back on the button
- * either way (SC 2.1.2, 2.4.3).
+ * either way (SC 2.1.2, 2.4.3). The popover and the calendar arrive after
+ * the field (`popover-layer.ts`), fetched when the field or the button takes
+ * focus or the pointer reaches the button, so a form with a date in it does
+ * not carry them in its first load; a calendar asked for before they land
+ * opens as soon as they do.
  */
 export function DatePicker({
   value,
@@ -104,6 +107,10 @@ export function DatePicker({
   const mergedRef = useMergedRefs<HTMLInputElement>(ref, inputRef);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const popoverId = `${useId()}-calendar`;
+  const showing = open && !disabled;
+  const { layer, preload } = usePopoverLayer(showing);
 
   // The field follows the value when it changes from outside — not while the
   // person is typing, and not for a change this field made itself (its text
@@ -183,67 +190,93 @@ export function DatePicker({
     }
   };
 
+  // The calendar is wanted and its layer is still on its way: Escape is still the calendar's.
+  useEscapeBeforeLayer(
+    showing && !layer,
+    (target) => target === inputRef.current || target === toggleRef.current,
+    () => setOpen(false),
+  );
+
   const invalid = wired['aria-invalid'] === true || unreadable;
 
   return (
-    <RadixPopover.Root open={open && !disabled} onOpenChange={setOpenState}>
-      <RadixPopover.Anchor asChild>
-        <div
-          className={cx('itsm-InputGroup', 'itsm-DatePicker', size !== 'md' && `itsm-InputGroup--${size}`, className)}
-          data-disabled={disabled ? '' : undefined}
-          data-invalid={invalid ? '' : undefined}
+    <>
+      <div
+        ref={anchorRef}
+        className={cx('itsm-InputGroup', 'itsm-DatePicker', size !== 'md' && `itsm-InputGroup--${size}`, className)}
+        data-disabled={disabled ? '' : undefined}
+        data-invalid={invalid ? '' : undefined}
+      >
+        <input
+          ref={mergedRef}
+          id={wired.id}
+          className="itsm-InputGroup__input itsm-DatePicker__input"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={placeholder ?? datePattern(locale)}
+          disabled={disabled}
+          required={wired.required}
+          aria-required={wired.required || undefined}
+          aria-describedby={wired['aria-describedby']}
+          aria-invalid={invalid || undefined}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledBy}
+          value={text}
+          onFocus={() => {
+            setEditing(true);
+            preload();
+          }}
+          onBlur={() => {
+            setEditing(false);
+            settle();
+          }}
+          onChange={(event) => {
+            const next = event.target.value;
+            setText(next);
+            setUnreadable(false);
+            if (next.trim() === '') {
+              publish(null);
+              return;
+            }
+            // A complete date is taken as it is typed; one without a year
+            // waits until the field is left, when "14/3" means this year.
+            if (!hasYear(next)) return;
+            const parsed = parseLocaleDate(next, locale);
+            if (parsed && !outOfRange(parsed)) {
+              publish(formatIsoDate(parsed));
+              setFocusedDate(parsed);
+            }
+          }}
+          onKeyDown={onKeyDown}
+        />
+        <button
+          ref={toggleRef}
+          type="button"
+          className="itsm-DatePicker__toggle"
+          aria-label="Choose date"
+          aria-haspopup="dialog"
+          aria-expanded={showing}
+          aria-controls={showing && layer ? popoverId : undefined}
+          data-state={showing ? 'open' : 'closed'}
+          disabled={disabled}
+          onPointerEnter={(event) => {
+            if (event.pointerType !== 'touch') preload();
+          }}
+          onFocus={preload}
+          onClick={() => setOpenState(!open)}
         >
-          <input
-            ref={mergedRef}
-            id={wired.id}
-            className="itsm-InputGroup__input itsm-DatePicker__input"
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={placeholder ?? datePattern(locale)}
-            disabled={disabled}
-            required={wired.required}
-            aria-required={wired.required || undefined}
-            aria-describedby={wired['aria-describedby']}
-            aria-invalid={invalid || undefined}
-            aria-label={ariaLabel}
-            aria-labelledby={ariaLabelledBy}
-            value={text}
-            onFocus={() => setEditing(true)}
-            onBlur={() => {
-              setEditing(false);
-              settle();
-            }}
-            onChange={(event) => {
-              const next = event.target.value;
-              setText(next);
-              setUnreadable(false);
-              if (next.trim() === '') {
-                publish(null);
-                return;
-              }
-              // A complete date is taken as it is typed; one without a year
-              // waits until the field is left, when "14/3" means this year.
-              if (!hasYear(next)) return;
-              const parsed = parseLocaleDate(next, locale);
-              if (parsed && !outOfRange(parsed)) {
-                publish(formatIsoDate(parsed));
-                setFocusedDate(parsed);
-              }
-            }}
-            onKeyDown={onKeyDown}
-          />
-          <RadixPopover.Trigger asChild>
-            <button ref={toggleRef} type="button" className="itsm-DatePicker__toggle" aria-label="Choose date" disabled={disabled}>
-              <Icon name="calendar" size="sm" />
-            </button>
-          </RadixPopover.Trigger>
-        </div>
-      </RadixPopover.Anchor>
-      <RadixPopover.Portal>
-        <RadixPopover.Content
+          <Icon name="calendar" size="sm" />
+        </button>
+      </div>
+      {layer ? (
+        <layer.PopoverLayer
+          open={showing}
+          onOpenChange={setOpenState}
+          anchorRef={anchorRef}
           ref={popoverRef}
+          id={popoverId}
           className="itsm-DatePicker__popover"
           aria-label="Choose date"
           side="bottom"
@@ -252,6 +285,10 @@ export function DatePicker({
           collisionPadding={8}
           onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => event.preventDefault()}
+          onInteractOutside={(event) => {
+            // A press on the button toggles the calendar itself; it is not "outside".
+            if (event.target instanceof Node && toggleRef.current?.contains(event.target)) event.preventDefault();
+          }}
         >
           {presets && presets.length > 0 ? (
             <div className="itsm-DatePicker__presets" role="group" aria-label="Quick picks">
@@ -273,7 +310,7 @@ export function DatePicker({
               })}
             </div>
           ) : null}
-          <Calendar
+          <layer.Calendar
             focusedDate={focusedDate}
             onFocusedDateChange={setFocusedDate}
             onSelect={commit}
@@ -283,8 +320,8 @@ export function DatePicker({
             weekStartsOn={weekStartsOn}
             focusRequest={focusRequest}
           />
-        </RadixPopover.Content>
-      </RadixPopover.Portal>
-    </RadixPopover.Root>
+        </layer.PopoverLayer>
+      ) : null}
+    </>
   );
 }

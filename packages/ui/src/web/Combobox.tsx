@@ -1,6 +1,5 @@
 'use client';
 
-import * as RadixPopover from '@radix-ui/react-popover';
 import {
   useCallback,
   useEffect,
@@ -24,6 +23,7 @@ import type { IconName, Size } from '../types.js';
 import { Avatar, type PresenceStatus } from './Avatar.js';
 import { cx } from './cx.js';
 import { mergeFieldProps, useFieldControl } from './FormField.js';
+import { useEscapeBeforeLayer, usePopoverLayer } from './popover-layer.js';
 import { useMergedRefs } from './refs.js';
 
 export interface ComboboxOption<T = unknown> {
@@ -128,7 +128,12 @@ function arrange<T>(items: readonly ComboboxOption<T>[]): { readonly flat: Combo
  * The list floats on the Radix popover, anchored to the field: portalled so
  * no card or table clips it, flipped when there is no room below, and part
  * of the overlay layer stack — so inside a dialog, Escape closes the list
- * first and the dialog second (SPEC §4.3).
+ * first and the dialog second (SPEC §4.3). The popover arrives after the
+ * field (`popover-layer.ts`): it is fetched when the field takes focus or
+ * the pointer reaches it, so a form that merely contains a combobox does not
+ * carry the popover library in its first load. Until it lands the list is
+ * kept, hidden, beside the input, so the field's ARIA references always
+ * resolve and nothing typed is lost.
  *
  * - `multiple` puts the choices in the field as chips; each chip has its own
  *   remove button, and Backspace in the empty field removes the last one.
@@ -183,6 +188,8 @@ export function Combobox<T = unknown>(props: ComboboxProps<T>): ReactNode {
   const mergedRef = useMergedRefs<HTMLInputElement>(ref, inputRef);
   const fieldRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
+  const showing = open && !disabled;
+  const { layer, preload } = usePopoverLayer(showing);
 
   // What to search for. The chosen option's own label, put in the field when
   // it takes focus, is not a search: until the person types, every option
@@ -367,6 +374,9 @@ export function Combobox<T = unknown>(props: ComboboxProps<T>): ReactNode {
 
   const withinField = (target: EventTarget | null): boolean => target instanceof Node && (fieldRef.current?.contains(target) ?? false);
 
+  // The list is wanted and its layer is still on its way: Escape is still the list's.
+  useEscapeBeforeLayer(showing && !layer, (target) => target === inputRef.current, () => close(true));
+
   const activeId = open && activeIndex >= 0 && items[activeIndex] ? `${listboxId}-o${activeIndex}` : undefined;
   const displayValue = multiple ? query : open ? query : (single?.label ?? '');
   const showClear = clearable && !disabled && (selected.length > 0 || (multiple && query !== ''));
@@ -421,93 +431,118 @@ export function Combobox<T = unknown>(props: ComboboxProps<T>): ReactNode {
     );
   };
 
+  const listbox = (
+    <>
+      <div id={listboxId} role="listbox" aria-label={ariaLabel ?? 'Suggestions'} aria-multiselectable={multiple || undefined} className="itsm-Combobox__list">
+        {sections.map((section) =>
+          section.group === null ? (
+            section.options.map(optionNode)
+          ) : (
+            <div key={`group:${section.group}`} role="group" aria-label={section.group} className="itsm-Combobox__group">
+              <div className="itsm-Combobox__groupLabel" aria-hidden="true">
+                {section.group}
+              </div>
+              {section.options.map(optionNode)}
+            </div>
+          ),
+        )}
+      </div>
+      {status ? <div className="itsm-Combobox__status">{status}</div> : null}
+    </>
+  );
+
   return (
-    <RadixPopover.Root
-      open={open && !disabled}
-      onOpenChange={(next) => {
-        if (!next) close(true);
-      }}
-    >
-      <RadixPopover.Anchor asChild>
-        <div
-          ref={fieldRef}
-          className={cx('itsm-InputGroup', 'itsm-Combobox', size !== 'md' && `itsm-InputGroup--${size}`, multiple && 'itsm-Combobox--multiple', className)}
-          data-disabled={disabled ? '' : undefined}
-          data-invalid={wired['aria-invalid'] ? '' : undefined}
-          onPointerDown={(event) => {
-            // A press on the field's padding puts the caret in the input, as a plain field would.
-            if (event.target !== event.currentTarget) return;
-            event.preventDefault();
-            inputRef.current?.focus();
+    <>
+      <div
+        ref={fieldRef}
+        className={cx('itsm-InputGroup', 'itsm-Combobox', size !== 'md' && `itsm-InputGroup--${size}`, multiple && 'itsm-Combobox--multiple', className)}
+        data-disabled={disabled ? '' : undefined}
+        data-invalid={wired['aria-invalid'] ? '' : undefined}
+        onPointerEnter={(event) => {
+          if (event.pointerType !== 'touch') preload();
+        }}
+        onPointerDown={(event) => {
+          // A press on the field's padding puts the caret in the input, as a plain field would.
+          if (event.target !== event.currentTarget) return;
+          event.preventDefault();
+          inputRef.current?.focus();
+        }}
+      >
+        {multiple
+          ? selected.map((option) => (
+              <span key={option.value} className="itsm-Combobox__chip">
+                <span className="itsm-Combobox__chipLabel">{option.label}</span>
+                {!disabled ? (
+                  <button
+                    type="button"
+                    className="itsm-Combobox__chipRemove"
+                    aria-label={`${messages.remove} ${option.label}`}
+                    onClick={() => remove(option)}
+                  >
+                    <Icon name="x" size="xs" />
+                  </button>
+                ) : null}
+              </span>
+            ))
+          : null}
+        <input
+          ref={mergedRef}
+          id={inputId}
+          className="itsm-InputGroup__input itsm-Combobox__input"
+          type="text"
+          role="combobox"
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          aria-expanded={open}
+          aria-controls={open ? listboxId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={activeId}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledBy}
+          aria-describedby={wired['aria-describedby']}
+          aria-invalid={wired['aria-invalid']}
+          aria-required={wired.required || undefined}
+          aria-busy={loading || undefined}
+          disabled={disabled}
+          placeholder={multiple && selected.length > 0 ? undefined : placeholder}
+          value={displayValue}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+            setActiveIndex(0);
           }}
-        >
-          {multiple
-            ? selected.map((option) => (
-                <span key={option.value} className="itsm-Combobox__chip">
-                  <span className="itsm-Combobox__chipLabel">{option.label}</span>
-                  {!disabled ? (
-                    <button
-                      type="button"
-                      className="itsm-Combobox__chipRemove"
-                      aria-label={`${messages.remove} ${option.label}`}
-                      onClick={() => remove(option)}
-                    >
-                      <Icon name="x" size="xs" />
-                    </button>
-                  ) : null}
-                </span>
-              ))
-            : null}
-          <input
-            ref={mergedRef}
-            id={inputId}
-            className="itsm-InputGroup__input itsm-Combobox__input"
-            type="text"
-            role="combobox"
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            aria-expanded={open}
-            aria-controls={open ? listboxId : undefined}
-            aria-autocomplete="list"
-            aria-activedescendant={activeId}
-            aria-label={ariaLabel}
-            aria-labelledby={ariaLabelledBy}
-            aria-describedby={wired['aria-describedby']}
-            aria-invalid={wired['aria-invalid']}
-            aria-required={wired.required || undefined}
-            aria-busy={loading || undefined}
-            disabled={disabled}
-            placeholder={multiple && selected.length > 0 ? undefined : placeholder}
-            value={displayValue}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setOpen(true);
-              setActiveIndex(0);
-            }}
-            onFocus={() => {
-              if (!multiple) setQuery(single?.label ?? '');
-            }}
-            onClick={() => setOpen(true)}
-            onKeyDown={onKeyDown}
-            onBlur={onBlur}
-          />
-          {loading ? <Spinner size="sm" className="itsm-Combobox__spinner" /> : null}
-          {showClear ? (
-            <button
-              type="button"
-              className="itsm-InputGroup__clear"
-              aria-label={messages.clear}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={clear}
-            >
-              <Icon name="x" size="xs" />
-            </button>
-          ) : null}
-        </div>
-      </RadixPopover.Anchor>
-      <RadixPopover.Portal>
-        <RadixPopover.Content
+          onFocus={() => {
+            preload();
+            if (!multiple) setQuery(single?.label ?? '');
+          }}
+          onClick={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          onBlur={onBlur}
+        />
+        {loading ? <Spinner size="sm" className="itsm-Combobox__spinner" /> : null}
+        {showClear ? (
+          <button
+            type="button"
+            className="itsm-InputGroup__clear"
+            aria-label={messages.clear}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={clear}
+          >
+            <Icon name="x" size="xs" />
+          </button>
+        ) : null}
+        {/* The list before the popover has arrived: in the document, so the
+            input's ARIA references resolve, but not shown. */}
+        {showing && !layer ? <div hidden>{listbox}</div> : null}
+      </div>
+      {layer ? (
+        <layer.PopoverLayer
+          open={showing}
+          onOpenChange={(next) => {
+            if (!next) close(true);
+          }}
+          anchorRef={fieldRef}
           ref={popupRef}
           role={undefined}
           side="bottom"
@@ -527,23 +562,9 @@ export function Combobox<T = unknown>(props: ComboboxProps<T>): ReactNode {
             if (withinField(event.target)) event.preventDefault();
           }}
         >
-          <div id={listboxId} role="listbox" aria-label={ariaLabel ?? 'Suggestions'} aria-multiselectable={multiple || undefined} className="itsm-Combobox__list">
-            {sections.map((section) =>
-              section.group === null ? (
-                section.options.map(optionNode)
-              ) : (
-                <div key={`group:${section.group}`} role="group" aria-label={section.group} className="itsm-Combobox__group">
-                  <div className="itsm-Combobox__groupLabel" aria-hidden="true">
-                    {section.group}
-                  </div>
-                  {section.options.map(optionNode)}
-                </div>
-              ),
-            )}
-          </div>
-          {status ? <div className="itsm-Combobox__status">{status}</div> : null}
-        </RadixPopover.Content>
-      </RadixPopover.Portal>
-    </RadixPopover.Root>
+          {listbox}
+        </layer.PopoverLayer>
+      ) : null}
+    </>
   );
 }

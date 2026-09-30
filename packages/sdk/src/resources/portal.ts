@@ -343,10 +343,17 @@ export function portal(client: Client) {
     catalogueItem: (key: string): Promise<CatalogueItemDetail> =>
       client.request(`/api/v1/catalogue/${encodeURIComponent(key)}`),
 
-    submitRequest: (key: string, answers: FormValues): Promise<SubmitResult> =>
+    /**
+     * `idempotencyKey` is one per intent: the caller mints it on the first
+     * press and sends the same key when it retries the same answers, so a
+     * reply lost on the way back cannot raise the request twice. Without it
+     * a fresh key is generated per call, as for every create.
+     */
+    submitRequest: (key: string, answers: FormValues, options: { idempotencyKey?: string } = {}): Promise<SubmitResult> =>
       client.request(`/api/v1/catalogue/${encodeURIComponent(key)}/submit`, {
         method: 'POST',
         body: { answers },
+        ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
       }),
 
     // ---- What I have raised ------------------------------------------------

@@ -1,85 +1,106 @@
 import type { ReactNode } from 'react';
-import Link from 'next/link';
 import type { Metadata } from 'next';
-import { ApiError } from '@itsm/sdk';
 import { EmptyState } from '@itsm/ui';
-import { KnowledgeSearch } from '../../../components/KnowledgeSearch.js';
-import { apiFor, requireSession } from '../../../server/session.js';
+import { settle } from '../../../home/settle.js';
+import { Browse } from '../../../knowledge/Browse.js';
+import { Results, RESULT_LIMIT } from '../../../knowledge/Results.js';
+import { mayOpen, portalCan } from '../../../navigation.js';
+import { apiFor, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
+import { categoryFor, queryOf } from './categories.js';
+import { ReportButton } from './ReportButton.js';
+import { SearchBox } from './SearchBox.js';
+import { readArticles } from './server.js';
+import './knowledge.css';
 
-export const metadata: Metadata = { title: 'Help articles' };
 export const dynamic = 'force-dynamic';
 
-/**
- * Searching the knowledge base.
- *
- * A server-rendered search: the query is in the URL, so a result page can be
- * linked to somebody and the back button works. The box is a client component
- * only so it can submit without a full reload.
- *
- * `engine` is surfaced when the answer came from the fallback. When
- * Meilisearch is down the PostgreSQL projection answers — correct, but with no
- * typo tolerance — and somebody who typed "pasword" and got nothing deserves
- * to know that is why, rather than concluding the article does not exist.
- */
-export default async function KnowledgePage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}): Promise<ReactNode> {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export async function generateMetadata({ searchParams }: { searchParams: SearchParams }): Promise<Metadata> {
   const params = await searchParams;
-  const q = (typeof params.q === 'string' ? params.q : '').slice(0, 200).trim();
+  const query = queryOf(params.q);
+  if (query) return { title: `Results for ‘${query}’ · Knowledge` };
+  const category = categoryFor(params.category);
+  return { title: category ? `${category.label} · Knowledge` : 'Knowledge' };
+}
+
+/**
+ * `/knowledge` — answers written by the service desk (SPEC §6.3, §5.4).
+ *
+ * Browsing: the categories, then what is most read and most recently
+ * updated, or one category's shelf. Searching (`?q=`): the knowledge index
+ * only — `types: 'knowledge'`, the index's real name; `article` matched
+ * nothing and every search here once came back empty (F2) — with the
+ * matched words marked safely.
+ *
+ * The heading and the field stay whatever happens below them, so a search
+ * that fails, finds nothing, or is still loading never takes the page's
+ * shape with it.
+ */
+export default async function KnowledgePage({ searchParams }: { searchParams: SearchParams }): Promise<ReactNode> {
   const session = await requireSession();
+  const me = await currentMe();
+  const held = heldPermissions(me);
+  const params = await searchParams;
 
-  if (!q) {
+  if (!mayOpen('/knowledge', held)) {
     return (
-      <div className="itsm-Page">
-        <h1 className="itsm-Page__heading">Help articles</h1>
-        <p className="itsm-Page__lede">Search for how to do something, or for an error you have seen.</p>
-        <KnowledgeSearch />
+      <div className="app-Page app-Knowledge">
+        <header className="app-Knowledge__header">
+          <h1 className="app-Knowledge__title" tabIndex={-1}>
+            Knowledge
+          </h1>
+        </header>
+        <EmptyState
+          tone="forbidden"
+          icon="lock"
+          headingLevel={2}
+          title="Knowledge isn’t available to you"
+          description="Your account can’t read help articles here. You can still report an issue or follow your requests."
+          action={{ id: 'requests', label: 'My requests', href: '/tickets' }}
+        />
       </div>
     );
   }
 
-  try {
-    // The index is named `knowledge`; `article` matches nothing in the API.
-    const results = await apiFor(session).search(q, { types: 'knowledge', limit: 20 });
-    return (
-      <div className="itsm-Page">
-        <h1 className="itsm-Page__heading">Help articles</h1>
-        <KnowledgeSearch initial={q} />
+  const can = portalCan(held);
+  const query = can.search ? queryOf(params.q) : '';
+  const category = categoryFor(params.category);
+  const api = apiFor(session);
+  const reader = { locale: me.locale, timeZone: me.timeZone };
 
-        {results.meta.engine !== 'meilisearch' ? (
-          <p className="itsm-Search__degraded" role="status">
-            Search is running in a reduced mode, so a typo will not find anything. Try the exact words.
-          </p>
-        ) : null}
+  return (
+    <div className="app-Page app-Knowledge">
+      <header className="app-Knowledge__header">
+        <h1 className="app-Knowledge__title" tabIndex={-1}>
+          Knowledge
+        </h1>
+        <p className="app-Knowledge__lede">Answers to common questions, from your service desk.</p>
+        {can.search ? <SearchBox query={query} /> : null}
+      </header>
 
-        {results.data.length === 0 ? (
-          <EmptyState
-            tone="search"
-            title={`Nothing matched “${q}”`}
-            description="Try fewer words, or report an issue and somebody will help."
-            action={<Link href="/report">Report an issue</Link>}
-          />
-        ) : (
-          <ul className="itsm-Search__results">
-            {results.data.map((hit) => (
-              <li key={`${hit.entityType}:${hit.entityId}`}>
-                <Link href={`/knowledge/${encodeURIComponent(String(hit.facets.key ?? hit.entityId))}`}>{hit.title}</Link>
-                <p className="itsm-Search__snippet">{hit.snippet}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
-  } catch (error) {
-    return (
-      <EmptyState
-        tone="error"
-        title="Search is not available"
-        description={error instanceof ApiError ? error.message : 'The service could not be reached.'}
-      />
-    );
-  }
+      {query ? (
+        <Results
+          query={query}
+          read={await settle(api.search(query, { types: 'knowledge', limit: RESULT_LIMIT }))}
+          {...(can.createTickets
+            ? {
+                report: (
+                  <ReportButton text={query} variant="tinted">
+                    Report ‘{query}’ as an issue
+                  </ReportButton>
+                ),
+              }
+            : {})}
+        />
+      ) : (
+        <Browse
+          category={category}
+          read={await readArticles(api, category)}
+          reader={reader}
+          {...(can.createTickets ? { report: <ReportButton variant="tinted">Report an issue</ReportButton> } : {})}
+        />
+      )}
+    </div>
+  );
 }

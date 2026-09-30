@@ -68,6 +68,14 @@ describe('raising something', () => {
     expect(calls[0]!.body).toEqual({ answers: { model: 'standard' } });
   });
 
+  it('sends the caller’s idempotency key for a catalogue request, so a retry of the same answers is one request', async () => {
+    const { calls, client } = recording({ ticketNumber: 'REQ-1' });
+    await client.submitRequest('new-laptop', { model: 'standard' }, { idempotencyKey: 'request-abc' });
+    await client.submitRequest('new-laptop', { model: 'standard' });
+    expect(calls[0]!.headers['idempotency-key']).toBe('request-abc');
+    expect(calls[1]!.headers['idempotency-key']).toMatch(/^sdk-/);
+  });
+
   it('escapes a key that is not URL-safe', async () => {
     const { calls, client } = recording({});
     await client.catalogueItem('access/finance share');
