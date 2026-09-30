@@ -31,6 +31,7 @@ export { SplitView, type SplitPane, type SplitViewProps } from './SplitView.js';
 export { TabBar, type TabBarProps } from './TabBar.js';
 export { TabNav, type TabNavItem, type TabNavProps } from './TabNav.js';
 export { TopBar, type TopBarProps } from './TopBar.js';
+export { TopNavShell, type TopNavShellProps } from './TopNavShell.js';
 export { UserMenu, type UserMenuProps, type UserMenuSignOut } from './UserMenu.js';
 
 // The in-house components, rebuilt in place.

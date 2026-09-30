@@ -164,14 +164,19 @@ export {
 /* ------------------------------------------------------------------- Feedback */
 export { EmptyState, type EmptyStateProps } from './web/EmptyState.js';
 export { Skeleton, SkeletonText, type SkeletonProps, type SkeletonTextProps } from './web/Skeleton.js';
+// Each from its own module, not through `./feedback/index.js`: Next's barrel
+// optimisation (`optimizePackageImports`) follows one level of re-export, so a
+// server component importing `StatusScreen` through the feedback barrel made
+// every client component that barrel re-exports — the connection pill, the
+// global banner — part of the route's first load.
+export { Banner, type BannerProps } from './feedback/Banner.js';
+export { ConnectionStatus, type ConnectionAttentionItem, type ConnectionStatusProps } from './feedback/ConnectionStatus.js';
+export { GlobalBanner, type GlobalBannerProps } from './feedback/GlobalBanner.js';
+export { InlineAlert, type InlineAlertProps } from './feedback/InlineAlert.js';
+export { Meter, type MeterProps } from './feedback/Meter.js';
+export { ProblemState, type ProblemStateProps } from './feedback/ProblemState.js';
+export { ProgressBar, type ProgressBarProps } from './feedback/ProgressBar.js';
 export {
-  Banner,
-  ConnectionStatus,
-  GlobalBanner,
-  InlineAlert,
-  Meter,
-  ProblemState,
-  ProgressBar,
   SkeletonAvatar,
   SkeletonCard,
   SkeletonConversation,
@@ -179,21 +184,6 @@ export {
   SkeletonPage,
   SkeletonStat,
   SkeletonTable,
-  Spinner,
-  StatusScreen,
-  // The one mapping from an API problem to words, for a toast or an inline
-  // message that should say what `ProblemState` would.
-  describeProblem,
-  // For sign-out: `clearLocalData({ alsoKeys })` forgets the notices a person dismissed on this device.
-  isDismissalKey,
-  type BannerProps,
-  type ConnectionAttentionItem,
-  type ConnectionStatusProps,
-  type GlobalBannerProps,
-  type InlineAlertProps,
-  type MeterProps,
-  type ProblemStateProps,
-  type ProgressBarProps,
   type SkeletonAvatarProps,
   type SkeletonCardProps,
   type SkeletonConversationProps,
@@ -202,10 +192,14 @@ export {
   type SkeletonPageVariant,
   type SkeletonStatProps,
   type SkeletonTableProps,
-  type ProblemDescription,
-  type SpinnerProps,
-  type StatusScreenProps,
-} from './feedback/index.js';
+} from './feedback/Skeletons.js';
+export { Spinner, type SpinnerProps } from './feedback/Spinner.js';
+export { StatusScreen, type StatusScreenProps } from './feedback/StatusScreen.js';
+// The one mapping from an API problem to words, for a toast or an inline
+// message that should say what `ProblemState` would.
+export { describeProblem, type ProblemDescription } from './feedback/problem.js';
+// For sign-out: `clearLocalData({ alsoKeys })` forgets the notices a person dismissed on this device.
+export { isDismissalKey } from './feedback/dismissal.js';
 
 /* -------------------------------------------------------------------- Display */
 export { Badge, type BadgeProps } from './web/Badge.js';

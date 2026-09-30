@@ -1,68 +1,29 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { useHotkey } from '../a11y/hotkeys.js';
 import { useStableId } from '../a11y/ids.js';
-import { useRegion } from '../a11y/regions.js';
-import { Icon } from '../icons/Icon.js';
 import type { SheetProps } from '../overlays/Sheet.js';
 import { useMediaQuery } from '../overlays/media.js';
-import { useOptionalItsm } from '../provider/ItsmProvider.js';
-import { defaultMessages } from '../provider/messages.js';
-import { BottomDockHost } from '../shell/BottomDock.js';
-import { ShellProvider, type PageInfo, type ShellContextValue } from '../shell/context.js';
+import type { PageInfo } from '../shell/context.js';
+import { FrameRoot, ShellMain as Main, type AppShellFrameProps } from '../shell/frame.js';
 import { fetchModule, lazyModule } from '../shell/lazy.js';
-import { usePathnameSafe, WithSearch } from '../shell/location.js';
-import { currentItemId, needsSearch, type SearchLike } from '../shell/match.js';
-import { NavBadgeView } from '../shell/NavBadge.js';
-import type { NavItem, NavModel, ShellBrand } from '../shell/nav.js';
+import { usePathnameSafe } from '../shell/location.js';
 import { SearchTrigger } from '../shell/SearchTrigger.js';
-import { ShellLink } from '../shell/ShellLink.js';
-import { ShortcutsDialogHost } from '../shell/shortcuts.js';
 import { Sidebar } from '../shell/Sidebar.js';
-import { SkipLinks } from '../shell/SkipLinks.js';
-import { TabBar } from '../shell/TabBar.js';
 import { TopBar } from '../shell/TopBar.js';
-import { SignOutForm, UserMenu, type UserMenuProps } from '../shell/UserMenu.js';
+import { TopNavFrame } from '../shell/TopNavFrame.js';
+import { UserMenu } from '../shell/UserMenu.js';
 import { useTheme } from '../theme/ThemeProvider.js';
-import { cx } from './cx.js';
 import { IconButton } from './IconButton.js';
+import { cx } from './cx.js';
+
+// The frame's props live with the parts every variant shares (`shell/frame.tsx`).
+export type { AppShellFrameProps } from '../shell/frame.js';
 
 /* =========================================================================
  * AppShell v2 — the application frame (SPEC §4.9)
  * ====================================================================== */
-
-export interface AppShellFrameProps {
-  /** `sidebar`: the admin console and the workbench. `topnav`: the portal. */
-  readonly variant: 'sidebar' | 'topnav';
-  readonly brand: ShellBrand;
-  readonly nav: NavModel;
-  /** Beside the brand in the sidebar header: the workbench's compose button. */
-  readonly sidebarHeaderExtra?: ReactNode;
-  /** The search trigger that opens the palette; ⌘K is bound when it is on. */
-  readonly search?: { readonly placeholder: string; readonly shortcut?: 'mod+k' } | false;
-  /** Client only: opens the command palette. */
-  onOpenSearch(): void;
-  /** The `NotificationCenter`. */
-  readonly bell?: ReactNode;
-  /** The `ConnectionStatus` slot: sidebar footer, portal top bar, compact top bar. */
-  readonly status?: ReactNode;
-  /** The workbench's availability pill, in the sidebar footer. */
-  readonly footerExtra?: ReactNode;
-  readonly user: UserMenuProps;
-  /** `GlobalBanner`s, at the top of the content column. */
-  readonly banner?: ReactNode;
-  /** The portal's tab bar below 768 px (at most five). */
-  readonly bottomTabs?: readonly NavItem[];
-  /** The portal's *New request*, in the top bar at 768 px and up. */
-  readonly topBarAction?: ReactNode;
-  /** Extra skip links after "Skip to content" (the workbench's list, conversation, reply). */
-  readonly skipLinks?: readonly { readonly label: string; readonly targetId: string }[];
-  /** The `id` of `main`, the first skip link's target. Default `main-content`. */
-  readonly mainId?: string;
-  readonly className?: string;
-  readonly children: ReactNode;
-}
 
 /** The legacy frame's navigation entries. */
 export interface AppShellNavItem {
@@ -93,9 +54,6 @@ export interface LegacyAppShellProps {
 
 export type AppShellProps = AppShellFrameProps | LegacyAppShellProps;
 
-/** The one sign-out form on a framed page; every account menu in the frame submits it. */
-const SIGN_OUT_FORM_ID = 'itsm-signout';
-
 /** The sidebar's full width begins here (SPEC D9); below it the sidebar is a rail or a sheet. */
 const XL_UP = '(min-width: 80rem)';
 
@@ -113,38 +71,6 @@ function useLazySheet(): [ComponentType<SheetProps> | null, () => void] {
     );
   }, [Sheet]);
   return [Sheet, load];
-}
-
-/** ⌘K anywhere, including inside text fields (D14). Bound once for the frame's two search triggers. */
-function SearchShortcut({ onOpen }: { readonly onOpen: () => void }): ReactNode {
-  useHotkey({ keys: 'mod+k', handler: () => onOpen(), allowInFields: true, description: 'Search and commands', group: 'General' });
-  return null;
-}
-
-function useShellValue(): [ShellContextValue, PageInfo | null] {
-  const [page, setPage] = useState<PageInfo | null>(null);
-  const value = useMemo<ShellContextValue>(
-    () => ({
-      signOutFormId: SIGN_OUT_FORM_ID,
-      publishPage(info) {
-        setPage(info);
-        return () => setPage((current) => (current === info ? null : current));
-      },
-    }),
-    [],
-  );
-  return [value, page];
-}
-
-function Main({ id, children }: { readonly id: string; readonly children: ReactNode }): ReactNode {
-  const ref = useRef<HTMLElement | null>(null);
-  useRegion(ref);
-  return (
-    // tabIndex -1: the skip link and F6 move focus here, not just the viewport.
-    <main ref={ref} id={id} tabIndex={-1} className="itsm-AppShell__page itsm-Region">
-      {children}
-    </main>
-  );
 }
 
 /* -------------------------------------------------------------------------
@@ -254,71 +180,6 @@ function SidebarFrame({ props, page, mainId }: { readonly props: AppShellFramePr
 }
 
 /* -------------------------------------------------------------------------
- * The top-nav frame (portal)
- * ---------------------------------------------------------------------- */
-
-function Pills({ items, currentId }: { readonly items: readonly NavItem[]; readonly currentId: string | null }): ReactNode {
-  return (
-    <ul className="itsm-AppShell__pillList">
-      {items.map((item) => (
-        <li key={item.id}>
-          <ShellLink href={item.href} className="itsm-AppShell__pill" aria-current={item.id === currentId ? 'page' : undefined}>
-            <span className="itsm-AppShell__pillLabel" data-text={item.label}>
-              {item.label}
-            </span>
-            <NavBadgeView badge={item.badge} />
-          </ShellLink>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function PillNav({ nav }: { readonly nav: NavModel }): ReactNode {
-  const pathname = usePathnameSafe();
-  const items = useMemo(() => nav.sections.flatMap((section) => section.items), [nav]);
-  const plain = <Pills items={items} currentId={currentItemId(items, pathname)} />;
-  return (
-    <nav aria-label={nav.label} className="itsm-AppShell__pills">
-      {needsSearch(items) ? <WithSearch fallback={plain}>{(search: SearchLike) => <Pills items={items} currentId={currentItemId(items, pathname, search)} />}</WithSearch> : plain}
-    </nav>
-  );
-}
-
-function TopNavFrame({ props, page, mainId }: { readonly props: AppShellFrameProps; readonly page: PageInfo | null; readonly mainId: string }): ReactNode {
-  const { brand, nav, search, onOpenSearch, bell, status, user, banner, bottomTabs, topBarAction, children } = props;
-  return (
-    <BottomDockHost tabBar={bottomTabs && bottomTabs.length > 0 ? <TabBar items={bottomTabs} /> : undefined}>
-      <TopBar
-        className="itsm-AppShell__topBar"
-        start={
-          page?.back ? (
-            <ShellLink href={page.back.href} className="itsm-AppShell__back">
-              <Icon name="chevron-left" size="md" directional />
-              <span className="itsm-AppShell__backLabel">{page.back.label}</span>
-            </ShellLink>
-          ) : null
-        }
-        brand={brand}
-        {...(page?.back ? { title: page.title } : {})}
-        center={nav.sections.some((section) => section.items.length > 0) ? <PillNav nav={nav} /> : undefined}
-        end={
-          <>
-            {search ? <SearchTrigger placeholder={search.placeholder} shortcut={search.shortcut ?? 'mod+k'} bindShortcut={false} onOpen={onOpenSearch} /> : null}
-            {topBarAction ? <div className="itsm-AppShell__action">{topBarAction}</div> : null}
-            {status ? <div className="itsm-AppShell__status">{status}</div> : null}
-            {bell}
-            <UserMenu {...user} {...(brand.switcher ? { switcher: brand.switcher } : {})} />
-          </>
-        }
-      />
-      {banner ? <div className="itsm-AppShell__banner">{banner}</div> : null}
-      <Main id={mainId}>{children}</Main>
-    </BottomDockHost>
-  );
-}
-
-/* -------------------------------------------------------------------------
  * The frame
  * ---------------------------------------------------------------------- */
 
@@ -357,27 +218,13 @@ export function AppShell(props: AppShellProps): ReactNode {
 }
 
 function FrameShell(props: AppShellFrameProps): ReactNode {
-  const messages = useOptionalItsm()?.messages ?? defaultMessages;
-  const [shell, page] = useShellValue();
-  const mainId = props.mainId ?? 'main-content';
-  const skip = [{ label: messages.skipToContent, targetId: mainId }, ...(props.skipLinks ?? [])];
-  const searchOn = props.search !== undefined && props.search !== false;
-
   return (
-    <ShellProvider value={shell}>
-      <div
-        className={cx('itsm-AppShell', props.className)}
-        data-variant={props.variant}
-        data-has-back={page?.back ? '' : undefined}
-        data-title-in-view={page?.titleInView ? '' : undefined}
-      >
-        <SkipLinks links={skip} />
-        {props.variant === 'sidebar' ? <SidebarFrame props={props} page={page} mainId={mainId} /> : <TopNavFrame props={props} page={page} mainId={mainId} />}
-        <SignOutForm id={SIGN_OUT_FORM_ID} action={props.user.signOut.action} />
-        {searchOn ? <SearchShortcut onOpen={props.onOpenSearch} /> : null}
-        <ShortcutsDialogHost />
-      </div>
-    </ShellProvider>
+    <FrameRoot
+      props={props}
+      frame={(page, mainId) =>
+        props.variant === 'sidebar' ? <SidebarFrame props={props} page={page} mainId={mainId} /> : <TopNavFrame props={props} page={page} mainId={mainId} />
+      }
+    />
   );
 }
 

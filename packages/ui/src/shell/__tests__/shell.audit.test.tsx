@@ -25,6 +25,7 @@ import { SplitView } from '../SplitView.js';
 import { TabBar } from '../TabBar.js';
 import { TabNav } from '../TabNav.js';
 import { TopBar } from '../TopBar.js';
+import { TopNavShell } from '../TopNavShell.js';
 import { UserMenu } from '../UserMenu.js';
 import { createLocation, setViewport, sidebarProps, topnavProps } from './support.js';
 
@@ -124,6 +125,22 @@ describe('the frame passes axe', () => {
         <AppShell {...topnavProps({ bell: <Bell />, topBarAction: <a href="/report">New request</a> })}>
           <PageHeader title="Printer jammed" back={{ href: '/tickets', label: 'My requests' }} />
         </AppShell>
+      </location.Provider>,
+    );
+    await settle();
+    await expectNoViolations(document.body);
+  });
+
+  it.each([1440, 320])('TopNavShell at %i px', async (width) => {
+    setViewport(width);
+    const location = createLocation('/tickets');
+    const { variant, ...props } = topnavProps({ bell: <Bell /> });
+    void variant;
+    render(
+      <location.Provider app="portal">
+        <TopNavShell {...props}>
+          <PageHeader title="My requests" />
+        </TopNavShell>
       </location.Provider>,
     );
     await settle();
