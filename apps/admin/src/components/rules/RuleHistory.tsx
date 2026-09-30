@@ -73,9 +73,9 @@ export function RuleHistory({
       {state === 'changes' && latest ? (
         <Surface as="section" tone="raised" elevation="xs" padding="md" className="app-VersionCard" aria-labelledby="unpublished-heading">
           <header className="app-VersionCard__head">
-            <h3 id="unpublished-heading" className="app-VersionCard__title">
+            <h2 id="unpublished-heading" className="app-VersionCard__title">
               Unpublished changes
-            </h3>
+            </h2>
             <StatusPill size="sm" {...RULE_STATES.changes} />
           </header>
           <p className="app-VersionCard__meta">
@@ -95,9 +95,9 @@ export function RuleHistory({
             <li key={version.version}>
               <Surface as="article" tone="raised" elevation="xs" padding="md" className="app-VersionCard" aria-labelledby={`version-${version.version}`}>
                 <header className="app-VersionCard__head">
-                  <h3 id={`version-${version.version}`} className="app-VersionCard__title">
+                  <h2 id={`version-${version.version}`} className="app-VersionCard__title">
                     Version {version.version}
-                  </h3>
+                  </h2>
                   {current ? <StatusPill size="sm" label="Current" tone="success" icon="circle-check" /> : null}
                   {canPublish && !current ? (
                     <Button

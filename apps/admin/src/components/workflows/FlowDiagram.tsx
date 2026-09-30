@@ -47,7 +47,8 @@ export default function FlowDiagram({ graph, label, selected = null, onSelect, h
 
   return (
     <div className="app-Flow" data-compact={compact ? '' : undefined} role="group" aria-label={label}>
-      <div className="app-Flow__scroll">
+      {/* Without selectable steps nothing inside takes focus, so the scroller does: a wide graph can be scrolled from the keyboard. */}
+      <div className="app-Flow__scroll" {...(onSelect ? {} : { tabIndex: 0, role: 'region', 'aria-label': label })}>
         <div className="app-Flow__canvas" style={{ inlineSize: placed.width, blockSize: placed.height } as CSSProperties}>
           <svg className="app-Flow__edges" width={placed.width} height={placed.height} viewBox={`0 0 ${placed.width} ${placed.height}`} aria-hidden="true" focusable="false">
             <defs>

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { forwardRef, type AnchorHTMLAttributes, type ReactElement, type ReactNode } from 'react';
+import { act, forwardRef, useState, type AnchorHTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type RuleRow } from '@itsm/sdk';
 
@@ -27,6 +27,7 @@ vi.mock('../client/api.js', () => ({
 const { ItsmProvider } = await import('@itsm/ui');
 const { RuleBuilder, headerActions } = await import('../components/rules/RuleBuilder.js');
 const { RulesView } = await import('../components/rules/RulesView.js');
+const { ActionsEditor } = await import('../components/rules/ActionsEditor.js');
 const presentation = await import('../components/rules/presentation.js');
 const draftModule = await import('../components/rules/draft.js');
 const events = await import('../rules/events.js');
@@ -403,6 +404,50 @@ describe('the builder', () => {
     expect(buttonNamed(document, 'Run test')).toBeUndefined();
     expect(buttonNamed(document, 'Add action')).toBeUndefined();
     expect((document.querySelector('.app-RuleBuilder__fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+  });
+});
+
+describe('the action cards', () => {
+  function Editor({ onChange }: { readonly onChange: (ids: string[]) => void }): ReactNode {
+    const [items, setItems] = useState<import('../components/rules/draft.js').ActionItem[]>([
+      { id: 'one', draft: { type: 'addTag', value: 'first', reason: '', to: '' } },
+      { id: 'two', draft: { type: 'addTag', value: 'second', reason: '', to: '' } },
+      { id: 'three', custom: { type: 'addWatcher', userId: 'u-1' } },
+    ]);
+    return (
+      <ActionsEditor
+        items={items}
+        workflows={null}
+        teams={null}
+        errors={{}}
+        onChange={(next) => {
+          setItems(next);
+          onChange(next.map((item) => item.id));
+        }}
+      />
+    );
+  }
+
+  it('moves a card with Alt+↓ keeping focus on the same control, and removes one with ×', () => {
+    const order: string[][] = [];
+    render(
+      <Frame>
+        <Editor onChange={(ids) => order.push(ids)} />
+      </Frame>,
+    );
+    const tag = document.querySelector('[data-row="one"] input') as HTMLInputElement;
+    tag.focus();
+    act(() => {
+      tag.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(order.at(-1)).toEqual(['two', 'one', 'three']);
+    expect(document.activeElement).toBe(document.querySelector('[data-row="one"] [data-control="value"]'));
+    // A custom action moves and goes like any other, and is never edited.
+    expect(text(document.querySelector('[data-row="three"]'))).toContain('Custom action · Add a watcher');
+    click(document.querySelector('button[aria-label="Remove action 3"]')!);
+    expect(order.at(-1)).toEqual(['two', 'one']);
+    // Without the team list, a team can't be chosen by name, so it isn't offered.
+    expect([...document.querySelectorAll('[data-row="two"] select option')].map((option) => option.textContent)).not.toContain('Assign to a team');
   });
 });
 
