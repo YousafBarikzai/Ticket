@@ -133,6 +133,18 @@ describe('line and area charts', () => {
     expect(markup).toMatch(/class="itsm-XYChart__line" data-slot="2"/);
   });
 
+  it('draws a reference series dashed in the grey, with no end marker, and keeps the data series’ colours', () => {
+    const target: ChartSeries = { id: 'target', label: 'Target', reference: true, points: days.map((x) => ({ x, y: 20 })) };
+    const markup = html(<LineChart title="Volume" series={[target, raised, resolved]} xType="time" />);
+    expect(markup).toMatch(/class="itsm-XYChart__line" data-slot="other" data-reference="true"/);
+    expect(markup).toMatch(/class="itsm-XYChart__line" data-slot="1" d=/);
+    expect(markup).toMatch(/class="itsm-XYChart__line" data-slot="2" d=/);
+    expect(count(markup, /itsm-XYChart__end"/g)).toBe(2);
+    expect(markup).not.toMatch(/itsm-XYChart__endName">Target</);
+    expect(count(markup, /itsm-ChartLegend__item/g)).toBe(3);
+    expect(markup).toMatch(/<th[^>]*>Target<\/th>/);
+  });
+
   it('writes a summary from the data when none is given, for screen readers only', () => {
     const markup = html(<LineChart title="Volume" series={[raised]} xType="time" />);
     expect(markup).toMatch(/itsm-ChartFigure__summary itsm-visually-hidden">(<span[^>]*>\. <\/span>)?Raised rose from 12 \(1 Sept?\) to 18 \(4 Sept?\), highest 30 \(3 Sept?\)\./);

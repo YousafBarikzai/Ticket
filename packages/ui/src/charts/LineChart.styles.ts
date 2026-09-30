@@ -120,6 +120,12 @@ export const lineChartStyles = layer(
   vector-effect: non-scaling-stroke;
 }
 
+/* A reference to read the data against (a target, a calibrated diagonal): thin, dashed, grey. */
+.itsm-XYChart__line[data-reference] {
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
 .itsm-XYChart__dot,
 .itsm-XYChart__end {
   fill: var(--_itsm-series);

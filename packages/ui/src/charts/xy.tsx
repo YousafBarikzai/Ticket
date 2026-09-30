@@ -26,6 +26,14 @@ export interface ChartSeries {
   readonly label: string;
   /** The series' colour. Give it explicitly when a filter can remove series, so the rest keep theirs. */
   readonly slot?: ChartSlot;
+  /**
+   * A reference to read the others against — a target, a perfectly
+   * calibrated diagonal — rather than data: drawn as a thin dashed line in
+   * the de-emphasis grey, with no end marker or label, and left out of the
+   * colour order so the data series keep theirs. It stays in the legend,
+   * the reader and the table.
+   */
+  readonly reference?: boolean;
   /** `y: null` is a gap, not a zero. */
   readonly points: readonly { readonly x: string; readonly y: number | null }[];
 }
@@ -161,7 +169,10 @@ export function XYChart({ kind, props }: { readonly kind: 'line' | 'area'; reado
     return index / (count - 1);
   });
   const labels = times ? timeLabels(xs, times, locale, timeZone) : { tick: (index: number) => xs[index] ?? '', full: (index: number) => xs[index] ?? '' };
-  const slots: SeriesSlot[] = series.map((one, index) => one.slot ?? slotAt(index));
+  // A reference line takes the grey and no colour of its own: the data series count their colours without it.
+  const slots: SeriesSlot[] = series.map((one, index) =>
+    one.reference ? 'other' : (one.slot ?? slotAt(index - series.slice(0, index).filter((before) => before.reference).length)),
+  );
 
   // Stacked: each series sits on the ones before it; a missing value adds nothing.
   const tops = stacked
@@ -190,6 +201,7 @@ export function XYChart({ kind, props }: { readonly kind: 'line' | 'area'; reado
 
   // Where each series ends, for the end marker and the direct label.
   const ends = series.map((one, seriesIndex) => {
+    if (one.reference) return null;
     const row = values[seriesIndex]!;
     let last = -1;
     for (let index = row.length - 1; index >= 0; index--) {
@@ -246,13 +258,14 @@ export function XYChart({ kind, props }: { readonly kind: 'line' | 'area'; reado
             key={`line:${one.id}`}
             className="itsm-XYChart__line"
             data-slot={slots[seriesIndex]}
+            data-reference={one.reference || undefined}
             d={linePath(drawn[seriesIndex]!)}
             vectorEffect="non-scaling-stroke"
           />
         ))}
       </svg>
       {series.map((one, seriesIndex) =>
-        isolatedPoints(drawn[seriesIndex]!)
+        (one.reference ? [] : isolatedPoints(drawn[seriesIndex]!))
           // The last one is drawn as the end marker below.
           .filter((point) => point.x !== positions[ends[seriesIndex]?.index ?? -1])
           .map((point) => (
