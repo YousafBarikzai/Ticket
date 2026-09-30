@@ -220,10 +220,132 @@
   line-height: var(--itsm-text-subheadline-line);
 }
 
+.app-RotaCard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- New and Edit rota ------------------------------------------------ */
+
+.app-RotaForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-RotaForm__pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+.app-RotaForm__members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-RotaForm__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-RotaForm__member {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-2xs) var(--itsm-space-2xs) var(--itsm-space-2xs) var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-RotaForm__position {
+  inline-size: 1.25rem;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-caption-size);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.app-RotaForm__name {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-RotaForm__moves {
+  display: inline-flex;
+  flex: none;
+  gap: var(--itsm-space-3xs);
+}
+
 .app-Cover__span {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: var(--itsm-space-sm);
+}
+
+/* ---- Routing ------------------------------------------------------------ */
+
+.app-Routing__team {
+  max-inline-size: 28rem;
+}
+
+.app-Routing__policy,
+.app-Routing__answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Routing__settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  max-inline-size: 36rem;
+}
+
+.app-Routing__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Routing__explain {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+  margin-block-end: var(--itsm-space-md);
+}
+
+.app-Routing__explain > :first-child {
+  inline-size: min(100%, 28rem);
+}
+
+.app-Routing__verdict {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-Routing__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  padding-inline-start: var(--itsm-space-lg);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
 }
 
 /* ---- Shifts and skills --------------------------------------------------- */

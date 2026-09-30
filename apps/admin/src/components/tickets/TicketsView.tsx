@@ -49,6 +49,12 @@ export interface TicketsViewProps {
   readonly filtered: boolean;
 }
 
+/** The two assignees the API resolves itself. */
+const ASSIGNEE_WORDS = [
+  { value: 'none', label: 'Unassigned' },
+  { value: 'me', label: 'Me' },
+];
+
 const PRIORITY_OPTIONS = [
   { value: 'P1', label: 'P1 · Critical', tone: 'danger' as const },
   { value: 'P2', label: 'P2 · High', tone: 'warning' as const },
@@ -138,14 +144,16 @@ export function TicketsView(props: TicketsViewProps): ReactNode {
       {
         id: 'assignee',
         label: 'Assignee',
-        type: 'select',
+        type: 'person',
         mode: 'server',
         pinned: true,
-        options: [
-          { value: 'none', label: 'Unassigned' },
-          { value: 'me', label: 'Me' },
-          ...(props.assigneeOption ? [props.assigneeOption] : []),
-        ],
+        options: [...ASSIGNEE_WORDS, ...(props.assigneeOption ? [props.assigneeOption] : [])],
+        // Unassigned and Me first, then whoever the directory finds for what is typed.
+        loadOptions: async (query, signal) => {
+          const found = await api.tenant.users({ q: query || undefined, limit: 20, status: 'active' });
+          if (signal.aborted) return [];
+          return [...ASSIGNEE_WORDS, ...found.map((person) => ({ value: person.id, label: person.displayName || person.email }))];
+        },
       },
       ...(teams && teams.length > 0 ? [{ id: 'team', label: 'Team', type: 'select' as const, mode: 'server' as const, options: teams }] : []),
       ...(services && services.length > 0 ? [{ id: 'service', label: 'Service', type: 'select' as const, mode: 'server' as const, options: services }] : []),

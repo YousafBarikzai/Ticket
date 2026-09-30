@@ -114,7 +114,7 @@ export function NowView({
     { id: 'person', header: 'Person', field: 'person.name', kind: 'title', width: '2fr', minWidth: 200 },
     { id: 'status', header: 'Status', field: 'effectiveStatus', kind: 'status', map: STATUS_LOOK, srPrefix: 'Status', width: '2fr', cardRole: 'badge' },
     { id: 'until', header: 'Until', field: 'until', kind: 'relative', hideBelow: 'md', width: '1fr', empty: '—' },
-    { id: 'capacity', header: 'Capacity', field: 'capacity', kind: 'number', align: 'end', width: 136, hideBelow: 'sm', empty: 'Team default' },
+    { id: 'capacity', header: 'Capacity', field: 'capacity', kind: 'number', align: 'end', width: 112, hideBelow: 'sm', empty: 'Default' },
     { id: 'reason', header: 'Reason', field: 'reason', kind: 'text', hideBelow: 'lg', width: '2fr', truncate: 1 },
     { id: 'updated', header: 'Updated', field: 'updatedAt', kind: 'relative', hideBelow: 'lg', width: '1fr', sortable: 'page' },
   ];

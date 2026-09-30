@@ -399,7 +399,6 @@ export const EXCLUDED: readonly { readonly route: string; readonly read: readonl
  * the same change.
  */
 export const PENDING: ReadonlySet<string> = new Set([
-  '/workforce/routing',
   '/catalogue/forms',
   '/catalogue/forms/new',
   '/catalogue/forms/[key]',

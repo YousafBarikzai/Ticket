@@ -34,6 +34,7 @@ export interface AvailabilityView {
 export interface RotaView {
   readonly key: string;
   readonly name: string;
+  readonly teamId: string;
   readonly teamName: string | null;
   readonly timeZone: string;
   readonly cadence: string;

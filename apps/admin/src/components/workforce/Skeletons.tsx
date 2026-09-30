@@ -37,12 +37,12 @@ export function NowSkeleton(): ReactNode {
   );
 }
 
-export function RotasSkeleton(): ReactNode {
+export function RotasSkeleton({ label = 'Loading on-call rotas…' }: { readonly label?: string }): ReactNode {
   return (
     <div className="app-Page app-Workforce">
       <Header action={false} />
       <div className="app-WorkforceSkeleton__cards">
-        <SkeletonCard lines={6} label="Loading on-call rotas…" />
+        <SkeletonCard lines={6} label={label} />
         <SkeletonCard lines={6} />
       </div>
     </div>

@@ -249,8 +249,7 @@ describe('routes, tabs and crumbs', () => {
 
   it('offers only the tabs a person may open and that exist', () => {
     const lead = person('workload.read');
-    // Routing waits for its page (it is still in PENDING); the other four exist.
-    expect(tabsFor(lead, 'workforce').map((tab) => tab.id)).toEqual(['now', 'on-call', 'shifts', 'skills']);
+    expect(tabsFor(lead, 'workforce').map((tab) => tab.id)).toEqual(['now', 'on-call', 'shifts', 'skills', 'routing']);
     expect(tabsFor(person('ai.read'), 'ai-triage').map((tab) => tab.id)).toEqual(['overview']);
     expect(tabsFor(person(), 'workforce')).toEqual([]);
   });

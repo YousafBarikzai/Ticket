@@ -51,6 +51,7 @@ export default async function OnCallPage(): Promise<ReactNode> {
     return {
       key: rota.key,
       name: rota.name,
+      teamId: rota.teamId,
       teamName: teams?.get(rota.teamId) ?? null,
       timeZone: rota.timeZone,
       cadence: rota.cadence,
@@ -70,5 +71,7 @@ export default async function OnCallPage(): Promise<ReactNode> {
     };
   });
 
-  return <OnCallView header={header} rotas={rotas} canCover={holds(me, 'workload.oncall.override')} />;
+  // New and Edit need the team list (A6): without it a rota's team could only be typed as an id.
+  const teamOptions = holds(me, 'workload.manage') && teams ? [...teams.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)) : undefined;
+  return <OnCallView header={header} rotas={rotas} canCover={holds(me, 'workload.oncall.override')} {...(teamOptions ? { teams: teamOptions } : {})} />;
 }

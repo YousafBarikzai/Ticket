@@ -9,6 +9,7 @@ import { useOnline } from '../../client/live.js';
 import { useMutation } from '../../client/useMutation.js';
 import { cadenceSentence, readLocalDateTime, spanText, toLocalInput } from './presentation.js';
 import { formatDateTime } from '@itsm/ui/format';
+import { RotaSheet, type TeamOption } from './RotaSheet.js';
 import type { PersonName, RotaView, WorkforceHeader } from './types.js';
 
 const named = (person: PersonName | null | undefined): string => (person ? (person.name ?? 'Unknown person') : 'Nobody');
@@ -27,37 +28,73 @@ export function OnCallView({
   header,
   rotas,
   canCover,
+  teams,
 }: {
   readonly header: WorkforceHeader;
   readonly rotas: readonly RotaView[];
   readonly canCover: boolean;
+  /** Teams a rota can belong to (A6), for people who may manage rotas; absent otherwise, and there is no New or Edit. */
+  readonly teams?: readonly TeamOption[];
 }): ReactNode {
   const [covering, setCovering] = useState<RotaView | null>(null);
+  const [editing, setEditing] = useState<RotaView | 'new' | null>(null);
+  const canManage = teams !== undefined && teams.length > 0;
 
   return (
     <div className="app-Page app-Workforce">
-      <PageHeader title="Workforce" tabs={header.tabs} {...(header.viewOnly ? { viewOnly: header.viewOnly } : {})} />
+      <PageHeader
+        title="Workforce"
+        tabs={header.tabs}
+        {...(header.viewOnly ? { viewOnly: header.viewOnly } : {})}
+        {...(canManage ? { primaryAction: { id: 'new-rota', label: 'New rota', icon: 'plus', variant: 'primary', shortcut: 'c' } } : {})}
+        onAction={(id) => {
+          if (id === 'new-rota') setEditing('new');
+        }}
+      />
       {rotas.length === 0 ? (
         <EmptyState
           icon="calendar"
           title="No on-call rotas"
-          description="Nothing escalates to an on-call person yet. Rotas are set up through the API for now."
+          description="Nothing escalates to an on-call person yet. A rota says who takes the out-of-hours page, in turn."
+          {...(canManage ? { action: { id: 'new-rota', label: 'New rota', icon: 'plus', variant: 'primary' } } : {})}
+          onAction={() => setEditing('new')}
         />
       ) : (
         <ul className="app-Rotas" aria-label="On-call rotas">
           {rotas.map((rota) => (
             <li key={rota.key}>
-              <RotaCard rota={rota} canCover={canCover} onCover={() => setCovering(rota)} />
+              <RotaCard rota={rota} canCover={canCover} canManage={canManage} onCover={() => setCovering(rota)} onEdit={() => setEditing(rota)} />
             </li>
           ))}
         </ul>
       )}
       {covering ? <CoverDialog rota={covering} onClose={() => setCovering(null)} /> : null}
+      {canManage ? (
+        <RotaSheet
+          open={editing !== null}
+          onClose={() => setEditing(null)}
+          {...(editing && editing !== 'new' ? { rota: editing } : {})}
+          teams={teams}
+          taken={rotas.map((rota) => rota.key)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function RotaCard({ rota, canCover, onCover }: { readonly rota: RotaView; readonly canCover: boolean; readonly onCover: () => void }): ReactNode {
+function RotaCard({
+  rota,
+  canCover,
+  canManage,
+  onCover,
+  onEdit,
+}: {
+  readonly rota: RotaView;
+  readonly canCover: boolean;
+  readonly canManage: boolean;
+  readonly onCover: () => void;
+  readonly onEdit: () => void;
+}): ReactNode {
   const { locale, timeZone } = useItsm();
   const titleId = `rota-${rota.key}`;
   const now = rota.now;
@@ -78,10 +115,19 @@ function RotaCard({ rota, canCover, onCover }: { readonly rota: RotaView; readon
             {cadenceSentence(rota, now?.next?.at, locale)}
           </p>
         </div>
-        {canCover ? (
-          <Button variant="secondary" size="sm" iconStart="user-plus" onClick={onCover}>
-            Cover a shift…
-          </Button>
+        {canCover || canManage ? (
+          <div className="app-RotaCard__actions">
+            {canManage ? (
+              <Button variant="ghost" size="sm" iconStart="pencil" onClick={onEdit}>
+                Edit rota
+              </Button>
+            ) : null}
+            {canCover ? (
+              <Button variant="secondary" size="sm" iconStart="user-plus" onClick={onCover}>
+                Cover a shift…
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </header>
 

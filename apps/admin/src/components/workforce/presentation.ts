@@ -212,3 +212,85 @@ export function todayIn(timeZone: string, now: Date = new Date()): string {
     return now.toISOString().slice(0, 10);
   }
 }
+
+/* =========================================================================
+ * A rota's first turn
+ * ====================================================================== */
+
+/**
+ * `date` at `time` on the wall clock of `timeZone`, as an ISO instant — the
+ * moment a rota's first turn starts. The browser has no "wall time in another
+ * zone" API, so the zone's offset on that day is read from `Intl` and the
+ * instant written with it; the day's local date, which is what the rota
+ * counts from, is then exactly the one chosen.
+ */
+export function zonedInstant(date: string, time: string, timeZone: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  const guess = new Date(`${date}T${time}:00Z`);
+  if (Number.isNaN(guess.getTime())) return null;
+  const offsetAt = (at: Date): number => {
+    try {
+      const name = new Intl.DateTimeFormat('en-GB', { timeZone, timeZoneName: 'longOffset' }).formatToParts(at).find((part) => part.type === 'timeZoneName')?.value ?? 'GMT';
+      const match = /GMT([+-])(\d{2}):?(\d{2})?/.exec(name);
+      if (!match) return 0;
+      return (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] ?? 0));
+    } catch {
+      return 0;
+    }
+  };
+  // Twice: the offset at the guess, then at the corrected instant, which settles across a clock change.
+  let instant = new Date(guess.getTime() - offsetAt(guess) * 60_000);
+  instant = new Date(guess.getTime() - offsetAt(instant) * 60_000);
+  return instant.toISOString();
+}
+
+/** A rota's members in order, checked: at least one, nobody twice (the API refuses both). */
+export function membersProblem(ids: readonly string[]): string | null {
+  if (ids.length === 0) return 'Add at least one person to the rota.';
+  if (new Set(ids).size !== ids.length) return 'Someone is in the rota twice.';
+  return null;
+}
+
+/** An item moved one place up or down a list; unchanged at either end. */
+export function moved<T>(list: readonly T[], index: number, direction: 'up' | 'down'): T[] {
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (index < 0 || index >= list.length || target < 0 || target >= list.length) return [...list];
+  const next = [...list];
+  [next[index], next[target]] = [next[target]!, next[index]!];
+  return next;
+}
+
+/* =========================================================================
+ * Routing
+ * ====================================================================== */
+
+export const STRATEGY_WORDS: Readonly<Record<'least_loaded' | 'round_robin' | 'skill', { readonly label: string; readonly description: string }>> = {
+  least_loaded: { label: 'Least loaded', description: 'Whoever holds the fewest open tickets, with room for another.' },
+  round_robin: { label: 'Round robin', description: 'Whoever has waited longest for a ticket, in turn.' },
+  skill: { label: 'By skill', description: 'The best qualified for what the ticket needs, then the least loaded.' },
+};
+
+/** "has left" → "Priya Agent has left"; "away" → "Priya Agent is away". */
+export function rejectionSentence(name: string, because: string): string {
+  if (/^(has|does|is|was|marked)\b/.test(because)) return `${name} ${because}`;
+  if (/^(away|off shift|at capacity)/.test(because)) return `${name} is ${because}`;
+  if (because === 'no shift running') return `${name} has no shift running`;
+  return `${name}: ${because}`;
+}
+
+/**
+ * The router's verdict as a sentence: "Would go to Priya Agent — least
+ * loaded of those available (2/5)." or "Would go to nobody — 4 of 6 away."
+ * An ISO timestamp in a round-robin reason is written as a date.
+ */
+export function explanationSentence(
+  result: { readonly userId: string | null; readonly reason: string },
+  nameOf: (id: string) => string,
+  ticket: string | null,
+): string {
+  const reason = result.reason
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (iso) => formatDateTime(iso, { locale: 'en-GB', timeZone: 'UTC', style: 'datetime' }))
+    .replace(/^nobody on the team can take it; /, '');
+  const subject = ticket ? `${ticket} would go to` : 'The next ticket would go to';
+  return result.userId ? `${subject} ${nameOf(result.userId)} — ${reason}.` : `${subject} nobody — ${reason}.`;
+}
