@@ -20,8 +20,8 @@ import { defaultMessages } from '../provider/messages.js';
 import type { IconName } from '../types.js';
 import { Button } from '../web/Button.js';
 import { cx } from '../web/cx.js';
+import { useMergedRefs } from '../web/refs.js';
 import { focusNearestOutside, holdsFocus } from './focus.js';
-import { useComposedRef } from './refs.js';
 import { Spinner } from './Spinner.js';
 
 /** A queued write that needs the person: it failed, or it conflicts with a newer change. */
@@ -205,7 +205,7 @@ export function ConnectionStatus({
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const rootRef = useRef<HTMLSpanElement | null>(null);
-  const composedRef = useComposedRef(rootRef, ref);
+  const composedRef = useMergedRefs(ref, rootRef);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   /** The row whose button was used last, so focus can move to its neighbour when it leaves the list. */

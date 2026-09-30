@@ -57,11 +57,18 @@ export const tileStyles = layer(
     transform var(--itsm-duration-normal) var(--itsm-easing-entrance);
 }
 
-.itsm-Tile:hover,
 .itsm-Tile:focus-visible {
   --_itsm-tile-shadow: var(--itsm-elevation-md);
   background: var(--itsm-colour-surface-accentHover);
   transform: translateY(calc(-1 * var(--itsm-lift-sm)));
+}
+/* The pointer raises a tile only where it can hover: a tapped tile on a touch screen would otherwise stay raised. */
+${mq.hover} {
+  .itsm-Tile:hover {
+    --_itsm-tile-shadow: var(--itsm-elevation-md);
+    background: var(--itsm-colour-surface-accentHover);
+    transform: translateY(calc(-1 * var(--itsm-lift-sm)));
+  }
 }
 
 .itsm-Tile:focus-visible {

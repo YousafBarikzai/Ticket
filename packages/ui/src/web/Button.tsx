@@ -14,6 +14,7 @@ import {
 } from 'react';
 import { announce } from '../a11y/announcer.js';
 import { useStableId } from '../a11y/ids.js';
+import { Spinner } from '../feedback/Spinner.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import { defaultMessages } from '../provider/messages.js';
 import type { ButtonVariant, IconName, Size } from '../types.js';
@@ -232,13 +233,13 @@ export function Button({
   const content = (
     <>
       {spinner === 'start' ? (
-        <span className="itsm-Button__spinner" aria-hidden="true" />
+        <Spinner size="sm" className="itsm-Button__spinner" />
       ) : (
         <IconSlot icon={iconStart} size={iconSize} className="itsm-Button__icon" />
       )}
       {hasLabel ? <span className="itsm-Button__label">{children}</span> : null}
       <IconSlot icon={endIcon} size={iconSize} className="itsm-Button__icon" />
-      {spinner === 'overlay' ? <span className="itsm-Button__spinner" data-overlay="" aria-hidden="true" /> : null}
+      {spinner === 'overlay' ? <Spinner size="sm" className="itsm-Button__spinner" data-overlay="" /> : null}
       {loading ? <VisuallyHidden>{loadingLabel ?? messages.loading}</VisuallyHidden> : null}
     </>
   );

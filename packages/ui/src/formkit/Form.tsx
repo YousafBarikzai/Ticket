@@ -66,6 +66,13 @@ export interface FormProps {
   readonly stickyActions?: boolean;
   /** Asks before leaving with unsaved changes. */
   readonly dirtyGuard?: boolean;
+  /**
+   * Client only. Hears the form become dirty and clean again (a successful
+   * save makes it clean). For a container that must know — a `Sheet` asks
+   * "Discard changes?" on close only while its form is dirty:
+   * `<Sheet dirty={dirty}><Form onDirtyChange={setDirty}>`.
+   */
+  readonly onDirtyChange?: (dirty: boolean) => void;
   readonly autosave?: FormAutosave;
   /** mod+S submits. */
   readonly saveShortcut?: boolean;
@@ -147,6 +154,7 @@ export function Form({
   children,
   stickyActions = false,
   dirtyGuard = false,
+  onDirtyChange,
   autosave,
   saveShortcut = false,
   errorTitle,
@@ -165,6 +173,19 @@ export function Form({
   const attempts = useRef(0);
   const [dirty, setDirty] = useState(false);
   const [actionsCount, setActionsCount] = useState(0);
+
+  // Told of each change, not of every render: the latest callback, and the
+  // value it last heard, so a parent passing a fresh function is not re-told.
+  const dirtyListener = useRef(onDirtyChange);
+  useEffect(() => {
+    dirtyListener.current = onDirtyChange;
+  });
+  const reportedDirty = useRef(false);
+  useEffect(() => {
+    if (reportedDirty.current === dirty) return;
+    reportedDirty.current = dirty;
+    dirtyListener.current?.(dirty);
+  }, [dirty]);
   const live = useRef(true);
 
   /** The values the form started with (or last saved), to tell whether anything changed. */

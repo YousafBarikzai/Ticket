@@ -9,11 +9,29 @@ architecture is §2 of
 
 ```
 src/
-  tokens/   colour, type, spacing, radius, elevation, motion — defined once
-  a11y/     focus trap, roving tabindex, live-region announcer, id helpers
-  web/      React components for the Next.js apps
-  forms/    FormRenderer: one renderer for catalogue forms, everywhere
+  tokens/     colour, type, spacing, radius, elevation, motion — defined once
+  styles/     the stylesheet: layers, base, one *.styles.ts per component, registry
+  theme/      preferences, the pre-paint theme script, ThemeProvider
+  provider/   ItsmProvider, URL state, commands, recents and pins, notify
+  a11y/       hotkeys, collection keyboard, F6 regions, announcer, focus helpers
+  icons/      the lucide-backed icon registry, Icon and BrandMark (server-safe)
+  format/     Intl dates, durations, counts; RelativeTime
+  web/        the original components, rebuilt in place (Button, Dialog, AppShell…)
+  controls/   segmented control, search, number, duration and time fields
+  formkit/    Form, FormSection, FormErrorSummary, InlineEdit, drafts
+  feedback/   notices, problem and status screens, skeletons, progress, connection
+  display/    surfaces, pills, avatars, lists, disclosure, prose, stepper, activity
+  overlays/   Radix menus, popovers, sheets, confirm and conflict dialogs, toaster
+  data/       DataTable (TanStack Table), filters, bulk actions, pagination
+  charts/     stat cards, line/area/bar/donut charts, sparkline, progress ring
+  shell/      the frame: sidebar, top and tab bars, palette, page header, nav
+  forms/      FormRenderer: one renderer for catalogue forms, everywhere
+  workbench/  AI suggestion card, SLA clock
 ```
+
+The root entry (`@itsm/ui`) is curated and carries the everyday components;
+`overlays`, `data`, `charts` and `shell` are subpaths because of their weight
+(see *The dependency rule* below).
 
 ## The token pipeline
 
@@ -31,10 +49,11 @@ derives from it:
  properties     theme object      (a test, not a doc)
 ```
 
-- **`css.ts`** renders the tokens as `--itsm-*` custom properties for three
-  themes: light, dark and high contrast. A theme is selected by
-  `data-itsm-theme` on any ancestor, which lets an admin preview pane render one
-  theme inside another. With no attribute the operating system decides, through
+- **`css.ts`** renders the tokens as `--itsm-*` custom properties for four
+  themes: `apple` (light, the default), `apple-dark`, `high-contrast` and
+  `high-contrast-dark`. A theme is selected by `data-itsm-theme` on any
+  ancestor, which lets an admin preview pane render one theme inside another.
+  With no attribute the operating system decides, through
   `prefers-color-scheme` and `prefers-contrast`.
 - **`native.ts`** projects the same values into the shapes React Native wants:
   absolute line heights in points, letter spacing in points, weights as strings,
@@ -45,10 +64,9 @@ derives from it:
   formulas and declares the *contrast contract*: every foreground/background
   pairing the components actually produce, tagged with the minimum that applies
   to it (4.5:1 body text, 3:1 large text and interface boundaries).
-  `__tests__/contrast.test.ts` walks the contract across all three themes — 192
-  assertions today. The high-contrast theme is held to AAA (7:1), because a
-  theme that only reaches the AA floor is decoration rather than an
-  accommodation.
+  `__tests__/contrast.test.ts` walks the contract across all four themes. Both
+  high-contrast themes are held to AAA (7:1), because a theme that only reaches
+  the AA floor is decoration rather than an accommodation.
 
 Two tokens are deliberately outside the contract, and the reasons are in the
 code next to them: `border.subtle` is a decorative divider (SC 1.4.11 covers
@@ -70,15 +88,29 @@ thought about it. Components that animate in JavaScript use `useReducedMotion`.
 
 ### Using the tokens
 
+The stylesheet is one cached, same-origin file, and the person's appearance
+is applied before the first paint by a small blocking script (SPEC §3.4–§3.5):
+
 ```tsx
-import { ThemeProvider, uiStylesheet } from '@itsm/ui';
+// app/itsm-ui.css/route.ts — force-static, immutable: returns uiStylesheet()
+// app/layout.tsx — the root layout, a server component with no provider
+import { uiStylesheetVersion } from '@itsm/ui/styles';
+import { themeInitScript } from '@itsm/ui/theme';
 
-// Runtime injection (Storybook, tests, client-only apps):
-<ThemeProvider defaultTheme="system">{children}</ThemeProvider>
+<html lang="en-GB" suppressHydrationWarning>
+  <head>
+    <script dangerouslySetInnerHTML={{ __html: themeInitScript({ app: 'portal' }) }} />
+    <link rel="stylesheet" href={`/itsm-ui.css?v=${uiStylesheetVersion}`} precedence="itsm" />
+  </head>
+  <body>{children}</body>
+</html>
 
-// Or emit the stylesheet at build time to avoid a flash of unstyled content:
-<style dangerouslySetInnerHTML={{ __html: uiStylesheet() }} />
-<ThemeProvider injectStyles={false}>{children}</ThemeProvider>
+// The group layout ((console), (desk), (portal)) mounts the provider, which
+// hosts ThemeProvider, the announcer and the lazily loaded toaster:
+<ItsmProvider app="portal" Link={AppLink} router={router} usePathname={usePathname}
+  useSearchParams={useSearchParams} locale={me.locale} timeZone={me.timeZone}>
+  {children}
+</ItsmProvider>
 ```
 
 ## The web / native split
@@ -233,17 +265,25 @@ design system must not know about the SDK, the session or tenancy.
 ## Tests
 
 ```bash
-pnpm --filter @itsm/ui test        # this package (22 files, 366 tests at the time of writing)
+pnpm --filter @itsm/ui test        # this package (93 files, 1,622 tests at the time of writing)
 pnpm --filter @itsm/ui typecheck
 pnpm test:unit                     # the workspace's unit project
 ```
 
-Besides the component tests, three suites guard the package as a whole:
+Besides the component tests, four suites guard the package as a whole:
 `src/__tests__/guards.test.ts` (no `next`; server-safe files stay server-safe),
 `src/__tests__/catalogue.test.tsx` (every subpath exports what the
 specification names, and the root entry's import graph reaches no Radix,
-TanStack or sonner) and `web/__tests__/stylesheet-vars.test.ts` (every style
-module is registered and references only variables the token pipeline emits).
+TanStack or sonner), `web/__tests__/stylesheet-vars.test.ts` (every style
+module is registered and references only variables the token pipeline emits)
+and `src/__tests__/composition.test.tsx` (the groups rendered together,
+unmocked: provider and toaster, table and undo, a gated button in a dialog,
+one action spec in two places, the frame and the palette an application hosts).
+
+Every group also has an axe-core suite, `<group>/__tests__/*.audit.test.tsx`,
+run on `document.body` so portalled overlays are audited too. jsdom has no
+layout, so colour contrast is left to `contrast.test.ts`, which computes every
+pairing from the tokens instead.
 
 The package's `test` script points back at the root Vitest configuration
 (`--root ../.. --project unit packages/ui`), because the workspace defines its
@@ -258,7 +298,7 @@ reasons a browser would.
 
 ## Not here yet
 
-`icons/`, `stories/` (Storybook with axe-core), the native component set and the
-`ai/` cards from PH-4 are scheduled after this epic. The contrast audit and the
-keyboard tests stand in for axe-core until Storybook lands; axe-core checks
-rendered markup, which is the part these tests do not cover.
+`stories/` (Storybook), the native component set and the `ai/` cards from PH-4
+are scheduled after this epic. Until Storybook lands there is no visual
+regression check: layout, colour and motion are reviewed in a real browser
+during each package's render pass.

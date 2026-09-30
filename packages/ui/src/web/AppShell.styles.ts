@@ -576,14 +576,17 @@ ${mq.coarse} {
   display: none;
 }
 
+/* The rail's name bubble: the same bubble as every tooltip in the product (\`Tooltip\`, the icon button's). */
 .itsm-Sidebar__tip {
   position: fixed;
   z-index: var(--itsm-z-tooltip);
   display: inline-flex;
   align-items: center;
   gap: var(--itsm-space-2xs);
+  box-sizing: border-box;
   max-inline-size: 15rem;
-  padding: var(--itsm-space-2xs) var(--itsm-space-xs);
+  padding: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs) / 2) var(--itsm-space-xs);
+  border: var(--itsm-border-hair) solid transparent;
   border-radius: var(--itsm-radius-md);
   background: var(--itsm-colour-surface-inverse);
   color: var(--itsm-colour-text-inverse);
@@ -591,6 +594,7 @@ ${mq.coarse} {
   font-size: var(--itsm-text-footnote-size);
   line-height: var(--itsm-text-footnote-line);
   font-weight: var(--itsm-font-weight-medium);
+  letter-spacing: var(--itsm-text-footnote-tracking);
   white-space: nowrap;
   pointer-events: none;
   transform: translateY(-50%);
@@ -747,6 +751,12 @@ ${mq.forcedColors} {
   }
   .itsm-Sidebar__item[aria-current="page"]::before {
     background: Highlight;
+  }
+  /* Forced colours drop the fill and the shadow; the border keeps the bubble's edge, as the other tooltips do. */
+  .itsm-Sidebar__tip {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
   }
 }
 

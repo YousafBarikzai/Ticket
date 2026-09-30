@@ -1,6 +1,14 @@
 import { css, layer, mq } from '../styles/css.js';
 
-const hoverOrFocus = '.itsm-Card[data-interactive]:is(:hover, :has(.itsm-Card__link:focus-visible))';
+// Keyboard focus raises the card anywhere; the pointer only where it can hover
+// (`mq.hover`), so a card tapped on a touch screen does not stay raised.
+const focused = '.itsm-Card[data-interactive]:has(.itsm-Card__link:focus-visible)';
+const hovered = '.itsm-Card[data-interactive]:hover';
+const raised = `
+  --_itsm-surface-elevation: var(--itsm-elevation-md);
+  background: var(--itsm-colour-surface-accentHover);
+  transform: translateY(calc(-1 * var(--itsm-lift-sm)));
+`;
 
 /**
  * `Card`. The fill, radius and depth are `Surface`'s (the card carries its
@@ -187,10 +195,9 @@ h4.itsm-Card__title {
     transform var(--itsm-duration-normal) var(--itsm-easing-entrance);
 }
 
-${hoverOrFocus} {
-  --_itsm-surface-elevation: var(--itsm-elevation-md);
-  background: var(--itsm-colour-surface-accentHover);
-  transform: translateY(calc(-1 * var(--itsm-lift-sm)));
+${focused} {${raised}}
+${mq.hover} {
+  ${hovered} {${raised}}
 }
 
 .itsm-Card[data-interactive]:active {

@@ -751,7 +751,7 @@ ${mq.coarse} {
  */
 .itsm-DataTable__hint {
   position: fixed;
-  inset-block-end: calc(var(--itsm-space-lg) + var(--itsm-bottom-dock-height, 0px));
+  inset-block-end: calc(var(--itsm-space-lg) + max(var(--itsm-bottom-dock-height), var(--itsm-safe-area-bottom)));
   inset-inline-start: 50%;
   z-index: var(--itsm-z-toast);
   max-inline-size: calc(100vw - 2 * var(--itsm-space-md));

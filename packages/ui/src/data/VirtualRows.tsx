@@ -47,6 +47,11 @@ export default function VirtualRows({ count, estimateSize, colSpan, renderRow, s
     estimateSize: () => estimateSize,
     overscan: 8,
     scrollMargin,
+    // React 19 refuses a `flushSync` from inside an effect — which is where a
+    // keyboard move scrolls the window from — and says so in the console. A
+    // scroll-driven render batched with the rest costs nothing visible here:
+    // the rows are measured, not animated.
+    useFlushSync: false,
   });
 
   useEffect(() => {

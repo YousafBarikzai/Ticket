@@ -1,28 +1,19 @@
 /*
- * A client module.
+ * The internal "everything in `web/`" entry the tests import; applications
+ * import the curated root entry (or a subpath) instead.
  *
- * `@itsm/ui` is a component library for interactive screens: state, focus
- * management, keyboard handling. React Server Components require every module
- * that reaches for a hook or the DOM to say so, and the directive is per file
- * rather than per package.
+ * Most modules here are client modules and say so with `'use client'`: they
+ * hold state, manage focus or handle the keyboard, and React Server
+ * Components need each such file to declare it. The directive is per file, so
+ * a component that reaches for a hook without it becomes a build error in an
+ * application, reported against that application's layout.
  *
- * It is on every component file, not only the ones that use a hook today,
- * because the alternative is a rule nobody can see: adding `useState` to
- * `Badge` would become a build error in three applications, reported against
- * their layout rather than against this file. The tokens and the stylesheet
- * stay free of it, which is what a server-rendered first paint actually needs.
- *
- * It costs nothing at first paint — a client component is still rendered to
- * HTML on the server; the directive decides what is hydrated afterwards.
- *
- * The redesign makes one deliberate exception: components the catalogue marks
- * server-safe (`Kbd` here; `Icon`, the skeletons, `Spinner` and others in
- * their own folders) carry no directive, so a server component renders them
- * with no client JavaScript at all. The rule that stops one of them growing a
- * hook is then a guard test rather than a build error in an application.
- *
- * This barrel is the internal "everything in `web/`" entry the tests import;
- * applications import the curated root entry instead.
+ * The components the catalogue marks server-safe carry no directive, so a
+ * server component renders them with no client JavaScript at all: in this
+ * folder `Kbd`, `VisuallyHidden`, `Skeleton`, `Badge`, `Avatar`, `RichText`,
+ * `Table` and the `IconSlot` helper (and `Icon`, the skeleton family, `Spinner`,
+ * the static charts and others in their own folders). What stops one of them
+ * growing a hook is `__tests__/guards.test.ts`, which pins every one of them.
  */
 
 export * from './cx.js';

@@ -1,4 +1,4 @@
-import { css, layer, mq, prefers } from '../styles/css.js';
+import { css, layer, mq } from '../styles/css.js';
 
 /**
  * `Button`, and the anchored bubble it shares with `IconButton` (the reason
@@ -15,11 +15,11 @@ import { css, layer, mq, prefers } from '../styles/css.js';
  * `box-shadow` re-states the ring's inner gap here, because a component rule
  * beats the base layer whatever its specificity.
  *
- * The spinner turns once every 0.8 s, a literal rather than a duration token:
- * the duration tokens collapse to 1ms under reduced motion, which is right for
- * a transition and wrong for a loop — a 1ms rotation is a strobe (the defect
- * the legacy spinner had). Under reduced motion it pulses instead, and the
- * pulse has its own literal period for the same reason.
+ * A busy button draws the product's one activity indicator (`Spinner`),
+ * which turns on its own literal period rather than a duration token — the
+ * tokens collapse to 1ms under reduced motion, right for a transition and
+ * wrong for a loop (a 1ms rotation is a strobe, the defect the legacy spinner
+ * had) — and pulses instead under reduced motion.
  */
 export const buttonStyles = layer(
   'components',
@@ -209,15 +209,14 @@ export const buttonStyles = layer(
 
 /* Busy */
 
-.itsm-Button__spinner {
-  flex: none;
-  box-sizing: border-box;
+/*
+ * The spinner at the icon's size and in the button's own text colour —
+ * white on a filled button, the label's colour on the others.
+ */
+.itsm-Button .itsm-Button__spinner {
   inline-size: var(--_icon);
   block-size: var(--_icon);
-  border: var(--itsm-border-thick) solid color-mix(in srgb, currentColor 28%, transparent);
-  border-block-start-color: currentColor;
-  border-radius: var(--itsm-radius-pill);
-  animation: itsm-spin 0.8s linear infinite;
+  color: inherit;
 }
 
 .itsm-Button__spinner[data-overlay] {
@@ -230,23 +229,6 @@ export const buttonStyles = layer(
 .itsm-Button[data-loading="overlay"] > .itsm-Button__label,
 .itsm-Button[data-loading="overlay"] > .itsm-Button__icon {
   opacity: 0;
-}
-
-@keyframes itsm-Button-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-
-${mq.reducedMotion} {
-  .itsm-Button__spinner {
-    border-color: currentColor;
-    animation: itsm-Button-pulse 1.6s ease-in-out infinite;
-  }
-}
-
-${prefers.reducedMotion} .itsm-Button__spinner {
-  border-color: currentColor;
-  animation: itsm-Button-pulse 1.6s ease-in-out infinite;
 }
 
 ${mq.forcedColors} {

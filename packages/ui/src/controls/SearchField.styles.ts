@@ -1,4 +1,4 @@
-import { css, layer, mq, prefers } from '../styles/css.js';
+import { css, layer, mq } from '../styles/css.js';
 
 /**
  * `SearchField`: a filled box (`fill.secondary`) with the magnifier, the
@@ -147,26 +147,10 @@ export const searchFieldStyles = layer(
   background-color: var(--itsm-colour-fill-pressed);
 }
 
-.itsm-SearchField__spinner {
-  flex: none;
-  box-sizing: border-box;
+.itsm-SearchField .itsm-SearchField__spinner {
+  /* The shared activity indicator, a step down to sit beside the magnifier's text. */
   inline-size: var(--itsm-icon-xs);
   block-size: var(--itsm-icon-xs);
-  border: var(--itsm-border-thick) solid color-mix(in srgb, currentColor 22%, transparent);
-  border-block-start-color: var(--itsm-colour-text-muted);
-  border-radius: var(--itsm-radius-pill);
-  color: var(--itsm-colour-text-muted);
-  animation: itsm-spin 0.8s linear infinite;
-}
-${mq.reducedMotion} {
-  .itsm-SearchField__spinner {
-    border-color: currentColor;
-    animation: itsm-Button-pulse 1.6s ease-in-out infinite;
-  }
-}
-${prefers.reducedMotion} .itsm-SearchField__spinner {
-  border-color: currentColor;
-  animation: itsm-Button-pulse 1.6s ease-in-out infinite;
 }
 
 [data-itsm-theme^="high-contrast"] .itsm-SearchField__box {

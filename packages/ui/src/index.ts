@@ -102,7 +102,7 @@ export { Textarea, type TextareaProps } from './web/Textarea.js';
 export { Select, type SelectOption, type SelectOptionGroup, type SelectProps } from './web/Select.js';
 export { Checkbox, type CheckboxProps } from './web/Checkbox.js';
 export { RadioGroup, type RadioGroupProps, type RadioOption } from './web/RadioGroup.js';
-export { Switch, type SwitchProps } from './web/Switch.js';
+export { Switch, type SwitchConfirm, type SwitchProps } from './web/Switch.js';
 export { Tabs, type TabItem, type TabsProps } from './web/Tabs.js';
 export {
   CheckboxGroup,
@@ -122,7 +122,17 @@ export {
 } from './controls/index.js';
 
 /* ------------------------------------------------------------------- Form kit */
-export { FormField, type FieldControlProps, type FormFieldProps } from './web/FormField.js';
+// The field context, for an application control that should label and
+// describe itself from the `FormField` around it the way the built-in ones do.
+export {
+  CharacterCount,
+  FormField,
+  mergeFieldProps,
+  useFieldControl,
+  type CharacterCountProps,
+  type FieldControlProps,
+  type FormFieldProps,
+} from './web/FormField.js';
 export {
   DraftNotice,
   DraftStatus,
@@ -171,6 +181,11 @@ export {
   SkeletonTable,
   Spinner,
   StatusScreen,
+  // The one mapping from an API problem to words, for a toast or an inline
+  // message that should say what `ProblemState` would.
+  describeProblem,
+  // For sign-out: `clearLocalData({ alsoKeys })` forgets the notices a person dismissed on this device.
+  isDismissalKey,
   type BannerProps,
   type ConnectionAttentionItem,
   type ConnectionStatusProps,
@@ -187,6 +202,7 @@ export {
   type SkeletonPageVariant,
   type SkeletonStatProps,
   type SkeletonTableProps,
+  type ProblemDescription,
   type SpinnerProps,
   type StatusScreenProps,
 } from './feedback/index.js';

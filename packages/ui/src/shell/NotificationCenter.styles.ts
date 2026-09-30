@@ -17,11 +17,6 @@ import { css, layer, mq, prefers } from '../styles/css.js';
 export const notificationCenterStyles = layer(
   'components',
   css`
-@keyframes itsm-NotificationPanel-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 .itsm-NotificationCenter {
   position: relative;
   display: inline-flex;
@@ -58,7 +53,7 @@ export const notificationCenterStyles = layer(
   background: var(--itsm-colour-danger-solid);
   box-shadow: 0 0 0 var(--itsm-border-thick) var(--itsm-colour-focusGap);
   pointer-events: none;
-  animation: itsm-NotificationPanel-pulse 2s var(--itsm-easing-standard) 3;
+  animation: itsm-pulse 2s var(--itsm-easing-standard) 3;
 }
 
 .itsm-NotificationPanel__popover {
@@ -207,28 +202,7 @@ export const notificationCenterStyles = layer(
 }
 
 .itsm-NotificationPanel__skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-md);
   padding: var(--itsm-space-sm) var(--itsm-space-md) var(--itsm-space-md);
-}
-.itsm-NotificationPanel__skeletonRow {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-}
-.itsm-NotificationPanel__skeletonRow > span {
-  display: block;
-  block-size: var(--itsm-space-sm);
-  border-radius: var(--itsm-radius-xs);
-  background: var(--itsm-colour-fill-secondary);
-  animation: itsm-NotificationPanel-pulse 1.6s var(--itsm-easing-standard) infinite;
-}
-.itsm-NotificationPanel__skeletonRow > span:first-child {
-  inline-size: 70%;
-}
-.itsm-NotificationPanel__skeletonRow > span:last-child {
-  inline-size: 45%;
 }
 
 .itsm-NotificationPanel__problem {
@@ -262,8 +236,7 @@ export const notificationCenterStyles = layer(
 }
 
 ${mq.reducedMotion} {
-  .itsm-NotificationCenter__urgent,
-  .itsm-NotificationPanel__skeletonRow > span {
+  .itsm-NotificationCenter__urgent {
     animation: none;
   }
   .itsm-NotificationPanel__popover,
@@ -274,8 +247,7 @@ ${mq.reducedMotion} {
     animation-name: itsm-overlay-fade-out;
   }
 }
-${prefers.reducedMotion} .itsm-NotificationCenter__urgent,
-${prefers.reducedMotion} .itsm-NotificationPanel__skeletonRow > span {
+${prefers.reducedMotion} .itsm-NotificationCenter__urgent {
   animation: none;
 }
 

@@ -25,11 +25,6 @@ export const progressBarStyles = layer(
   to { transform: translateX(250%); }
 }
 
-@keyframes itsm-progress-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 .itsm-ProgressBar {
   --_itsm-bar: var(--itsm-colour-accent);
   display: flex;
@@ -114,14 +109,14 @@ ${mq.reducedMotion} {
   .itsm-ProgressBar[data-state="indeterminate"] .itsm-ProgressBar__fill {
     inline-size: 100%;
     transform: none;
-    animation: itsm-progress-pulse 2s ease-in-out infinite;
+    animation: itsm-pulse 2s ease-in-out infinite;
   }
 }
 
 ${prefers.reducedMotion} .itsm-ProgressBar[data-state="indeterminate"] .itsm-ProgressBar__fill {
   inline-size: 100%;
   transform: none;
-  animation: itsm-progress-pulse 2s ease-in-out infinite;
+  animation: itsm-pulse 2s ease-in-out infinite;
 }
 
 ${mq.forcedColors} {

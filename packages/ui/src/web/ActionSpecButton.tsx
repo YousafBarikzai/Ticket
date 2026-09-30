@@ -5,12 +5,15 @@ import { useHotkey } from '../a11y/hotkeys.js';
 import { ariaKeyShortcuts } from '../a11y/keys.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import type { ActionSpec, ButtonVariant, Size } from '../types.js';
-import { Button } from '../web/Button.js';
+import { Button } from './Button.js';
 
+// The overlays subpath, fetched only when an action that asks first is chosen:
+// this file is reached from the root entry, which stays free of Radix (SPEC §3.1).
 const LazyConfirmDialog = lazy(() => import('../overlays/ConfirmDialog.js').then((module) => ({ default: module.ConfirmDialog })));
 
-export interface ShellActionProps {
+export interface ActionSpecButtonProps {
   readonly spec: ActionSpec;
+  /** The emphasis when the spec names none: a page's one primary, a notice's secondary. */
   readonly defaultVariant: ButtonVariant;
   readonly size?: Size;
   /** Receives the spec's `id` when an action without `href` is chosen (after its confirmation, if it asks). */
@@ -27,17 +30,25 @@ function ShortcutBinding({ keys, description, onPress }: { readonly keys: string
 }
 
 /**
- * An `ActionSpec` — an action described as data, so a server page can hand
- * it over — drawn as the frame draws actions: a link-styled `Button` when it
- * goes somewhere, a button that reports its `id` when it does something, a
- * confirmation first when it asks for one (loaded on demand), and a state
- * gate as `disabledReason` — focusable, explained on press (D19).
+ * An `ActionSpec` — an action described as data, so a server component can
+ * hand it over — drawn as a `Button`. The one place that happens: a page
+ * header's actions, an empty state's, a banner's and a problem's all come
+ * through here, so the same spec behaves the same wherever it is shown.
  *
- * With `bindShortcut`, the spec's shortcut presses it: `c` on a list page
- * creates, as the keyboard map says (D14). Single-key shortcuts follow the
- * person's switch and never fire while typing.
+ * - With `href`: a link styled as a button, through the application's `Link`;
+ *   `external` opens a new tab and says so.
+ * - Without: a button that reports its `id` through `onAction` — the client
+ *   parent decides what "Retry" or "Publish" does.
+ * - `confirm`: asks first, with `ConfirmDialog` loaded on demand. The dialog
+ *   stays open, busy, while `onAction` runs, and shows its error if it
+ *   rejects (SPEC §4.3), so a failed delete is never a silent close.
+ * - `disabled` with `disabledReason`: a state gate (D19) — the button stays
+ *   focusable, the reason is its description, and pressing it shows and says
+ *   the reason (X-80). `disabled` alone is the native attribute.
+ * - `bindShortcut`: the spec's `shortcut` presses it (D14), following the
+ *   person's single-key switch and never while they type.
  */
-export function ShellAction({ spec, defaultVariant, size = 'md', onAction, bindShortcut = false, className }: ShellActionProps): ReactNode {
+export function ActionSpecButton({ spec, defaultVariant, size = 'md', onAction, bindShortcut = false, className }: ActionSpecButtonProps): ReactNode {
   const itsm = useOptionalItsm();
   const control = useRef<HTMLElement | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -55,6 +66,8 @@ export function ShellAction({ spec, defaultVariant, size = 'md', onAction, bindS
   };
 
   const asksFirst = spec.confirm !== undefined;
+  // A link while it can simply be followed; one that asks first is a button
+  // until the answer is yes. `Button` itself turns a gated link into a button.
   const linkLike = spec.href !== undefined && !asksFirst;
 
   return (

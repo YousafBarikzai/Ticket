@@ -17,6 +17,7 @@ import { announce } from '../a11y/announcer.js';
 import { useStableId } from '../a11y/ids.js';
 import { ariaKeyShortcuts } from '../a11y/keys.js';
 import { scrollIntoViewIfPossible } from '../a11y/motion.js';
+import { Spinner } from '../feedback/Spinner.js';
 import { Icon } from '../icons/Icon.js';
 import { useFocusReturn } from '../overlays/focus-return.js';
 import { InertOutside } from '../overlays/inert.js';
@@ -646,7 +647,7 @@ export function CommandPalette({
                 }}
                 onKeyDown={onKeyDown}
               />
-              {pending ? <span className="itsm-CommandPalette__spinner" aria-hidden="true" /> : null}
+              {pending ? <Spinner size="sm" className="itsm-CommandPalette__spinner" /> : null}
             </div>
             <div ref={listRef} id={listboxId} role="listbox" aria-label={label} className="itsm-CommandPalette__list">
               {fallbackItem

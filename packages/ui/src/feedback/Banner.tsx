@@ -6,10 +6,10 @@ import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import { defaultMessages } from '../provider/messages.js';
 import type { ActionSpec, IconName, Tone } from '../types.js';
 import { cx } from '../web/cx.js';
+import { useMergedRefs } from '../web/refs.js';
 import { FeedbackAction } from './actions.js';
 import { rememberDismissal, useDismissed } from './dismissal.js';
 import { focusNearestOutside, holdsFocus } from './focus.js';
-import { useComposedRef } from './refs.js';
 import { toneIcon } from './tone.js';
 
 export interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'children' | 'role'> {
@@ -74,7 +74,7 @@ export function Banner({
   const dismissedOnDevice = useDismissed(dismissKey);
   const [closed, setClosed] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const composedRef = useComposedRef(rootRef, ref);
+  const composedRef = useMergedRefs(ref, rootRef);
 
   if (closed || dismissedOnDevice !== false) return null;
 

@@ -3,6 +3,7 @@
 import * as RadixPopover from '@radix-ui/react-popover';
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useStableId } from '../a11y/ids.js';
+import { SkeletonList } from '../feedback/Skeletons.js';
 import { formatDateTime } from '../format/format.js';
 import { RelativeTime } from '../format/RelativeTime.js';
 import { Icon } from '../icons/Icon.js';
@@ -140,15 +141,9 @@ function PanelBody({
           </Button>
         </div>
       ) : first ? (
-        <div className="itsm-NotificationPanel__skeleton">
-          {[0, 1, 2].map((row) => (
-            <div key={row} className="itsm-NotificationPanel__skeletonRow" aria-hidden="true">
-              <span />
-              <span />
-            </div>
-          ))}
-          <span className="itsm-visually-hidden">Loading notifications…</span>
-        </div>
+        // The same placeholder every list uses: it appears after 200 ms (a fast
+        // answer never flashes one) and says "Loading notifications…" once.
+        <SkeletonList rows={3} label="Loading notifications…" className="itsm-NotificationPanel__skeleton" />
       ) : items.length === 0 ? (
         <EmptyState size="sm" headingLevel={3} icon="bell" title={emptyText ?? 'You’re all caught up'} description="New assignments, mentions and approvals appear here." />
       ) : (

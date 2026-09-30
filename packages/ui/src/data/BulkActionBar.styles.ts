@@ -38,7 +38,8 @@ export const bulkActionBarStyles = layer(
 }
 .itsm-BulkActionBar[data-placement="float"] {
   position: sticky;
-  inset-block-end: calc(var(--itsm-space-lg) + var(--itsm-bottom-dock-height, 0px) + var(--itsm-safe-area-bottom));
+  /* Above whatever covers the bottom edge: the dock (whose height already counts the safe area) or, without one, the home indicator. */
+  inset-block-end: calc(var(--itsm-space-lg) + max(var(--itsm-bottom-dock-height), var(--itsm-safe-area-bottom)));
   z-index: var(--itsm-z-sticky);
   inline-size: max-content;
   border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);

@@ -12,20 +12,16 @@ import { css, layer, mq, prefers } from '../styles/css.js';
  * and pulses its opacity instead: something still shows the page is busy,
  * and nothing rotates.
  *
- * Registered with the primitives, before the components that contain one.
+ * The keyframes are the shared `itsm-spin` and `itsm-pulse`
+ * (`styles/motion.styles.ts`). This is the product's one activity indicator:
+ * buttons, search fields, the palette, lists and toasts all draw this one.
+ *
+ * Registered with the primitives, before the components that contain one, so
+ * a container can resize or recolour it with a selector of equal weight.
  */
 export const spinnerStyles = layer(
   'components',
   css`
-@keyframes itsm-spinner-turn {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes itsm-spinner-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-
 .itsm-Spinner {
   display: inline-flex;
   flex-shrink: 0;
@@ -51,17 +47,17 @@ export const spinnerStyles = layer(
   display: block;
   inline-size: 100%;
   block-size: 100%;
-  animation: itsm-spinner-turn 1s steps(8, end) infinite;
+  animation: itsm-spin 1s steps(8, end) infinite;
 }
 
 ${mq.reducedMotion} {
   .itsm-Spinner__drawing {
-    animation: itsm-spinner-breathe 2s ease-in-out infinite;
+    animation: itsm-pulse 2s ease-in-out infinite;
   }
 }
 
 ${prefers.reducedMotion} .itsm-Spinner__drawing {
-  animation: itsm-spinner-breathe 2s ease-in-out infinite;
+  animation: itsm-pulse 2s ease-in-out infinite;
 }
 
 ${mq.forcedColors} {

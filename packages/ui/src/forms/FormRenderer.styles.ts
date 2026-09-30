@@ -209,7 +209,8 @@ ${intentRules}
 
 .itsm-FormRenderer__actions {
   position: sticky;
-  inset-block-end: calc(var(--itsm-bottom-dock-height) + var(--itsm-safe-area-bottom));
+  /* The dock's height already counts the safe area, so the larger of the two, not their sum. */
+  inset-block-end: max(var(--itsm-bottom-dock-height), var(--itsm-safe-area-bottom));
   z-index: var(--itsm-z-sticky);
   display: flex;
   align-items: center;

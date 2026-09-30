@@ -7,12 +7,12 @@ import type { MenuItemSpec } from '../overlays/Menu.js';
 import { MD_UP, useMediaQuery } from '../overlays/media.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import type { ActionSpec, Crumb } from '../types.js';
+import { ActionSpecButton } from '../web/ActionSpecButton.js';
 import { cx } from '../web/cx.js';
 import { Breadcrumbs } from './Breadcrumbs.js';
 import { usePublishPage } from './context.js';
 import { lazyModule, useIntentLoader } from './lazy.js';
 import { LazyMenuButton } from './LazyMenuButton.js';
-import { ShellAction } from './ShellAction.js';
 import { ShellLink } from './ShellLink.js';
 import { TabNav, type TabNavItem } from './TabNav.js';
 
@@ -191,7 +191,7 @@ export function PageHeader({
   const hasOverflowButton = menuItems.length > 0;
 
   const primary = primaryAction === undefined || primaryAction === null ? null : isSpec(primaryAction) ? (
-    <ShellAction spec={primaryAction} defaultVariant="primary" onAction={onAction} bindShortcut className="itsm-PageHeader__primary" />
+    <ActionSpecButton spec={primaryAction} defaultVariant="primary" onAction={onAction} bindShortcut className="itsm-PageHeader__primary" />
   ) : (
     primaryAction
   );
@@ -231,7 +231,7 @@ export function PageHeader({
           {secondaries.length > 0 || primary || hasOverflowButton ? (
             <div className="itsm-PageHeader__actions">
               {secondaries.map((spec) => (
-                <ShellAction key={spec.id} spec={spec} defaultVariant="secondary" onAction={onAction} className="itsm-PageHeader__secondary" />
+                <ActionSpecButton key={spec.id} spec={spec} defaultVariant="secondary" onAction={onAction} className="itsm-PageHeader__secondary" />
               ))}
               {primary}
               {hasOverflowButton ? (

@@ -20,10 +20,6 @@ import { css, layer, mq, prefers } from '../styles/css.js';
 export const commandPaletteStyles = layer(
   'components',
   css`
-@keyframes itsm-CommandPalette-turn {
-  to { transform: rotate(360deg); }
-}
-
 .itsm-CommandPalette__scrim {
   position: fixed;
   inset: 0;
@@ -134,13 +130,8 @@ export const commandPaletteStyles = layer(
   box-shadow: none;
 }
 .itsm-CommandPalette__spinner {
+  /* The shared activity indicator, grey like every other: blue is for what can be pressed (SPEC §1.1). */
   flex: none;
-  inline-size: var(--itsm-icon-sm);
-  block-size: var(--itsm-icon-sm);
-  border: var(--itsm-border-thick) solid var(--itsm-colour-fill-secondary);
-  border-block-start-color: var(--itsm-colour-accent);
-  border-radius: var(--itsm-radius-pill);
-  animation: itsm-CommandPalette-turn 0.8s linear infinite;
 }
 
 .itsm-CommandPalette__list {
@@ -312,15 +303,9 @@ ${mq.reducedMotion} {
   .itsm-CommandPalette {
     animation-name: itsm-overlay-fade-in;
   }
-  .itsm-CommandPalette__spinner {
-    animation: itsm-overlay-fade-in 1.6s ease-in-out infinite alternate;
-  }
 }
 ${prefers.reducedMotion} .itsm-CommandPalette {
   animation-name: itsm-overlay-fade-in;
-}
-${prefers.reducedMotion} .itsm-CommandPalette__spinner {
-  animation: itsm-overlay-fade-in 1.6s ease-in-out infinite alternate;
 }
 
 ${mq.forcedColors} {

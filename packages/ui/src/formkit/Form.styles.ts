@@ -47,7 +47,8 @@ export const formStyles = layer(
 
 .itsm-Form__actions[data-sticky] {
   position: sticky;
-  inset-block-end: calc(var(--itsm-bottom-dock-height) + var(--itsm-safe-area-bottom));
+  /* The dock's height already counts the safe area; adding both floated the bar a home indicator's height above a tab bar. */
+  inset-block-end: max(var(--itsm-bottom-dock-height), var(--itsm-safe-area-bottom));
   z-index: var(--itsm-z-sticky);
   background-color: transparent;
   transition:

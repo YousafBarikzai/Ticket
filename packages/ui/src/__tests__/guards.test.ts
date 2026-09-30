@@ -191,6 +191,28 @@ const SERVER_SAFE = [
   'web/Badge.tsx',
   'web/Avatar.tsx',
   'web/RichText.tsx',
+  // The rest of the catalogue's S column, pinned once their packages landed:
+  // the foundations' key caps and hidden text, the feedback group's bones and
+  // drawings, the frame's skip links, and the static charts (their hover
+  // layer, `ChartReader`, and link leaf, `ChartLink`, are the client parts).
+  'web/Kbd.tsx',
+  'web/VisuallyHidden.tsx',
+  'web/Skeleton.tsx',
+  'web/IconSlot.tsx',
+  'feedback/Illustration.tsx',
+  'shell/SkipLinks.tsx',
+  'charts/ChartFigure.tsx',
+  'charts/LineChart.tsx',
+  'charts/AreaChart.tsx',
+  'charts/BarChart.tsx',
+  'charts/DonutChart.tsx',
+  'charts/ProgressRing.tsx',
+  'charts/Sparkline.tsx',
+  'charts/StatGrid.tsx',
+  'charts/xy.tsx',
+  'charts/parts.tsx',
+  'charts/texture.tsx',
+  'charts/scale.ts',
   'theme/theme-script.ts',
   // Not the `theme` barrel: it re-exports `ThemeProvider`, a client module.
   // The script and the preference rules are what a server layout imports.

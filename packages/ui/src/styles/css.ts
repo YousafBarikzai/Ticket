@@ -145,6 +145,13 @@ interface Conditions {
   readonly reducedTransparency: string;
   /** A touch screen: the pointer the larger density sizes are for. */
   readonly coarse: string;
+  /**
+   * A pointer that can hover. A hover rule that moves something (a card's
+   * lift) goes inside it: a touch screen applies `:hover` on tap and keeps it
+   * until the next tap elsewhere, so a card tapped and returned to stays
+   * raised. Colour-only hover feedback does not need it.
+   */
+  readonly hover: string;
   readonly forcedColors: string;
 }
 
@@ -162,6 +169,7 @@ export const mq: Up & Below & Conditions = {
   reducedMotion: '@media (prefers-reduced-motion: reduce)',
   reducedTransparency: '@media (prefers-reduced-transparency: reduce)',
   coarse: '@media (pointer: coarse)',
+  hover: '@media (hover: hover)',
   forcedColors: '@media (forced-colors: active)',
 };
 

@@ -99,7 +99,9 @@ describe('Banner', () => {
       <Banner tone="neutral" title="Draft" action={{ id: 'publish', label: 'Publish', disabled: true, disabledReason: 'Needs a connection' }} onAction={onAction} />,
     );
     const publish = button(container, 'Publish')!;
-    expect(publish.disabled).toBe(true);
+    // A state gate stays focusable so its reason can be reached (SPEC §1.10, D19).
+    expect(publish.disabled).toBe(false);
+    expect(publish.getAttribute('aria-disabled')).toBe('true');
     const described = (publish.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent);
     expect(described).toContain('Needs a connection');
     // Visible text, not a tooltip (X-80).

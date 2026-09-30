@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type R
 import { useStableId } from '../a11y/ids.js';
 import { useHotkey } from '../a11y/hotkeys.js';
 import { ariaKeyShortcuts } from '../a11y/keys.js';
+import { Spinner } from '../feedback/Spinner.js';
 import { Icon } from '../icons/Icon.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import { defaultMessages } from '../provider/messages.js';
@@ -197,7 +198,7 @@ export function SearchField({
             }
           }}
         />
-        {loading ? <span className="itsm-SearchField__spinner" aria-hidden="true" /> : null}
+        {loading ? <Spinner size="sm" className="itsm-SearchField__spinner" /> : null}
         {showClear ? (
           <button type="button" className="itsm-SearchField__clear" aria-label={messages.clearSearch} onClick={clear}>
             <Icon name="x" size="xs" />

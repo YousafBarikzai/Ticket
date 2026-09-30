@@ -152,12 +152,12 @@ export const switchStyles = layer(
 ${mq.reducedMotion} {
   .itsm-Switch[aria-busy="true"] .itsm-Switch__thumb::after {
     border-block-start-color: var(--itsm-colour-text-muted);
-    animation: itsm-Button-pulse 1.6s ease-in-out infinite;
+    animation: itsm-pulse 1.6s ease-in-out infinite;
   }
 }
 ${prefers.reducedMotion} .itsm-Switch[aria-busy="true"] .itsm-Switch__thumb::after {
   border-block-start-color: var(--itsm-colour-text-muted);
-  animation: itsm-Button-pulse 1.6s ease-in-out infinite;
+  animation: itsm-pulse 1.6s ease-in-out infinite;
 }
 
 /* Unavailable */
