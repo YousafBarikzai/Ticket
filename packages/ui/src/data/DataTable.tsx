@@ -120,6 +120,12 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
   readonly bulkActions?: readonly ActionSpec[];
   /** The ⋯ menu and context menu; Move up and Move down are added when `reorderable`. */
   readonly rowActions?: readonly ActionSpec[];
+  /**
+   * Client parent only: one row's ⋯ menu, in place of `rowActions`, for
+   * actions that depend on the row's state — *Publish* on a draft,
+   * *Reactivate* on a retired row. Every row still has the menu.
+   */
+  rowActionsFor?(row: Row): readonly ActionSpec[];
   /** Client parent only (no Server Actions). `details` carries a reason a confirmation asked for. */
   onAction?(actionId: string, rows: Row[], details?: ActionDetails): void | Promise<void>;
   readonly activate?: DataTableActivate;
@@ -377,6 +383,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
     selection = 'none',
     bulkActions = NO_ACTIONS,
     rowActions = NO_ACTIONS,
+    rowActionsFor,
     onAction,
     onActivate,
     pagination = { mode: 'none' },
@@ -818,7 +825,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
   /* ------------------------------------------------------------ menus */
 
   const nameOf = (row: Row): string => (primary ? textOf(primary, valueAt(row, primary.field)) : '') || keyOf(row);
-  const hasMenu = rowActions.length > 0 || reorderable !== undefined;
+  const hasMenu = rowActions.length > 0 || rowActionsFor !== undefined || reorderable !== undefined;
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const menuReturn = useRef<HTMLElement | null>(null);
   const [contextKey, setContextKey] = useState<string | null>(null);
@@ -839,8 +846,9 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
   };
 
   const menuItemsFor = (entry: RowEntry<Row>): MenuItemSpec[] => {
-    const safe = rowActions.filter((action) => action.tone !== 'danger').map((action) => itemFor(action, entry.row));
-    const danger = rowActions.filter((action) => action.tone === 'danger').map((action) => itemFor(action, entry.row));
+    const actions = rowActionsFor ? rowActionsFor(entry.row) : rowActions;
+    const safe = actions.filter((action) => action.tone !== 'danger').map((action) => itemFor(action, entry.row));
+    const danger = actions.filter((action) => action.tone === 'danger').map((action) => itemFor(action, entry.row));
     const items: MenuItemSpec[] = [...safe];
     if (reorderable) {
       const edge = siblingsOf(entry.index);

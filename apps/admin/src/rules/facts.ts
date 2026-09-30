@@ -35,8 +35,13 @@ export interface Fact {
   readonly options?: readonly FactOption[];
   /** A word after a number: "minutes", "times". */
   readonly unit?: string;
-  /** Where it applies: ticket facts always; comment facts on comment events. */
-  readonly group: 'Ticket' | 'Requester' | 'Comment' | 'Event';
+  /** Where it applies: ticket facts always; comment facts on comment events; a form's answers in its own conditions. */
+  readonly group: 'Ticket' | 'Requester' | 'Comment' | 'Event' | 'Answers';
+  /**
+   * The comparisons to offer, when the kind's own set is wrong for this fact:
+   * a form's multi-select question is a list, so "includes" rather than "is".
+   */
+  readonly operators?: readonly Operator[];
 }
 
 const option = (value: string, label: string): FactOption => ({ value, label });
@@ -162,6 +167,7 @@ const ALL: readonly Operator[] = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'contain
  * "Age contains".
  */
 export function operatorsFor(fact: Fact): readonly Operator[] {
+  if (fact.operators && fact.operators.length > 0) return fact.operators;
   switch (fact.kind) {
     case 'enum':
       return ['eq', 'ne', 'exists', 'empty'];

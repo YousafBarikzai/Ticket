@@ -39,6 +39,12 @@ export interface ConditionBuilderProps {
   readonly onChange: (expression: unknown) => void;
   /** The engine's fact paths (`configure.rules.facts()`); the whole catalogue without. */
   readonly facts?: readonly string[];
+  /**
+   * Facts of the caller's own, in place of the rules engine's: a form's
+   * questions (`form.accessLevel`, with their options), or what a ticket
+   * field's *Required when* is evaluated against. Takes precedence over `facts`.
+   */
+  readonly factCatalogue?: readonly Fact[];
   /** What no conditions means here. Default "Every time". */
   readonly emptyText?: string;
   readonly readOnly?: boolean;
@@ -123,8 +129,9 @@ function ValueEditor({ fact, row, index, onValue, disabled }: { readonly fact: F
   }
 }
 
-export function ConditionBuilder({ label, value, onChange, facts: enginePaths, emptyText = 'Every time', readOnly = false, className }: ConditionBuilderProps): ReactNode {
-  const facts = useMemo(() => factsFrom(enginePaths), [enginePaths]);
+export function ConditionBuilder({ label, value, onChange, facts: enginePaths, factCatalogue, emptyText = 'Every time', readOnly = false, className }: ConditionBuilderProps): ReactNode {
+  const facts = useMemo(() => (factCatalogue ? [...factCatalogue] : factsFrom(enginePaths)), [enginePaths, factCatalogue]);
+  const lookup = (path: string): Fact => facts.find((fact) => fact.path === path) ?? factFor(path);
   const factOptions = useMemo(() => groupedFacts(facts), [facts]);
   const parsed = useMemo(() => (value === undefined || value === null ? { conditions: [], join: 'and' as Join } : fromExpression(value)), [value]);
 
@@ -177,7 +184,7 @@ export function ConditionBuilder({ label, value, onChange, facts: enginePaths, e
   const patch = (id: string, change: Partial<Condition>): void => commit(rows.map((row) => (row.id === id ? { ...row, ...change } : row)));
 
   const chooseFact = (id: string, path: string): void => {
-    const fact = factFor(path);
+    const fact = lookup(path);
     const row = rows.find((entry) => entry.id === id);
     const operators = operatorsFor(fact);
     const operator = row && operators.includes(row.operator) ? row.operator : operators[0]!;
@@ -233,7 +240,7 @@ export function ConditionBuilder({ label, value, onChange, facts: enginePaths, e
       ) : (
         <ol className="app-Conditions__list" ref={list} aria-label={`${label}, ${rows.length} ${rows.length === 1 ? 'condition' : 'conditions'}`}>
           {rows.map((row, index) => {
-            const fact = row.fact ? factFor(row.fact) : null;
+            const fact = row.fact ? lookup(row.fact) : null;
             const operators = fact ? operatorsFor(fact) : OPERATORS.map((entry) => entry.value);
             return (
               <li key={row.id} className="app-Conditions__row" data-row={row.id} onKeyDown={(event) => onRowKeyDown(event, index)}>

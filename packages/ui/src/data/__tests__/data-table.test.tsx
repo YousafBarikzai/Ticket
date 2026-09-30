@@ -489,6 +489,40 @@ describe('reordering without drag', () => {
   });
 });
 
+describe('row menus that depend on the row', () => {
+  it('builds each row’s ⋯ menu from rowActionsFor, and runs the chosen action on that row', async () => {
+    const onAction = vi.fn();
+    const { container } = mount({
+      rowActionsFor: (row) => [
+        { id: 'edit', label: 'Edit' },
+        ...(row.status === 'draft' ? [{ id: 'publish', label: 'Publish' }] : []),
+        ...(row.status === 'archived' ? [{ id: 'restore', label: 'Restore' }] : []),
+      ],
+      onAction,
+    });
+    const labels = async (name: string): Promise<string[]> => {
+      const row = [...container.querySelectorAll('tbody tr')].find((entry) => entry.querySelector('.itsm-DataTable__primaryCell')?.textContent === name)!;
+      focus(row.querySelector<HTMLElement>('[data-itsm-control="primary"]')!);
+      press(activeElement()!, '.');
+      await settle();
+      const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((item) => item.textContent ?? '');
+      press(activeElement()!, 'Escape');
+      await settle();
+      return items;
+    };
+    expect(await labels('VIP requester')).toEqual(['Edit']);
+    expect(await labels('Major incident')).toEqual(['Edit', 'Restore']);
+    expect(await labels('Printer jams')).toEqual(['Edit', 'Publish']);
+
+    focus([...container.querySelectorAll<HTMLElement>('tbody [data-itsm-control="primary"]')].find((element) => element.textContent === 'Printer jams')!);
+    press(activeElement()!, '.');
+    await settle();
+    click([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'Publish')!);
+    await settle();
+    expect(onAction).toHaveBeenCalledWith('publish', [expect.objectContaining({ key: 'printer-jams' })], undefined);
+  });
+});
+
 describe('cards in a narrow container', () => {
   it('turns rows into cards below 640 px of container by default, with a container query', () => {
     const { container } = mount();
