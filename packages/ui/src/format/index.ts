@@ -15,10 +15,18 @@ export {
   formatNumber,
   formatPercent,
   formatRelative,
+  type DateInput,
   type DateTimeStyle,
   type FormatDateTimeOptions,
   type FormatListOptions,
   type FormatNumberOptions,
+  type FormatRelativeOptions,
 } from './format.js';
-export { formatDuration, parseDuration, type FormatDurationOptions } from './duration.js';
+export {
+  formatDuration,
+  parseDuration,
+  type DurationUnit,
+  type FormatDurationOptions,
+  type ParseDurationOptions,
+} from './duration.js';
 export { RelativeTime, type RelativeTimeProps } from './RelativeTime.js';

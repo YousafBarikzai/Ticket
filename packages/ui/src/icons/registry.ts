@@ -11,15 +11,16 @@
  * Keys are the product's names: a concept for navigation and domain icons
  * (`queue`, `sla`, `compose`), the lucide file name for generic controls and
  * states (`chevron-down`, `triangle-alert`). Values are the lucide 1.48 file
- * names under `lucide/dist/esm/icons/`, which is where the icon data is
- * deep-imported from — never the package root, which would pull in every icon.
+ * names under `lucide/dist/esm/icons/`, which is where `nodes.ts` deep-imports
+ * the drawing from — never the package root, which would pull in every icon.
  * Several lucide names are aliases (`Trash2` is `trash`, `Building2` is
  * `building-complex`); the value is always the file that exists.
  *
- * Stub (SPEC §1.8, §4.1): the names are the contract other packages build
- * against; the values become deep imports of the icon node data with the
- * foundations package. Adding a name is safe; renaming or removing one breaks
- * every caller that spells it.
+ * This file is names only — no drawing — so a module that needs `IconName`
+ * for a prop type, or checks a name that arrived as data, costs nothing.
+ * Adding a name is safe (add its import to `nodes.ts`, which the type checker
+ * then insists on); renaming or removing one breaks every caller that spells
+ * it.
  */
 export const iconRegistry = {
   // Navigation and product areas.
@@ -68,6 +69,10 @@ export const iconRegistry = {
   star: 'star',
   history: 'rotate-ccw-clock',
   calendar: 'calendar',
+  link: 'link',
+  flag: 'flag',
+  archive: 'archive',
+  'user-plus': 'user-plus',
 
   // Controls.
   search: 'search',
@@ -91,6 +96,8 @@ export const iconRegistry = {
   'list-filter': 'list-filter',
   'columns-3': 'columns-3',
   'rows-3': 'rows-3',
+  'sliders-horizontal': 'sliders-horizontal',
+  'chevrons-up-down': 'chevrons-up-down',
   'panel-left': 'panel-left',
   'panel-right': 'panel-right',
   pin: 'pin',
@@ -104,6 +111,7 @@ export const iconRegistry = {
   'refresh-cw': 'refresh-cw',
   keyboard: 'keyboard',
   'log-out': 'log-out',
+  'log-in': 'log-in',
   eye: 'eye',
   'eye-off': 'eye-off',
   play: 'play',
@@ -114,6 +122,9 @@ export const iconRegistry = {
   'circle-check': 'circle-check',
   'triangle-alert': 'triangle-alert',
   'circle-alert': 'circle-alert',
+  'circle-x': 'circle-x',
+  'circle-dashed': 'circle-dashed',
+  hourglass: 'hourglass',
   info: 'info',
   'loader-circle': 'loader-circle',
   clock: 'clock',

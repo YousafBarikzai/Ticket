@@ -1,7 +1,16 @@
 import { css, layer } from '../styles/css.js';
 
 /**
- * `RelativeTime`. No rules yet: registered ahead of them, so the registry and
- * variable checks cover this module from the first rule it gains.
+ * `RelativeTime`: figures of equal width, so "9 min ago" becoming "10 min ago"
+ * does not nudge the text after it, and never broken across lines — half a
+ * timestamp at the end of a line reads as two facts.
  */
-export const relativeTimeStyles = layer('components', css``);
+export const relativeTimeStyles = layer(
+  'components',
+  css`
+.itsm-RelativeTime {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+`,
+);

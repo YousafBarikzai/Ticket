@@ -120,6 +120,7 @@ import { tabNavStyles } from '../shell/TabNav.styles.js';
 import { topBarStyles } from '../shell/TopBar.styles.js';
 import { userMenuStyles } from '../shell/UserMenu.styles.js';
 import { kbdStyles } from '../web/Kbd.styles.js';
+import { regionStyles } from '../a11y/Region.styles.js';
 import { baseStyles } from './base.styles.js';
 import { interactiveStyles } from './interactive.styles.js';
 import { motionStyles } from './motion.styles.js';
@@ -148,6 +149,7 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'icons/Icon.styles.ts', css: iconStyles },
   { module: 'icons/BrandMark.styles.ts', css: brandMarkStyles },
   { module: 'web/Kbd.styles.ts', css: kbdStyles },
+  { module: 'a11y/Region.styles.ts', css: regionStyles },
   { module: 'display/Surface.styles.ts', css: surfaceStyles },
   { module: 'feedback/Spinner.styles.ts', css: spinnerStyles },
 

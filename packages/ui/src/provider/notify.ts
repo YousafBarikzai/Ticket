@@ -6,13 +6,14 @@
  * A module-level queue rather than a hook, so any event handler can call it
  * without a provider in reach, and so calling it never pulls the toast library
  * into a page: the `Toaster` (in `@itsm/ui/overlays`) is mounted lazily by
- * `ItsmProvider`, subscribes here, and drains whatever was queued before it
- * arrived. Server events never come through here; they belong to the
- * notification centre.
+ * `ItsmProvider` — on the first `notify()` or when the browser is idle —
+ * subscribes here, and replays whatever was queued before it arrived. Server
+ * events never come through here; they belong to the notification centre.
  *
- * Stub (SPEC §4.3): the call signatures are the contract, and the queue is
- * real but minimal. The foundations package owns it; the overlays package's
- * `Toaster` consumes `subscribeToNotifications`.
+ * The contract with the `Toaster` is `subscribeToNotifications` and the
+ * `NotifyEvent` union. Everything a toast needs is in the event, already
+ * normalised: a `danger` toast is persistent unless the caller said otherwise
+ * ("errors persist", SPEC §4.3), so the Toaster does not re-derive the rule.
  */
 
 export type NotifyTone = 'neutral' | 'success' | 'info' | 'warning' | 'danger';
@@ -23,7 +24,7 @@ export interface NotifyOptions {
   readonly action?: { readonly label: string; onClick(): void };
   /** Adds "Undo" for 8 seconds, also reachable with mod+Z while the toast is showing. */
   readonly undo?: () => Promise<void>;
-  /** Milliseconds, or `persistent` (every error is). */
+  /** Milliseconds, or `persistent`. A `danger` toast is persistent unless this says otherwise. */
   readonly duration?: number | 'persistent';
   /** Replaces a live toast with the same id instead of stacking a second one. */
   readonly id?: string;
@@ -54,14 +55,16 @@ export type NotifyEvent =
       readonly messages: NotifyPromiseMessages<unknown>;
     }
   | { readonly type: 'progress'; readonly id: string; readonly progress: NotifyProgress }
-  | { readonly type: 'dismiss'; readonly id: string };
+  /** `id` absent: dismiss every toast. */
+  | { readonly type: 'dismiss'; readonly id?: string };
 
 export interface Notify {
   /** Shows a toast and returns its id. */
   (message: string, options?: NotifyOptions): string;
   promise<T>(promise: Promise<T>, messages: NotifyPromiseMessages<T>): string;
   progress(id: string, progress: NotifyProgress): string;
-  dismiss(id: string): void;
+  /** Dismisses one toast, or every toast when called without an id. */
+  dismiss(id?: string): void;
 }
 
 type Listener = (event: NotifyEvent) => void;
@@ -71,6 +74,7 @@ const pending: NotifyEvent[] = [];
 const MAX_PENDING = 20;
 let listener: Listener | null = null;
 let counter = 0;
+const demandWatchers = new Set<() => void>();
 
 function emit(event: NotifyEvent): void {
   if (listener) {
@@ -81,6 +85,7 @@ function emit(event: NotifyEvent): void {
   // Bounded: with no toaster ever mounted (a test, a page without the
   // provider), the queue must not grow for the life of the tab.
   if (pending.length > MAX_PENDING) pending.shift();
+  for (const watcher of [...demandWatchers]) watcher();
 }
 
 function nextId(): string {
@@ -90,7 +95,9 @@ function nextId(): string {
 
 function show(message: string, options: NotifyOptions = {}): string {
   const id = options.id ?? nextId();
-  emit({ type: 'show', id, message, options });
+  const normalised: NotifyOptions =
+    options.tone === 'danger' && options.duration === undefined ? { ...options, duration: 'persistent' } : options;
+  emit({ type: 'show', id, message, options: normalised });
   return id;
 }
 
@@ -104,8 +111,17 @@ export const notify: Notify = Object.assign(show, {
     emit({ type: 'progress', id, progress });
     return id;
   },
-  dismiss(id: string): void {
-    emit({ type: 'dismiss', id });
+  dismiss(id?: string): void {
+    // Nothing to dismiss before a toaster has shown anything: drop the queued
+    // toast instead of replaying a show and its dismissal back to back.
+    if (!listener) {
+      for (let index = pending.length - 1; index >= 0; index--) {
+        const event = pending[index]!;
+        if (id === undefined || ('id' in event && event.id === id)) pending.splice(index, 1);
+      }
+      return;
+    }
+    emit(id === undefined ? { type: 'dismiss' } : { type: 'dismiss', id });
   },
 });
 
@@ -120,4 +136,24 @@ export function subscribeToNotifications(next: Listener): () => void {
   return () => {
     if (listener === next) listener = null;
   };
+}
+
+/**
+ * Calls `watcher` whenever a toast is queued with no toaster to show it — at
+ * once if one is already waiting. `ItsmProvider` uses it to mount the
+ * `Toaster` the moment it is first needed rather than on every page load.
+ */
+export function watchNotificationDemand(watcher: () => void): () => void {
+  demandWatchers.add(watcher);
+  if (pending.length > 0 && !listener) watcher();
+  return () => {
+    demandWatchers.delete(watcher);
+  };
+}
+
+/** Empties the queue and forgets the toaster. Tests use it between cases; applications never need it. */
+export function resetNotifications(): void {
+  pending.splice(0);
+  listener = null;
+  demandWatchers.clear();
 }

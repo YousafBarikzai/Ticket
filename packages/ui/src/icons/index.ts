@@ -6,4 +6,5 @@
  */
 export { Icon, type IconProps } from './Icon.js';
 export { BrandMark, type BrandMarkProps } from './BrandMark.js';
+export { brandGlyphs, brandGradient, brandMarkSvg, type BrandMarkSvgOptions } from './brand.js';
 export { iconNames, iconRegistry, isIconName, type IconName } from './registry.js';

@@ -50,8 +50,11 @@ export type {
 export {
   ItsmProvider,
   defaultMessages,
+  // For sign-out: `clearLocalData({ alsoKeys: isRecentsKey })` forgets a person's recents and pins.
+  isRecentsKey,
   notify,
   useItsm,
+  useNow,
   usePins,
   useRecents,
   useRecordRecent,
@@ -75,7 +78,7 @@ export {
   type UrlStateSetter,
 } from './provider/index.js';
 export { announce, type AnnounceOptions, type Politeness } from './a11y/announcer.js';
-export { useHotkey, type HotkeyOptions } from './a11y/hotkeys.js';
+export { useHotkey, type HotkeyContext, type HotkeyOptions } from './a11y/hotkeys.js';
 export {
   useCollectionKeyboard,
   type ActivateHow,
