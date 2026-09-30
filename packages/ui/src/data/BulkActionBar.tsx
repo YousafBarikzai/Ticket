@@ -17,11 +17,19 @@ export interface ActionDetails {
   readonly reason?: string;
 }
 
+/**
+ * A bulk action. With `menu` it is a menu of choices rather than one action
+ * ("Status ▾": each state the selection can move to): the button opens the
+ * menu, and behind "More" it becomes a submenu. The items act themselves
+ * (`onSelect`); `onAction` is not called for them.
+ */
+export type BulkAction = ActionSpec & { readonly menu?: readonly MenuItemSpec[] };
+
 export interface BulkActionBarProps {
   readonly count: number;
   readonly noun: Plural;
   /** More than three overflow to "More". */
-  readonly actions: readonly ActionSpec[];
+  readonly actions: readonly BulkAction[];
   /**
    * Client only. An action with `confirm` is confirmed first; a promise keeps
    * the confirmation open, pending, until it settles.
@@ -40,7 +48,7 @@ const VISIBLE = 3;
 
 /** One control in the toolbar, in visual order. */
 type Slot =
-  | { readonly kind: 'action'; readonly action: ActionSpec }
+  | { readonly kind: 'action'; readonly action: BulkAction }
   | { readonly kind: 'more' }
   | { readonly kind: 'cancel' }
   | { readonly kind: 'clear' };
@@ -50,7 +58,10 @@ function unfocusable(slot: Slot): boolean {
   return slot.kind === 'action' && slot.action.disabled === true && !slot.action.disabledReason;
 }
 
-function menuItemFor(action: ActionSpec, run: (action: ActionSpec) => void): MenuItemSpec {
+function menuItemFor(action: BulkAction, run: (action: ActionSpec) => void): MenuItemSpec {
+  if (action.menu && !action.disabled) {
+    return { type: 'submenu', id: action.id, label: action.label, ...(action.icon ? { icon: action.icon } : {}), items: action.menu };
+  }
   return {
     id: action.id,
     label: action.label,
@@ -71,9 +82,10 @@ function menuItemFor(action: ActionSpec, run: (action: ActionSpec) => void): Men
  *
  * One tab stop, with ← → (Home, End) between its controls, as the APG toolbar
  * pattern has it. Up to three actions show as buttons; with more, two show
- * and the rest sit behind "More". A dangerous action keeps its colour, and one
- * with a `confirm` asks first. While a long job runs, the actions give way to
- * its progress and a Cancel button.
+ * and the rest sit behind "More"; an action with a `menu` opens it ("Status
+ * ▾"). A dangerous action keeps its colour, and one with a `confirm` asks
+ * first. While a long job runs, the actions give way to its progress and a
+ * Cancel button.
  */
 export function BulkActionBar({ count, noun, actions, onAction, onClear, placement = 'float', busy, className }: BulkActionBarProps): ReactNode {
   const locale = useOptionalItsm()?.locale;
@@ -153,6 +165,21 @@ export function BulkActionBar({ count, noun, actions, onAction, onClear, placeme
             case 'action': {
               const { action } = slot;
               const gated = action.disabled === true;
+              if (action.menu && !gated) {
+                return (
+                  <Menu
+                    key={action.id}
+                    label={`${action.label} for ${selected}`}
+                    side="top"
+                    items={action.menu}
+                    trigger={
+                      <Button size="sm" variant={action.variant ?? 'ghost'} {...(action.icon ? { iconStart: action.icon } : {})} iconEnd="chevron-down" {...rove(index)}>
+                        {action.label}
+                      </Button>
+                    }
+                  />
+                );
+              }
               return (
                 <Button
                   key={action.id}
