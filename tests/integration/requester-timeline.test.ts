@@ -26,6 +26,7 @@ const secrets = {
   statusReason: mark('status-reason'),
   internalNote: mark('internal-note'),
   internalFile: `${mark('internal-file')}.xlsx`,
+  taskTitle: mark('task-title'),
 };
 const shared = {
   publicField: mark('public-field'),
@@ -123,6 +124,15 @@ beforeAll(async () => {
     token: asAgent(),
     body: { body: shared.publicReply, visibility: 'public' },
   });
+  // A task is the desk's working note: its title must not reach the requester,
+  // though its existence and state may (the portal counts them for progress).
+  const task = await request(`/api/v1/tickets/${number}/tasks`, {
+    method: 'POST',
+    token: asAgent(),
+    body: { title: secrets.taskTitle, assigneeId: tenant.people.agent!.id },
+  });
+  expect(task.status).toBe(201);
+
   await attach(secrets.internalFile, note.body.id);
   await attach(shared.publicFile, reply.body.id);
   await attach(shared.ticketFile);
@@ -156,6 +166,13 @@ describe('what a requester is given', () => {
     expect(view.includesInternal).toBe(false);
   });
 
+  it('counts tasks without naming them or who has them', async () => {
+    const view = await timeline(asRequester());
+    const tasks = view.entries.filter((entry) => entry.kind === 'task');
+    expect(tasks).toHaveLength(1);
+    expect(Object.keys(tasks[0]!).sort()).toEqual(['at', 'id', 'kind', 'status']);
+  });
+
   it('still carries the public conversation and the files that belong to it', async () => {
     const view = await timeline(asRequester());
     expect(view.entries.filter((entry) => entry.kind === 'comment').map((entry) => entry.body)).toEqual([shared.publicReply]);
@@ -170,7 +187,7 @@ describe('what the desk is given', () => {
     expect(view.includesInternal).toBe(true);
 
     const body = JSON.stringify(view);
-    for (const secret of [secrets.internalFieldEdited, secrets.statusReason, secrets.internalNote, secrets.internalFile]) {
+    for (const secret of [secrets.internalFieldEdited, secrets.statusReason, secrets.internalNote, secrets.internalFile, secrets.taskTitle]) {
       expect(body).toContain(secret);
     }
     expect(view.ticket.custom).toEqual({ publicNote: shared.publicField, internalNote: secrets.internalFieldEdited });
@@ -188,5 +205,26 @@ describe('what the desk is given', () => {
     const body = JSON.stringify(await timeline(asAdmin()));
     expect(body).toContain(secrets.restrictedField);
     expect(body).toContain(`${secrets.restrictedField}-2`);
+  });
+});
+
+describe('a retired field', () => {
+  // Retiring keeps the stored values, and a value with no definition is shown
+  // to anybody working the desk — so the lens has to keep reading a retired
+  // field's classification, or retiring a restricted field would publish it.
+  it('keeps a restricted value from an agent who may not read it', async () => {
+    const retired = await request<{ isActive: boolean }>('/api/v1/field-definitions/restrictedNote', { method: 'DELETE', token: asAdmin() });
+    expect(retired.status).toBe(200);
+    expect(retired.body.isActive).toBe(false);
+
+    const body = JSON.stringify(await timeline(asAgent()));
+    expect(body).not.toContain(secrets.restrictedField);
+    const read = await request(`/api/v1/tickets/${number}`, { token: asAgent() });
+    expect(JSON.stringify(read.body)).not.toContain(secrets.restrictedField);
+    const list = await request(`/api/v1/tickets?q=${encodeURIComponent('Laptop will not charge')}`, { token: asAgent() });
+    expect(JSON.stringify(list.body)).not.toContain(secrets.restrictedField);
+
+    // Still there for whoever the field names.
+    expect(JSON.stringify(await timeline(asAdmin()))).toContain(secrets.restrictedField);
   });
 });

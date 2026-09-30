@@ -120,6 +120,16 @@ async function navigate(request: Request): Promise<Response> {
 async function networkFirst(request: Request, cacheName: string): Promise<Response> {
   try {
     const response = await fetch(request);
+    // The session behind this cache has ended — expired, revoked, or signed
+    // out in another tab. What the cache holds is that person's inbox and
+    // tickets, internal notes included, and it outlives them only for as long
+    // as nobody says so; on a shared machine the next person would find it in
+    // the offline copy. An explicit sign-out already clears it; this is the
+    // same for the sessions that end without one.
+    if (response.status === 401) {
+      await caches.delete(cacheName);
+      return response;
+    }
     if (isCacheable(response)) {
       const cache = await caches.open(cacheName);
       await cache.put(request, response.clone());

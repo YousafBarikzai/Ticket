@@ -145,3 +145,21 @@ describe('the workbench’s aggregation handlers', () => {
     expect(await response!.text()).toBe('{"items":["INC-1"]}');
   });
 });
+
+describe('a session that ends', () => {
+  it('takes the cached inbox and tickets with it', async () => {
+    const cache = await cacheStorage.open('itsm-api-dev');
+    await cache.put('/api/desk/inbox/mine', new Response('{"items":["INC-1"]}', { status: 200 }));
+    network = async () => new Response('{"title":"Unauthorised"}', { status: 401 });
+
+    const response = await fetchThrough('/api/desk/inbox/mine');
+    expect(response!.status).toBe(401);
+    expect(stores.has('itsm-api-dev')).toBe(false);
+
+    // Offline afterwards, there is nothing left to show.
+    network = async () => {
+      throw new TypeError('fetch failed');
+    };
+    expect((await fetchThrough('/api/desk/inbox/mine'))!.status).toBe(503);
+  });
+});

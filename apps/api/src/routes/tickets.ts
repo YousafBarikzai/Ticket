@@ -74,10 +74,15 @@ interface Lens {
  * desk sees `internal` too, and a `restricted` field additionally needs one of
  * the permissions it names. The definition is the ticket service's, because
  * the timeline uses the same one to decide who sees events.
+ *
+ * Retired definitions are read too. Retiring a field keeps its stored values,
+ * and a value with no definition at all is shown to every desk reader — so a
+ * lens built from active fields alone would hand a retired `restricted`
+ * field's values to anyone working the desk.
  */
 async function lensFor(ctx: TenantContext): Promise<Lens> {
   return {
-    fields: await fieldService.listFields(ctx),
+    fields: await fieldService.listFields(ctx, { includeInactive: true }),
     reader: {
       worksTheDesk: ticketService.worksTheDesk(ctx),
       holds: (permission: string) => ctx.permissions.scopeFor(permission) !== undefined,
@@ -367,6 +372,14 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
             actorId: entry.event.actorId,
             payload: lensedPayload(entry.event.type, entry.event.payload, lens),
           };
+        }
+        // A task's title and assignee are the desk's working notes: every
+        // task is `internal`, and the `task.completed` event that also names
+        // it is already withheld from anybody who does not work the desk. A
+        // requester gets the task and its state, which is all the portal's
+        // progress count reads.
+        if (!lens.reader.worksTheDesk) {
+          return { kind: 'task' as const, at: entry.at.toISOString(), id: entry.task.id, status: entry.task.status };
         }
         return {
           kind: 'task' as const,
