@@ -4,6 +4,7 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { SESSION_COOKIE, safeRedirectTarget, type Session } from '@itsm/bff';
 import { ApiError, portal, type ApprovalRequest, type Me, type Portal } from '@itsm/sdk';
+import { withoutAnswered } from '../approvals/server.js';
 import { bff } from '../bff.js';
 import { PATH_HEADER } from '../proxy.js';
 
@@ -90,15 +91,19 @@ export function heldPermissions(me: Me): ReadonlySet<string> {
  * Undecided only. `includeDecided` is left out rather than sent as `false`
  * (the API once read `false` as true, F34), and anything already decided is
  * dropped here as well, so a stale or older API cannot put a decision back in
- * somebody's count.
+ * somebody's count. So is a step this person has already answered that still
+ * waits on a second approver (`withoutAnswered`, WP29): it is not waiting on
+ * *them*.
  */
 export const currentApprovals = cache(async (): Promise<readonly ApprovalRequest[] | null> => {
   const me = await currentMe();
   if (!heldPermissions(me).has('approval.read')) return null;
   const session = await requireSession();
   try {
-    const page = await apiFor(session).approvals({});
-    return page.data.filter((approval) => approval.decidedAt === null && approval.status === 'pending');
+    const api = apiFor(session);
+    const page = await api.approvals({});
+    const open = page.data.filter((approval) => approval.decidedAt === null && approval.status === 'pending');
+    return await withoutAnswered(api, me.actor.id, open);
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) redirect(await loginHref());
     return null;

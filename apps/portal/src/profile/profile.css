@@ -1,0 +1,466 @@
+/*
+ * Profile (SPEC §6.3 `/profile`): the heading, the section list beside the
+ * sections from 1024 px, and each section as an inset grouped list — rows on
+ * one raised surface divided by hairlines, the way a phone's settings read
+ * (this page is the Me tab). Arrangement only, from the design system's
+ * tokens; unlayered, so it wins over `@layer itsm.*` without `!important`.
+ * Design-system parts are only ever placed in context here, never restyled
+ * on their own.
+ */
+
+/* ---- The page ----------------------------------------------------------------- */
+
+.app-Profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  max-inline-size: var(--itsm-content-medium);
+  padding-block: var(--itsm-space-lg) var(--itsm-space-3xl);
+}
+
+.app-Profile__title {
+  margin: 0;
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+}
+
+.app-Profile__title:focus {
+  outline: none;
+}
+
+.app-Profile__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-xl);
+}
+
+/* The section list only where there is room beside the sections; a phone scrolls one column. */
+.app-Profile__nav {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .app-Profile__layout {
+    grid-template-columns: 12rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .app-Profile__nav {
+    display: block;
+    position: sticky;
+    inset-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
+  }
+}
+
+.app-Profile__navList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Profile__navLink {
+  display: block;
+  padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-md);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-Profile__navLink:hover {
+    background: var(--itsm-colour-fill-hover);
+    color: var(--itsm-colour-text-primary);
+  }
+}
+
+.app-Profile__sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xl);
+  min-inline-size: 0;
+}
+
+.app-Profile__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  scroll-margin-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
+}
+
+.app-Profile__heading {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+  letter-spacing: var(--itsm-text-title3-tracking);
+}
+
+.app-Profile__heading:focus {
+  outline: none;
+}
+
+/* ---- A grouped list ----------------------------------------------------------- */
+
+.app-Profile__group {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-Profile__row {
+  box-sizing: border-box;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+}
+
+.app-Profile__group > * + *,
+.app-Profile__facts > * + *,
+.app-Devices > * + * {
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Profile__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Profile__group > .app-Profile__note {
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+}
+
+.app-Profile__footnote {
+  margin: 0;
+  padding-inline: var(--itsm-space-md);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+@media (forced-colors: active) {
+  .app-Profile__group {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}
+
+/* ---- Account ------------------------------------------------------------------ */
+
+.app-Profile__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-md);
+  padding-block: var(--itsm-space-md);
+}
+
+.app-Profile__who {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Profile__name {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-title3-tracking);
+  overflow-wrap: anywhere;
+}
+
+.app-Profile__email {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  overflow-wrap: anywhere;
+}
+
+.app-Profile__facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.app-Profile__fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-3xs) var(--itsm-space-md);
+}
+
+.app-Profile__fact dt {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Profile__fact dd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  overflow-wrap: anywhere;
+}
+
+/* Label and value side by side once there is room for both, as a settings list reads. */
+@media (min-width: 30rem) {
+  .app-Profile__fact {
+    grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr);
+    align-items: baseline;
+  }
+}
+
+.app-Profile__sub {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- The approvals row -------------------------------------------------------- */
+
+.app-Profile__link {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-xl);
+  color: inherit;
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-Profile__link:hover {
+    background: var(--itsm-colour-surface-hover);
+  }
+}
+
+.app-Profile__link:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: calc(-1 * var(--itsm-focus-width));
+}
+
+.app-Profile__linkIcon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--itsm-icon-2xl);
+  block-size: var(--itsm-icon-2xl);
+  border-radius: var(--itsm-radius-md);
+  background: var(--itsm-colour-brand-subtle);
+  color: var(--itsm-colour-brand-subtleText);
+}
+
+.app-Profile__linkText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Profile__linkLabel {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-Profile__linkDetail {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Profile__chevron {
+  flex: none;
+  color: var(--itsm-colour-text-muted);
+}
+
+/* ---- Notifications ------------------------------------------------------------ */
+
+.app-Notifications__channel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+/* What only exists while the channel is on sits under its switch, so the switch is read first. */
+.app-Notifications__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding-block-start: var(--itsm-space-xs);
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Notifications__window {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+/* ---- Appearance --------------------------------------------------------------- */
+
+/*
+ * The three choices are pictures of the page. On a narrow screen each card
+ * is a row with its picture at the start; with room for three across, the
+ * picture sits on top, as a system's own appearance settings draw it.
+ */
+.app-Appearance__choice .itsm-RadioGroup__cardIcon {
+  inline-size: calc(var(--itsm-icon-2xl) * 2);
+  block-size: auto;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-radius: var(--itsm-radius-md);
+  background: transparent;
+}
+
+.app-Appearance__choice .itsm-IconSlot {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+@container (min-width: 30rem) {
+  .app-Appearance__choice .itsm-RadioGroup__options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-Appearance__choice .itsm-RadioGroup__card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .app-Appearance__choice .itsm-RadioGroup__cardIcon {
+    grid-column: 1 / -1;
+    inline-size: 100%;
+  }
+
+  .app-Appearance__choice .itsm-RadioGroup__card > .itsm-Choice__text {
+    grid-column: 1;
+  }
+
+  .app-Appearance__choice .itsm-RadioGroup__card > .itsm-Radio {
+    grid-column: 2;
+  }
+}
+
+.app-Swatch {
+  display: flex;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-subtle);
+}
+
+/* Each half is drawn by the theme it names (`data-itsm-theme`), so it shows the real colours. */
+.app-Swatch__pane {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+  padding: var(--itsm-space-xs);
+  background: var(--itsm-colour-surface-canvas);
+}
+
+.app-Swatch__pane:first-child {
+  border-start-start-radius: inherit;
+  border-end-start-radius: inherit;
+}
+
+.app-Swatch__pane:last-child {
+  border-start-end-radius: inherit;
+  border-end-end-radius: inherit;
+}
+
+.app-Swatch__bar {
+  block-size: var(--itsm-space-xs);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-Swatch__card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  padding: var(--itsm-space-2xs);
+  border-radius: var(--itsm-radius-sm);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-Swatch__line {
+  block-size: var(--itsm-space-2xs);
+  inline-size: 80%;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+}
+
+.app-Swatch__line--short {
+  inline-size: 45%;
+  background: var(--itsm-colour-accent);
+}
+
+/* ---- Devices ------------------------------------------------------------------ */
+
+.app-Devices {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Devices__row,
+.app-Devices__install {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Devices__icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--itsm-icon-2xl);
+  block-size: var(--itsm-icon-2xl);
+  border-radius: var(--itsm-radius-md);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Devices__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Devices__name {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.app-Devices__meta {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}

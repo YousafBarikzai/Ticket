@@ -1,0 +1,420 @@
+/*
+ * Approvals (SPEC §6.3 `/approvals`): the heading, the two segments, a list
+ * of rows with a checkbox beside each, the bar that appears while rows are
+ * ticked, the sheet that holds one approval, and the decision inside it.
+ * Arrangement only, from the design system's tokens; unlayered, so it wins
+ * over `@layer itsm.*` without `!important`. Design-system parts are only
+ * ever placed in context here, never restyled on their own.
+ */
+
+/* ---- The page ----------------------------------------------------------------- */
+
+.app-Approvals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  max-inline-size: var(--itsm-content-medium);
+  padding-block: var(--itsm-space-lg) var(--itsm-space-3xl);
+}
+
+.app-Approvals__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}
+
+.app-Approvals__title {
+  margin: 0;
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+}
+
+.app-Approvals__title:focus {
+  outline: none;
+}
+
+.app-Approvals__scopes {
+  align-self: flex-start;
+  max-inline-size: 100%;
+}
+
+/* The list, with the thin progress line on its top edge while it updates: nothing dims. */
+.app-Approvals__results {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Approvals__progress {
+  position: absolute;
+  inset-block-start: calc(-1 * var(--itsm-space-xs));
+  inset-inline: 0;
+}
+
+.app-Approvals__selectAll {
+  padding-inline: var(--itsm-space-md);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Approvals__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---- A row -------------------------------------------------------------------- */
+
+/*
+ * A card with two controls side by side: the checkbox, and the button that
+ * opens the approval (never one inside the other, X-62). The button takes the
+ * rest of the card, so the whole row is a target.
+ */
+.app-ApprovalRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+.app-ApprovalRow:not(:has(.app-ApprovalRow__select)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-ApprovalRow[data-selected] {
+  background: var(--itsm-colour-surface-selected);
+}
+
+@media (hover: hover) {
+  .app-ApprovalRow:has(.app-ApprovalRow__open:hover):not([data-selected]) {
+    background: var(--itsm-colour-surface-hover);
+  }
+}
+
+.app-ApprovalRow__select {
+  display: flex;
+  align-items: center;
+  padding-inline-start: var(--itsm-space-md);
+}
+
+.app-ApprovalRow__open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title pill'
+    'what what'
+    'meta meta';
+  align-items: start;
+  gap: var(--itsm-space-3xs) var(--itsm-space-sm);
+  min-inline-size: 0;
+  margin: 0;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: 0;
+  border-radius: var(--itsm-radius-xl);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.app-ApprovalRow__open:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: calc(-1 * var(--itsm-focus-width));
+}
+
+.app-ApprovalRow__title {
+  grid-area: title;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-body-tracking);
+  overflow-wrap: anywhere;
+}
+
+.app-ApprovalRow__pill {
+  grid-area: pill;
+  margin-block-start: var(--itsm-space-3xs);
+}
+
+.app-ApprovalRow__what {
+  grid-area: what;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  letter-spacing: var(--itsm-text-subheadline-tracking);
+  overflow-wrap: anywhere;
+}
+
+.app-ApprovalRow__meta {
+  grid-area: meta;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--itsm-space-xs);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+/* The dot ends the part before it, so a wrapped line never starts with one. */
+.app-ApprovalRow__meta > span:not(:last-child)::after {
+  content: '·';
+  margin-inline-start: var(--itsm-space-xs);
+}
+
+/* On a narrow phone the pill goes under the words rather than squeezing them. */
+@media (max-width: 29.9375rem) {
+  .app-ApprovalRow__open {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'title'
+      'what'
+      'meta'
+      'pill';
+  }
+
+  .app-ApprovalRow__pill {
+    justify-self: start;
+  }
+}
+
+@media (forced-colors: active) {
+  .app-ApprovalRow {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}
+
+/* ---- The bar while rows are ticked ------------------------------------------- */
+
+/*
+ * Opaque (D6) and resting above the tab bar on a phone. It sits at the end of
+ * the list in the page's flow, and sticks to the bottom of the view while the
+ * list is longer than the screen.
+ */
+.app-Approvals__bulk {
+  position: sticky;
+  inset-block-end: calc(max(var(--itsm-bottom-dock-height), var(--itsm-safe-area-bottom)) + var(--itsm-space-md));
+  z-index: var(--itsm-z-sticky);
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: var(--itsm-space-xs);
+  max-inline-size: 100%;
+  padding: var(--itsm-space-xs) var(--itsm-space-xs) var(--itsm-space-xs) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-lg);
+}
+
+.app-Approvals__bulkCount {
+  margin: 0;
+  margin-inline-end: var(--itsm-space-xs);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  white-space: nowrap;
+}
+
+@media (forced-colors: active) {
+  .app-Approvals__bulk {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}
+
+/* ---- The decision ------------------------------------------------------------- */
+
+.app-Decision,
+.app-Decision__note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Decision__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs);
+}
+
+/* In the sheet's footer the two buttons keep the end; on a phone they share the width. */
+.app-ApprovalSheet .app-Decision__actions {
+  flex: 1 1 100%;
+}
+
+@media (max-width: 47.9375rem) {
+  .app-ApprovalSheet .app-Decision__actions > .itsm-Button {
+    flex: 1 1 0;
+  }
+}
+
+.app-Decision__error {
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Decision__queued {
+  margin: 0;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-info-subtle);
+  color: var(--itsm-colour-info-subtleText);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* It takes focus when the buttons leave with the queueing; it is a sentence, not a control. */
+.app-Decision__queued:focus {
+  outline: none;
+}
+
+/* ---- The sheet ---------------------------------------------------------------- */
+
+/*
+ * A phone gets the whole screen (X-92): deciding is a task, not a glance, and
+ * the tab bar is hidden while it is open. The design system's bottom sheet
+ * stops at 92 % of the height; this one does not, and keeps clear of the
+ * status bar on a notched phone.
+ */
+@media (max-width: 47.9375rem) {
+  .app-ApprovalSheet.itsm-Sheet--auto,
+  .app-ApprovalSheet.itsm-Sheet--auto[data-snap='half'] {
+    inline-size: 100%;
+    max-inline-size: none;
+    block-size: 100dvh;
+    padding-block-start: var(--itsm-safe-area-top);
+    border-radius: 0;
+  }
+
+  /* A page-sized sheet has no grabber: the close button (and Escape) end it. */
+  .app-ApprovalSheet .itsm-Sheet__handle {
+    display: none;
+  }
+}
+
+.app-ApprovalSheet__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-ApprovalSheet__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-ApprovalSheet__heading {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+.app-ApprovalSheet__outcome {
+  align-self: flex-start;
+}
+
+.app-ApprovalSheet__quiet {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-ApprovalSheet__answers {
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-ApprovalSheet__answer {
+  white-space: pre-line;
+}
+
+.app-ApprovalSheet__decisions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-ApprovalSheet__decision {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-ApprovalSheet__comment {
+  margin: var(--itsm-space-2xs) 0 0;
+  padding-inline-start: var(--itsm-space-sm);
+  border-inline-start: var(--itsm-border-thick) solid var(--itsm-colour-border-subtle);
+  color: var(--itsm-colour-text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.app-ApprovalSheet__closeRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- Approve n ---------------------------------------------------------------- */
+
+.app-BulkApprove__list {
+  display: flex;
+  flex-direction: column;
+  max-block-size: 40vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-BulkApprove__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  padding: var(--itsm-space-xs) var(--itsm-space-sm);
+}
+
+.app-BulkApprove__item + .app-BulkApprove__item {
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-BulkApprove__title {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.app-BulkApprove__what {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
