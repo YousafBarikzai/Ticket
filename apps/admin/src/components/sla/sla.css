@@ -1,0 +1,658 @@
+/*
+ * Service levels: policies, calendars and the priority matrix (SPEC §6.1).
+ * Arrangement only, tokens throughout; imported by the three pages and
+ * their loading files. Card surfaces follow the design system's cards:
+ * raised, radius 2xl, elevation sm, lifting only under a pointer.
+ */
+
+/* ---- Shared card shape ------------------------------------------------ */
+
+.app-PolicyCard,
+.app-CalendarCard {
+  /* Paint, radius, padding and depth are the design system's Surface; this is layout and the lift. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  block-size: 100%;
+  transition: transform var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+@media (hover: hover) {
+  .app-PolicyCard:hover,
+  .app-CalendarCard:hover {
+    transform: translateY(calc(-1 * var(--itsm-lift-sm)));
+  }
+}
+
+.app-PolicyCard[data-current],
+.app-CalendarCard[data-current] {
+  background: var(--itsm-colour-surface-selected);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-PolicyCard,
+  .app-CalendarCard {
+    transition: none;
+  }
+
+  .app-PolicyCard:hover,
+  .app-CalendarCard:hover {
+    transform: none;
+  }
+}
+
+:root[data-itsm-motion='reduced'] .app-PolicyCard:hover,
+:root[data-itsm-motion='reduced'] .app-CalendarCard:hover {
+  transform: none;
+}
+
+/* The title is the card's one link; its hit area covers the card. */
+.app-PolicyCard__link,
+.app-CalendarCard__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-PolicyCard__link::after,
+.app-CalendarCard__link::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
+}
+
+.app-PolicyCard__link:focus-visible,
+.app-CalendarCard__link:focus-visible {
+  outline: none;
+}
+
+.app-PolicyCard__link:focus-visible::after,
+.app-CalendarCard__link:focus-visible::after {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-focus-offset);
+}
+
+.app-PolicyCard__head,
+.app-CalendarCard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-PolicyCard__title,
+.app-CalendarCard__title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+.app-PolicyCard__order {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-caption-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-PolicyCard__none,
+.app-CalendarCard__meta,
+.app-Policies__caption {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* Things inside a card that are their own controls sit above the stretched link. */
+.app-PolicyCard__key {
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
+}
+
+.app-PolicyCard__key:empty {
+  display: none;
+}
+
+/* ---- Policies ----------------------------------------------------------- */
+
+.app-Policies {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Policies__list,
+.app-Calendars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--itsm-space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A policy's targets at a glance. */
+.app-MiniMatrix {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-MiniMatrix th,
+.app-MiniMatrix td {
+  padding: var(--itsm-space-3xs) var(--itsm-space-xs);
+  text-align: end;
+  white-space: nowrap;
+}
+
+.app-MiniMatrix thead th {
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-MiniMatrix tbody th {
+  padding-inline-start: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-medium);
+  text-align: start;
+}
+
+.app-MiniMatrix tbody tr + tr > * {
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-MiniMatrix__none {
+  color: var(--itsm-colour-text-muted);
+}
+
+/* The policy drawer. */
+.app-PolicyDetail,
+.app-CalendarDetail,
+.app-NewPolicy,
+.app-NewCalendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-PolicyDetail__heading {
+  margin: 0 0 var(--itsm-space-sm);
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-PolicyDetail__note,
+.app-CalendarDetail__note,
+.app-NewPolicy__note,
+.app-NewPolicy__rank,
+.app-NewCalendar__note,
+.app-Targets__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-SlaFieldError {
+  margin: var(--itsm-space-2xs) 0 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-SlaSheetFooter {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- The targets grid ------------------------------------------------- */
+
+.app-Targets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  container-type: inline-size;
+}
+
+.app-Targets__scroller {
+  overflow-x: auto;
+}
+
+.app-Targets__table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.app-Targets__table th,
+.app-Targets__table td {
+  padding: var(--itsm-space-2xs) var(--itsm-space-xs);
+  vertical-align: top;
+}
+
+.app-Targets__corner,
+.app-Targets__head {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-medium);
+  line-height: var(--itsm-text-footnote-line);
+  text-align: start;
+}
+
+.app-Targets__head {
+  min-inline-size: 8.5rem;
+}
+
+.app-Targets__head > :not(:first-child) {
+  vertical-align: middle;
+}
+
+.app-Targets__headText {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: middle;
+}
+
+.app-Targets__type {
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-Targets__typeHint {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-caption-size);
+  font-weight: var(--itsm-font-weight-regular);
+  line-height: var(--itsm-text-caption-line);
+}
+
+.app-Targets__priority {
+  padding-block-start: var(--itsm-space-xs);
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-subheadline-line);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.app-Targets__cell[data-changed] .itsm-Input,
+.app-Targets__cell[data-changed] .itsm-InputGroup {
+  box-shadow: inset 3px 0 0 var(--itsm-colour-accent);
+}
+
+.app-Targets__cellLabel {
+  display: none;
+}
+
+.app-Targets__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Targets__advanced > summary {
+  cursor: pointer;
+  color: var(--itsm-colour-text-link);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Targets__advanced[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Targets__thresholds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+/* Narrow (a phone, a narrow sheet): one card per priority, fields labelled. */
+@container (max-width: 34rem) {
+  .app-Targets__table,
+  .app-Targets__table tbody,
+  .app-Targets__row {
+    display: block;
+  }
+
+  .app-Targets__table thead {
+    display: none;
+  }
+
+  .app-Targets__row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: var(--itsm-space-xs);
+    margin-block-end: var(--itsm-space-sm);
+    padding: var(--itsm-space-sm);
+    border-radius: var(--itsm-radius-xl);
+    background: var(--itsm-colour-surface-sunken);
+  }
+
+  .app-Targets__priority {
+    grid-column: 1 / -1;
+    padding: 0;
+  }
+
+  .app-Targets__cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--itsm-space-3xs);
+    padding: 0;
+  }
+
+  .app-Targets__cellLabel {
+    display: block;
+    color: var(--itsm-colour-text-secondary);
+    font-size: var(--itsm-text-footnote-size);
+    line-height: var(--itsm-text-footnote-line);
+  }
+}
+
+/* ---- The dirty bar ---------------------------------------------------- */
+
+.app-SlaDirty {
+  position: sticky;
+  inset-block-end: max(var(--itsm-space-sm), var(--itsm-bottom-dock-height), var(--itsm-safe-area-bottom));
+  z-index: var(--itsm-z-sticky);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-xs) var(--itsm-space-xs) var(--itsm-space-xs) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-overlay);
+  box-shadow: var(--itsm-elevation-lg);
+}
+
+.app-SlaDirty__count {
+  margin: 0;
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-font-weight-medium);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-SlaDirty__actions {
+  display: flex;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- The priority matrix (HeatGrid) ------------------------------------ */
+
+.app-Matrix {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Matrix__tools {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.app-HeatGrid {
+  display: grid;
+  gap: var(--itsm-space-2xs);
+  max-inline-size: 40rem;
+}
+
+.app-HeatGrid__axis {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-letter-spacing-wide);
+  text-transform: uppercase;
+}
+
+.app-HeatGrid__axis--columns {
+  padding-inline-start: calc(1.5rem + 4.5rem);
+  text-align: center;
+}
+
+.app-HeatGrid__body {
+  display: flex;
+  align-items: stretch;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-HeatGrid__axis--rows {
+  align-self: center;
+  inline-size: 1.5rem;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+}
+
+.app-HeatGrid__table {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: var(--itsm-space-2xs);
+}
+
+.app-HeatGrid__corner {
+  inline-size: 4.5rem;
+}
+
+.app-HeatGrid__columnHead,
+.app-HeatGrid__rowHead {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-font-weight-medium);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-HeatGrid__columnHead {
+  padding-block-end: var(--itsm-space-2xs);
+  text-align: center;
+}
+
+.app-HeatGrid__rowHead {
+  padding-inline-end: var(--itsm-space-xs);
+  text-align: end;
+}
+
+.app-HeatGrid__cell {
+  padding: 0;
+  border-radius: var(--itsm-radius-lg);
+}
+
+.app-HeatGrid__cell[data-tone='danger'] {
+  background: var(--itsm-colour-danger-subtle);
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-HeatGrid__cell[data-tone='warning'] {
+  background: var(--itsm-colour-warning-subtle);
+  color: var(--itsm-colour-warning-subtleText);
+}
+
+.app-HeatGrid__cell[data-tone='info'] {
+  background: var(--itsm-colour-info-subtle);
+  color: var(--itsm-colour-info-subtleText);
+}
+
+.app-HeatGrid__cell[data-tone='neutral'] {
+  background: var(--itsm-colour-neutral-subtle);
+  color: var(--itsm-colour-neutral-subtleText);
+}
+
+.app-HeatGrid__cell[data-changed] {
+  box-shadow: inset 0 0 0 2px var(--itsm-colour-accent);
+}
+
+.app-HeatGrid__chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--itsm-space-3xs);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: 4.5rem;
+  padding: var(--itsm-space-xs) var(--itsm-space-2xs);
+  border-radius: inherit;
+  text-align: center;
+}
+
+.app-HeatGrid__button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .app-HeatGrid__button:hover {
+    background: var(--itsm-colour-fill-hover);
+  }
+}
+
+.app-HeatGrid__button:active {
+  background: var(--itsm-colour-fill-pressed);
+}
+
+.app-HeatGrid__value {
+  font-size: var(--itsm-text-title3-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-title3-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-HeatGrid__description {
+  font-size: var(--itsm-text-caption-size);
+  font-weight: var(--itsm-font-weight-medium);
+  line-height: var(--itsm-text-caption-line);
+}
+
+.app-HeatGrid__changed {
+  position: absolute;
+  inset-block-start: var(--itsm-space-3xs);
+  inset-inline-end: var(--itsm-space-2xs);
+  color: var(--itsm-colour-accent);
+  font-weight: var(--itsm-font-weight-bold);
+}
+
+.app-HeatGrid__hint,
+.app-HeatGrid__popoverHint {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-HeatGrid__popoverHint {
+  margin-block-start: var(--itsm-space-sm);
+}
+
+/* 320 px: the words under each P code go, the code and the axes stay. */
+@media (max-width: 24rem) {
+  .app-HeatGrid__description {
+    display: none;
+  }
+
+  .app-HeatGrid__corner {
+    inline-size: 3.5rem;
+  }
+
+  .app-HeatGrid__axis--columns {
+    padding-inline-start: calc(1.5rem + 3.5rem);
+  }
+
+  .app-HeatGrid__chip {
+    min-block-size: 3.5rem;
+  }
+}
+
+/* ---- Calendars ---------------------------------------------------------- */
+
+.app-CalendarCard .app-WeekStrip {
+  position: relative;
+}
+
+.app-Holidays {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Holidays__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Holidays__row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(10rem, 2fr) auto;
+  align-items: end;
+  gap: var(--itsm-space-sm);
+}
+
+@container (max-width: 30rem) {
+  .app-Holidays__row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .app-Holidays__row > :nth-child(2) {
+    grid-column: 1;
+  }
+}
+
+/* ---- Loading ------------------------------------------------------------ */
+
+.app-SlaSkeleton__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--itsm-space-md);
+}
+
+.app-SlaSkeleton__head,
+.app-SlaSkeleton__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-SlaSkeleton__title {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-SlaSkeleton__tabs {
+  display: flex;
+  gap: var(--itsm-space-lg);
+  padding-block-end: var(--itsm-space-xs);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}

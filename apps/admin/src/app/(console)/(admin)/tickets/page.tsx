@@ -1,172 +1,135 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { Badge, EmptyState, Table } from '@itsm/ui';
-import { pageAccess } from '../../../../server/session.js';
+import type { Ticket } from '@itsm/sdk';
+import { PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../components/Forbidden.js';
+import { TicketsView, type NamedOption } from '../../../../components/tickets/TicketsView.js';
+import {
+  SCOPES,
+  detailOf,
+  drawerTicket,
+  isFiltered,
+  readTicketQuery,
+  scopeHref,
+  ticketFilter,
+  ticketRow,
+  type TicketDetail,
+} from '../../../../components/tickets/presentation.js';
+import { holds, holdsAny } from '../../../../permissions.js';
+import { resolvePeople } from '../../../../server/people.js';
 import { read } from '../../../../server/read.js';
-import { holds } from '../../../../permissions.js';
-import { Panel } from '../../../../components/Panel.js';
+import { pageAccess } from '../../../../server/session.js';
+import '../../../../components/tickets/tickets.css';
 
 export const metadata: Metadata = { title: 'Tickets' };
 export const dynamic = 'force-dynamic';
 
-/**
- * The API's own vocabulary, checked against `statusCategorySchema` rather than
- * assumed. It is `paused`, not `pending` — and an unrecognised category is not
- * refused, it simply matches nothing, so the wrong word here would have shown
- * an empty desk and called it accurate.
- */
-const CATEGORIES = ['open', 'paused', 'resolved', 'closed'] as const;
-type Category = (typeof CATEGORIES)[number];
-
-function isCategory(value: string | undefined): value is Category {
-  return CATEGORIES.includes(value as Category);
-}
-
-const INTENT: Record<string, 'danger' | 'warning' | 'success' | 'neutral'> = {
-  p1: 'danger',
-  p2: 'warning',
-  p3: 'neutral',
-  p4: 'neutral',
-};
+type SearchParams = Record<string, string | string[] | undefined>;
 
 /**
- * Every ticket on the desk.
+ * Tickets (SPEC §6.1, X-13): every ticket on the desk, across every team —
+ * an administrator's question the workbench does not answer — read-only and
+ * one click from the workbench, where tickets are worked.
  *
- * Not a second workbench. The workbench answers "what is mine"; this answers
- * "what is on this desk at all", which is an administrator's question and one
- * no screen has ever answered — a ticket assigned to a team the administrator
- * is not in was invisible to them outside the database.
+ * The query string is the state: `status` (the scope, Open by default; the
+ * legacy `open|paused|resolved|closed` values unchanged), `q`, `priority`,
+ * `type`, `assignee` (`none`, `me` or a person), `team`, `service`, `sort`,
+ * and `open=ticket:<number>` for the drawer. Old links such as
+ * `/tickets?status=open&assignee=none` land on exactly what they meant.
  *
- * Read-only on purpose, and the link out to the workbench is the point: an
- * administrator who wants to *change* a ticket should be doing it where the
- * timeline, the SLA panel and the reply box are, not in a grid on a
- * configuration screen.
- *
- * The status filter is a link, not a control. A server component filtering by
- * its own search parameters needs no JavaScript at all, and this page is read
- * far more often than it is filtered.
+ * Names, not ids: assignees are resolved in one call for the page, teams from
+ * the directory (A6) and services from the catalogue when this person can
+ * list them — each allowed to fail without taking the list with it.
  */
-export default async function TicketsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ status?: string; assignee?: string }>;
-}): Promise<ReactNode> {
+export default async function TicketsPage({ searchParams }: { searchParams: Promise<SearchParams> }): Promise<ReactNode> {
   const access = await pageAccess('/tickets');
   if (!access.allowed) return <Forbidden route="/tickets" />;
   const { me, api } = access;
 
-  if (!holds(me, 'ticket.read')) {
-    return (
-      <EmptyState
-        tone="error"
-        title="Your account cannot read this desk's tickets"
-        description="It needs ticket.read. Ask an administrator."
-      />
-    );
+  const params = await searchParams;
+  const query = readTicketQuery(params);
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (typeof value === 'string') search.set(name, value);
+  }
+  const drawerNumber = drawerTicket(params.open);
+
+  const [page, teams, services, detail] = await Promise.all([
+    read(() => api.observe.tickets(ticketFilter(query))),
+    read(() => api.tenant.teams()),
+    holds(me, 'catalogue.manage') ? read(() => api.configure.catalogue.services()) : Promise.resolve(null),
+    drawerNumber
+      ? read(async () => {
+          const [ticket, sla] = await Promise.all([
+            api.observe.ticket(drawerNumber),
+            api.observe.ticketSla(drawerNumber).then(
+              (value) => value.timers,
+              () => null,
+            ),
+          ]);
+          return { ticket, sla };
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const tickets: readonly Ticket[] = page.ok ? page.value.data : [];
+  const ids = [
+    ...tickets.map((ticket) => ticket.assigneeId),
+    ...(detail?.ok ? [detail.value.ticket.assigneeId, detail.value.ticket.requesterId] : []),
+    query.assignee && query.assignee !== 'me' && query.assignee !== 'none' ? query.assignee : null,
+  ];
+  const people = await resolvePeople(api, ids);
+  const nameOf = (id: string | null | undefined): string | null => (id ? (people.get(id)?.name ?? null) : null);
+
+  const teamOptions: NamedOption[] | undefined = teams.ok ? teams.value.map((team) => ({ value: team.id, label: team.name })) : undefined;
+  const teamName = new Map((teamOptions ?? []).map((team) => [team.value, team.label]));
+  const serviceOptions: NamedOption[] | undefined = services?.ok ? services.value.map((service) => ({ value: service.id, label: service.name })) : undefined;
+  const namesById = Object.fromEntries([...people.entries()].map(([id, ref]) => [id, ref.name]));
+
+  let initialDetail: TicketDetail | undefined;
+  if (detail?.ok) {
+    const { ticket, sla } = detail.value;
+    const involved = [ticket.assigneeId, ticket.requesterId].filter((id): id is string => !!id);
+    initialDetail = detailOf(ticket, Object.fromEntries(involved.map((id) => [id, nameOf(id)])), sla);
   }
 
-  const params = await searchParams;
-  const category = isCategory(params.status) ? params.status : undefined;
-  // The API resolves `none` itself; anything else here would be a user id, and
-  // this screen has no picker to produce one.
-  const unassigned = params.assignee === 'none';
-
-  const page = await read(() =>
-    api.observe.tickets({
-      statusCategory: category,
-      ...(unassigned ? { assignee: 'none' } : {}),
-      limit: 50,
-      sort: '-createdAt',
-    }),
-  );
-
-  const href = (status?: string): string => {
-    const query = new URLSearchParams();
-    if (status) query.set('status', status);
-    if (unassigned) query.set('assignee', 'none');
-    return query.size > 0 ? `/tickets?${query}` : '/tickets';
-  };
+  const workbench = originOf(process.env.WORKBENCH_ORIGIN);
+  // The workbench is where tickets are worked; the button is for people who work there.
+  const worksTickets = holdsAny(me, ['ticket.update', 'ticket.comment.internal']);
+  const assigneeOption =
+    query.assignee && query.assignee !== 'me' && query.assignee !== 'none' ? { value: query.assignee, label: nameOf(query.assignee) ?? 'Unknown person' } : undefined;
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Tickets</h1>
-        <p className="itsm-Admin__lede">
-          Everything raised on this desk, newest first, across every team. Fifty at a time — this is a check on the
-          shape of the workload, not a queue to work.
-        </p>
-      </header>
-
-      <nav className="itsm-Filters" aria-label="Filter by status">
-        <a className="itsm-Filters__item" aria-current={category === undefined ? 'page' : undefined} href={href()}>
-          Everything
-        </a>
-        {CATEGORIES.map((value) => (
-          <a
-            className="itsm-Filters__item"
-            aria-current={category === value ? 'page' : undefined}
-            href={href(value)}
-            key={value}
-          >
-            {value[0]!.toUpperCase() + value.slice(1)}
-          </a>
-        ))}
-      </nav>
-
-      {unassigned ? (
-        <p className="itsm-Admin__lede">
-          Showing only tickets with nobody assigned. <a href={`/tickets${category ? `?status=${category}` : ''}`}>Include assigned ones</a>.
-        </p>
-      ) : null}
-
-      <Panel
-        title={`${category ? `${category[0]!.toUpperCase()}${category.slice(1)} tickets` : 'All tickets'}${unassigned ? ', unassigned' : ''}`}
-        result={page}
-      >
-        {(value) =>
-          value.data.length === 0 ? (
-            <EmptyState
-              title="Nothing here"
-              description={category ? `No tickets are ${category}.` : 'No tickets have been raised on this desk yet.'}
-            />
-          ) : (
-            <>
-              <Table
-                caption="Tickets on this desk"
-                columns={[
-                  { key: 'number', header: 'Number', cell: (row) => <code>{row.number}</code> },
-                  { key: 'title', header: 'Title', cell: (row) => row.title },
-                  { key: 'type', header: 'Type', cell: (row) => row.type },
-                  {
-                    key: 'priority',
-                    header: 'Priority',
-                    cell: (row) => (
-                      <Badge intent={INTENT[row.priority.toLowerCase()] ?? 'neutral'} srPrefix="Priority">
-                        {row.priority}
-                      </Badge>
-                    ),
-                  },
-                  { key: 'status', header: 'Status', cell: (row) => row.status },
-                  {
-                    key: 'assignee',
-                    header: 'Assigned',
-                    cell: (row) => (row.assigneeId ? 'Yes' : 'Nobody'),
-                  },
-                  { key: 'raised', header: 'Raised', cell: (row) => new Date(row.createdAt).toLocaleDateString() },
-                ]}
-                rows={value.data}
-                rowKey={(row) => row.id}
-              />
-              {value.nextCursor ? (
-                <p className="itsm-Admin__note">
-                  There are more than fifty. Narrow it with a status above, or work the queue in the workbench.
-                </p>
-              ) : null}
-            </>
-          )
-        }
-      </Panel>
+    <div className="app-Page app-Tickets">
+      <PageHeader
+        title="Tickets"
+        {...(page.ok && tickets.length === 0 && query.scope === 'all' && !isFiltered(query) ? { subtitle: 'Every ticket on the desk. Open one to work it in the workbench.' } : {})}
+        {...(workbench && worksTickets ? { primaryAction: { id: 'workbench', label: 'Open workbench', href: `${workbench}/inbox`, variant: 'primary' as const, icon: 'inbox' as const } } : {})}
+      />
+      <TicketsView
+        rows={tickets.map((ticket) => ticketRow(ticket, nameOf, (id) => (id ? (teamName.get(id) ?? null) : null)))}
+        nextCursor={page.ok ? page.value.nextCursor : null}
+        {...(page.ok ? {} : { problem: page.problem })}
+        query={query}
+        scopes={SCOPES.map((scope) => ({ value: scope.value, label: scope.label, href: scopeHref(search, scope.value) }))}
+        {...(teamOptions ? { teams: teamOptions } : {})}
+        {...(serviceOptions ? { services: serviceOptions } : {})}
+        {...(assigneeOption ? { assigneeOption } : {})}
+        people={namesById}
+        {...(workbench && worksTickets ? { workbenchOrigin: workbench } : {})}
+        {...(initialDetail ? { initialDetail } : {})}
+        filtered={isFiltered(query)}
+      />
     </div>
   );
+}
+
+/** An origin from the environment, without a trailing slash; nothing when unset or not a URL (C1). */
+function originOf(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
 }

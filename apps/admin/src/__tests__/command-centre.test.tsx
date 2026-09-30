@@ -334,8 +334,7 @@ describe('the first-run checklist', () => {
     expect(presentation.setupSteps(facts, administrator).map((step) => [step.id, step.href])).toEqual([
       ['catalogue', '/catalogue?new=service'],
       ['service-levels', '/sla?new=1'],
-      // Calendars is still being built: Service levels itself.
-      ['business-hours', '/sla'],
+      ['business-hours', '/sla/calendars?new=1'],
       ['email', '/settings?q=email'],
     ]);
   });

@@ -249,7 +249,8 @@ describe('routes, tabs and crumbs', () => {
 
   it('offers only the tabs a person may open and that exist', () => {
     const lead = person('workload.read');
-    expect(tabsFor(lead, 'workforce').map((tab) => tab.id)).toEqual(['now']);
+    // Routing waits for its page (it is still in PENDING); the other four exist.
+    expect(tabsFor(lead, 'workforce').map((tab) => tab.id)).toEqual(['now', 'on-call', 'shifts', 'skills']);
     expect(tabsFor(person('ai.read'), 'ai-triage').map((tab) => tab.id)).toEqual(['overview']);
     expect(tabsFor(person(), 'workforce')).toEqual([]);
   });
@@ -328,9 +329,11 @@ describe('create commands', () => {
     expect(createCommandsFor(person('rules.rule.read')).map((command) => command.id)).toEqual([]);
     const sla = createCommandsFor(person('sla.policy.manage')).map((command) => command.id);
     expect(sla).toContain('new-sla-policy');
-    // The calendars tab is still being built.
-    expect(sla).not.toContain('new-calendar');
+    expect(sla).toContain('new-calendar');
     for (const command of CREATE_COMMANDS) expect(routeFor(command.href), command.href).not.toBeNull();
+    // Someone who may do everything is still offered no command whose page is pending.
+    const everything = person(...CREATE_COMMANDS.map((command) => command.permission), ...NAV.flatMap((item) => item.read));
+    for (const command of createCommandsFor(everything)) expect(isPending(routeFor(command.href)!), command.id).toBe(false);
   });
 
   it('need the page’s read gate too', () => {
