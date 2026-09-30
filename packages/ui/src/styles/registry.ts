@@ -86,6 +86,7 @@ import { problemStateStyles } from '../feedback/ProblemState.styles.js';
 import { progressBarStyles } from '../feedback/ProgressBar.styles.js';
 import { skeletonsStyles } from '../feedback/Skeletons.styles.js';
 import { spinnerStyles } from '../feedback/Spinner.styles.js';
+import { illustrationStyles } from '../feedback/Illustration.styles.js';
 import { statusScreenStyles } from '../feedback/StatusScreen.styles.js';
 import { relativeTimeStyles } from '../format/RelativeTime.styles.js';
 import { formStyles } from '../formkit/Form.styles.js';
@@ -152,6 +153,7 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'a11y/Region.styles.ts', css: regionStyles },
   { module: 'display/Surface.styles.ts', css: surfaceStyles },
   { module: 'feedback/Spinner.styles.ts', css: spinnerStyles },
+  { module: 'feedback/Illustration.styles.ts', css: illustrationStyles },
 
   // The existing components, in the old stylesheet's order.
   { module: 'web/Tile.styles.ts', css: tileStyles },
