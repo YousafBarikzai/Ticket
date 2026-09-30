@@ -191,8 +191,8 @@ describe('rows', () => {
     const runs = result.items[0]!;
     expect(runs.title).toBe('1 workflow run failed');
     expect(runs.at).toBe(minutes(-12));
-    // `/workflows/runs` is still being built: the row falls back to the item's first page.
-    expect(runs.action).toEqual({ label: 'Review', href: '/workflows' });
+    // The runs page exists (WP18): the row goes straight to the failed runs.
+    expect(runs.action).toEqual({ label: 'Review', href: '/workflows/runs?status=failed' });
     const drafts = result.items.find((item) => item.id === 'drafts')!;
     expect(drafts.title).toBe('3 drafts are waiting to be published');
     expect(drafts.detail).toBe('2 rules · 1 request type');
@@ -280,7 +280,7 @@ describe('rows', () => {
       { now: NOW },
     );
     const item = reader.items.find((entry) => entry.id === 'credentials');
-    expect(item).toMatchObject({ tone: 'danger', title: '2 credentials need rotating', action: { label: 'Review', href: '/integrations' } });
+    expect(item).toMatchObject({ tone: 'danger', title: '2 credentials need rotating', action: { label: 'Review', href: '/integrations/credentials' } });
     expect(item?.rows?.map((row) => [row.label, row.when])).toEqual([
       ['old', 'Expired'],
       ['slack-bot', 'Expires'],
@@ -317,7 +317,8 @@ describe('rows', () => {
     expect(item).toMatchObject({ title: '1 asset warranty ends within 30 days' });
     expect(item?.action).toBeUndefined();
     expect(reachable(person('ticket.read'), '/rules')).toBeUndefined();
-    expect(reachable(person('rules.rule.read'), '/rules/new', '/rules')).toBe('/rules');
+    // The first choice is a page this person cannot open, so the next one is used.
+    expect(reachable(person('rules.rule.read'), '/workflows/runs', '/rules')).toBe('/rules');
   });
 });
 

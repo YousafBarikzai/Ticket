@@ -142,6 +142,7 @@
 
 .app-Conditions__row > select,
 .app-Conditions__row > .itsm-Select,
+.app-Conditions__row > .itsm-SelectField,
 .app-Conditions__row > .itsm-Input,
 .app-Conditions__row > .itsm-NumberField {
   flex: 1 1 10rem;

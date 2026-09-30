@@ -58,8 +58,14 @@ interface Row extends Condition {
 let nextRowId = 0;
 const rowId = (): string => `condition-${++nextRowId}`;
 
-function toRows(conditions: readonly Condition[]): Row[] {
-  return conditions.map((condition) => ({ ...condition, id: rowId() }));
+/**
+ * Rows with ids. The first render's ids come from the position, so the
+ * server's HTML and the browser's first render agree (a module counter
+ * runs on across server requests, and a mismatched `data-row` broke the
+ * focus kept by ↑/↓ after hydration); rows made later use the counter.
+ */
+function toRows(conditions: readonly Condition[], stable = false): Row[] {
+  return conditions.map((condition, index) => ({ ...condition, id: stable ? `condition-s${index}` : rowId() }));
 }
 
 const OPERATOR_LABELS = new Map<string, string>(OPERATORS.map((entry) => [entry.value, entry.label]));
@@ -135,7 +141,7 @@ export function ConditionBuilder({ label, value, onChange, facts: enginePaths, f
   const factOptions = useMemo(() => groupedFacts(facts), [facts]);
   const parsed = useMemo(() => (value === undefined || value === null ? { conditions: [], join: 'and' as Join } : fromExpression(value)), [value]);
 
-  const [rows, setRows] = useState<Row[]>(() => toRows(parsed?.conditions ?? []));
+  const [rows, setRows] = useState<Row[]>(() => toRows(parsed?.conditions ?? [], true));
   const [join, setJoin] = useState<Join>(parsed?.join ?? 'and');
   // What this builder last sent up. A new `value` that is not that — a reset,
   // a draft restored — replaces the rows; our own echo does not.

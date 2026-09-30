@@ -1,156 +1,98 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { ApiError } from '@itsm/sdk';
-import { Badge, EmptyState, Table } from '@itsm/ui';
-import { pageAccess } from '../../../../server/session.js';
+import { redirect } from 'next/navigation';
+import { Card } from '@itsm/ui';
+import { PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../components/Forbidden.js';
-import { holds } from '../../../../permissions.js';
-import { WorkflowConsole } from '../../../../components/WorkflowConsole.js';
+import { WorkflowsView } from '../../../../components/workflows/WorkflowsView.js';
+import { inWorkflowScope, runMix, workflowScope, type RunMix } from '../../../../components/workflows/presentation.js';
+import { read } from '../../../../server/read.js';
+import { pageAccess } from '../../../../server/session.js';
+import { loadDetails, workflowAbilities, workflowTabs, workflowView } from './data.js';
+import '../../../../components/workflows/workflows.css';
 
 export const metadata: Metadata = { title: 'Workflows' };
 export const dynamic = 'force-dynamic';
 
-const WHEN = (iso: string | null): string => (iso ? new Date(iso).toLocaleString('en-GB') : '—');
+/** Runs read for the "last runs" bars: the most the API gives in one answer. */
+const RUNS_READ = 200;
+/** Runs counted per workflow. */
+const PER_WORKFLOW = 50;
+
+type Search = Record<string, string | string[] | undefined>;
+
+function scopeHref(search: Search, scope: 'all' | 'live' | 'draft'): string {
+  const params = new URLSearchParams();
+  for (const [name, value] of Object.entries(search)) {
+    if (name === 'status' || value === undefined) continue;
+    for (const entry of Array.isArray(value) ? value : [value]) params.append(name, entry);
+  }
+  if (scope !== 'all') params.set('status', scope);
+  const query = params.toString();
+  return query ? `/workflows?${query}` : '/workflows';
+}
 
 /**
- * Workflows, without the graph editor.
- *
- * The editor is a project of its own and stays one. Everything around it is
- * not: an administrator needs to see which workflows exist, check a draft
- * before publishing it, publish, roll back when a published version turns out
- * wrong, and — most of all — look at what is running right now and unstick it.
- *
- * The runs are the half that matters day to day. A workflow that has stalled
- * on a step nobody is going to complete is a joiner who never got a laptop,
- * and until this screen the only way to see one was a database query.
+ * Workflows › Workflows (SPEC §6.1): each workflow with its live version,
+ * how it starts and how its last runs went. The list, its versions and the
+ * recent runs are read separately; a failed runs read leaves the bars out.
  */
-export default async function WorkflowsPage(): Promise<ReactNode> {
+export default async function WorkflowsPage({ searchParams }: { readonly searchParams: Promise<Search> }): Promise<ReactNode> {
   const access = await pageAccess('/workflows');
   if (!access.allowed) return <Forbidden route="/workflows" />;
   const { me, api } = access;
-  const canManage = holds(me, 'workflow.manage');
+  const search = await searchParams;
+  // `?open=workflow:<key>` (the palette's link before the detail page existed) goes to that page.
+  if (typeof search.open === 'string' && search.open.startsWith('workflow:') && search.open.length > 9) {
+    redirect(`/workflows/${encodeURIComponent(search.open.slice(9))}`);
+  }
+  const can = workflowAbilities(me, 'Workflows');
+  const tabs = workflowTabs(me);
 
-  let workflows: Awaited<ReturnType<typeof api.configure.workflows.list>>;
-  let runs: Awaited<ReturnType<typeof api.configure.workflows.runs>>;
-  try {
-    [workflows, runs] = await Promise.all([
-      api.configure.workflows.list(),
-      api.configure.workflows.runs({ limit: 50 }),
-    ]);
-  } catch (error) {
+  const [list, runs] = await Promise.all([read(() => api.configure.workflows.list()), read(() => api.configure.workflows.runs({ limit: RUNS_READ }))]);
+  if (!list.ok) {
     return (
-      <EmptyState
-        tone="error"
-        title="The workflows could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The API could not be reached.'}
-      />
+      <div className="app-Page app-Workflows">
+        <PageHeader title="Workflows" tabs={tabs} {...(can.viewOnly ? { viewOnly: can.viewOnly } : {})} />
+        <Card title="Workflows" problem={list.problem} />
+      </div>
     );
   }
 
-  const byId = new Map(workflows.map((workflow) => [workflow.id, workflow.name]));
-  const stuck = runs.filter((run) => run.status === 'failed' || run.status === 'waiting');
+  const details = await loadDetails(api, list.value);
+  const workflows = list.value.map((row) => workflowView(row, details.get(row.key) ?? null));
+
+  const mixes: Record<string, RunMix> = {};
+  if (runs.ok) {
+    const byId = new Map(list.value.map((row) => [row.id, row.key]));
+    const grouped = new Map<string, { status: string }[]>();
+    for (const run of runs.value) {
+      const key = byId.get(run.definitionId);
+      if (!key) continue;
+      const bucket = grouped.get(key) ?? [];
+      if (bucket.length < PER_WORKFLOW) bucket.push(run);
+      grouped.set(key, bucket);
+    }
+    for (const [key, bucket] of grouped) mixes[key] = runMix(bucket);
+  }
+
+  const live = workflows.filter((workflow) => inWorkflowScope(workflow, 'live')).length;
+  const failed = runs.ok ? runs.value.filter((run) => run.status === 'failed').length : 0;
+  const meta =
+    workflows.length === 0
+      ? undefined
+      : `${live} live${runs.ok ? ` · ${failed === 0 ? 'no failed runs' : `${failed}${runs.value.length >= RUNS_READ ? '+' : ''} failed ${failed === 1 ? 'run' : 'runs'}`}` : ''}`;
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Workflows</h1>
-        <p className="itsm-Admin__lede">
-          A workflow is a sequence with approvals, tasks and waits in it — a joiner, a change, an offboarding.{' '}
-          {stuck.length > 0
-            ? `${stuck.length} of the last ${runs.length} runs are waiting or have failed.`
-            : `None of the last ${runs.length} runs are stuck.`}
-        </p>
-      </header>
-
-      <section aria-labelledby="definitions-heading">
-        <h2 id="definitions-heading">Workflows</h2>
-        {workflows.length === 0 ? (
-          <EmptyState
-            title="No workflows"
-            description="Nothing multi-step is defined. Creating one needs the graph editor, which is not built."
-          />
-        ) : (
-          <Table
-            caption="Workflow definitions"
-            columns={[
-              { key: 'name', header: 'Name', cell: (row) => row.name },
-              { key: 'key', header: 'Key', cell: (row) => <code>{row.key}</code> },
-              { key: 'description', header: 'Description', cell: (row) => row.description ?? '—' },
-              {
-                key: 'status',
-                header: 'Live',
-                cell: (row) => (
-                  <Badge intent={row.status === 'published' ? 'success' : 'warning'} srPrefix="Live">
-                    {row.status === 'published' ? 'Published' : row.status}
-                  </Badge>
-                ),
-              },
-              { key: 'updated', header: 'Changed', cell: (row) => WHEN(row.updatedAt) },
-            ]}
-            rows={workflows}
-            rowKey={(row) => row.id}
-          />
-        )}
-      </section>
-
-      <section aria-labelledby="runs-heading">
-        <h2 id="runs-heading">Recent runs</h2>
-        {runs.length === 0 ? (
-          <EmptyState title="Nothing has run" description="No workflow has been started on this desk yet." />
-        ) : (
-          <Table
-            caption="The fifty most recent workflow runs"
-            columns={[
-              { key: 'workflow', header: 'Workflow', cell: (row) => byId.get(row.definitionId) ?? '—' },
-              {
-                key: 'status',
-                header: 'State',
-                cell: (row) => (
-                  <Badge
-                    intent={
-                      row.status === 'completed'
-                        ? 'success'
-                        : row.status === 'failed'
-                          ? 'danger'
-                          : row.status === 'cancelled'
-                            ? 'neutral'
-                            : 'warning'
-                    }
-                    srPrefix="State"
-                  >
-                    {row.status}
-                  </Badge>
-                ),
-              },
-              {
-                key: 'at',
-                header: 'Waiting on',
-                cell: (row) => (row.currentKeys.length > 0 ? row.currentKeys.join(', ') : '—'),
-              },
-              { key: 'error', header: 'Error', cell: (row) => row.error ?? '—' },
-              { key: 'started', header: 'Started', cell: (row) => WHEN(row.startedAt) },
-              { key: 'ended', header: 'Ended', cell: (row) => WHEN(row.endedAt) },
-            ]}
-            rows={runs}
-            rowKey={(row) => row.id}
-          />
-        )}
-      </section>
-
-      {canManage ? (
-        <WorkflowConsole
-          workflows={workflows.map((workflow) => ({ key: workflow.key, name: workflow.name, status: workflow.status }))}
-          stuckRuns={stuck.map((run) => ({
-            id: run.id,
-            label: `${byId.get(run.definitionId) ?? 'workflow'} · ${run.status} · ${run.currentKeys.join(', ') || 'no step'}`,
-          }))}
-        />
-      ) : (
-        <p className="itsm-Admin__note">
-          Your account can see these but not change them. Publishing, rolling back and unsticking a run need{' '}
-          <code>workflow.manage</code>.
-        </p>
-      )}
-    </div>
+    <WorkflowsView
+      workflows={workflows}
+      mixes={mixes}
+      runsRead={runs.ok ? runs.value.length : 0}
+      scope={workflowScope(typeof search.status === 'string' ? search.status : undefined)}
+      scopeHrefs={{ all: scopeHref(search, 'all'), live: scopeHref(search, 'live'), draft: scopeHref(search, 'draft') }}
+      tabs={tabs}
+      {...(meta ? { meta } : {})}
+      {...(can.viewOnly ? { viewOnly: can.viewOnly } : {})}
+    />
   );
 }

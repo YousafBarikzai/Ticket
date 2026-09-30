@@ -385,11 +385,9 @@ export const NAV: readonly AdminNavItem[] = [
  * Each still has a read gate, so `pageAccess()` works for them too.
  */
 export const EXCLUDED: readonly { readonly route: string; readonly read: readonly string[]; readonly reason: string }[] = [
-  {
-    route: '/automation',
-    read: ['rules.rule.read', 'rules.rule.manage', 'rules.rule.publish', 'workflow.read', 'workflow.manage'],
-    reason: 'The old automation hub. It becomes a redirect to Rules or Workflows (WP18); nothing links to it.',
-  },
+  // `/automation` was the one entry here. It is a redirect now (a route
+  // handler, WP18: Rules, or Workflows for people who cannot open Rules),
+  // not a page, so it has no gate of its own to list.
 ];
 
 /**
@@ -399,10 +397,6 @@ export const EXCLUDED: readonly { readonly route: string; readonly read: readonl
  * the same change.
  */
 export const PENDING: ReadonlySet<string> = new Set([
-  '/rules/new',
-  '/rules/[key]',
-  '/workflows/runs',
-  '/workflows/[key]',
   '/integrations/actions',
   '/integrations/credentials',
   '/integrations/webhooks',
