@@ -185,6 +185,8 @@ export interface CiClassRow {
 export interface CiRow {
   id: string;
   name: string;
+  /** The item's class (`CiClassRow.id`). Optional: an API from before it was sent leaves it out. */
+  classId?: string;
   status: string;
   criticality: string;
   externalKey: string | null;
@@ -211,6 +213,12 @@ export interface AssetRow {
   purchasedOn: string | null;
   warrantyEndsOn: string | null;
   retiredAt: string | null;
+  /**
+   * The person holding it now, on the lists (`assets`, `warranties`); null when
+   * nobody does (in stock, or placed at a location). Absent from a single
+   * asset, whose `assignments` say it, and from an API that predates it.
+   */
+  holderId?: string | null;
 }
 
 export interface CiFilter {

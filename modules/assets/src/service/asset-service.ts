@@ -385,6 +385,25 @@ export async function listAssets(ctx: TenantContext, query: z.input<typeof listA
 }
 
 /**
+ * Who holds each of these assets now, by asset id.
+ *
+ * The open assignment's person, for the ones held by a person; an asset in a
+ * place (a store room, a desk) or in stock has no entry. One query for a whole
+ * page of the register, so a list can name holders without opening each asset.
+ */
+export async function currentHolders(ctx: TenantContext, assetIds: readonly string[]): Promise<Map<string, string>> {
+  authz.require(ctx, 'asset.read');
+  if (assetIds.length === 0) return new Map();
+  return transaction(ctx, async (tx) => {
+    const open = await tx.assetAssignment.findMany({
+      where: { assetId: { in: [...assetIds] }, returnedAt: null, userId: { not: null } },
+      select: { assetId: true, userId: true },
+    });
+    return new Map(open.flatMap((row) => (row.userId ? [[row.assetId, row.userId] as const] : [])));
+  });
+}
+
+/**
  * Warranties running out.
  *
  * The one report that pays for an asset register: a machine repaired the week

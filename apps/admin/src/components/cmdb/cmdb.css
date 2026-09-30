@@ -1,0 +1,464 @@
+/*
+ * Configuration items and Assets (SPEC §6.1 `/cmdb`, `/cmdb/assets`): the
+ * class list beside the items table, the item and asset drawers, their forms
+ * and dialogs. Arrangement only, tokens throughout; surfaces, controls and
+ * type come from the design system. Imported by both pages and their
+ * loading files.
+ */
+
+/* ---- Shared ------------------------------------------------------------ */
+
+.app-CmdbMuted {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-CmdbMono,
+.app-CmdbTag {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A tag is one label: it never breaks at its hyphen. */
+.app-CmdbTag {
+  white-space: nowrap;
+}
+
+.app-CmdbActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs);
+}
+
+/* A drawer's foot: the destructive action apart, at the start; the rest at the end. */
+.app-CmdbDrawerActions {
+  display: flex;
+  flex: 1 1 auto;
+  inline-size: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs);
+}
+
+.app-CmdbFieldError {
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Configuration items: classes beside the table --------------------- */
+
+.app-Cmdb__panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-lg);
+  align-items: start;
+}
+
+.app-Cmdb__nav {
+  display: none;
+}
+
+.app-Cmdb__picker {
+  max-inline-size: 24rem;
+}
+
+@media (min-width: 64rem) {
+  .app-Cmdb__panes {
+    grid-template-columns: 15rem minmax(0, 1fr);
+  }
+
+  .app-Cmdb__nav {
+    display: block;
+    position: sticky;
+    inset-block-start: var(--itsm-space-lg);
+  }
+
+  .app-Cmdb__picker {
+    display: none;
+  }
+}
+
+.app-Cmdb__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  min-inline-size: 0;
+}
+
+.app-Cmdb__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Cmdb__title {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  font-weight: var(--itsm-text-title3-weight);
+  line-height: var(--itsm-text-title3-line);
+  letter-spacing: var(--itsm-text-title3-tracking);
+}
+
+.app-Cmdb__lede {
+  margin: var(--itsm-space-3xs) 0 0;
+  max-inline-size: 60ch;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Cmdb__lede:empty {
+  display: none;
+}
+
+.app-Cmdb__caption {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- A drawer's panels ------------------------------------------------- */
+
+.app-CiDrawer,
+.app-CiPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-CiPanel__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-CiSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-CiSection__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-CiSection__count {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-CiSection__text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.app-CiSection__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* Relationships and impact: one line per item, the name first. */
+.app-CiEdges,
+.app-CiLinked,
+.app-CmdbHoldings {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-CiEdge,
+.app-CiLinked__row,
+.app-CmdbHolding {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs) var(--itsm-space-xs);
+  padding-block: var(--itsm-space-xs);
+  border-block-end: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-CiEdge:last-child,
+.app-CiLinked__row:last-child,
+.app-CmdbHolding:last-child {
+  border-block-end: 0;
+}
+
+.app-CiEdge__verb {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* The other item: a real button, drawn as a link, that opens its drawer. */
+.app-CiEdge__name {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--itsm-radius-xs);
+  background: none;
+  color: var(--itsm-colour-text-link);
+  font: inherit;
+  font-weight: var(--itsm-font-weight-medium);
+  text-align: start;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .app-CiEdge__name:hover {
+    text-decoration: underline;
+  }
+}
+
+.app-CiEdge > .itsm-IconButton {
+  margin-inline-start: auto;
+}
+
+.app-CiImpact__summary {
+  margin: 0;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-CiLinked__icon {
+  flex: none;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-CiLinked__what {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-CiLinked__link {
+  color: var(--itsm-colour-text-link);
+}
+
+.app-CiLinked__unknown {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-CiLinked__meta {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Asset holdings and warranty --------------------------------------- */
+
+.app-CmdbHolding {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-CmdbHolding__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-CmdbHolding__when,
+.app-CmdbHolding__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-CmdbHolding__note {
+  white-space: pre-wrap;
+}
+
+.app-CmdbWarranty {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs) var(--itsm-space-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Forms and dialogs ------------------------------------------------- */
+
+.app-CmdbForm,
+.app-CmdbDialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-CmdbDialog {
+  gap: var(--itsm-space-md);
+}
+
+.app-CmdbDialog__text {
+  margin: 0;
+}
+
+/* A value that cannot change here, said as text rather than as a disabled field. */
+.app-CmdbForm__fixed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--itsm-space-3xs) var(--itsm-space-xs);
+  margin: 0;
+}
+
+/*
+ * What sits among a section's fields and is not a field keeps the fields'
+ * rhythm (a field's own bottom margin; the section drops the last one's).
+ */
+.app-CmdbForm__fixed,
+.app-CmdbForm__segment,
+.app-CmdbForm__pair,
+.app-CmdbForm__note,
+.app-CmdbInherited,
+.app-CmdbAttributes {
+  margin-block-end: var(--itsm-space-md);
+}
+
+.app-CmdbForm__pair > * {
+  margin-block-end: 0;
+}
+
+.app-CmdbForm__label {
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-CmdbForm__fixedLabel {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-CmdbForm__fixedHint,
+.app-CmdbForm__hint {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-CmdbForm__fixedHint {
+  flex-basis: 100%;
+}
+
+.app-CmdbForm__segment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-CmdbForm__pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--itsm-space-md);
+}
+
+/* The sentence a relationship will read as, before it is saved. */
+.app-CmdbReadBack {
+  margin: 0;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-fill-secondary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-CmdbInherited {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-CmdbInherited__list {
+  margin: 0;
+  padding-inline-start: var(--itsm-space-lg);
+}
+
+.app-CmdbAttributes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-CmdbAttribute {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md);
+  border: 1px solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+}
+
+.app-CmdbAttribute:focus-visible {
+  outline-offset: var(--itsm-focus-offset);
+}
+
+.app-CmdbAttribute__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs);
+}
+
+.app-CmdbAttribute__number {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-CmdbAttribute__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+/* ---- Skeletons --------------------------------------------------------- */
+
+.app-CmdbSkeleton__head,
+.app-CmdbSkeleton__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-CmdbSkeleton__toolbar {
+  justify-content: flex-start;
+}
+
+@media (forced-colors: active) {
+  .app-CmdbAttribute {
+    border-color: CanvasText;
+  }
+
+  .app-CmdbReadBack {
+    border: 1px solid CanvasText;
+  }
+}

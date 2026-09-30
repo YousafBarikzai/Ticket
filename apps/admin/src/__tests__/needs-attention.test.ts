@@ -303,19 +303,17 @@ describe('rows', () => {
       ['ai-budget', 'danger', 'Monthly AI budget reached'],
       ['usage', 'warning', 'Agents: 47 people of 50 people'],
     ]);
-    // Settings › Usage and › AI are still being built: both fall back to Settings.
-    expect(result.items.map((item) => item.action?.href)).toEqual(['/settings', '/settings']);
+    // Each points at the Settings tab that can change it.
+    expect(result.items.map((item) => item.action?.href)).toEqual(['/settings/ai', '/settings/usage']);
     expect(meterSentence({ meter: 'agents', unit: 'people', display: '50 people', value: 50, hard: 50, soft: 45, state: 'blocked' })).toBe(
       'Agents: plan limit reached (50 people)',
     );
   });
 
-  it('leaves the action off when there is no page this person can open', async () => {
+  it('links to the page when this person can open it, and leaves the action off when there is none', async () => {
     const { api } = fakeApi({ warranties: [{ tag: 'LT-1', expired: false }, { tag: 'LT-2', expired: true }] });
     const [item] = (await collectNeedsAttention(person('asset.read'), api, { now: NOW })).items;
-    // The Assets page is still being built.
-    expect(item).toMatchObject({ title: '1 asset warranty ends within 30 days' });
-    expect(item?.action).toBeUndefined();
+    expect(item).toMatchObject({ title: '1 asset warranty ends within 30 days', action: { label: 'View', href: '/cmdb/assets?warranty=30' } });
     expect(reachable(person('ticket.read'), '/rules')).toBeUndefined();
     // The first choice is a page this person cannot open, so the next one is used.
     expect(reachable(person('rules.rule.read'), '/workflows/runs', '/rules')).toBe('/rules');

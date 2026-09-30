@@ -142,6 +142,15 @@ describe('a class declares what its items carry', () => {
       criticality: 'critical',
     });
     expect(created.attributes).toEqual({ engine: 'postgres', environment: 'production' });
+
+    // Each item names its class, in the list and on its own, so a screen can
+    // say "Orders DB · Database server" and check attributes against it.
+    const classes = await request<{ data: { id: string; key: string }[] }>('/api/v1/ci-classes', { token: asAgent() });
+    const database = classes.body.data.find((row) => row.key === 'database')!;
+    const one = await request<{ classId: string }>(`/api/v1/cis/${created.id}`, { token: asAgent() });
+    expect(one.body.classId).toBe(database.id);
+    const listed = await request<{ data: { id: string; classId: string }[] }>('/api/v1/cis?classKey=database', { token: asAgent() });
+    expect(listed.body.data.find((row) => row.id === created.id)?.classId).toBe(database.id);
   });
 
   it('refuses a class loop rather than letting inheritance depend on where it is cut', async () => {
@@ -370,6 +379,13 @@ describe('the asset register', () => {
     // never in two places at once, and the history survives.
     expect(held.body.assignments.filter((row) => row.returnedAt === null)).toHaveLength(1);
     expect(held.body.assignments.find((row) => row.returnedAt === null)!.userId).toBe(second);
+
+    // The lists name the current holder, so "who has what" needs no asset opened.
+    const listed = await request<{ data: { tag: string; holderId: string | null }[] }>('/api/v1/assets?search=LAP-001', { token: asAgent() });
+    expect(listed.body.data.find((row) => row.tag === 'LAP-001')?.holderId).toBe(second);
+    expect((await request('/api/v1/assets/LAP-001/return', { method: 'POST', token: asLead(), body: {} })).status).toBe(200);
+    const returned = await request<{ data: { tag: string; holderId: string | null }[] }>('/api/v1/assets?search=LAP-001', { token: asAgent() });
+    expect(returned.body.data.find((row) => row.tag === 'LAP-001')?.holderId).toBeNull();
   });
 
   it('refuses a cost with no currency, because nobody can add those up', async () => {

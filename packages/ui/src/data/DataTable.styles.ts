@@ -102,8 +102,8 @@ ${scope} :is(.itsm-DataTable__row, .itsm-DataTable__skeletonRow):has([data-card-
 ${scope} [data-card-role="title"] + [data-card-role="badge"] {
   margin-inline-start: calc(var(--itsm-space-xs) - var(--itsm-space-sm));
 }
-${scope} [data-card-role="hidden"],
-${scope} [data-hide-below] {
+/* As heavy as the cell rule above (row > cell), or its display: block wins and a hidden cell shows. */
+${scope} :is(.itsm-DataTable__row, .itsm-DataTable__skeletonRow) > :is([data-card-role="hidden"], [data-hide-below]) {
   display: none;
 }
 ${scope} .itsm-DataTable__cellLabel {
