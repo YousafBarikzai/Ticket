@@ -1,0 +1,234 @@
+/*
+ * AI triage (SPEC §6.1 `/ai-triage/**`): the mode card and its
+ * confirmation, the stats row, the budget card, the range control and the
+ * decision drawer's answers and attempts. Arrangement only, tokens
+ * throughout; the design system draws the controls, charts and pills.
+ */
+
+/* ---- The mode ------------------------------------------------------------- */
+
+.app-TriageMode__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-Mode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Mode__sentence,
+.app-TriageMode__lead {
+  margin: 0;
+  max-inline-size: 42rem;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-TriageMode__lead {
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Mode__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Mode__section,
+.app-Mode__evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Mode__heading {
+  margin: 0;
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Mode__text {
+  margin: 0;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-Mode__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Mode__writes {
+  margin: 0;
+  padding-inline-start: var(--itsm-space-lg);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Stats and budget ----------------------------------------------------- */
+
+.app-TriageStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--itsm-space-md);
+  align-items: stretch;
+}
+
+.app-Budget {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--itsm-space-xs);
+  min-inline-size: 0;
+}
+
+/* The same head as the stat cards beside it: icon, label, and here the one control. */
+.app-Budget__head {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  min-inline-size: 0;
+}
+
+.app-Budget__icon {
+  flex: none;
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Budget__label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-text-subheadline-weight);
+  line-height: var(--itsm-text-subheadline-line);
+  letter-spacing: var(--itsm-text-subheadline-tracking);
+}
+
+.app-Budget__spent {
+  margin: 0;
+  font-size: var(--itsm-text-statValue-size);
+  font-weight: var(--itsm-text-statValue-weight);
+  line-height: var(--itsm-text-statValue-line);
+  letter-spacing: var(--itsm-text-statValue-tracking);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Budget__state {
+  display: flex;
+}
+
+.app-Budget__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Quality and Decisions -------------------------------------------------- */
+
+.app-TriageRange {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.app-TriageProviders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--itsm-space-lg);
+}
+
+.app-Decisions__passed {
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Answers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Answers__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Answers__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+}
+
+.app-Answers__field {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Answers__value {
+  font-weight: var(--itsm-text-headline-weight);
+}
+
+.app-Attempts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Attempts__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+}
+
+.app-Attempts__who {
+  font-weight: var(--itsm-text-headline-weight);
+}
+
+.app-Attempts__why {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Skeletons -------------------------------------------------------------- */
+
+.app-TriageSkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-TriageSkeleton__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-lg);
+}
+
+.app-TriageSkeleton__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--itsm-space-md);
+}

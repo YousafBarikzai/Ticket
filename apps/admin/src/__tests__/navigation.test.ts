@@ -250,7 +250,9 @@ describe('routes, tabs and crumbs', () => {
   it('offers only the tabs a person may open and that exist', () => {
     const lead = person('workload.read');
     expect(tabsFor(lead, 'workforce').map((tab) => tab.id)).toEqual(['now', 'on-call', 'shifts', 'skills', 'routing']);
-    expect(tabsFor(person('ai.read'), 'ai-triage').map((tab) => tab.id)).toEqual(['overview']);
+    // Decisions needs `ai.manage`: a list of every decision is a list of every triaged ticket.
+    expect(tabsFor(person('ai.read'), 'ai-triage').map((tab) => tab.id)).toEqual(['overview', 'quality']);
+    expect(tabsFor(person('ai.read', 'ai.manage'), 'ai-triage').map((tab) => tab.id)).toEqual(['overview', 'quality', 'decisions']);
     expect(tabsFor(person(), 'workforce')).toEqual([]);
   });
 
@@ -292,8 +294,8 @@ describe('the sidebar model', () => {
 
   it('points an item at the first tab a person may open', () => {
     const credentialsOnly = person('integration.credential.read');
-    // Credentials is still pending, so there is nothing to open yet.
-    expect(visibleNav(credentialsOnly).map((item) => item.id)).not.toContain('integrations');
+    expect(visibleNav(credentialsOnly).find((item) => item.id === 'integrations')?.href).toBe('/integrations/credentials');
+    expect(visibleNav(person('webhook.read')).find((item) => item.id === 'integrations')?.href).toBe('/integrations/webhooks');
     expect(visibleNav(person('integration.action.read')).find((item) => item.id === 'integrations')?.href).toBe('/integrations');
   });
 });
