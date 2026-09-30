@@ -14,6 +14,7 @@ import { Badge } from '../../web/Badge.js';
 import { SlaClock, type SlaState } from '../../workbench/SlaClock.js';
 import { fillTemplate, isBlank, personName, textOf, valueAt } from '../model.js';
 import type { CellKind, ColumnSpec } from '../types.js';
+import { TimeCell } from './TimeCell.js';
 
 /**
  * The cell registry: how each `CellKind` draws a value. Plain data in, markup
@@ -97,11 +98,7 @@ function time(value: unknown, column: ColumnSpec, context: CellContext, kind: 'd
   } else {
     text = formatDateTime(iso, { locale: context.locale, timeZone: context.timeZone, style: kind });
   }
-  return (
-    <time dateTime={iso} title={formatDateTime(iso, { locale: context.locale, timeZone: context.timeZone, style: 'full' })}>
-      {text}
-    </time>
-  );
+  return <TimeCell iso={iso} text={text} full={formatDateTime(iso, { locale: context.locale, timeZone: context.timeZone, style: 'full' })} />;
 }
 
 /** A link drawn inside a cell that is not the row's primary control. */

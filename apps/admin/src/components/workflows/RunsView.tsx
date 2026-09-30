@@ -37,6 +37,8 @@ export interface RunsViewProps {
   readonly ruleNames: Readonly<Record<string, string>>;
   readonly canOperate: boolean;
   readonly canReadTickets: boolean;
+  /** Ticket numbers by id, for the runs' ticket column (see `RunsTable`). */
+  readonly ticketNumbers?: Readonly<Record<string, string>>;
   readonly workbenchOrigin?: string;
   readonly tabs: readonly { id: string; label: string; href: string; match?: 'exact' }[];
   readonly viewOnly?: { readonly label: string; readonly permission: string; readonly key: string };
@@ -102,6 +104,7 @@ export function RunsView(props: RunsViewProps): ReactNode {
         ruleNames={ruleNames}
         canOperate={canOperate}
         canReadTickets={canReadTickets}
+        {...(props.ticketNumbers ? { ticketNumbers: props.ticketNumbers } : {})}
         {...(workbenchOrigin ? { workbenchOrigin } : {})}
         scope={{
           label: 'State',

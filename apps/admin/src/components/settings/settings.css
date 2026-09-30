@@ -7,7 +7,13 @@
 
 /* ---- The page -------------------------------------------------------------- */
 
-.app-Settings {
+/*
+ * The header (and its tabs) lines up with every other page in the console;
+ * what is under it keeps a readable measure, left-aligned beneath the title.
+ * Narrowing the whole page instead centred it, and the title then sat further
+ * in than on any other page.
+ */
+.app-Settings > :not(.itsm-PageHeader, .app-SettingsSkeleton__head) {
   max-inline-size: 60rem;
 }
 

@@ -253,6 +253,11 @@ describe('Table', () => {
     expect(html).not.toContain('cursor');
   });
 
+  it('lets the keyboard reach a table that scrolls sideways, named by its caption', () => {
+    const html = renderToStaticMarkup(<Table caption="Rules" columns={columns} rows={rows} rowKey={(row) => row.id} />);
+    expect(html).toContain('<div class="itsm-Table__scroll" tabindex="0" role="group" aria-label="Rules">');
+  });
+
   it('marks activatable rows by attribute for the pointer', () => {
     const { container } = render(
       <Table caption="Rules" columns={columns} rows={rows} rowKey={(row) => row.id} rowHandles={() => ({ onClick: () => undefined, tabIndex: -1 })} />,

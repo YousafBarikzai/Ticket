@@ -382,12 +382,14 @@ describe('adding a person', () => {
 
     type(sheet.querySelector<HTMLInputElement>('input[name="email"]')!, 'sam.lee@acme.test');
     type(sheet.querySelector<HTMLInputElement>('input[name="displayName"]')!, 'Sam Lee');
-    const boxes = [...sheet.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
-    await clickAsync(boxes[1]!);
-    await clickAsync(boxes[2]!);
+    const box = (label: string): HTMLInputElement =>
+      [...sheet.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((input) => [...(input.labels ?? [])].some((node) => node.textContent?.includes(label)))!;
+    await clickAsync(box('Service desk agent'));
+    await clickAsync(box('Administrator'));
+    await clickAsync(box('They’re external'));
     await submit(form);
     await settle();
-    expect(createUser).toHaveBeenCalledWith({ displayName: 'Sam Lee', email: 'sam.lee@acme.test' });
+    expect(createUser).toHaveBeenCalledWith({ displayName: 'Sam Lee', email: 'sam.lee@acme.test', isExternal: true });
     expect(assignRole.mock.calls.map((call) => (call as unknown[])[1])).toEqual(['agent', 'administrator']);
     expect(onAdded).toHaveBeenCalledWith('f0000000-0000-4000-8000-000000000009');
   });

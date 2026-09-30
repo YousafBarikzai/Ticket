@@ -75,10 +75,12 @@ const nextConfig: NextConfig = {
    * here makes Next rewrite each such import to the module that defines the
    * name, so a route ships the client components it renders and no others
    * (SPEC §3.7; 24–30 kB off every route of all three applications when this
-   * was added).
+   * was added). `@itsm/ui/theme` is named too, as in the other two apps: the
+   * root layout imports the no-flash theme script from it, and without the
+   * rewrite that entry's client re-exports (the theme hooks) ride along.
    */
   experimental: {
-    optimizePackageImports: ['@itsm/ui'],
+    optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme'],
     /**
      * Server Actions carry the platform pages' writes (SPEC §3.6 rule 7) and
      * nothing else. Next already refuses an action whose `Origin` is not this

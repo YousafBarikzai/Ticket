@@ -107,7 +107,10 @@ export function Table<Row>({
   grid = false,
 }: TableProps<Row>): ReactNode {
   return (
-    <div className="itsm-Table__scroll">
+    // A tab stop of its own (SC 2.1.1): on a narrow screen the table scrolls
+    // sideways inside this box, and a keyboard user must be able to reach the
+    // columns it hides. Named by the caption, so the stop says what it is.
+    <div className="itsm-Table__scroll" tabIndex={0} role="group" aria-label={caption}>
       <table className={cx('itsm-Table', className)} role={grid ? 'grid' : undefined} aria-busy={loading || undefined}>
         <caption className={cx(captionHidden && 'itsm-visually-hidden')}>{caption}</caption>
         <thead>

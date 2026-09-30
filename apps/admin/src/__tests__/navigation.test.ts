@@ -62,7 +62,12 @@ function routeOfFile(file: string): string {
   return `/${parts.join('/')}`;
 }
 
-const pages = pagesUnder(consoleDir).map((file) => ({ file, route: routeOfFile(file), platform: file.includes(`${sep}(platform)${sep}`) }));
+/** The catch-all that sends any unknown address to the in-frame 404; not a page on the map. */
+const MISSING = join(consoleDir, '[...missing]', 'page.tsx');
+
+const pages = pagesUnder(consoleDir)
+  .filter((file) => file !== MISSING)
+  .map((file) => ({ file, route: routeOfFile(file), platform: file.includes(`${sep}(platform)${sep}`) }));
 const builtRoutes = new Set(pages.map((page) => page.route));
 
 function person(...keys: string[]): Grants {
@@ -96,6 +101,14 @@ describe('every page is on the map', () => {
   it('lists nothing as pending that the map does not know', () => {
     const known = new Set(allRoutes());
     expect([...PENDING].filter((route) => !known.has(route))).toEqual([]);
+  });
+
+  it('answers every unknown address with the in-frame 404, outside any loading boundary', () => {
+    const source = readFileSync(MISSING, 'utf8');
+    expect(source).toContain('notFound();');
+    expect(source).not.toContain('pageAccess(');
+    expect(existsSync(join(consoleDir, 'loading.tsx'))).toBe(false);
+    expect(existsSync(join(consoleDir, '[...missing]', 'loading.tsx'))).toBe(false);
   });
 
   it('keeps /queues as a redirect, not a page (it is Workforce now)', () => {

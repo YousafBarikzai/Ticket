@@ -56,6 +56,25 @@ export interface RuleFacts {
   events: string[];
 }
 
+/**
+ * What the rules that matched one ticket would have done to it: one object
+ * for the whole rule set (the engine's `effectsOf`), not a list per rule —
+ * a field written by two rules is written once, by the later one.
+ */
+export interface RuleEffects {
+  /** Field writes, by field name (`priority`, `groupId`, a custom field…). */
+  patch: Record<string, unknown>;
+  tags: string[];
+  watchers: string[];
+  notifications: { template: string; to: 'requester' | 'assignee' | 'group' | 'watchers' }[];
+  links: { of: string }[];
+  /** Workflows that would start, by definition key. */
+  workflows: { definitionKey: string }[];
+  status?: { status: string; reason?: string };
+  priorityReason?: string;
+  assignStrategy?: 'round_robin' | 'least_loaded' | 'skill';
+}
+
 /** A dry run against real tickets: what this rule would have done. */
 export interface RuleTestResult {
   sampled: number;
@@ -64,10 +83,25 @@ export interface RuleTestResult {
     number: string;
     title: string;
     matched: string[];
-    effects: unknown[];
+    effects: RuleEffects;
   }[];
   errors: { ruleKey: string; message: string }[];
 }
+
+/**
+ * One published version of a rule, newest first on `GET /rules/:key` (the
+ * latest 20). `snapshot` is the definition as it was published.
+ */
+export interface RuleVersionRow {
+  id: string;
+  version: number;
+  snapshot: unknown;
+  publishedAt: string;
+  publishedBy: string | null;
+}
+
+/** `GET /rules/:key`: the rule and its recent versions, so a history needs no second read. */
+export type RuleDetail = RuleRow & { versions: RuleVersionRow[] };
 
 /**
  * A rule as the builder holds it before saving: the `POST /rules` shape, with
@@ -88,7 +122,7 @@ export interface RuleDefinition {
 export interface Rules {
   list(filter?: { event?: string; status?: string }): Promise<RuleRow[]>;
   facts(): Promise<RuleFacts>;
-  get(idOrKey: string): Promise<RuleRow>;
+  get(idOrKey: string): Promise<RuleDetail>;
   create(input: Record<string, unknown>): Promise<RuleRow>;
   update(idOrKey: string, input: Record<string, unknown>): Promise<RuleRow>;
   publish(idOrKey: string): Promise<RuleRow>;
@@ -111,7 +145,7 @@ function rules(client: Client): Rules {
     list: (filter = {}) =>
       client.request<{ data: RuleRow[] }>('/api/v1/rules', { query: { event: filter.event, status: filter.status } }).then(unwrap),
     facts: () => client.request<{ data: RuleFacts }>('/api/v1/rules/facts').then(unwrap),
-    get: (idOrKey) => client.request<RuleRow>(`/api/v1/rules/${encodeURIComponent(idOrKey)}`),
+    get: (idOrKey) => client.request<RuleDetail>(`/api/v1/rules/${encodeURIComponent(idOrKey)}`),
     create: (input) => client.request<RuleRow>('/api/v1/rules', { method: 'POST', body: input }),
     update: (idOrKey, input) =>
       client.request<RuleRow>(`/api/v1/rules/${encodeURIComponent(idOrKey)}`, { method: 'PATCH', body: input }),
@@ -329,12 +363,35 @@ export interface WorkflowRunRow {
 /** What `checkGraph` found, against the newest draft rather than what is live. */
 export interface WorkflowValidation {
   version: number;
-  problems: { code?: string; message: string; nodeKey?: string }[];
+  /** `where` names the step (a node key) or the part of the graph the problem is in. */
+  problems: { code: string; where: string; message: string }[];
+}
+
+/** One version of a workflow, newest first. `isCurrent` marks the one new runs start on. */
+export interface WorkflowVersionRow {
+  version: number;
+  status: string;
+  changeNote: string | null;
+  publishedAt: string | null;
+  isCurrent: boolean;
+}
+
+/**
+ * `GET /workflows/:key`: not the list row but the definition's name and
+ * state, every version, and the newest version's graph (the draft when there
+ * is one) — what a workflow page draws.
+ */
+export interface WorkflowDetail {
+  key: string;
+  name: string;
+  status: string;
+  versions: WorkflowVersionRow[];
+  graph: unknown;
 }
 
 export interface Workflows {
   list(status?: string): Promise<WorkflowRow[]>;
-  get(key: string): Promise<WorkflowRow & { versions?: unknown[] }>;
+  get(key: string): Promise<WorkflowDetail>;
   create(input: Record<string, unknown>): Promise<WorkflowRow>;
   saveDraft(key: string, graph: unknown, changeNote?: string): Promise<unknown>;
   validate(key: string): Promise<WorkflowValidation>;
@@ -358,7 +415,7 @@ function workflows(client: Client): Workflows {
   return {
     list: (status) =>
       client.request<{ data: WorkflowRow[] }>('/api/v1/workflows', { query: { status } }).then(unwrap),
-    get: (key) => client.request<WorkflowRow & { versions?: unknown[] }>(`/api/v1/workflows/${encodeURIComponent(key)}`),
+    get: (key) => client.request<WorkflowDetail>(`/api/v1/workflows/${encodeURIComponent(key)}`),
     create: (input) => client.request<WorkflowRow>('/api/v1/workflows', { method: 'POST', body: input }),
     saveDraft: (key, graph, changeNote) =>
       client.request(`/api/v1/workflows/${encodeURIComponent(key)}`, {

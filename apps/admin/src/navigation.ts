@@ -196,7 +196,7 @@ export const NAV: readonly AdminNavItem[] = [
     tabs: [
       tab('request-types', 'Request types', '/catalogue', ['catalogue.manage']),
       tab('forms', 'Forms', '/catalogue/forms', ['catalogue.form.read', 'catalogue.form.manage'], {
-        routes: ['/catalogue/forms/new', '/catalogue/forms/[key]'],
+        routes: ['/catalogue/forms/[key]'],
         keywords: ['form builder', 'questions'],
       }),
     ],
@@ -641,7 +641,7 @@ export const CREATE_COMMANDS: readonly CreateCommand[] = [
   { id: 'new-rule', label: 'New rule', href: '/rules/new', permission: 'rules.rule.manage', icon: 'automation' },
   { id: 'new-request-type', label: 'New request type', href: '/catalogue?new=request-type', permission: 'catalogue.manage', icon: 'catalogue' },
   { id: 'new-service', label: 'New service', href: '/catalogue?new=service', permission: 'catalogue.manage', icon: 'catalogue' },
-  { id: 'new-form', label: 'New form', href: '/catalogue/forms/new', permission: 'catalogue.form.manage', icon: 'forms' },
+  { id: 'new-form', label: 'New form', href: '/catalogue/forms?new=1', permission: 'catalogue.form.manage', icon: 'forms' },
   { id: 'new-field', label: 'New field', href: '/fields?new=1', permission: 'ticket.config.manage', icon: 'fields', keywords: ['custom field'] },
   { id: 'new-sla-policy', label: 'New SLA policy', href: '/sla?new=1', permission: 'sla.policy.manage', icon: 'sla', keywords: ['service level'] },
   { id: 'new-calendar', label: 'New calendar', href: '/sla/calendars?new=1', permission: 'sla.policy.manage', icon: 'calendar', keywords: ['business hours'] },

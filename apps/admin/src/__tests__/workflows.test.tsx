@@ -279,6 +279,22 @@ function table(props: Partial<Parameters<typeof RunsTable>[0]> = {}): ReactEleme
   );
 }
 
+describe('the runs table', () => {
+  it('names a run’s ticket by its number when the page could look it up, and says “Open” when it could not', async () => {
+    render(table({ runs: [RUN, { ...RUN, id: 'r2', ticketId: 't-older' }], ticketNumbers: { [RUN.ticketId!]: 'INC-000005' } }));
+    await settle();
+    const known = [...document.querySelectorAll<HTMLAnchorElement>('a')].find((a) => a.textContent === 'INC-000005')!;
+    expect(known.getAttribute('href')).toBe('https://desk.test/tickets/INC-000005');
+    expect(known.getAttribute('aria-label')).toBe('Open INC-000005 in the workbench');
+    expect([...document.querySelectorAll('a')].some((a) => a.textContent === 'Open')).toBe(true);
+    cleanupDocument();
+    render(table({ workbenchOrigin: undefined, ticketNumbers: { [RUN.ticketId!]: 'INC-000005' } }));
+    await settle();
+    const local = [...document.querySelectorAll<HTMLAnchorElement>('a')].find((a) => a.textContent === 'INC-000005')!;
+    expect(local.getAttribute('href')).toBe('/tickets?open=ticket:INC-000005');
+  });
+});
+
 describe('a run’s drawer', () => {
   it('offers Retry step, Skip step and Abandon on a failed run, and retries the step', async () => {
     run.mockResolvedValue({ id: 'r1', definitionId: 'w1', status: 'failed', currentKeys: ['do-the-work'], ticketId: 't-1', error: 'The integration did not answer', startedAt: RUN.startedAt, endedAt: null, triggeredBy: 'rule:vip-requester', steps: [{ stepKey: 'approve', attempt: 1, status: 'done', startedAt: RUN.startedAt, endedAt: RUN.startedAt }, { stepKey: 'do-the-work', attempt: 1, status: 'failed', error: 'The integration did not answer', startedAt: RUN.startedAt, endedAt: null }] });

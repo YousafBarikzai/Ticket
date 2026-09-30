@@ -81,6 +81,20 @@ export function ReportsTable({ rows, canRun }: { readonly rows: readonly ReportT
           description: 'A report is a set of numbers sent out as a spreadsheet, on demand or on a schedule. None are set up for this desk.',
           icon: 'insights',
         }}
+        // Drawn here rather than from \`empty\` so its heading follows the page's h1 (the table's own is an h3).
+        {...(rows.length === 0
+          ? {
+              emptyContent: (
+                <EmptyState
+                  size="sm"
+                  headingLevel={2}
+                  icon="insights"
+                  title="No reports yet"
+                  description="A report is a set of numbers sent out as a spreadsheet, on demand or on a schedule. None are set up for this desk."
+                />
+              ),
+            }
+          : {})}
         noResults={{ title: 'No reports match', description: 'Try another word.' }}
       />
       <Sheet

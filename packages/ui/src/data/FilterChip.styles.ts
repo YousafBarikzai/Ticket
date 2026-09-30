@@ -101,11 +101,21 @@ export const filterChipStyles = layer(
   background-color: transparent;
 }
 
+/*
+ * The toggle is the capsule and the button at once, so the reset above
+ * (\`font: inherit\`, there for the chip's inner buttons) would take it back to
+ * the page's body size — a yes/no filter set larger than the chips beside it.
+ * Its own type comes back here, after the reset.
+ */
 .itsm-FilterBar__toggle {
   gap: var(--itsm-space-2xs);
   padding-block: 0;
   padding-inline: var(--itsm-space-sm);
   white-space: nowrap;
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  letter-spacing: var(--itsm-text-subheadline-tracking);
+  font-weight: var(--itsm-font-weight-medium);
 }
 
 :is(.itsm-FilterChip__trigger, .itsm-FilterChip__clear, .itsm-FilterBar__toggle):hover {

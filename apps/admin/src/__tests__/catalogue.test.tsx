@@ -196,6 +196,24 @@ describe('the questions model', () => {
     expect(retyped.schema.properties.a).toEqual({ type: 'number', title: 'A' });
   });
 
+  it('reads “required when always” as Always, with no problem, and writes it back the way it was', () => {
+    const document: FormDefinition = {
+      key: 'laptop',
+      version: 2,
+      schema: { type: 'object', properties: { address: { type: 'string', title: 'Delivery address' } } },
+      ui: { elements: [{ kind: 'field', field: 'address', control: 'text', label: 'Delivery address', requiredWhen: { always: true } }] },
+    };
+    const draft = questions.fromDocument(document, { published: true });
+    expect(draft.blocks[0]).toMatchObject({ kind: 'question', required: 'always', requiredWhen: null });
+    expect(questions.checkQuestions(draft)).toEqual([]);
+    const { version: _version, ...stored } = document;
+    expect(questions.toDocument(draft, 'laptop')).toEqual(stored);
+    // Made optional, the condition goes with it; made "when", it is the new condition.
+    const optional = questions.toDocument(questions.updateQuestion(draft, draft.blocks[0]!.id, { required: 'never' }), 'laptop');
+    expect(optional.ui.elements[0]).not.toHaveProperty('requiredWhen');
+    expect(optional.schema.required).toBeUndefined();
+  });
+
   it('gives blocks read from a document the same ids every time, so the server and the browser agree', () => {
     expect(questions.fromDocument(ACCESS).blocks.map((block) => block.id)).toEqual(questions.fromDocument(ACCESS).blocks.map((block) => block.id));
   });

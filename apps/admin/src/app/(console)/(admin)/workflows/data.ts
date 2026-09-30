@@ -1,6 +1,6 @@
 import 'server-only';
 import { cache } from 'react';
-import type { Admin, Me, WorkflowRow, WorkflowRunRow } from '@itsm/sdk';
+import type { Admin, Me, WorkflowDetail, WorkflowRow, WorkflowRunRow } from '@itsm/sdk';
 import { tabsFor } from '../../../../navigation.js';
 import { holds, holdsAny, viewOnlyFor } from '../../../../permissions.js';
 import { read, type Read } from '../../../../server/read.js';
@@ -14,17 +14,10 @@ import type { RunView, VersionView, WorkflowView } from '../../../../components/
  * runs, and who may do what. Server-only (SPEC §3.6).
  */
 
-/** `GET /workflows/:key` as the API returns it (the SDK types the list row only). */
-export interface WorkflowDetailRow {
-  readonly key: string;
-  readonly name: string;
-  readonly status: string;
-  readonly versions: readonly { readonly version: number; readonly status: string; readonly changeNote: string | null; readonly publishedAt: string | null; readonly isCurrent: boolean }[];
-  /** The newest version's graph: the draft when there is one. */
-  readonly graph: unknown;
-}
+/** `GET /workflows/:key`: name, state, every version and the newest version's graph (the draft when there is one). */
+export type WorkflowDetailRow = WorkflowDetail;
 
-export const loadWorkflow = cache((api: Admin, key: string): Promise<Read<WorkflowDetailRow>> => read(() => api.configure.workflows.get(key) as unknown as Promise<WorkflowDetailRow>));
+export const loadWorkflow = cache((api: Admin, key: string): Promise<Read<WorkflowDetailRow>> => read(() => api.configure.workflows.get(key)));
 
 export interface WorkflowAbilities {
   readonly canPublish: boolean;
@@ -116,4 +109,16 @@ export async function loadRuleNames(api: Admin, me: Me): Promise<Record<string, 
   if (!holdsAny(me, ['rules.rule.read', 'rules.rule.manage', 'rules.rule.publish'])) return {};
   const rules = await read(() => api.configure.rules.list());
   return rules.ok ? Object.fromEntries(rules.value.map((rule) => [rule.key, rule.name])) : {};
+}
+
+/**
+ * Ticket numbers by id for the runs on a page: the desk's newest 200 tickets,
+ * read once, for people who may read tickets (an empty map otherwise). Runs
+ * carry only a ticket's id and the API has no lookup by many ids, so an older
+ * ticket keeps the plain "Open" link.
+ */
+export async function loadTicketNumbers(api: Admin, canReadTickets: boolean): Promise<Record<string, string>> {
+  if (!canReadTickets) return {};
+  const page = await read(() => api.observe.tickets({ limit: 200, sort: '-createdAt' }));
+  return page.ok ? Object.fromEntries(page.value.data.map((ticket) => [ticket.id, ticket.number])) : {};
 }

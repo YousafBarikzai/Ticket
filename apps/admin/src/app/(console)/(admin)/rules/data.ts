@@ -1,6 +1,6 @@
 import 'server-only';
 import { cache } from 'react';
-import type { Admin, Me, RuleFacts, RuleRow } from '@itsm/sdk';
+import type { Admin, Me, RuleDetail, RuleFacts, RuleRow, RuleVersionRow } from '@itsm/sdk';
 import { holds, holdsAny, viewOnlyFor } from '../../../../permissions.js';
 import { personFrom, resolvePeople } from '../../../../server/people.js';
 import { read, type Read } from '../../../../server/read.js';
@@ -102,25 +102,14 @@ export function workbenchOrigin(me: Me): string | undefined {
   }
 }
 
-/** A stored version as `GET /rules/:key` returns it (the SDK types the rule only). */
-interface VersionRow {
-  readonly version: number;
-  readonly snapshot: unknown;
-  readonly publishedAt: string;
-  readonly publishedBy: string | null;
-}
-
 /**
  * One rule and its versions, read once per request: the page and its
  * metadata both ask, and `cache()` makes that one call.
  */
-export const loadRule = cache(
-  (api: Admin, key: string): Promise<Read<RuleRow & { readonly versions?: readonly VersionRow[] }>> =>
-    read(() => api.configure.rules.get(key) as Promise<RuleRow & { versions?: VersionRow[] }>),
-);
+export const loadRule = cache((api: Admin, key: string): Promise<Read<RuleDetail>> => read(() => api.configure.rules.get(key)));
 
 /** The versions with who published each, by name (one directory call for all of them). */
-export async function versionViews(api: Admin, versions: readonly VersionRow[] | undefined): Promise<RuleVersionView[]> {
+export async function versionViews(api: Admin, versions: readonly RuleVersionRow[] | undefined): Promise<RuleVersionView[]> {
   const rows = (versions ?? []).filter((row) => typeof row?.version === 'number');
   const people = await resolvePeople(api, rows.map((row) => row.publishedBy));
   return rows.map((row) => ({

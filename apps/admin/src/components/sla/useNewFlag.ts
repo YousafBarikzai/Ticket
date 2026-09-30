@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { goBack } from '../../client/address.js';
 
 /**
  * A create sheet that lives in the URL as `?new=1` — what the command
@@ -76,7 +77,7 @@ export function useNewFlag(): NewFlag {
     const here = `${window.location.pathname}${window.location.search}`;
     if (openedHere.has(here)) {
       openedHere.delete(here);
-      window.history.back();
+      goBack();
       return;
     }
     window.history.replaceState(null, '', newHref(pathname, search, false));

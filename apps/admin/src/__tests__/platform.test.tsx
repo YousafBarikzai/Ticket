@@ -180,8 +180,8 @@ describe('the Server Actions', () => {
 
 describe('in words', () => {
   const plans: PlanRow[] = [
-    { key: 'starter', name: 'Starter', description: 'One desk.', features: [], pricePerAgentMicros: '19000000', currency: 'GBP', isRetired: false, sortOrder: 20, limits: [{ meter: 'storage', soft: String(8 * 1024 ** 3), hard: String(10 * 1024 ** 3) }, { meter: 'agents', soft: '8', hard: '10' }] },
-    { key: 'enterprise', name: 'Enterprise', description: null, features: ['ticket.customFields'], pricePerAgentMicros: null, currency: 'GBP', isRetired: true, sortOrder: 40, limits: [{ meter: 'agents', soft: '400', hard: null }] },
+    { key: 'starter', name: 'Starter', description: 'One desk.', features: [], pricePerAgentMicros: '19000000', currency: 'GBP', isRetired: false, sortOrder: 20, limits: [{ meter: 'storage', soft: 8 * 1024 ** 3, hard: 10 * 1024 ** 3 }, { meter: 'agents', soft: 8, hard: 10 }] },
+    { key: 'enterprise', name: 'Enterprise', description: null, features: ['ticket.customFields'], pricePerAgentMicros: null, currency: 'GBP', isRetired: true, sortOrder: 40, limits: [{ meter: 'agents', soft: 400, hard: null }] },
   ];
 
   it('prices per agent and says limits the way the plan enforces them', () => {

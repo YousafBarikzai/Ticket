@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { goBack } from './address.js';
 
 /**
  * A drawer that lives in the URL: `?open=<kind>:<key>` (SPEC §4.10, D12).
@@ -91,7 +92,7 @@ export function useDrawer(kind: string): Drawer {
     const here = `${window.location.pathname}${window.location.search}`;
     if (openedHere.has(here)) {
       openedHere.delete(here);
-      window.history.back();
+      goBack();
       return;
     }
     window.history.replaceState(null, '', drawerHref(pathname, search, kind, null));

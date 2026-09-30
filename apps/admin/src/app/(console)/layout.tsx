@@ -67,13 +67,20 @@ export default async function ConsoleLayout({ children }: { children: ReactNode 
   }
 
   if (load.kind === 'unavailable') {
+    // A 429 is an answer, not silence: say the desk is busy, and for how long, rather than unreachable.
+    const busy = load.problem.status === 429;
+    const seconds = load.problem.retryAfterSeconds;
     return (
       <StatusScreen
         brand="admin"
         illustration="offline"
         errorBoundary
-        title="Can’t reach the desk right now"
-        body="The service didn’t answer. Nothing you did caused this; try again in a moment."
+        title={busy ? 'The desk is busy right now' : 'Can’t reach the desk right now'}
+        body={
+          busy
+            ? `Too many requests reached the service at once. Try again ${seconds ? `in ${seconds} s` : 'in a moment'}.`
+            : 'The service didn’t answer. Nothing you did caused this; try again in a moment.'
+        }
         actions={[{ id: 'retry', label: 'Try again', icon: 'refresh-cw', href: await currentPath() }]}
       />
     );

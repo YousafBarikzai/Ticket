@@ -5,13 +5,14 @@ import { StatusScreen } from '@itsm/ui';
 export const metadata: Metadata = { title: 'Page not found' };
 
 /**
- * A 404 for a URL no route answers, outside the frame (SPEC §5.2).
+ * A 404 outside the frame (SPEC §5.2): the last resort.
  *
- * The in-frame 404 (`(console)/not-found.tsx`) handles everything under the
- * console's layout, including the platform section's deliberate `notFound()`;
- * this one is for addresses that match no route at all, where there may be no
- * session to draw a frame with. A plain link home, which signs the person in
- * first if they need it.
+ * Inside the console every unknown address — and the platform section's
+ * deliberate `notFound()` — gets the in-frame 404 (`(console)/not-found.tsx`,
+ * reached through the `(console)/[...missing]` catch-all). This one is left
+ * for what no console route can catch, where there may be no session to draw
+ * a frame with. A plain link home, which signs the person in first if they
+ * need it.
  */
 export default function NotFound(): ReactNode {
   return (

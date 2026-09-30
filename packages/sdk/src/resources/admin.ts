@@ -271,7 +271,8 @@ export interface PlanRow {
   currency: string;
   isRetired: boolean;
   sortOrder: number;
-  limits: { meter: string; soft: string | null; hard: string | null }[];
+  /** The meter's lines in its own unit (bytes for storage). Null is "no line". */
+  limits: { meter: string; soft: number | null; hard: number | null }[];
 }
 
 export interface Admin {
@@ -306,7 +307,8 @@ export interface Admin {
      */
     users(query?: string | UserQuery): Promise<UserRow[]>;
     user(id: string): Promise<UserRow>;
-    createUser(input: { email: string; displayName: string; primaryOrgId?: string }): Promise<UserRow>;
+    /** `isExternal` marks someone outside the organisation (a contractor, a supplier's engineer); it defaults to false. */
+    createUser(input: { email: string; displayName: string; primaryOrgId?: string; isExternal?: boolean }): Promise<UserRow>;
     deactivateUser(id: string, reason?: string): Promise<unknown>;
     /** Roles are not restored — deactivating removed them — so offer "Add a role" next. */
     reactivateUser(id: string, reason?: string): Promise<{ id: string; status: 'active' }>;

@@ -69,7 +69,14 @@
 
 /* ---- The role matrix -------------------------------------------------------------- */
 
+/*
+ * Positioned, so the matrix's visually hidden words (absolutely positioned)
+ * are clipped by this box like everything else in it. Otherwise they were
+ * placed against the card, beyond the scroller's edge, and on a phone the
+ * whole page scrolled sideways instead of the matrix scrolling in its box.
+ */
 .app-Matrix__scroll {
+  position: relative;
   overflow-x: auto;
   border-radius: var(--itsm-radius-lg);
 }

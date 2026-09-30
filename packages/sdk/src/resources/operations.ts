@@ -31,7 +31,8 @@ export interface AvailabilityRow {
   effectiveStatus: string;
   reason: string | null;
   until: string | null;
-  capacity: number;
+  /** Null means "the team's default" (the routing policy's `defaultCapacity`), not zero. */
+  capacity: number | null;
   source: string;
   updatedAt: string;
 }
@@ -639,7 +640,13 @@ export interface SecurityAlertRow {
 
 export interface AuditEventRow {
   id: string;
-  seq: number;
+  /**
+   * The event's place in the chain: a `BIGSERIAL` shared by every tenant, so
+   * a string on the wire (a bigint does not survive JSON). Compare as a
+   * number only after checking it is one; gaps between a tenant's own events
+   * are expected.
+   */
+  seq: string;
   action: string;
   actorType: string;
   actorId: string | null;

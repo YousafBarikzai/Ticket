@@ -34,6 +34,12 @@ export interface RunsTableProps {
   readonly ruleNames: Readonly<Record<string, string>>;
   readonly canOperate: boolean;
   readonly canReadTickets: boolean;
+  /**
+   * Ticket numbers by ticket id, for the tickets the page could look up (the
+   * desk's newest 200): a run names its ticket "INC-000123" rather than
+   * "Open". Runs carry only the id, and the API has no lookup by many ids.
+   */
+  readonly ticketNumbers?: Readonly<Record<string, string>>;
   readonly workbenchOrigin?: string;
   readonly showWorkflow?: boolean;
   readonly scope?: DataTableScope;
@@ -62,6 +68,17 @@ type Row = {
 
 const NOUN: Plural = { one: 'run', other: 'runs' };
 
+/**
+ * The state pill in words without the step: the table's own *Step or error*
+ * column already says where a waiting run is waiting ("Waiting · Ask for
+ * approval" beside "Ask for approval" said it twice, and on a phone card the
+ * long pill squeezed the workflow's name to "Close a…"). The drawer keeps the
+ * step in its pill.
+ */
+function stateLook(run: RunView): ReturnType<typeof runLook> {
+  return runLook({ status: run.status, stepTitle: null });
+}
+
 
 export function RunsTable({
   runs,
@@ -72,6 +89,7 @@ export function RunsTable({
   ruleNames,
   canOperate,
   canReadTickets,
+  ticketNumbers = {},
   workbenchOrigin,
   showWorkflow = true,
   scope,
@@ -96,14 +114,14 @@ export function RunsTable({
         id: run.id,
         workflowName: run.workflowName,
         workflowKey: run.workflowKey ?? '',
-        ticket: run.ticketId ? 'Open' : '',
-        state: runLook(run).label,
+        ticket: run.ticketId ? (ticketNumbers[run.ticketId] ?? 'Open') : '',
+        state: stateLook(run).label,
         step: stepOrError(run),
         startedAt: run.startedAt,
         duration: durationText(run, now, locale),
         run,
       })),
-    [runs, now, locale],
+    [runs, now, locale, ticketNumbers],
   );
 
   const columns: ColumnSpec[] = [
@@ -189,20 +207,28 @@ export function RunsTable({
             }
           : {})}
         cells={{
-          ticket: (row) =>
-            row.run.ticketId ? (
-              workbenchOrigin ? (
-                <Button size="sm" variant="ghost" href={`${workbenchOrigin}/tickets/${encodeURIComponent(row.run.ticketId)}`} aria-label={`Open the ticket for this ${row.workflowName} run`}>
-                  Open
-                </Button>
-              ) : (
-                <span className="app-Runs__quiet">A ticket</span>
-              )
+          ticket: (row) => {
+            if (!row.run.ticketId) return <span className="app-Runs__quiet">None</span>;
+            const number = ticketNumbers[row.run.ticketId];
+            if (number) {
+              // The workbench when it is there (same tab, SPEC §4.10), else this console's Tickets drawer.
+              const href = workbenchOrigin ? `${workbenchOrigin}/tickets/${encodeURIComponent(number)}` : `/tickets?open=ticket:${encodeURIComponent(number)}`;
+              return (
+                <a className="app-Runs__ticket" href={href} aria-label={`Open ${number}${workbenchOrigin ? ' in the workbench' : ''}`}>
+                  {number}
+                </a>
+              );
+            }
+            return workbenchOrigin ? (
+              <Button size="sm" variant="ghost" href={`${workbenchOrigin}/tickets/${encodeURIComponent(row.run.ticketId)}`} aria-label={`Open the ticket for this ${row.workflowName} run`}>
+                Open
+              </Button>
             ) : (
-              <span className="app-Runs__quiet">None</span>
-            ),
+              <span className="app-Runs__quiet">A ticket</span>
+            );
+          },
           state: (row) => {
-            const look = runLook(row.run);
+            const look = stateLook(row.run);
             return <StatusPill size="sm" label={look.label} tone={look.tone} icon={look.icon} srPrefix="State" />;
           },
           step: (row) => <span className={row.run.status === 'failed' ? 'app-Runs__error' : undefined}>{row.step || '—'}</span>,
@@ -210,8 +236,20 @@ export function RunsTable({
         {...(pagination ? { pagination } : {})}
         {...(toolbarEnd ? { toolbarEnd } : {})}
         empty={empty}
-        {...(emptyIsGood && runs.length === 0
-          ? { emptyContent: <EmptyState size="sm" tone="success" title={empty.title} {...(empty.description ? { description: empty.description } : {})} /> }
+        {...(runs.length === 0
+          ? {
+              // Drawn here so its heading follows the page's own (the table's default is an h3,
+              // which skips a level on the runs page); good news is said in the success tone.
+              emptyContent: (
+                <EmptyState
+                  size="sm"
+                  headingLevel={2}
+                  {...(emptyIsGood ? { tone: 'success' as const } : {})}
+                  title={empty.title}
+                  {...(empty.description ? { description: empty.description } : {})}
+                />
+              ),
+            }
           : {})}
         noResults={{ title: 'No runs match', description: 'Try another workflow, or clear the filters.' }}
       />

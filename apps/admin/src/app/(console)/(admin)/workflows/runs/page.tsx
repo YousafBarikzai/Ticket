@@ -9,7 +9,7 @@ import type { RunScope } from '../../../../../components/workflows/types.js';
 import { read } from '../../../../../server/read.js';
 import { pageAccess } from '../../../../../server/session.js';
 import { workbenchOrigin } from '../../rules/data.js';
-import { graphsFrom, loadDetails, loadRuleNames, runView, workflowAbilities, workflowIndex, workflowTabs } from '../data.js';
+import { graphsFrom, loadDetails, loadRuleNames, loadTicketNumbers, runView, workflowAbilities, workflowIndex, workflowTabs } from '../data.js';
 import '../../../../../components/workflows/workflows.css';
 
 export const metadata: Metadata = { title: 'Runs · Workflows' };
@@ -60,10 +60,11 @@ export default async function RunsPage({ searchParams }: { readonly searchParams
   }
 
   const query = { ...(scope !== 'all' ? { status: scope } : {}), ...(ticketId ? { ticketId } : {}) };
-  const [list, runs, ruleNames] = await Promise.all([
+  const [list, runs, ruleNames, ticketNumbers] = await Promise.all([
     read(() => api.configure.workflows.list()),
     unknownTicket ? Promise.resolve(null) : read(() => api.configure.workflows.runs({ ...query, limit: FIRST_PAGE })),
     loadRuleNames(api, me),
+    loadTicketNumbers(api, can.canReadTickets),
   ]);
   if (runs && !runs.ok) {
     return (
@@ -93,6 +94,7 @@ export default async function RunsPage({ searchParams }: { readonly searchParams
       ruleNames={ruleNames}
       canOperate={can.canOperate}
       canReadTickets={can.canReadTickets}
+      ticketNumbers={ticketNumbers}
       tabs={tabs}
       renderedAt={new Date().toISOString()}
       {...(origin ? { workbenchOrigin: origin } : {})}

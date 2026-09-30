@@ -65,6 +65,8 @@ export interface WorkflowDetailProps {
   readonly canPublish: boolean;
   readonly canOperate: boolean;
   readonly canReadTickets: boolean;
+  /** Ticket numbers by id, for the runs' ticket column (see `RunsTable`). */
+  readonly ticketNumbers?: Readonly<Record<string, string>>;
   readonly workbenchOrigin?: string;
   readonly breadcrumbs: readonly Crumb[];
   readonly viewOnly?: { readonly label: string; readonly permission: string; readonly key: string };
@@ -260,6 +262,7 @@ export function WorkflowDetail(props: WorkflowDetailProps): ReactNode {
       ruleNames={ruleNames}
       canOperate={canOperate}
       canReadTickets={canReadTickets}
+      {...(props.ticketNumbers ? { ticketNumbers: props.ticketNumbers } : {})}
       {...(workbenchOrigin ? { workbenchOrigin } : {})}
       showWorkflow={false}
       empty={{ title: 'No runs yet', description: 'Runs of this workflow appear here once it starts.' }}

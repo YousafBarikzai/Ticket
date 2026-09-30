@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import type { WorkflowValidation } from '@itsm/sdk';
 import { notFound } from 'next/navigation';
 import { Card } from '@itsm/ui';
 import { PageHeader } from '@itsm/ui/shell';
@@ -8,9 +9,10 @@ import { WorkflowDetail, type CheckResult } from '../../../../../components/work
 import { parseFlow } from '../../../../../components/workflows/graph.js';
 import { breadcrumbsFor } from '../../../../../navigation.js';
 import { read } from '../../../../../server/read.js';
+import { holds } from '../../../../../permissions.js';
 import { pageAccess } from '../../../../../server/session.js';
 import { workbenchOrigin } from '../../rules/data.js';
-import { loadRuleNames, loadWorkflow, runView, versionViews, workflowAbilities, workflowView } from '../data.js';
+import { loadRuleNames, loadTicketNumbers, loadWorkflow, runView, versionViews, workflowAbilities, workflowView } from '../data.js';
 import '../../../../../components/workflows/workflows.css';
 
 export const dynamic = 'force-dynamic';
@@ -25,13 +27,13 @@ export async function generateMetadata({ params }: { readonly params: Params }):
   return { title: `${workflow.ok ? workflow.value.name : 'Workflow'} · Workflows` };
 }
 
-/** The API names a problem's step as `where`; the SDK's older type says `nodeKey`. */
-function checkFrom(value: { version: number; problems: readonly Record<string, unknown>[] }): CheckResult {
+/** The check as the page draws it: each problem's message and the step it is on (`where`), when it names one. */
+function checkFrom(value: WorkflowValidation): CheckResult {
   return {
     version: value.version,
     problems: value.problems.map((problem) => ({
-      message: String(problem.message ?? 'A problem'),
-      where: typeof problem.where === 'string' ? problem.where : typeof problem.nodeKey === 'string' ? problem.nodeKey : null,
+      message: problem.message || 'A problem',
+      where: typeof problem.where === 'string' && problem.where !== '' ? problem.where : null,
     })),
   };
 }
@@ -50,12 +52,13 @@ export default async function WorkflowPage({ params, searchParams }: { readonly 
   const search = await searchParams;
   const crumbs = breadcrumbsFor('/workflows/[key]');
 
-  const [detail, list, check, runs, ruleNames] = await Promise.all([
+  const [detail, list, check, runs, ruleNames, ticketNumbers] = await Promise.all([
     loadWorkflow(api, key),
     read(() => api.configure.workflows.list()),
     read(() => api.configure.workflows.validate(key)),
     read(() => api.configure.workflows.runs({ limit: 200 })),
     loadRuleNames(api, me),
+    loadTicketNumbers(api, holds(me, 'ticket.read')),
   ]);
   if (!detail.ok) {
     if (detail.problem.status === 404) notFound();
@@ -87,7 +90,7 @@ export default async function WorkflowPage({ params, searchParams }: { readonly 
       workflow={view}
       graph={graph}
       versions={versionViews(detail.value)}
-      check={check.ok ? { ok: true, value: checkFrom(check.value as unknown as { version: number; problems: Record<string, unknown>[] }) } : { ok: false, problem: check.problem }}
+      check={check.ok ? { ok: true, value: checkFrom(check.value) } : { ok: false, problem: check.problem }}
       runs={own}
       graphs={graphs}
       workflows={index}
@@ -95,6 +98,7 @@ export default async function WorkflowPage({ params, searchParams }: { readonly 
       canPublish={can.canPublish}
       canOperate={can.canOperate}
       canReadTickets={can.canReadTickets}
+      ticketNumbers={ticketNumbers}
       breadcrumbs={crumbs}
       initialTab={tab}
       {...(origin ? { workbenchOrigin: origin } : {})}

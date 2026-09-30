@@ -86,7 +86,7 @@ const RULE = 'b0000000-0000-4000-8000-000000000003';
 function event(seq: number, extra: Partial<AuditEventRow> = {}): AuditEventRow {
   return {
     id: `e${seq}`,
-    seq: String(seq) as unknown as number,
+    seq: String(seq),
     action: 'rule.published',
     actorType: 'user',
     actorId: ALEX,

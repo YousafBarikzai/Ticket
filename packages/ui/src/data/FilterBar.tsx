@@ -473,7 +473,8 @@ function FilterBarView({ search, scope, filters, values, onValuesChange, viewMen
             }}
           />
         ) : null}
-        {scope ? <SegmentedControl className="itsm-FilterBar__scope" label={scope.label} mode="nav" size="sm" options={scope.options} value={scope.value} /> : null}
+        {/* \`wrap\`: on a phone five scopes share the width by their words, never cut to "Resolve…". */}
+        {scope ? <SegmentedControl className="itsm-FilterBar__scope" label={scope.label} mode="nav" size="sm" wrap options={scope.options} value={scope.value} /> : null}
         {visible.map(chip)}
         {addable.length > 0 ? (
           <Menu

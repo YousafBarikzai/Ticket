@@ -1,11 +1,13 @@
 'use client';
 
 import { useMemo, useSyncExternalStore } from 'react';
+import type { FlagRow, SettingRow } from '@itsm/sdk';
 import { notify, type IconName } from '@itsm/ui';
 import { setShortcutsDialogOpen, type CommandItem, type CommandProvider } from '@itsm/ui/shell';
 import { useTheme } from '@itsm/ui/theme';
 import { createCommandsFor, isPending, visibleNav, visibleTabs } from '../navigation.js';
 import { holdsAny, type Grants } from '../permissions.js';
+import { TAB_LABELS, flagEntry, hrefFor, sectionTitle, settingEntry, tabOfFlag, tabOfSetting } from '../settings/catalogue.js';
 import { api } from './api.js';
 import { signOut } from './sign-out.js';
 
@@ -109,6 +111,44 @@ export function findIn<T>(rows: readonly T[], query: string, fields: (row: T) =>
 function detailHref(pattern: string, key: string, listHref: string, kind: string): string {
   const encoded = encodeURIComponent(key);
   return isPending(pattern) ? `${listHref}?open=${kind}:${encoded}` : pattern.replace(/\[[^\]]+\]/, encoded);
+}
+
+/**
+ * Settings and features matching `query`, named and placed as Settings names
+ * them: the catalogue's label ("Default priority", not the module's note),
+ * the tab that lists it, and a link that opens that tab filtered by the same
+ * words with the row as the fragment (it scrolls to the row and focuses its
+ * control). Pure, and tested.
+ */
+export function findSettings(
+  settings: readonly Pick<SettingRow, 'key' | 'description'>[],
+  flags: readonly Pick<FlagRow, 'key' | 'module' | 'description' | 'value'>[],
+  query: string,
+): CommandItem[] {
+  const settingHits = findIn(settings, query, (setting) => {
+    const entry = settingEntry(setting.key);
+    return [entry.label, setting.key, entry.description ?? setting.description, sectionTitle(entry.group)];
+  }).map((setting) => {
+    const tab = tabOfSetting(setting.key);
+    return {
+      id: `setting-${setting.key}`,
+      label: settingEntry(setting.key).label,
+      description: `Setting · ${TAB_LABELS[tab]}`,
+      icon: 'settings' as const,
+      href: hrefFor({ kind: 'setting', key: setting.key, tab }, query),
+    };
+  });
+  const flagHits = findIn(flags, query, (flag) => {
+    const entry = flagEntry(flag.key, flag.module);
+    return [entry.label, flag.key, entry.description ?? flag.description];
+  }).map((flag) => ({
+    id: `flag-${flag.key}`,
+    label: flagEntry(flag.key, flag.module).label,
+    description: `Feature · ${flag.value ? 'On' : 'Off'}`,
+    icon: 'settings' as const,
+    href: hrefFor({ kind: 'flag', key: flag.key, tab: tabOfFlag() }, query),
+  }));
+  return [...settingHits, ...flagHits].slice(0, 6);
 }
 
 interface FindSource {
@@ -240,15 +280,15 @@ const FIND_SOURCES: readonly FindSource[] = [
     read: ['admin.setting.read'],
     icon: 'settings',
     async search(query) {
-      // MOD-13-E1-S1: an administrator finds a setting by its name, its key or what it does.
-      const settings = await cachedList('settings', () => api.tenant.settings());
-      return findIn(settings, query, (setting) => [setting.key, setting.description, setting.module]).map((setting) => ({
-        id: `setting-${setting.key}`,
-        label: setting.description ?? setting.key,
-        description: setting.key,
-        icon: 'settings',
-        href: `/settings?q=${encodeURIComponent(setting.key)}`,
-      }));
+      // MOD-13-E1-S1: an administrator finds a setting — or a feature — by its name, its key or what it
+      // does, read the way Settings reads it (the catalogue's label, its section), and lands on the tab
+      // that lists it with the words kept and the row as the fragment, so AI settings open on AI and a
+      // feature on Features. Flags are asked for on their own: a refusal there leaves the settings.
+      const [settings, flags] = await Promise.all([
+        cachedList('settings', () => api.tenant.settings()),
+        cachedList('flags', () => api.tenant.flags()).catch(() => []),
+      ]);
+      return findSettings(settings, flags, query);
     },
   },
 ];

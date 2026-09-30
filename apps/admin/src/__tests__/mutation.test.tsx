@@ -13,6 +13,7 @@ vi.mock('@itsm/ui', async (original) => ({ ...(await original<typeof import('@it
 const { respondTo, useMutation, useSessionEnded, reportSessionEnded } = await import('../client/useMutation.js');
 const { problemFrom, isTenantSuspended } = await import('../problem.js');
 const { cleanupDocument, render } = await import('./support/render.js');
+const { goBack, resetAddress, GIVE_UP_MS } = await import('../client/address.js');
 
 /**
  * The one write path (SPEC §4.10): what each answer from the API turns into
@@ -86,8 +87,49 @@ describe('useMutation', () => {
     });
     expect(result).toEqual({ ok: true, value: { key: 'vip' } });
     expect(notify).toHaveBeenCalledWith('Rule vip published', expect.objectContaining({ tone: 'success' }));
-    expect(router.refresh).toHaveBeenCalledTimes(1);
     expect(mutation!.pending).toBe(false);
+    // The refresh waits one task, for the caller to change the address first.
+    expect(router.refresh).not.toHaveBeenCalled();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes only after a sheet closed by going Back has landed on its new address', async () => {
+    vi.useFakeTimers();
+    try {
+      const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+      render(<Probe fn={async (key) => ({ key })} />);
+      await act(async () => {
+        await mutation!.run('vip');
+        goBack(); // what a create sheet's close does after a success
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(back).toHaveBeenCalled();
+      // Refreshing now would be answered for the sheet's address, and Next would put it back.
+      expect(router.refresh).not.toHaveBeenCalled();
+      await act(async () => {
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        vi.advanceTimersByTime(1);
+      });
+      expect(router.refresh).toHaveBeenCalledTimes(1);
+      // A Back that never lands is not waited for for ever.
+      render(<Probe fn={async (key) => ({ key })} />);
+      await act(async () => {
+        await mutation!.run('rules');
+        goBack();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(GIVE_UP_MS + 10);
+      });
+      expect(router.refresh).toHaveBeenCalledTimes(2);
+    } finally {
+      resetAddress();
+      vi.useRealTimers();
+    }
   });
 
   it('offers Undo only when there is a safe inverse', async () => {

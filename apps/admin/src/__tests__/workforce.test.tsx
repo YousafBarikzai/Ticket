@@ -253,7 +253,7 @@ describe('Now', () => {
     });
     expect(setAvailability).toHaveBeenCalledWith({ status: 'busy' });
     expect(text(container.querySelector('.app-NowSummary__line'))).toBe('0 available · 2 away · 0 offline');
-    expect(router.refresh).toHaveBeenCalled();
+    await vi.waitFor(() => expect(router.refresh).toHaveBeenCalled());
     // The toast's Undo puts back what was there.
     let undo: HTMLButtonElement | undefined;
     await act(async () => {

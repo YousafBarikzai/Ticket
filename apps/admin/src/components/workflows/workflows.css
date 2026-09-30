@@ -75,6 +75,12 @@
   color: var(--itsm-colour-text-secondary);
 }
 
+.app-Runs__ticket {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  white-space: nowrap;
+}
+
 .app-Runs__error {
   color: var(--itsm-colour-danger-subtleText);
 }

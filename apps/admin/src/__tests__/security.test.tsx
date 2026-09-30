@@ -42,6 +42,8 @@ function Frame({ children }: { readonly children: ReactNode }): ReactNode {
 
 beforeEach(() => {
   search = '';
+  // jsdom has no scrolling; a role's heading scrolls the registry into view.
+  if (typeof Element.prototype.scrollIntoView !== 'function') Element.prototype.scrollIntoView = () => undefined;
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: /min-width/.test(query),
     media: query,

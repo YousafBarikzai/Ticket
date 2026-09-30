@@ -2,7 +2,7 @@
 
 import { useId, useState, type ReactNode } from 'react';
 import type { RoleRow } from '@itsm/sdk';
-import { Button, CheckboxGroup, Form, FormField, Input, Select, describeProblem, notify } from '@itsm/ui';
+import { Button, Checkbox, CheckboxGroup, Form, FormField, Input, Select, describeProblem, notify } from '@itsm/ui';
 import { Sheet } from '@itsm/ui/overlays';
 import { api } from '../../client/api.js';
 import { useOnline } from '../../client/live.js';
@@ -13,7 +13,8 @@ import type { NamedOption } from './types.js';
 
 /**
  * *Add person* (`?new=1`, also ⌘K, SPEC §6.1 `/people`, B §3.16): name,
- * email, organisation, and the roles they start with as checkbox cards.
+ * email, organisation, whether they are external, and the roles they start
+ * with as checkbox cards.
  *
  * Two writes — the account, then each role — and the second can fail on its
  * own (a plan's agent limit, say) after the first has succeeded. So the
@@ -51,10 +52,17 @@ export function AddPersonSheet({ open, organisations, roles, takenEmails, onClos
   const [picked, setPicked] = useState<string[]>([]);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [external, setExternal] = useState(false);
 
   const add = useMutation(
-    async (input: { displayName: string; email: string; primaryOrgId?: string; roleKeys: readonly string[] }): Promise<Added> => {
-      const user = await api.tenant.createUser({ displayName: input.displayName, email: input.email, ...(input.primaryOrgId ? { primaryOrgId: input.primaryOrgId } : {}) });
+    async (input: { displayName: string; email: string; primaryOrgId?: string; isExternal: boolean; roleKeys: readonly string[] }): Promise<Added> => {
+      const user = await api.tenant.createUser({
+        displayName: input.displayName,
+        email: input.email,
+        ...(input.primaryOrgId ? { primaryOrgId: input.primaryOrgId } : {}),
+        // Sent only when set: internal is the API's default.
+        ...(input.isExternal ? { isExternal: true } : {}),
+      });
       const missed: { role: string; why: string }[] = [];
       // One at a time: a plan limit refuses the rest the same way, and the toast should say so once.
       for (const key of input.roleKeys) {
@@ -74,6 +82,7 @@ export function AddPersonSheet({ open, organisations, roles, takenEmails, onClos
     setPicked([]);
     setEmail('');
     setName('');
+    setExternal(false);
     add.reset();
   };
 
@@ -114,7 +123,7 @@ export function AddPersonSheet({ open, organisations, roles, takenEmails, onClos
             const primaryOrgId = String(data.get('primaryOrgId') ?? '');
             const errors = personProblems({ name: displayName, email: address }, takenEmails);
             if (Object.keys(errors).length > 0) return { fieldErrors: errors };
-            const result = await add.run({ displayName, email: address.toLowerCase(), ...(primaryOrgId ? { primaryOrgId } : {}), roleKeys: picked });
+            const result = await add.run({ displayName, email: address.toLowerCase(), ...(primaryOrgId ? { primaryOrgId } : {}), isExternal: external, roleKeys: picked });
             if (!result.ok) {
               if (result.problem.status === 409) return { fieldErrors: { email: 'Someone on this desk already has that email address.' } };
               return result.problem.fieldErrors ? { fieldErrors: result.problem.fieldErrors } : { message: result.problem.detail ?? 'They weren’t added.' };
@@ -165,6 +174,12 @@ export function AddPersonSheet({ open, organisations, roles, takenEmails, onClos
               <Select name="primaryOrgId" defaultValue="" options={[{ value: '', label: 'None' }, ...organisations]} />
             </FormField>
           ) : null}
+          <Checkbox
+            label="They’re external"
+            description="A contractor, a supplier’s engineer or a customer’s contact. Shown as External across the desk."
+            checked={external}
+            onChange={(event) => setExternal(event.currentTarget.checked)}
+          />
           {roles && roles.length > 0 ? (
             <CheckboxGroup
               label="Roles"

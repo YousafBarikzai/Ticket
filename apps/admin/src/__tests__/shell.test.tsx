@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({
 
 const { ItsmProvider } = await import('@itsm/ui');
 const { AdminShell, PublishNavBadges } = await import('../components/AdminShell.js');
-const { goToCommands, createCommands, findIn, fold, setCommandPaletteOpen } = await import('../client/palette.js');
+const { goToCommands, createCommands, findIn, findSettings, fold, setCommandPaletteOpen } = await import('../client/palette.js');
 const { accessGroups } = await import('../components/AdminOverlays.js');
 const { Forbidden } = await import('../components/Forbidden.js');
 const { cleanupDocument, render } = await import('./support/render.js');
@@ -176,6 +176,21 @@ describe('the palette', () => {
   it('offers creation only to people who may create', () => {
     expect(createCommands({ permissions: grants('rules.rule.read') })).toEqual([]);
     expect(createCommands({ permissions: grants('sla.policy.manage') }).map((item) => item.label)).toContain('New SLA policy');
+  });
+
+  it('finds settings and features by the names Settings gives them, and opens the tab that lists them', () => {
+    const settings = [
+      { key: 'ai.tone', description: 'OD-07 tone for drafted replies' },
+      { key: 'ticket.defaultPriority', description: 'Priority when none is given' },
+    ];
+    const flags = [{ key: 'rules.engine.enabled', module: 'rules', description: 'flag cache TTL applies', value: true }];
+    expect(findSettings(settings, flags, 'reply tone')).toEqual([
+      { id: 'setting-ai.tone', label: 'Reply tone', description: 'Setting · AI', icon: 'settings', href: '/settings/ai?q=reply+tone#setting-ai-tone' },
+    ]);
+    expect(findSettings(settings, flags, 'priority').map((item) => item.href)).toEqual(['/settings?q=priority#setting-ticket-defaultPriority']);
+    const [flag] = findSettings(settings, flags, 'rules.engine');
+    expect(flag).toMatchObject({ description: 'Feature · On', href: '/settings/features?q=rules.engine#flag-rules-engine-enabled' });
+    expect(flag!.label).not.toContain('.');
   });
 
   it('matches every word, accents aside, best first', () => {

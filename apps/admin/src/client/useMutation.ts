@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState, useSyncExternalStore, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { afterAddressSettles } from './address.js';
 import { describeProblem, notify, type Problem } from '@itsm/ui';
 import { isSessionEnded, problemFrom } from '../problem.js';
 
@@ -14,7 +15,7 @@ import { isSessionEnded, problemFrom } from '../problem.js';
  *
  * | Answer | What the person sees |
  * |---|---|
- * | success | the success toast (with *Undo* when the caller has a safe inverse), then the server data refreshes in a transition |
+ * | success | the success toast (with *Undo* when the caller has a safe inverse), then — once the caller's address change has landed (`address.ts`) — the server data refreshes in a transition |
  * | 422 | nothing global: `fieldErrors` go to the form, which focuses its summary |
  * | 409 | nothing global: the caller opens `ConflictDialog` from `problem` |
  * | 401 | the "Your session ended" dialog, with *Sign in again* back to this page |
@@ -156,7 +157,9 @@ export function useMutation<A extends unknown[], R>(fn: (...args: A) => Promise<
           });
         }
         opts.onSuccess?.(value);
-        if (opts.refresh !== false) refresh();
+        // After the caller has closed its sheet or opened the new record: a refresh begun for
+        // the old address would bring that address back when it lands (`address.ts`).
+        if (opts.refresh !== false) afterAddressSettles(refresh);
         return { ok: true, value };
       } catch (error) {
         const failed = problemFrom(error);

@@ -173,16 +173,35 @@ if sign_in workbench "$WORKBENCH" "sam.agent@$TENANT.test"; then
 fi
 
 if sign_in admin "$ADMIN" "alex.admin@$TENANT.test"; then
-  check "$ADMIN" / /workforce /tickets /cmdb /automation /sla /insights /integrations \
-    /settings /security /audit /people /fields /catalogue /rules /workflows /ai-triage
-  # Queues became Workforce; old links and bookmarks follow it (308).
+  # Every area's first page, then every tab.
+  check "$ADMIN" / /insights /tickets /workforce /sla /catalogue /fields /rules /workflows /integrations \
+    /ai-triage /cmdb /cmdb/assets /people /security /audit /settings
+  check "$ADMIN" /insights/metrics /insights/reports \
+    /workforce/on-call /workforce/shifts /workforce/skills /workforce/routing \
+    /sla/calendars /sla/matrix /catalogue/forms /rules/new /workflows/runs \
+    /integrations/actions /integrations/credentials /integrations/webhooks \
+    /ai-triage/quality /ai-triage/decisions /people/teams /people/organisations /security/access \
+    /settings/features /settings/ai /settings/modules /settings/usage
+  # The detail pages, against whatever the seed made.
+  check "$ADMIN" \
+    "$(first_link "$ADMIN" /rules '/rules/')" \
+    "$(first_link "$ADMIN" /workflows '/workflows/')" \
+    "$(first_link "$ADMIN" /catalogue/forms '/catalogue/forms/')"
+  # Queues became Workforce; old links and bookmarks follow it (308). Automation
+  # is Rules now (Workflows for people who cannot open Rules), and a new form
+  # opens its sheet on the forms list.
   redirects "$ADMIN" /queues /workforce
-  # The status filter is a link rather than a control, so it is a route too.
+  redirects "$ADMIN" /automation /rules
+  redirects "$ADMIN" /catalogue/forms/new '/catalogue/forms?new=1'
+  # Filters, scopes and drawers are addresses too.
   check "$ADMIN" '/tickets?status=open' '/tickets?status=closed' '/tickets?status=open&assignee=none' \
-    '/audit?action=ticket.created'
+    '/audit?action=ticket.created' '/fields?scope=all' '/cmdb?retired=true' '/cmdb/assets?warranty=30' \
+    '/workflows/runs?status=failed' '/integrations?status=dismissed' '/ai-triage/quality?days=90' \
+    '/people?status=all' '/settings?q=email' '/?range=7d'
   # The platform screens do not exist for a tenant administrator: a 404, not
-  # a 403 that would confirm there is something behind the door.
-  answers "$ADMIN" 404 /tenants /plans
+  # a 403 that would confirm there is something behind the door — and the
+  # same 404 as any address that was never a page.
+  answers "$ADMIN" 404 /tenants /plans /no-such-page
 fi
 
 echo

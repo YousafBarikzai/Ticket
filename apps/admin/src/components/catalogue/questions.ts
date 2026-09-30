@@ -230,7 +230,11 @@ export function richFromText(text: string): RichBlock[] {
 
 function questionFrom(element: UiFieldElement, document: FormDefinition, published: boolean, id: string): QuestionDraft {
   const property = document.schema.properties[element.field];
-  const required: Requirement = document.schema.required?.includes(element.field) ? 'always' : element.requiredWhen ? 'when' : 'never';
+  // `requiredWhen: { always: true }` is "always" said as a condition (the seeded forms do): read it
+  // as Always, and keep that spelling so saving the form writes it back the way it was.
+  const inSchema = document.schema.required?.includes(element.field) === true;
+  const alwaysByCondition = !inSchema && isAlways(element.requiredWhen);
+  const required: Requirement = inSchema || alwaysByCondition ? 'always' : element.requiredWhen ? 'when' : 'never';
   const type = element.control;
   return {
     kind: 'question',
@@ -254,7 +258,7 @@ function questionFrom(element: UiFieldElement, document: FormDefinition, publish
         : {}),
     })),
     keep: {
-      element: omit(element as unknown as Record<string, unknown>, ELEMENT_EDITED),
+      element: { ...omit(element as unknown as Record<string, unknown>, ELEMENT_EDITED), ...(alwaysByCondition ? { requiredWhen: element.requiredWhen } : {}) },
       property: pick(property as unknown as Record<string, unknown> | undefined, PROPERTY_KEPT_BY_TYPE[type] ?? []),
     },
   };
@@ -372,12 +376,18 @@ function propertyFor(question: QuestionDraft): JsonSchemaProperty {
   }
 }
 
+/** A question read from `requiredWhen: { always: true }` and still Always: written back in that spelling. */
+function keptAlways(question: QuestionDraft): unknown {
+  return question.required === 'always' ? question.keep.element.requiredWhen : undefined;
+}
+
 function elementFor(question: QuestionDraft, field: string, preview = false): UiFieldElement {
   const options: FieldOption[] = question.options.map((option) => ({ value: option.value, label: option.label.trim(), ...(option.keep ?? {}) }));
   const visibleWhen = condition(question.visibleWhen);
-  const requiredWhen = question.required === 'when' ? condition(question.requiredWhen) : undefined;
+  const requiredWhen = question.required === 'when' ? condition(question.requiredWhen) : keptAlways(question);
+  const { requiredWhen: _spelling, ...kept } = question.keep.element;
   return {
-    ...question.keep.element,
+    ...kept,
     kind: 'field',
     field,
     control: question.type,
@@ -404,7 +414,7 @@ export function toDocument(draft: QuestionsDraft, key: string, { preview = false
     if (block.kind === 'question') {
       const field = fieldOf(block);
       properties[field] = propertyFor(block);
-      if (block.required === 'always') required.push(field);
+      if (block.required === 'always' && keptAlways(block) === undefined) required.push(field);
       return elementFor(block, field, preview);
     }
     if (block.kind === 'instruction') {
