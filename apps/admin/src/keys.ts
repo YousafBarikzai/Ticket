@@ -25,10 +25,36 @@ export const FIELD_KEY = /^[a-z][a-zA-Z0-9]{0,63}$/;
 /** `^[a-z][a-z0-9-]{1,62}$` — the key of a rule, policy, service, form or workflow. */
 export const SLUG_KEY = /^[a-z][a-z0-9-]{1,62}$/;
 
+/**
+ * Letters that Unicode does not decompose into a base letter and a mark, so
+ * NFD alone would drop them: `Straße` must become `strasse`, not `strae`.
+ */
+const LIGATURES: Readonly<Record<string, string>> = {
+  ß: 'ss',
+  æ: 'ae',
+  œ: 'oe',
+  ø: 'o',
+  ł: 'l',
+  đ: 'd',
+  ð: 'd',
+  þ: 'th',
+  ı: 'i',
+};
+
+/**
+ * The words of a label, folded to plain ASCII the way a person would spell
+ * them without accents (F29): `Café access` is `cafe access`, not `caf
+ * access`. NFD splits `é` into `e` and a combining accent, and the accent is
+ * the part that is dropped; the few letters NFD cannot split are spelled out.
+ * Anything still outside `a-z0-9` (punctuation, other scripts) is removed.
+ */
 function words(label: string): string[] {
   return label
     .trim()
     .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[ßæœøłđðþı]/g, (letter) => LIGATURES[letter] ?? '')
     .replace(/[^a-z0-9\s]/g, '')
     .split(/\s+/)
     .filter(Boolean);
@@ -70,4 +96,38 @@ export function slugFor(label: string): string {
 
   const key = parts.join('-').slice(0, 63).replace(/-+$/, '');
   return SLUG_KEY.test(key) ? key : '';
+}
+
+/**
+ * Keys that would collide with a route: `/rules/new` is the new-rule page and
+ * `/workflows/runs` the runs list, so a rule, workflow or form keyed `new` or
+ * `runs` could never be opened by its own URL. The static segment wins in the
+ * router, so the API accepting the key is not enough (B §1.2).
+ */
+export const RESERVED_KEYS: readonly string[] = ['new', 'runs'];
+
+export type KeyRule = 'slug' | 'field';
+
+/** Why a key can or cannot be used — each state has its own words in `KeyField`. */
+export type KeyState = 'ok' | 'empty' | 'invalid' | 'reserved' | 'taken';
+
+/**
+ * Whether `key` can be saved: well-formed for its rule, not a reserved word
+ * (slug keys only — field keys do not appear in a URL) and not already used.
+ * Pure, so the component and its test agree on every case.
+ */
+export function keyState(
+  key: string,
+  { rule, taken = [], reserved = rule === 'slug' ? RESERVED_KEYS : [] }: { rule: KeyRule; taken?: readonly string[]; reserved?: readonly string[] },
+): KeyState {
+  if (key === '') return 'empty';
+  if (!(rule === 'slug' ? SLUG_KEY : FIELD_KEY).test(key)) return 'invalid';
+  if (reserved.includes(key)) return 'reserved';
+  if (taken.includes(key)) return 'taken';
+  return 'ok';
+}
+
+/** The key a name would produce under a rule. */
+export function deriveKey(label: string, rule: KeyRule): string {
+  return rule === 'slug' ? slugFor(label) : keyFor(label);
 }

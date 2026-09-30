@@ -1,32 +1,593 @@
 /*
  * The administration console's own layout.
  *
- * This file used to be a copy of the portal's stylesheet — the same `65ch`
- * measure, the same `.itsm-Home` and `.itsm-Approvals` rules for screens that
- * do not exist here — and not one rule in it matched a class this app renders.
- * Every `.itsm-Admin__*` element was falling back to a browser default, which
- * is why the console looked untouched by a theme that was already applied to
- * it: the tokens were arriving and nothing was spending them.
+ * Arrangement only, as in the other two apps (SPEC §3.4): colour, spacing,
+ * type, radii and motion all come from the design system's custom properties,
+ * so a token change — or a theme, or *Increase contrast* — reaches this sheet
+ * without an edit. Logical properties throughout, because the product ships in
+ * right-to-left locales and a stylesheet written in `left` and `right` has to
+ * be rewritten rather than translated. Unlayered, and loaded after the design
+ * system's sheet, so it arranges and never fights the components.
  *
- * Arrangement only, as in the other two apps. Colour, spacing, type, radii and
- * the lift on hover all come from the design system's custom properties, so a
- * token change reaches all three. Logical properties throughout, because the
- * product ships in right-to-left locales and a stylesheet written in `left`
- * and `right` has to be rewritten rather than translated.
+ * Two parts:
  *
- * The measure is wider than the portal's `65ch` and deliberately so. The
- * portal is *read* — somebody is following what happened to their request. A
- * console is *scanned*: it is tables of keys, statuses and permissions, and a
- * table forced to two thirds of the window wraps every row it should not.
+ *   1. `app-` classes for the frame's pages and the shared admin building
+ *      blocks (`KeyField`, `ConditionBuilder`, `JsonView`, `JsonDiff`,
+ *      `WeekHours`, `PersonCell`, *Your access*). New app classes use this
+ *      prefix; `itsm-` belongs to the design system.
+ *   2. The pre-redesign page classes (`itsm-Admin*`, `itsm-Panel*`, …) that
+ *      today's page bodies still render inside the new frame. Each page
+ *      package retires its share as it rebuilds its pages on `PageHeader`,
+ *      `Card` and `DataTable`; the last one deletes the block.
  */
 
+/* ======================================================================
+ * 1. The frame's pages and the shared building blocks
+ * ==================================================================== */
+
+/* A page inside the frame: the frame's `main` already carries the gutter. */
+.app-Page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  margin-inline: auto;
+  max-inline-size: 90rem;
+}
+
+.app-Page--centred {
+  justify-content: center;
+  min-block-size: 60dvh;
+}
+
+/* ---- KeyField --------------------------------------------------------- */
+
+.app-KeyField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-KeyField__line {
+  align-items: center;
+  color: var(--itsm-colour-text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--itsm-text-footnote-size);
+  gap: var(--itsm-space-2xs);
+  line-height: var(--itsm-text-footnote-line);
+  margin: 0;
+}
+
+.app-KeyField__label {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-KeyField__key {
+  background: var(--itsm-colour-surface-sunken);
+  border-radius: var(--itsm-radius-sm);
+  color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-font-family-mono);
+  padding: 0 var(--itsm-space-3xs);
+}
+
+.app-KeyField__state {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-KeyField[data-state="taken"] .app-KeyField__state,
+.app-KeyField[data-state="reserved"] .app-KeyField__state,
+.app-KeyField[data-state="invalid"] .app-KeyField__state {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-KeyField__edit {
+  margin-inline-start: auto;
+}
+
+.app-KeyField__editor {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-sm);
+}
+
+.app-KeyField__editor > :first-child {
+  flex: 1 1 16rem;
+}
+
+/* ---- ConditionBuilder ------------------------------------------------- */
+
+.app-Conditions {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.app-Conditions__legend {
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+  margin-block-end: var(--itsm-space-xs);
+  padding: 0;
+}
+
+.app-Conditions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * One condition: controls that read as a sentence. They wrap rather than
+ * scroll, because the last control is the value somebody is typing into.
+ */
+.app-Conditions__row {
+  align-items: center;
+  background: var(--itsm-colour-surface-sunken);
+  border-radius: var(--itsm-radius-lg);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-xs);
+}
+
+.app-Conditions__row > select,
+.app-Conditions__row > .itsm-Select,
+.app-Conditions__row > .itsm-Input,
+.app-Conditions__row > .itsm-NumberField {
+  flex: 1 1 10rem;
+  inline-size: auto;
+  min-inline-size: 0;
+}
+
+.app-Conditions__join {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  inline-size: 100%;
+}
+
+.app-Conditions__rowActions {
+  display: inline-flex;
+  gap: var(--itsm-space-3xs);
+  margin-inline-start: auto;
+}
+
+.app-Conditions__empty {
+  color: var(--itsm-colour-text-secondary);
+  margin: 0;
+}
+
+.app-Conditions > .itsm-Button {
+  align-self: flex-start;
+}
+
+/* ---- JsonView ---------------------------------------------------------- */
+
+.app-Json {
+  background: var(--itsm-colour-surface-sunken);
+  border-radius: var(--itsm-radius-lg);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  max-block-size: 32rem;
+  overflow: auto;
+  padding: var(--itsm-space-sm);
+}
+
+.app-Json__toolbar {
+  display: flex;
+  font-family: var(--itsm-font-family-sans);
+  justify-content: flex-end;
+}
+
+.app-Json__root,
+.app-Json__children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-Json__children {
+  border-inline-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  margin-inline-start: var(--itsm-space-2xs);
+  padding-inline-start: var(--itsm-space-sm);
+}
+
+.app-Json summary {
+  border-radius: var(--itsm-radius-sm);
+  cursor: default;
+}
+
+.app-Json summary:hover {
+  background: var(--itsm-colour-surface-hover);
+}
+
+.app-Json__key {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Json__summary,
+.app-Json__colon {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Json__value {
+  color: var(--itsm-colour-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.app-Json__value[data-kind="string"] {
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-Json__value[data-kind="number"],
+.app-Json__value[data-kind="boolean"] {
+  color: var(--itsm-colour-info-subtleText);
+}
+
+.app-Json__value[data-kind="null"] {
+  color: var(--itsm-colour-text-muted);
+}
+
+/* ---- JsonDiff ---------------------------------------------------------- */
+
+.app-Diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Diff__toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-sm);
+  justify-content: space-between;
+}
+
+.app-Diff__summary {
+  color: var(--itsm-colour-text-secondary);
+  margin: 0;
+}
+
+.app-Diff__scroll {
+  overflow-x: auto;
+}
+
+.app-Diff__table {
+  border-collapse: collapse;
+  font-size: var(--itsm-text-footnote-size);
+  inline-size: 100%;
+}
+
+.app-Diff__table th,
+.app-Diff__table td {
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  padding: var(--itsm-space-2xs) var(--itsm-space-xs);
+  text-align: start;
+  vertical-align: top;
+}
+
+.app-Diff__table thead th {
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-Diff code {
+  font-family: var(--itsm-font-family-mono);
+  overflow-wrap: anywhere;
+}
+
+.app-Diff__kind {
+  color: var(--itsm-colour-text-secondary);
+  display: block;
+  font-size: var(--itsm-text-caption-size);
+}
+
+[data-kind="added"] > td:last-child,
+.app-Diff__line[data-side="after"] {
+  background: var(--itsm-colour-success-subtle);
+  color: var(--itsm-colour-success-subtleText);
+}
+
+[data-kind="removed"] > td:nth-child(2),
+.app-Diff__line[data-side="before"] {
+  background: var(--itsm-colour-danger-subtle);
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+[data-kind="changed"] > td:nth-child(2) {
+  background: var(--itsm-colour-danger-subtle);
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+[data-kind="changed"] > td:last-child {
+  background: var(--itsm-colour-success-subtle);
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-Diff__absent {
+  color: var(--itsm-colour-text-muted);
+  font-style: italic;
+}
+
+.app-Diff__unified {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-Diff__unified > li {
+  display: grid;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-Diff__line {
+  border-radius: var(--itsm-radius-sm);
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  padding: 0 var(--itsm-space-2xs);
+}
+
+/* ---- WeekHours --------------------------------------------------------- */
+
+.app-WeekHours {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.app-WeekHours__legend {
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  margin-block-end: var(--itsm-space-xs);
+  padding: 0;
+}
+
+.app-WeekHours__days {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-WeekHours__day {
+  align-items: start;
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  display: grid;
+  gap: var(--itsm-space-sm);
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  padding-block: var(--itsm-space-xs);
+}
+
+.app-WeekHours__day:last-child {
+  border-block-end: 0;
+}
+
+.app-WeekHours__periods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-WeekHours__period {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-WeekHours__to,
+.app-WeekHours__closed {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-WeekHours__closed {
+  align-self: center;
+}
+
+.app-WeekHours__problem {
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  margin: 0;
+}
+
+.app-WeekHours > .itsm-Button {
+  align-self: flex-start;
+}
+
+@container itsm-page (max-width: 30rem) {
+  .app-WeekHours__day {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The read-only week: seven thin bars, filled across the open hours. */
+.app-WeekStrip {
+  display: grid;
+  gap: var(--itsm-space-3xs);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  max-inline-size: 16rem;
+  padding: 0;
+}
+
+.app-WeekStrip__day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-WeekStrip__name {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-caption-size);
+  text-align: center;
+}
+
+.app-WeekStrip__bar {
+  background: var(--itsm-colour-fill-track);
+  block-size: var(--itsm-space-xs);
+  border-radius: var(--itsm-radius-pill);
+  overflow: hidden;
+  position: relative;
+}
+
+.app-WeekStrip__fill {
+  background: var(--itsm-colour-accent);
+  inset-block: 0;
+  position: absolute;
+}
+
+@media (forced-colors: active) {
+  .app-WeekStrip__fill {
+    background: Highlight;
+  }
+}
+
+/* ---- PersonCell -------------------------------------------------------- */
+
+.app-Person {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--itsm-space-xs);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.app-Person__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-Person__name,
+.app-Person__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-Person__detail,
+.app-Person__id,
+.app-Person__empty {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Person__id {
+  font-family: var(--itsm-font-family-mono);
+}
+
+.app-Person[data-unknown] .app-Person__name {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Person__external {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-pill);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-caption-size);
+  padding: 0 var(--itsm-space-2xs);
+}
+
+/* ---- Your access ------------------------------------------------------- */
+
+.app-Access {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-Access__area {
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  margin: 0 0 var(--itsm-space-2xs);
+}
+
+.app-Access__list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-Access__item {
+  align-items: baseline;
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+  padding-block: var(--itsm-space-2xs);
+}
+
+.app-Access__label {
+  flex: 1 1 auto;
+}
+
+.app-Access__scope,
+.app-Access__empty {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Access__key {
+  color: var(--itsm-colour-text-secondary);
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  inline-size: 100%;
+}
+
+/* ---- Sign in ----------------------------------------------------------- */
+
+.app-SignIn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  text-align: start;
+}
+
+.app-SignIn__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+/* ======================================================================
+ * 2. Pre-redesign page classes, until each page is rebuilt (Stage 3)
+ * ==================================================================== */
+
+/*
+ * The measure is wider than the portal's `65ch` and deliberately so: a
+ * console is *scanned* — tables of keys, statuses and permissions — and a
+ * table forced to two thirds of the window wraps every row it should not.
+ */
 .itsm-Admin {
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-lg);
   margin-inline: auto;
   max-inline-size: 90rem;
-  padding-inline: var(--itsm-space-md);
 }
 
 .itsm-Admin__head h1 {
@@ -316,60 +877,4 @@
   color: var(--itsm-colour-text-secondary);
   font-size: var(--itsm-font-size-sm);
   font-weight: var(--itsm-font-weight-medium);
-}
-
-/* ---- Sign in ------------------------------------------------------------- */
-
-.itsm-SignIn {
-  margin-inline: auto;
-  max-inline-size: 28rem;
-  padding: var(--itsm-space-xl) var(--itsm-space-md);
-}
-
-.itsm-SignIn__heading {
-  font-size: var(--itsm-font-size-2xl);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: 0 var(--itsm-space-2xs);
-}
-
-.itsm-SignIn__note {
-  color: var(--itsm-colour-text-secondary);
-  margin-block-end: var(--itsm-space-lg);
-}
-
-.itsm-SignIn__error {
-  color: var(--itsm-colour-danger-subtleText);
-}
-
-.itsm-SignIn__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
-}
-
-.itsm-SignIn__form label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-3xs);
-}
-
-/* ---- Shell extras -------------------------------------------------------- */
-
-/*
- * Which desk this is. It sits in the brand, quietly, and it is the single
- * most important word on the page: the console for the wrong tenant looks
- * exactly like the console for the right one.
- */
-.itsm-AppShell__tenant {
-  color: var(--itsm-colour-text-secondary);
-  font-weight: var(--itsm-font-weight-regular);
-}
-
-.itsm-AppShell__who {
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-font-size-sm);
-}
-
-.itsm-AppShell__signout {
-  margin-inline-start: var(--itsm-space-2xs);
 }

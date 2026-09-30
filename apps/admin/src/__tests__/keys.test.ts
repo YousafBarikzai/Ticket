@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIELD_KEY, SLUG_KEY, keyFor, slugFor } from '../keys.js';
+import { FIELD_KEY, RESERVED_KEYS, SLUG_KEY, deriveKey, keyFor, keyState, slugFor } from '../keys.js';
 
 /**
  * Two key rules, tested against the expressions the API actually enforces.
@@ -72,5 +72,57 @@ describe('a slug key', () => {
     // The whole reason both exist. Each output is refused by the other's rule.
     expect(SLUG_KEY.test(keyFor('Order a laptop'))).toBe(false);
     expect(FIELD_KEY.test(slugFor('Order a laptop'))).toBe(false);
+  });
+});
+
+describe('accented names (F29)', () => {
+  it('folds accents to the letter a person would type without them', () => {
+    // It used to drop the letter with the accent: `Café access` → `caf-access`.
+    expect(slugFor('Café access')).toBe('cafe-access');
+    expect(slugFor('Résumé review')).toBe('resume-review');
+    expect(slugFor('Ünïcödé name here')).toBe('unicode-name-here');
+    expect(slugFor('Dvořák desk')).toBe('dvorak-desk');
+  });
+
+  it('spells out the letters Unicode cannot split into a letter and an accent', () => {
+    expect(slugFor('Straße repairs')).toBe('strasse-repairs');
+    expect(slugFor('Łukasz’s team')).toBe('lukaszs-team');
+    expect(slugFor('Øresund office')).toBe('oresund-office');
+  });
+
+  it('still refuses what it cannot honestly key', () => {
+    // Other scripts are not transliterated: that would be an invention.
+    expect(slugFor('東京')).toBe('');
+    expect(slugFor('é')).toBe('');
+  });
+});
+
+describe('the state of a key', () => {
+  it('accepts a well-formed, unused, unreserved key', () => {
+    expect(keyState('order-a-laptop', { rule: 'slug' })).toBe('ok');
+    expect(keyState('costCentre', { rule: 'field' })).toBe('ok');
+  });
+
+  it('says why a key cannot be used', () => {
+    expect(keyState('', { rule: 'slug' })).toBe('empty');
+    expect(keyState('Order', { rule: 'slug' })).toBe('invalid');
+    expect(keyState('order-a-laptop', { rule: 'field' })).toBe('invalid');
+    expect(keyState('vpn', { rule: 'slug', taken: ['vpn', 'email'] })).toBe('taken');
+  });
+
+  it('refuses the words that collide with a page (`/rules/new`, `/workflows/runs`)', () => {
+    expect(RESERVED_KEYS).toEqual(['new', 'runs']);
+    expect(keyState('new', { rule: 'slug' })).toBe('reserved');
+    expect(keyState('runs', { rule: 'slug' })).toBe('reserved');
+    // Reserved beats taken: the reason to give is the one that will not go away.
+    expect(keyState('new', { rule: 'slug', taken: ['new'] })).toBe('reserved');
+    // Field keys never appear in a URL.
+    expect(keyState('runs', { rule: 'field' })).toBe('ok');
+    expect(keyState('archive', { rule: 'slug', reserved: ['archive'] })).toBe('reserved');
+  });
+
+  it('derives by rule', () => {
+    expect(deriveKey('Cost centre', 'slug')).toBe('cost-centre');
+    expect(deriveKey('Cost centre', 'field')).toBe('costCentre');
   });
 });

@@ -165,8 +165,10 @@ if sign_in workbench "$WORKBENCH" "sam.agent@$TENANT.test"; then
 fi
 
 if sign_in admin "$ADMIN" "alex.admin@$TENANT.test"; then
-  check "$ADMIN" / /queues /tickets /cmdb /automation /sla /insights /integrations \
-    /settings /security /audit /people /fields /catalogue /rules /workflows
+  check "$ADMIN" / /workforce /tickets /cmdb /automation /sla /insights /integrations \
+    /settings /security /audit /people /fields /catalogue /rules /workflows /ai-triage
+  # Queues became Workforce; old links and bookmarks follow it (308).
+  redirects "$ADMIN" /queues /workforce
   # The status filter is a link rather than a control, so it is a route too.
   check "$ADMIN" '/tickets?status=open' '/tickets?status=closed' '/tickets?status=open&assignee=none' \
     '/audit?action=ticket.created'

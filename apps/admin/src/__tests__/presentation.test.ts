@@ -40,3 +40,16 @@ describe('deriving a field key from its label', () => {
     expect(keyFor('a '.repeat(80)).length).toBeLessThanOrEqual(64);
   });
 });
+
+describe('an accented label', () => {
+  it('folds accents rather than dropping the letter (F29)', () => {
+    expect(keyFor('Café access')).toBe('cafeAccess');
+    expect(keyFor('Numéro de série')).toBe('numeroDeSerie');
+    expect(keyFor('Straße')).toBe('strasse');
+  });
+
+  it('keeps the plain ASCII cases exactly as they were', () => {
+    expect(keyFor('Cost centre')).toBe('costCentre');
+    expect(keyFor("Manager's approval")).toBe('managersApproval');
+  });
+});
