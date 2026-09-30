@@ -10,7 +10,6 @@
  * Deliberately NOT a scripting language: no function calls, no loops, no
  * property assignment, no access to anything but the context object passed in.
  */
-import { z } from 'zod';
 
 export type Scalar = string | number | boolean | null;
 export type ExprValue = Scalar | Scalar[];
@@ -45,44 +44,9 @@ export type Expr =
   | { withinLast: [Operand, string] }
   | { always: true };
 
-const operandSchema: z.ZodType<Operand> = z.lazy(() =>
-  z.union([
-    z.object({ var: z.string().min(1).max(200) }).strict(),
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])),
-  ]),
-);
-
-const pair = z.tuple([operandSchema, operandSchema]);
-
-export const exprSchema: z.ZodType<Expr> = z.lazy(() =>
-  z.union([
-    z.object({ and: z.array(exprSchema).min(1).max(50) }).strict(),
-    z.object({ or: z.array(exprSchema).min(1).max(50) }).strict(),
-    z.object({ not: exprSchema }).strict(),
-    z.object({ eq: pair }).strict(),
-    z.object({ ne: pair }).strict(),
-    z.object({ gt: pair }).strict(),
-    z.object({ gte: pair }).strict(),
-    z.object({ lt: pair }).strict(),
-    z.object({ lte: pair }).strict(),
-    z.object({ in: pair }).strict(),
-    z.object({ nin: pair }).strict(),
-    z.object({ contains: pair }).strict(),
-    z.object({ startsWith: pair }).strict(),
-    z.object({ endsWith: pair }).strict(),
-    z.object({ matches: z.tuple([operandSchema, z.string().max(500)]) }).strict(),
-    z.object({ exists: operandSchema }).strict(),
-    z.object({ empty: operandSchema }).strict(),
-    z.object({ before: pair }).strict(),
-    z.object({ after: pair }).strict(),
-    z.object({ withinLast: z.tuple([operandSchema, z.string().regex(/^P/)]) }).strict(),
-    z.object({ always: z.literal(true) }).strict(),
-  ]),
-) as z.ZodType<Expr>;
+// The zod schema lives in its own module so that a bundle which only evaluates
+// (a browser form) never loads zod; see `schema.ts`.
+export { exprSchema, parseExpr } from './schema.js';
 
 export type EvalContext = Record<string, unknown>;
 
@@ -471,11 +435,6 @@ export function checkExpr(expr: Expr, types: Readonly<Record<string, DeclaredTyp
 function describe(operand: { type: DeclaredType; path?: string }, side: string): string {
   if (operand.path) return `${operand.path} (${operand.type})`;
   return `the ${side}-hand ${operand.type}`;
-}
-
-/** Validates an expression's shape and returns it typed, for storing in a definition. */
-export function parseExpr(input: unknown): Expr {
-  return exprSchema.parse(input);
 }
 
 /** Lists every context path an expression reads, used by builder validation. */
