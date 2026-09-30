@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hostsFor, readCatalogue } from '../railway-deploy.js';
 import {
+  BUILT_IN_CLIENT_SCOPES,
   PLACEHOLDER,
   authHost,
   confidentialClients,
@@ -11,6 +12,7 @@ import {
   readRealm,
   realmSettings,
   resolveRealm,
+  scopesToAttach,
   unresolvedPlaceholders,
   userProfileOf,
   type Realm,
@@ -183,8 +185,32 @@ describe('what Keycloak is actually sent', () => {
   });
 
   it('creates only the scopes an existing realm is missing', () => {
-    expect(missingScopes(resolved, ['itsm-claims', 'profile']).map((scope) => scope.name).sort()).toEqual(['basic', 'email']);
-    expect(missingScopes(resolved, ['itsm-claims', 'basic', 'profile', 'email'])).toEqual([]);
+    expect(missingScopes(resolved, ['itsm-claims', 'profile', 'roles', 'web-origins', 'acr']).map((scope) => scope.name).sort()).toEqual(['basic', 'email']);
+    expect(missingScopes(resolved, ['itsm-claims', 'basic', 'profile', 'email', 'roles', 'web-origins', 'acr'])).toEqual([]);
+  });
+
+  it('declares every scope Keycloak’s own clients are given, so the deploy can attach them', () => {
+    const declared = new Set(((resolved as unknown as { clientScopes: { name: string }[] }).clientScopes).map((scope) => scope.name));
+    for (const [clientId, scopes] of Object.entries(BUILT_IN_CLIENT_SCOPES)) {
+      for (const scope of scopes) expect(declared.has(scope), `${clientId}: ${scope}`).toBe(true);
+    }
+  });
+
+  it('gives the account page a subject and its roles, without which its API refuses it', () => {
+    // The account page is Keycloak's own; its API wants the account client's
+    // roles in resource_access and the account named in sub.
+    const wanted = BUILT_IN_CLIENT_SCOPES['account-console'] ?? [];
+    expect(wanted).toEqual(expect.arrayContaining(['basic', 'roles']));
+    const roles = ((resolved as unknown as { clientScopes: { name: string; protocolMappers: { config: Record<string, string> }[] }[] }).clientScopes).find(
+      (scope) => scope.name === 'roles',
+    );
+    expect(roles?.protocolMappers.map((mapper) => mapper.config['claim.name'])).toContain('resource_access.${client_id}.roles');
+  });
+
+  it('attaches only the scopes a client is missing', () => {
+    expect(scopesToAttach(['basic', 'roles', 'profile'], [])).toEqual(['basic', 'roles', 'profile']);
+    expect(scopesToAttach(['basic', 'roles', 'profile'], ['profile', 'basic'])).toEqual(['roles']);
+    expect(scopesToAttach(['basic', 'roles'], ['roles', 'basic', 'offline_access'])).toEqual([]);
   });
 
   it('keeps the realm settings out of the import and the clients out of the settings', () => {

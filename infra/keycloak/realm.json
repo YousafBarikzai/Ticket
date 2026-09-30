@@ -60,7 +60,12 @@
     "basic, profile and email are Keycloak's own scopes, declared here because a",
     "realm created from a file that names any scope gets only the scopes it names.",
     "Without them every sign-in asking for 'openid profile email' is refused as",
-    "invalid_scope, and a token without basic carries no sub."
+    "invalid_scope, and a token without basic carries no sub.",
+    "roles, web-origins and acr are Keycloak's too, and the rest of its default",
+    "set. Our four clients do not use them; Keycloak's own account page does, and",
+    "its client (account-console) is not in this file, so keycloak-realm.ts",
+    "attaches them to it on every deploy. Without roles its API refuses every",
+    "request and the page reads 'Something went wrong'."
   ],
   "clientScopes": [
     {
@@ -230,6 +235,77 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
           }
+        }
+      ]
+    },
+    {
+      "name": "roles",
+      "description": "The account's realm and client roles. Keycloak's own account page is refused by its API without them",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "client roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "consentRequired": false,
+          "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+        }
+      ]
+    },
+    {
+      "name": "web-origins",
+      "description": "The origins a browser client may call from",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "allowed web origins",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-allowed-origins-mapper",
+          "consentRequired": false,
+          "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+        }
+      ]
+    },
+    {
+      "name": "acr",
+      "description": "How strongly the account was authenticated",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "acr loa level",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-acr-mapper",
+          "consentRequired": false,
+          "config": { "id.token.claim": "true", "access.token.claim": "true", "introspection.token.claim": "true" }
         }
       ]
     }
