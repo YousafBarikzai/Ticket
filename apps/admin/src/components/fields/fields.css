@@ -1,0 +1,138 @@
+/*
+ * Ticket fields (SPEC §6.1 `/fields`): the table's type and visibility
+ * cells, the Restricted pill-button and its list, the field sheet's locked
+ * type and the desk/requester preview. Arrangement only, tokens
+ * throughout; the options rows and inspector groups come from the
+ * catalogue's stylesheet, which the page imports too.
+ */
+
+.app-FieldType,
+.app-FieldVisibility {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-FieldType {
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-FieldVisibility {
+  color: var(--itsm-colour-text-secondary);
+}
+
+/* "Restricted": a pill that opens the list of permissions, in words. */
+.app-VisibilityPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  min-block-size: var(--itsm-control-height-sm);
+  padding: 0 var(--itsm-space-xs);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-primary);
+  font: inherit;
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-medium);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .app-VisibilityPill:hover {
+    background: var(--itsm-colour-fill-hover);
+  }
+}
+
+@media (forced-colors: active) {
+  .app-VisibilityPill {
+    border-color: ButtonText;
+  }
+}
+
+.app-VisibilityPill__intro {
+  margin: 0 0 var(--itsm-space-xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-VisibilityPill__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  padding-inline-start: var(--itsm-space-md);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* ---- The field sheet ---------------------------------------------------- */
+
+.app-FieldForm__lockedType {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-FieldForm__typeLine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-FieldPreview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-md);
+}
+
+@media (min-width: 40rem) {
+  .app-FieldPreview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.app-FieldPreview__pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-FieldPreview__label {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-FieldPreview__none {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* ---- Loading ------------------------------------------------------------ */
+
+.app-FieldsSkeleton__head,
+.app-FieldsSkeleton__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}

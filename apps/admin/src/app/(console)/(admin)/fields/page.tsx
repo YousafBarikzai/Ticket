@@ -1,108 +1,71 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { ApiError } from '@itsm/sdk';
-import { Badge, EmptyState, Table } from '@itsm/ui';
-import { pageAccess } from '../../../../server/session.js';
+import { Card } from '@itsm/ui';
+import { PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../components/Forbidden.js';
-import { holds } from '../../../../permissions.js';
-import { FieldEditor } from '../../../../components/FieldEditor.js';
+import { FieldsView, type FieldScope } from '../../../../components/fields/FieldsView.js';
+import { fieldView, rulesByField } from '../../../../components/fields/presentation.js';
+import { holds, permissionLabel, viewOnlyFor } from '../../../../permissions.js';
+import { read } from '../../../../server/read.js';
+import { pageAccess } from '../../../../server/session.js';
+import '../../../../components/catalogue/catalogue.css';
+import '../../../../components/fields/fields.css';
 
 export const metadata: Metadata = { title: 'Ticket fields' };
 export const dynamic = 'force-dynamic';
 
+const SCOPES: readonly { readonly value: FieldScope; readonly label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'retired', label: 'Retired' },
+  { value: 'all', label: 'All' },
+];
+
 /**
- * Custom fields.
- *
- * The first screen in this console that writes, and the one that most needed
- * to exist: `field_definition` has been a table since Phase 1 with no service,
- * no routes and no way for anybody to see what their own desk collects
- * (ADR-0048).
- *
- * Inactive definitions are shown, not hidden. A field somebody turned off last
- * year still has values on every ticket raised while it was on, and an
- * administrator wondering where a column went is better served by seeing it
- * greyed than by it vanishing.
+ * Ticket fields (SPEC §6.1; ADR-0048; F27): what this desk collects beyond a
+ * title and a description. Every definition is read, retired ones too — a
+ * field turned off last year still has values on every ticket raised while
+ * it was on — and the scope (`?scope=active|retired|all`) chooses which to
+ * list. Permissions are read for the Restricted picker and the column's
+ * names; rules only to say which read a field before it is retired.
  */
-export default async function FieldsPage(): Promise<ReactNode> {
+export default async function FieldsPage({ searchParams }: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<ReactNode> {
   const access = await pageAccess('/fields');
   if (!access.allowed) return <Forbidden route="/fields" />;
   const { me, api } = access;
-  const canManage = holds(me, 'ticket.config.manage');
+  const query = await searchParams;
+  const requested = typeof query.scope === 'string' ? query.scope : 'active';
+  const scope: FieldScope = requested === 'retired' || requested === 'all' ? requested : 'active';
+  const viewOnly = viewOnlyFor(me, 'Ticket fields', 'ticket.config.manage');
 
-  let fields: Awaited<ReturnType<typeof api.tenant.fields>>;
-  try {
-    fields = await api.tenant.fields(true);
-  } catch (error) {
+  const [fields, permissions, rules] = await Promise.all([
+    read(() => api.tenant.fields(true)),
+    read(() => api.tenant.permissions()),
+    holds(me, 'rules.rule.read') ? read(() => api.configure.rules.list()) : Promise.resolve(null),
+  ]);
+
+  if (!fields.ok) {
     return (
-      <EmptyState
-        tone="error"
-        title="The field definitions could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The API could not be reached.'}
-      />
+      <div className="app-Page app-Fields">
+        <PageHeader title="Ticket fields" />
+        <Card title="Ticket fields" problem={fields.problem} />
+      </div>
     );
   }
 
+  const usage = rulesByField(rules?.ok ? rules.value : []);
+  const all = fields.value.map((row) => fieldView(row, permissionLabel, usage.get(row.key) ?? []));
+  const shown = all.filter((field) => (scope === 'all' ? true : scope === 'active' ? field.isActive : !field.isActive));
+  const count = (value: FieldScope): number => all.filter((field) => (value === 'all' ? true : value === 'active' ? field.isActive : !field.isActive)).length;
+
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Ticket fields</h1>
-        <p className="itsm-Admin__lede">
-          What this desk collects beyond a title and a description. A value is refused if it does not match one of
-          these, so a field defined here is the only way a ticket can carry it.
-        </p>
-      </header>
-
-      {fields.length === 0 ? (
-        <EmptyState
-          title="No custom fields"
-          description="A ticket carries its standard fields only. Add one below when this desk needs something else."
-        />
-      ) : (
-        <Table
-          caption="Custom fields on a ticket"
-          columns={[
-            { key: 'label', header: 'Label', cell: (row) => row.label },
-            { key: 'key', header: 'Key', cell: (row) => <code>{row.key}</code> },
-            { key: 'type', header: 'Type', cell: (row) => row.type },
-            {
-              key: 'who',
-              header: 'Who sees it',
-              cell: (row) =>
-                row.classification === 'public' ? (
-                  'Everybody, including the requester'
-                ) : row.classification === 'internal' ? (
-                  'The desk'
-                ) : (
-                  <>Only {row.visibleTo.join(', ') || 'nobody'}</>
-                ),
-            },
-            {
-              key: 'applies',
-              header: 'Applies to',
-              cell: (row) => (row.appliesTo.types.length === 0 ? 'Every type' : row.appliesTo.types.join(', ')),
-            },
-            {
-              key: 'active',
-              header: 'In use',
-              cell: (row) => (
-                <Badge intent={row.isActive ? 'success' : 'neutral'} srPrefix="In use">
-                  {row.isActive ? 'Yes' : 'Retired'}
-                </Badge>
-              ),
-            },
-          ]}
-          rows={fields}
-          rowKey={(row) => row.id}
-        />
-      )}
-
-      {canManage ? (
-        <FieldEditor existingKeys={fields.map((field) => field.key)} />
-      ) : (
-        <p className="itsm-Admin__note">
-          Your account can see these but not change them. Editing needs <code>ticket.config.manage</code>.
-        </p>
-      )}
-    </div>
+    <FieldsView
+      fields={shown}
+      allFields={all}
+      scope={scope}
+      scopes={SCOPES.map((entry) => ({ ...entry, href: entry.value === 'active' ? '/fields' : `/fields?scope=${entry.value}`, count: count(entry.value) }))}
+      canManage={holds(me, 'ticket.config.manage')}
+      permissions={(permissions.ok ? permissions.value : []).map((permission) => ({ key: permission.key, label: permissionLabel(permission.key), description: permission.description }))}
+      {...(viewOnly ? { viewOnly } : {})}
+    />
   );
 }
