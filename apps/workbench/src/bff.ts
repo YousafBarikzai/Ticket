@@ -11,7 +11,7 @@ export const bff = createBff({
   appName: 'workbench',
   originEnvVar: 'WORKBENCH_ORIGIN',
   defaultOrigin: 'http://localhost:3100',
-  defaultLanding: '/queue',
+  defaultLanding: '/inbox',
   signInPath: '/sign-in',
   signedOutPath: '/signed-out',
 });

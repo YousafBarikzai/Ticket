@@ -31,14 +31,17 @@
       "budget": 500000,
       "enforceGrowth": true,
       "baselines": {
-        "/": 185591,
-        "/_global-error": 185591,
-        "/_not-found": 185591,
-        "/offline": 189341,
-        "/queue": 277914,
-        "/sign-in": 187794,
-        "/signed-out": 189341,
-        "/tickets/[id]": 208226
+        "/": 247506,
+        "/_global-error": 247506,
+        "/_not-found": 247506,
+        "/inbox": 247506,
+        "/inbox/[view]": 318229,
+        "/inbox/team/[teamId]": 318230,
+        "/offline": 249555,
+        "/queue": 247506,
+        "/sign-in": 249557,
+        "/signed-out": 247506,
+        "/tickets/[id]": 263483
       }
     },
     "admin": {
