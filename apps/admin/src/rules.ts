@@ -138,36 +138,68 @@ export function fromExpression(expression: unknown): Parsed | null {
 /* ------------------------------------------------------------------ actions */
 
 /**
- * The actions this editor can compose, of the eleven in the closed set.
+ * The actions the builder composes, of the eleven in the engine's closed set
+ * (`modules/rules/src/domain/actions.ts`).
  *
- * The other six — `setField`, `setCategory`, `assignGroup`, `addWatcher`,
- * `linkDuplicate`, `startWorkflow` — all take an identifier this console has no
- * list to offer: a category id, a group id, a user id. A text box asking an
- * administrator to paste a UUID is not a builder, so they stay API-only and the
- * screen says which and why.
+ * Eight have a typed editor: the five that take a value a person can pick
+ * from a list, plus *Start a workflow* (a workflow chosen by name, SPEC
+ * §6.1), *Set impact or urgency* (`setField` on those two fields, with the
+ * three levels) and *Assign to a team* (`assignGroup`, a team chosen by
+ * name — offered only when the team list can be read, A6).
+ *
+ * The rest — `setCategory`, `addWatcher`, `linkDuplicate`, and `setField` on
+ * any other field — take an identifier this console has no list for. A rule
+ * that has one keeps it untouched: the builder shows it read-only as a
+ * *Custom action* and saves it back exactly as it was (`fromAction` returns
+ * null for it), rather than offering a box to paste a UUID into.
  */
 export const ACTION_TYPES = [
   { value: 'setPriority', label: 'Set the priority' },
   { value: 'setStatus', label: 'Set the status' },
-  { value: 'addTag', label: 'Add a tag' },
-  { value: 'assignStrategy', label: 'Assign by strategy' },
   { value: 'sendNotification', label: 'Send a notification' },
+  { value: 'assignStrategy', label: 'Assign by strategy' },
+  { value: 'assignGroup', label: 'Assign to a team' },
+  { value: 'addTag', label: 'Add a tag' },
+  { value: 'startWorkflow', label: 'Start a workflow' },
+  { value: 'setField', label: 'Set impact or urgency' },
 ] as const;
 
 export type ActionType = (typeof ACTION_TYPES)[number]['value'];
 
+/** The two fields `setField` is offered for; the engine allows more, which stay custom actions. */
+export const LEVEL_FIELDS = ['impact', 'urgency'] as const;
+export type LevelField = (typeof LEVEL_FIELDS)[number];
+
 export interface ActionDraft {
   type: ActionType;
-  /** The single value each of these actions needs: a priority, a status, a tag, a strategy, a template. */
+  /**
+   * The single value each action needs: a priority, a status, a template, a
+   * strategy, a team id, a tag, a workflow key, or a level.
+   */
   value: string;
-  /** Required by `setPriority`, optional on `setStatus`, unused elsewhere. */
+  /** Required by `setPriority` (may be empty), optional on `setStatus`, unused elsewhere. */
   reason: string;
-  /** `sendNotification` only. */
+  /** `sendNotification` only: who is told. */
   to: string;
+  /** `setField` only: which of impact and urgency. */
+  field?: LevelField;
 }
 
-export function emptyAction(): ActionDraft {
-  return { type: 'setPriority', value: 'P3', reason: '', to: 'requester' };
+export function emptyAction(type: ActionType = 'setPriority'): ActionDraft {
+  switch (type) {
+    case 'setPriority':
+      return { type, value: 'P3', reason: '', to: '' };
+    case 'setStatus':
+      return { type, value: '', reason: '', to: '' };
+    case 'sendNotification':
+      return { type, value: '', reason: '', to: 'requester' };
+    case 'assignStrategy':
+      return { type, value: 'round_robin', reason: '', to: '' };
+    case 'setField':
+      return { type, value: 'high', reason: '', to: '', field: 'impact' };
+    default:
+      return { type, value: '', reason: '', to: '' };
+  }
 }
 
 /** One row, as the action the engine's closed set defines. */
@@ -187,6 +219,60 @@ export function toAction(draft: ActionDraft): Record<string, unknown> {
       return { type: 'assignStrategy', strategy: draft.value };
     case 'sendNotification':
       return { type: 'sendNotification', template: draft.value.trim(), to: draft.to };
+    case 'startWorkflow':
+      return { type: 'startWorkflow', definitionKey: draft.value.trim() };
+    case 'setField':
+      return { type: 'setField', field: draft.field ?? 'impact', value: draft.value };
+    case 'assignGroup':
+      return { type: 'assignGroup', groupId: draft.value };
+  }
+}
+
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/**
+ * A stored action as a row the builder can edit, or null when it cannot draw
+ * it faithfully — the caller then keeps the stored action as it is.
+ *
+ * The same promise as `fromExpression`: null rather than an approximation, so
+ * that saving never quietly changes an action the author could not see.
+ */
+export function fromAction(action: unknown): ActionDraft | null {
+  if (typeof action !== 'object' || action === null || Array.isArray(action)) return null;
+  const row = action as Record<string, unknown>;
+  const keys = Object.keys(row);
+  const only = (...allowed: string[]): boolean => keys.every((key) => key === 'type' || allowed.includes(key));
+  switch (row.type) {
+    case 'setPriority':
+      return only('priority', 'reason') && typeof row.priority === 'string'
+        ? { type: 'setPriority', value: row.priority, reason: text(row.reason), to: '' }
+        : null;
+    case 'setStatus':
+      return only('status', 'reason') && typeof row.status === 'string'
+        ? { type: 'setStatus', value: row.status, reason: text(row.reason), to: '' }
+        : null;
+    case 'addTag':
+      return only('tag') && typeof row.tag === 'string' ? { type: 'addTag', value: row.tag, reason: '', to: '' } : null;
+    case 'assignStrategy':
+      return only('strategy') && typeof row.strategy === 'string' ? { type: 'assignStrategy', value: row.strategy, reason: '', to: '' } : null;
+    case 'sendNotification':
+      return only('template', 'to') && typeof row.template === 'string' && typeof row.to === 'string'
+        ? { type: 'sendNotification', value: row.template, reason: '', to: row.to }
+        : null;
+    case 'startWorkflow':
+      return only('definitionKey') && typeof row.definitionKey === 'string'
+        ? { type: 'startWorkflow', value: row.definitionKey, reason: '', to: '' }
+        : null;
+    case 'setField':
+      // Only impact and urgency, with a level as the value; any other field
+      // takes an id or a date and stays a custom action.
+      return only('field', 'value') && (LEVEL_FIELDS as readonly unknown[]).includes(row.field) && typeof row.value === 'string'
+        ? { type: 'setField', value: row.value, reason: '', to: '', field: row.field as LevelField }
+        : null;
+    case 'assignGroup':
+      return only('groupId') && typeof row.groupId === 'string' ? { type: 'assignGroup', value: row.groupId, reason: '', to: '' } : null;
+    default:
+      return null;
   }
 }
 

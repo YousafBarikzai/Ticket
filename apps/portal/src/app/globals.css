@@ -1,508 +1,276 @@
 /*
  * The portal's own layout.
  *
- * Arrangement only: colour, spacing, type and radii come from the design
- * system's custom properties, which is what keeps this app in step with the
- * workbench when a token changes. Logical properties throughout, so the
- * right-to-left locales mirror rather than needing a second stylesheet.
+ * Everything here is *arrangement*. Colour, spacing, type and radii all come
+ * from the design system's custom properties, which is what keeps this app in
+ * step with the workbench and the admin console when a token changes — and
+ * what stops an application quietly inventing a seventh grey. Unlayered, so
+ * it wins over the design system's `@layer itsm.*` rules without
+ * `!important`.
  *
- * One measurement runs through everything here: `65ch`. The portal is read,
- * not scanned — a person is trying to understand what is happening to their
- * request — and a line longer than about seventy characters is where the eye
- * starts losing its place on the return sweep.
+ * New rules use the `app-` prefix (SPEC §8.0 rule 6). Every pre-redesign
+ * `itsm-` page rule has gone with the page it styled; a page's own rules live
+ * beside it (`requests.css`, `approvals.css`, `profile.css`, …) and load with
+ * it.
+ *
+ * Logical properties throughout (`inline-size`, `margin-block`,
+ * `padding-inline`), so the right-to-left locales mirror rather than needing
+ * a second stylesheet.
  */
 
-.itsm-Page {
+/* ---- Page columns --------------------------------------------------------- */
+
+/*
+ * The frame's own pages (loading, errors). The content column is 1200 px at
+ * most; reading pages (a request, an article) are 720.
+ */
+.app-Page {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: var(--itsm-content-default);
   margin-inline: auto;
-  max-inline-size: 65ch;
-  padding-inline: var(--itsm-space-md);
 }
 
-.itsm-Page__heading {
-  font-size: var(--itsm-font-size-2xl);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: var(--itsm-space-sm) var(--itsm-space-2xs);
+.app-Page--reading {
+  max-inline-size: var(--itsm-content-narrow);
 }
 
-.itsm-Page__lede {
-  color: var(--itsm-colour-text-secondary);
-  margin-block-end: var(--itsm-space-lg);
-}
-
-.itsm-Page__footnote {
-  margin-block-start: var(--itsm-space-lg);
-}
-
-/* ---- Home --------------------------------------------------------------- */
-
-.itsm-Home {
-  margin-inline: auto;
-  max-inline-size: 65ch;
-  padding-inline: var(--itsm-space-md);
-}
-
-.itsm-Home__heading {
-  font-size: var(--itsm-font-size-3xl);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: var(--itsm-space-lg) var(--itsm-space-md);
+.app-Page--state {
+  padding-block: var(--itsm-space-2xl);
 }
 
 /*
- * The two things somebody came to do. The columns come from `.itsm-TileGrid`
- * in the design system, which reflows on its own at the width the tiles stop
- * fitting — this only adds the space beneath. Repeating the columns here would
- * mean a tile that changed size needed two files edited to keep working, and
- * one of them would be forgotten.
- *
- * Source order still matters and is unchanged: "something is broken" is the
- * more urgent of the two and is first, which is what a single column shows.
+ * A status screen drawn inside the frame (the in-shell not-found) sits in the
+ * content column: not a whole viewport tall, on the page's own canvas, and
+ * resting like a card rather than floating like a dialog.
  */
-.itsm-Home__actions {
-  margin-block-end: var(--itsm-space-xl);
+.app-Page--state .itsm-StatusScreen {
+  min-block-size: 0;
+  padding: 0;
+  background: transparent;
 }
 
-.itsm-Home__waiting,
-.itsm-Home__recent {
-  margin-block-end: var(--itsm-space-xl);
+.app-Page--state .itsm-StatusScreen__card {
+  box-shadow: var(--itsm-elevation-xs);
 }
 
-.itsm-Home__waiting h2,
-.itsm-Home__recent h2 {
-  font-size: var(--itsm-font-size-lg);
-  font-weight: var(--itsm-font-weight-semibold);
-}
+/* ---- Request rows (RequestRow) ------------------------------------------- */
 
-.itsm-Home__waiting ul,
-.itsm-Home__recent ul {
+.app-RequestList {
   display: flex;
   flex-direction: column;
-  gap: var(--itsm-space-2xs);
-  list-style: none;
+  gap: var(--itsm-space-xs);
   margin: 0;
   padding: 0;
-}
-
-.itsm-Home__waiting li,
-.itsm-Home__recent li {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Home__meta,
-.itsm-Home__empty {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-}
-
-/* ---- Catalogue ---------------------------------------------------------- */
-
-.itsm-Catalogue__group {
-  margin-block-end: var(--itsm-space-lg);
-}
-
-/* ---- Tickets ------------------------------------------------------------ */
-
-.itsm-Tickets {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
   list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Tickets__row {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  border-radius: var(--itsm-radius-md);
-  padding: var(--itsm-space-sm);
 }
 
 /*
- * The one row on the page that is somebody's to act on. The border says so as
- * well as the badge and the sentence, because a person scanning for "which of
- * these is mine to do" reads the shape before the words.
+ * A card per request. The title is the one link; its hit area is stretched
+ * over the whole card (the `::after` below), and the inline action sits
+ * above it, so both work and neither is inside the other.
  */
-.itsm-Tickets__row[data-needs-you='true'] {
-  border-color: var(--itsm-colour-warning-border);
-  border-inline-start-width: var(--itsm-border-thick);
-}
-
-.itsm-Tickets__title {
-  font-weight: var(--itsm-font-weight-medium);
-}
-
-.itsm-Tickets__meta {
-  align-items: baseline;
-  color: var(--itsm-colour-text-muted);
+.app-RequestRow {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
-  font-size: var(--itsm-font-size-sm);
-  gap: var(--itsm-space-2xs);
-  margin-block: var(--itsm-space-3xs);
+  align-items: center;
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+  box-sizing: border-box;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
 }
 
-.itsm-Tickets__number {
-  font-family: var(--itsm-font-family-mono);
+/*
+ * The rows that are the person's to move carry an edge in their chip's
+ * colour: somebody scanning for "which of these is mine to do" reads the
+ * shape before the words. Never the only signal — the chip says it too.
+ */
+.app-RequestRow[data-yours] {
+  box-shadow: inset var(--itsm-border-thick) 0 0 var(--itsm-colour-neutral-border), var(--itsm-elevation-xs);
 }
 
-.itsm-Tickets__detail {
-  margin: 0;
+.app-RequestRow[data-yours='warning'] {
+  box-shadow: inset var(--itsm-border-thick) 0 0 var(--itsm-colour-warning-border), var(--itsm-elevation-xs);
 }
 
-/* ---- One ticket --------------------------------------------------------- */
-
-.itsm-Ticket__raised {
-  background: var(--itsm-colour-success-subtle);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-success-subtleText);
-  padding: var(--itsm-space-sm);
+.app-RequestRow[data-yours='success'] {
+  box-shadow: inset var(--itsm-border-thick) 0 0 var(--itsm-colour-success-border), var(--itsm-elevation-xs);
 }
 
-.itsm-Ticket__number {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-  margin-block-end: 0;
+@media (hover: hover) {
+  .app-RequestRow:hover {
+    background: var(--itsm-colour-surface-hover);
+  }
 }
 
-.itsm-Ticket__state {
-  align-items: baseline;
+.app-RequestRow__main {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Ticket__description {
-  border-inline-start: var(--itsm-border-thick) solid var(--itsm-colour-border-subtle);
-  color: var(--itsm-colour-text-secondary);
-  margin-block: var(--itsm-space-md);
-  padding-inline-start: var(--itsm-space-sm);
-  white-space: pre-wrap;
-}
-
-.itsm-Ticket__historyHeading,
-.itsm-Article h2 {
-  font-size: var(--itsm-font-size-lg);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block-start: var(--itsm-space-xl);
-}
-
-/* ---- Forms and replies -------------------------------------------------- */
-
-.itsm-Report,
-.itsm-Request,
-.itsm-Reply,
-.itsm-Decision {
-  display: flex;
+  flex: 1 1 16rem;
   flex-direction: column;
-  gap: var(--itsm-space-sm);
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
 }
 
-.itsm-Reply {
-  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  margin-block-start: var(--itsm-space-lg);
-  padding-block-start: var(--itsm-space-md);
+.app-RequestRow__link {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-body-tracking);
+  text-decoration: none;
+  overflow-wrap: anywhere;
 }
 
-.itsm-Reply__actions,
-.itsm-Decision__actions {
+.app-RequestRow__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* The ring goes round the card the link stands for, not round its words. */
+@supports selector(:has(*)) {
+  .app-RequestRow__link:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .app-RequestRow:has(.app-RequestRow__link:focus-visible) {
+    outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+    outline-offset: var(--itsm-focus-offset);
+  }
+}
+
+.app-RequestRow__unread {
+  display: inline-block;
+  inline-size: var(--itsm-space-xs);
+  block-size: var(--itsm-space-xs);
+  margin-inline-end: var(--itsm-space-xs);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-accent);
+  vertical-align: middle;
+}
+
+.app-RequestRow__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Reply__closed,
-.itsm-Request__noForm {
+  align-items: center;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+  margin: 0;
   color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
 }
 
-.itsm-Report__error,
-.itsm-Request__error,
-.itsm-Reply__error,
-.itsm-Decision__error {
-  color: var(--itsm-colour-danger-subtleText);
+.app-RequestRow__number {
+  font-variant-numeric: tabular-nums slashed-zero;
 }
 
-/* ---- Approvals ---------------------------------------------------------- */
+.app-RequestRow__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
 
-.itsm-Approvals {
+.app-RequestRow__actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}
+
+@media (forced-colors: active) {
+  .app-RequestRow {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+
+  .app-RequestRow__unread {
+    background: Highlight;
+  }
+}
+
+/* ---- Search snippets (knowledge/highlight.ts) ----------------------------- */
+
+/* The words a search matched: weight, not a marker pen (as Spotlight draws them). */
+.app-Highlight {
+  background: transparent;
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+/* ---- Status screens: sign-in, errors, offline ----------------------------- */
+
+.app-SignIn {
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-md);
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  text-align: start;
 }
 
-.itsm-Approvals__row {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  border-radius: var(--itsm-radius-md);
-  padding: var(--itsm-space-sm);
-}
-
-.itsm-Approvals__what {
-  font-size: var(--itsm-font-size-md);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin: 0;
-}
-
-.itsm-Approvals__meta {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-}
-
-/* ---- Search and articles ------------------------------------------------ */
-
-.itsm-Search {
-  align-items: flex-end;
-  display: flex;
-  gap: var(--itsm-space-2xs);
-  margin-block-end: var(--itsm-space-lg);
-}
-
-.itsm-Search > .itsm-Field {
-  flex: 1;
-}
-
-.itsm-Search__degraded {
-  background: var(--itsm-colour-warning-subtle);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-warning-subtleText);
-  padding: var(--itsm-space-xs);
-}
-
-.itsm-Search__results {
+.app-SignIn__form {
   display: flex;
   flex-direction: column;
-  gap: var(--itsm-space-sm);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Search__snippet {
-  color: var(--itsm-colour-text-secondary);
-  margin: 0;
-}
-
-.itsm-Article__escape {
-  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  color: var(--itsm-colour-text-secondary);
-  margin-block-start: var(--itsm-space-xl);
-  padding-block-start: var(--itsm-space-md);
-}
-
-.itsm-Feedback {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-  margin-block-start: var(--itsm-space-lg);
-}
-
-.itsm-Feedback textarea {
-  flex-basis: 100%;
-}
-
-/* ---- Sign in ------------------------------------------------------------ */
-
-.itsm-SignIn {
-  margin: var(--itsm-space-3xl) auto;
-  max-inline-size: 26rem;
-  padding-inline: var(--itsm-space-md);
-}
-
-.itsm-SignIn__heading {
-  font-size: var(--itsm-font-size-2xl);
-  font-weight: var(--itsm-font-weight-semibold);
-}
-
-.itsm-SignIn__note {
-  color: var(--itsm-colour-text-secondary);
-}
-
-.itsm-SignIn__error {
-  color: var(--itsm-colour-danger-subtleText);
-}
-
-.itsm-SignIn__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-SignIn__form label {
-  font-weight: var(--itsm-font-weight-medium);
-  margin-block-start: var(--itsm-space-xs);
-}
-
-/* ---- Shell extras ------------------------------------------------------- */
-
-.itsm-AppShell__tenant {
-  color: var(--itsm-colour-text-muted);
-  font-weight: var(--itsm-font-weight-regular);
-}
-
-.itsm-AppShell__who {
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-font-size-sm);
-}
-
-.itsm-AppShell__signout {
-  display: inline;
-}
-
-/* ---- Offline and the outbox (doc 14 §5) --------------------------------- */
-
-.itsm-Outbox {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-warning-border);
-  border-radius: var(--itsm-radius-md);
-  background: var(--itsm-colour-warning-subtle);
-  color: var(--itsm-colour-warning-subtleText);
-  margin-block-end: var(--itsm-space-md);
-  padding: var(--itsm-space-sm);
-}
-
-.itsm-Outbox__offline,
-.itsm-Outbox__pending {
-  margin: 0;
-}
-
-.itsm-Outbox__pending {
+  gap: var(--itsm-space-md);
   margin-block-start: var(--itsm-space-2xs);
 }
 
-.itsm-Outbox__heading {
-  font-size: var(--itsm-font-size-md);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: var(--itsm-space-sm) var(--itsm-space-2xs);
+.app-Status__digest {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  font-variant-numeric: tabular-nums;
+  margin-block-start: var(--itsm-space-xs);
 }
 
-.itsm-Outbox__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.app-Offline {
+  margin-block-start: var(--itsm-space-lg);
+  text-align: start;
 }
 
-.itsm-Outbox__item {
-  display: grid;
-  gap: var(--itsm-space-3xs);
-}
-
-.itsm-Outbox__what {
+.app-Offline__heading {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
   font-weight: var(--itsm-font-weight-medium);
+  margin: 0 0 var(--itsm-space-xs);
 }
 
-.itsm-Outbox__why {
-  font-size: var(--itsm-font-size-sm);
-}
-
-.itsm-Outbox__actions {
-  display: flex;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Report__queued,
-.itsm-Reply__queued,
-.itsm-Decision__queued {
-  background: var(--itsm-colour-info-subtle);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-info-subtleText);
-  padding: var(--itsm-space-sm);
-}
-
-/* ---- Profile ------------------------------------------------------------ */
-
-/*
- * Four cards stacked. Not a two-column grid at any width: the page is read top
- * to bottom once, when somebody has come to change one thing, and a second
- * column only moves that thing further from where they are looking.
- */
-.itsm-Profile {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-md);
-}
-
-/*
- * A description list, not a table. The pairs have no columns to compare across
- * and no order to sort by, and a screen reader announcing "table, 5 rows,
- * 2 columns" for five facts about you is a worse description than "list".
- */
-.itsm-Details {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-  margin: 0;
-}
-
-.itsm-Details__row {
-  display: grid;
-  gap: var(--itsm-space-2xs);
-  grid-template-columns: minmax(8rem, 1fr) 2fr;
-}
-
-.itsm-Details__row dt {
+.app-Offline__empty {
   color: var(--itsm-colour-text-secondary);
-}
-
-.itsm-Details__row dd {
   margin: 0;
 }
 
-.itsm-Chips {
+.app-Offline__list {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-  list-style: none;
+  flex-direction: column;
   margin: 0;
   padding: 0;
+  list-style: none;
+  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-lg);
+  overflow: hidden;
 }
 
-.itsm-Prefs {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-md);
+.app-Offline__list li + li {
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
 }
 
-.itsm-Prefs__channel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
+.app-Offline__link {
+  display: block;
+  padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  color: var(--itsm-colour-text-primary);
+  text-decoration: none;
 }
 
-.itsm-Prefs__channel + .itsm-Prefs__channel {
-  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  padding-block-start: var(--itsm-space-md);
+.app-Offline__link:hover {
+  background: var(--itsm-colour-surface-hover);
 }
 
-/*
- * The detail is indented under its switch so that the switch stays the thing
- * you read first — everything inside only exists while the channel is on.
- */
-.itsm-Prefs__detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
-  margin-inline-start: var(--itsm-space-lg);
-}
-
-.itsm-Prefs__window {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-sm);
-}
-
-.itsm-Prefs__note,
-.itsm-Prefs__saved {
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-font-size-sm);
-}
-
-.itsm-Prefs__error {
-  color: var(--itsm-colour-danger-subtleText);
+.app-Offline__kind {
+  color: var(--itsm-colour-text-muted);
 }

@@ -1,5 +1,9 @@
+import { readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { componentStylesheet } from '../stylesheet.js';
+import { componentStylesheet } from '../../styles/index.js';
+import { styleRegistry } from '../../styles/registry.js';
 import { renderTokenStylesheet, structuralVariables, themeVariables } from '../../tokens/css.js';
 import { themeNames } from '../../tokens/tokens.js';
 
@@ -44,6 +48,50 @@ describe('the component stylesheet', () => {
     const css = renderTokenStylesheet();
     for (const name of referenced(componentStylesheet)) {
       expect(css.includes(`${name}:`), name).toBe(true);
+    }
+  });
+});
+
+/**
+ * The checks above read the assembled sheet, so they can only see modules the
+ * registry includes. A `*.styles.ts` written beside its component and never
+ * registered would pass them — its rules, typos and all, would simply never
+ * reach a browser. This closes that gap from the other side: the files on disk
+ * and the registry must name the same modules.
+ */
+describe('the style registry', () => {
+  const source = fileURLToPath(new URL('../../', import.meta.url));
+
+  function styleModulesOnDisk(directory: string): string[] {
+    const found: string[] = [];
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) found.push(...styleModulesOnDisk(path));
+      else if (entry.name.endsWith('.styles.ts')) found.push(relative(source, path).split('\\').join('/'));
+    }
+    return found;
+  }
+
+  it('registers every style module on disk, and nothing that is not there', () => {
+    const onDisk = styleModulesOnDisk(source).sort();
+    const registered = styleRegistry.map((entry) => entry.module).sort();
+    expect(registered).toEqual(onDisk);
+  });
+
+  it('registers each module once', () => {
+    const modules = styleRegistry.map((entry) => entry.module);
+    expect(new Set(modules).size).toBe(modules.length);
+  });
+
+  it('puts every registered module into the sheet', async () => {
+    for (const entry of styleRegistry) {
+      const file = new URL(entry.module, new URL('../../', import.meta.url)).href;
+      const exported = Object.values((await import(/* @vite-ignore */ file)) as Record<string, unknown>).filter(
+        (value): value is string => typeof value === 'string',
+      );
+      expect(exported, entry.module).toContain(entry.css);
+      if (entry.css !== '') expect(componentStylesheet.includes(entry.css), entry.module).toBe(true);
     }
   });
 });

@@ -1,5 +1,49 @@
 import type { Client, RequestOptions } from '../client.js';
-import type { AiCapability, AiJob, Me, Page, SlaTimers, Suggestion, Ticket, Timeline, TimeSummary, TriageSuggestion } from './types.js';
+import type { FieldRow } from './admin.js';
+import type { AvailabilityRow } from './operations.js';
+import {
+  getUser,
+  listTeamMembers,
+  listTeams,
+  listUsers,
+  markNotificationRead,
+  notificationInbox,
+  search,
+  transitionBody,
+} from './common.js';
+import type {
+  ActivityTypeRow,
+  AiCapability,
+  AiJob,
+  Article,
+  ArticleSummary,
+  AvailabilityInput,
+  CategoryRow,
+  CreateTicketInput,
+  Me,
+  NotificationInbox,
+  Page,
+  RunningTimer,
+  SearchOptions,
+  SearchResults,
+  SlaTimers,
+  Suggestion,
+  TeamListRow,
+  TeamMemberRow,
+  Ticket,
+  TicketCount,
+  TicketLinkRow,
+  TicketLinkType,
+  TicketPatch,
+  TimeEntryRow,
+  Timeline,
+  TimeSummary,
+  TransitionOptions,
+  TriageSuggestion,
+  UserQuery,
+  UserRow,
+  WatcherRow,
+} from './types.js';
 
 /**
  * What the agent workbench asks the API for.
@@ -11,8 +55,13 @@ import type { AiCapability, AiJob, Me, Page, SlaTimers, Suggestion, Ticket, Time
  * a search rather than a read.
  */
 export interface TicketFilter {
-  /** Comma-separated, as the API's grammar takes them: `open,pending`. */
+  /** Comma-separated, as the API's grammar takes them: `new,in_progress`. */
   status?: string;
+  /**
+   * The four categories every status falls into: `open`, `paused`,
+   * `resolved`, `closed`. Open work is `open,paused`; anything else here
+   * matches nothing, silently.
+   */
   statusCategory?: string;
   type?: string;
   priority?: string;
@@ -51,12 +100,35 @@ export function ticketQuery(filter: TicketFilter): Record<string, string | numbe
   return query;
 }
 
+/**
+ * The same grammar without paging or sorting, for `GET /tickets/count`.
+ *
+ * The route ignores `limit`, `cursor` and `sort` rather than refusing them, so
+ * sending a view's list query unchanged would work; leaving them out keeps the
+ * request honest about what it asks.
+ */
+export function ticketCountQuery(filter: TicketFilter): Record<string, string | number | undefined> {
+  const { limit: _limit, cursor: _cursor, sort: _sort, ...rest } = filter;
+  const { limit: _defaultLimit, ...query } = ticketQuery(rest);
+  return query;
+}
+
+const unwrap = <T>(body: { data: T }): T => body.data;
+
 export function workbench(client: Client) {
   return {
     me: (): Promise<Me> => client.request<Me>('/api/v1/me'),
 
     tickets: (filter: TicketFilter = {}): Promise<Page<Ticket>> =>
       client.request<Page<Ticket>>('/api/v1/tickets', { query: ticketQuery(filter) }),
+
+    /**
+     * How many tickets a view holds, for its badge. The same filter and the
+     * same visibility as the list, so a badge never promises a ticket the list
+     * will not show; `capped` means "at least this many".
+     */
+    ticketCount: (filter: TicketFilter = {}): Promise<TicketCount> =>
+      client.request<TicketCount>('/api/v1/tickets/count', { query: ticketCountQuery(filter) }),
 
     ticket: (idOrNumber: string): Promise<Ticket> =>
       client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}`),
@@ -94,11 +166,11 @@ export function workbench(client: Client) {
      * point — two agents working the same ticket should not silently overwrite
      * one another.
      */
-    transition: (idOrNumber: string, to: string, version: number, reason?: string) =>
+    transition: (idOrNumber: string, to: string, version: number, detail?: string | TransitionOptions) =>
       client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/transitions`, {
         method: 'POST',
         ifMatch: version,
-        body: { to, ...(reason ? { reason } : {}) },
+        body: transitionBody(to, detail),
       }),
 
     /**
@@ -121,6 +193,129 @@ export function workbench(client: Client) {
       client.request<{ id: string }>('/api/v1/time-entries', {
         method: 'POST',
         body: { ticketId, activityKey, minutes, ...(note ? { note } : {}) },
+      }),
+
+    // ---- Raising and editing -------------------------------------------------
+
+    /**
+     * Raises a ticket. The idempotency key is generated unless the caller
+     * supplies one, and a caller that may retry — a sheet that stays open
+     * after a network error — should: the same key twice is one ticket.
+     */
+    createTicket: (input: CreateTicketInput, options: { idempotencyKey?: string } = {}): Promise<Ticket> =>
+      client.request<Ticket>('/api/v1/tickets', {
+        method: 'POST',
+        body: input,
+        ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+      }),
+
+    /**
+     * Edits fields. `If-Match` is required here, unlike an assignment: an edit
+     * is made from a form somebody has been looking at, and two people saving
+     * the same form must not silently keep only the second.
+     */
+    updateTicket: (idOrNumber: string, patch: TicketPatch, version: number): Promise<Ticket> =>
+      client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}`, {
+        method: 'PATCH',
+        ifMatch: version,
+        body: patch,
+      }),
+
+    tags: (idOrNumber: string): Promise<string[]> =>
+      client.request<{ data: string[] }>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/tags`).then(unwrap),
+
+    createTask: (
+      idOrNumber: string,
+      input: { title: string; description?: string; assigneeId?: string; groupId?: string; key?: string; order?: number },
+    ): Promise<{ id: string; title: string; status: string; order: number }> =>
+      client.request(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/tasks`, { method: 'POST', body: input }),
+
+    completeTask: (taskId: string): Promise<{ id: string; status: string; completedAt: string | null }> =>
+      client.request(`/api/v1/tasks/${encodeURIComponent(taskId)}/complete`, { method: 'POST', body: {} }),
+
+    /** `target` is a number or an id; the inverse link is written on the other ticket too. */
+    link: (idOrNumber: string, target: string, linkType: TicketLinkType): Promise<{ sourceId: string; targetId: string; linkType: TicketLinkType }> =>
+      client.request(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/links`, {
+        method: 'POST',
+        body: { target, linkType },
+      }),
+
+    /** What this ticket is linked to, from its own side. Links to tickets the reader cannot see are left out. */
+    ticketLinks: (idOrNumber: string): Promise<TicketLinkRow[]> =>
+      client.request<{ data: TicketLinkRow[] }>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/links`).then(unwrap),
+
+    watch: (idOrNumber: string, userId: string): Promise<{ ticketId: string; userId: string; reason: string }> =>
+      client.request(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/watchers`, { method: 'POST', body: { userId } }),
+
+    ticketWatchers: (idOrNumber: string): Promise<WatcherRow[]> =>
+      client.request<{ data: WatcherRow[] }>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/watchers`).then(unwrap),
+
+    /** The same call as `slaTimers`, under the name the other surfaces use. */
+    ticketSla: (idOrNumber: string): Promise<SlaTimers> =>
+      client.request<SlaTimers>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/sla`),
+
+    /** The desk's custom fields, active ones only: what an agent may fill in today. */
+    fieldDefinitions: (): Promise<FieldRow[]> =>
+      client.request<{ data: FieldRow[] }>('/api/v1/field-definitions').then(unwrap),
+
+    categories: (options: { includeInactive?: boolean } = {}): Promise<CategoryRow[]> =>
+      client.request<{ data: CategoryRow[] }>('/api/v1/categories', { query: { includeInactive: options.includeInactive } }).then(unwrap),
+
+    // ---- People and teams ----------------------------------------------------
+
+    users: (query: UserQuery = {}): Promise<UserRow[]> => listUsers(client, query),
+
+    user: (id: string): Promise<UserRow> => getUser(client, id),
+
+    teams: (): Promise<TeamListRow[]> => listTeams(client),
+
+    teamMembers: (teamId: string): Promise<TeamMemberRow[]> => listTeamMembers(client, teamId),
+
+    // ---- Me: notifications, availability, the timer ---------------------------
+
+    notifications: (options: { unread?: boolean; limit?: number } = {}): Promise<NotificationInbox> =>
+      notificationInbox(client, options),
+
+    markNotificationRead: (id: string | 'all'): Promise<{ marked: number }> => markNotificationRead(client, id),
+
+    /** Everybody's by default, or the people named. `effectiveStatus` is what routing uses. */
+    availability: (userIds?: readonly string[]): Promise<AvailabilityRow[]> =>
+      client
+        .request<{ data: AvailabilityRow[] }>('/api/v1/workload/availability', {
+          query: { userIds: userIds && userIds.length > 0 ? userIds.join(',') : undefined },
+        })
+        .then(unwrap),
+
+    setAvailability: (input: AvailabilityInput): Promise<{ userId: string; status: string; until: string | null }> =>
+      client.request('/api/v1/workload/availability', { method: 'PUT', body: input }),
+
+    timer: (): Promise<RunningTimer | null> =>
+      client.request<{ running: RunningTimer | null }>('/api/v1/time/timer').then((body) => body.running),
+
+    /** A 409 when one is already running: stop that one first, which is what the conflict body says. */
+    startTimer: (input: { ticketId: string; activityKey: string; note?: string }): Promise<{ ticketId: string; startedAt: string }> =>
+      client.request('/api/v1/time/timer/start', { method: 'POST', body: input }),
+
+    /** Turns the running timer into a time entry. */
+    stopTimer: (): Promise<TimeEntryRow> => client.request<TimeEntryRow>('/api/v1/time/timer/stop', { method: 'POST', body: {} }),
+
+    activityTypes: (): Promise<ActivityTypeRow[]> =>
+      client.request<{ data: ActivityTypeRow[] }>('/api/v1/activity-types').then(unwrap),
+
+    // ---- Search and knowledge ------------------------------------------------
+
+    search: (q: string, options: SearchOptions = {}): Promise<SearchResults> => search(client, q, options),
+
+    knowledge: (filter: { status?: string; category?: string; limit?: number } = {}): Promise<ArticleSummary[]> =>
+      client.request<{ data: ArticleSummary[] }>('/api/v1/knowledge', { query: { ...filter } }).then(unwrap),
+
+    article: (key: string): Promise<Article> => client.request<Article>(`/api/v1/knowledge/${encodeURIComponent(key)}`),
+
+    /** `resolved` counts the article as having answered the ticket; `referenced` only records that it was used. */
+    linkArticle: (key: string, ticketId: string, relation: 'referenced' | 'resolved' = 'referenced') =>
+      client.request<{ articleKey: string; ticketId: string; relation: string }>(`/api/v1/knowledge/${encodeURIComponent(key)}/link`, {
+        method: 'POST',
+        body: { ticketId, relation },
       }),
 
     // ---- MOD-09 AI ---------------------------------------------------------

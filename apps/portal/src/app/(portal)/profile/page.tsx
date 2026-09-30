@@ -1,102 +1,201 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import type { NotificationPreference } from '@itsm/sdk';
-import { Badge, Card, EmptyState } from '@itsm/ui';
-import { apiFor, requireSession } from '../../../server/session.js';
-import { NotificationPreferences } from '../../../components/NotificationPreferences.js';
-import { ThemeChoice } from '../../../components/ThemeChoice.js';
+import { ApiError, type SessionRow } from '@itsm/sdk';
+import { Avatar, Badge, Icon } from '@itsm/ui';
+import { AppLink } from '../../AppLink.js';
+import { SectionProblem } from '../../../home/SectionProblem.js';
+import { settle } from '../../../home/settle.js';
+import { approvalsWaitingLabel } from '../../../navigation.js';
+import { AppearanceSettings } from '../../../profile/AppearanceSettings.js';
+import { languageName, organisationLines, otherChannels, sectionsFor, settingsOf, zonePlace, zoneWords } from '../../../profile/model.js';
+import { NotificationSettings } from '../../../profile/NotificationSettings.js';
+import { readDirectoryEntry } from '../../../profile/server.js';
+import { SignedInDevices } from '../../../profile/SignedInDevices.js';
+import { ZoneClock } from '../../../profile/ZoneClock.js';
+import { apiFor, currentApprovals, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
+import '../../../profile/profile.css';
 
 export const metadata: Metadata = { title: 'Profile' };
 export const dynamic = 'force-dynamic';
 
 /**
- * The fifth item in the brief's navigation, and the one that did not exist.
+ * Profile (SPEC §6.3 `/profile`, F40) — the Me tab on a phone, an anchor list
+ * beside the sections on a wide screen.
  *
- * `/me/notification-preferences` has been served since MOD-11-E1 with nothing
- * calling it — a person could be told about their tickets in the app or by
- * e-mail, and had no way to say which, or to ask for a daily summary instead
- * of a message per event.
+ * **Account** says who the person is in words: their name and address, their
+ * organisation by name, their teams by name, their language and their time
+ * zone as a place with the time there now — never a code, a count of teams
+ * or a permission key. It is read-only on purpose: these arrive from the
+ * organisation's directory, and a box that let somebody edit what the next
+ * sync overwrites would be a lie with a Save button on it.
  *
- * What is deliberately not here: a person cannot change their own name,
- * organisation or team. Those arrive from the identity provider through SCIM
- * (MOD-01), and a box that let somebody edit a field the next sync overwrites
- * would be a lie with a Save button on it. The page says where they come from
- * instead.
+ * Then a permanent row to **Approvals** for anyone who approves (with the
+ * count the avatar carries), **Notifications** (saved as they change),
+ * **Appearance** on this device, and the **Devices** signed in.
+ *
+ * Every read starts together and each section fails on its own: a profile
+ * that cannot load one part is still worth showing, and says which.
  */
+
+type SessionsRead = { readonly ok: true; readonly value: readonly SessionRow[] } | { readonly ok: false; readonly unsupported: boolean };
+
 export default async function ProfilePage(): Promise<ReactNode> {
   const session = await requireSession();
+  const me = await currentMe();
+  const held = heldPermissions(me);
   const api = apiFor(session);
+  const approver = held.has('approval.read');
 
-  const me = await api.me();
+  const [preferences, sessions, directory, approvals] = await Promise.all([
+    settle(api.notificationPreferences()),
+    api.sessions().then(
+      (value): SessionsRead => ({ ok: true, value }),
+      (error: unknown): SessionsRead => ({ ok: false, unsupported: error instanceof ApiError && (error.status === 403 || error.status === 404) }),
+    ),
+    readDirectoryEntry(session, me),
+    approver ? currentApprovals() : Promise.resolve(null),
+  ]);
 
-  let preferences: readonly NotificationPreference[] = [];
-  let preferencesFailed = false;
-  try {
-    preferences = await api.notificationPreferences();
-  } catch {
-    // Failing softly: a profile that cannot load one section is still worth
-    // showing, and the section says so itself below.
-    preferencesFailed = true;
-  }
+  const now = new Date();
+  const name = me.actor.displayName?.trim() || 'You';
+  const zone = zoneWords(me.timeZone, now, me.locale);
+  const organisations = organisationLines(me.organisations);
+  const showDevices = sessions.ok || !sessions.unsupported;
+  const sections = sectionsFor({ approvals: approver, devices: showDevices });
+  const waiting = approvals?.length ?? 0;
 
-  const details: readonly { label: string; value: string }[] = [
-    { label: 'Name', value: me.actor.displayName ?? 'Not set' },
-    { label: 'Organisation', value: me.tenant?.name ?? '—' },
-    { label: 'Teams', value: me.teamIds.length === 0 ? 'None' : String(me.teamIds.length) },
-    { label: 'Language', value: me.locale },
-    { label: 'Time zone', value: me.timeZone },
+  const facts: { readonly id: string; readonly label: string; readonly value: ReactNode }[] = [
+    ...(organisations.length > 0
+      ? [{ id: 'organisation', label: organisations.length > 1 ? 'Organisations' : 'Organisation', value: organisations.map((line) => <span key={line} className="app-Profile__line">{line}</span>) }]
+      : me.tenant
+        ? [{ id: 'organisation', label: 'Organisation', value: me.tenant.name }]
+        : []),
+    ...(directory.teams ? [{ id: 'teams', label: directory.teams.length > 1 ? 'Teams' : 'Team', value: directory.teams.join(', ') }] : []),
+    { id: 'language', label: 'Language', value: languageName(me.locale) },
+    {
+      id: 'zone',
+      label: 'Time zone',
+      value: (
+        <>
+          <span className="app-Profile__line">{zone.place}</span>
+          {zone.now ? (
+            <span className="app-Profile__sub">
+              <ZoneClock timeZone={me.timeZone} locale={me.locale} initial={zone.now} />
+              {zone.long ? ` · ${zone.long}` : ''}
+            </span>
+          ) : null}
+        </>
+      ),
+    },
   ];
 
   return (
-    <div className="itsm-Page">
-      <h1 className="itsm-Page__heading">Profile</h1>
-      <p className="itsm-Page__lede">Who you are on this service desk, and how it gets in touch.</p>
+    <div className="app-Page app-Profile">
+      <header className="app-Profile__header">
+        <h1 className="app-Profile__title" tabIndex={-1}>
+          Profile
+        </h1>
+      </header>
 
-      <div className="itsm-Profile">
-        <Card title="You">
-          <dl className="itsm-Details">
-            {details.map((detail) => (
-              <div className="itsm-Details__row" key={detail.label}>
-                <dt>{detail.label}</dt>
-                <dd>{detail.value}</dd>
-              </div>
+      <div className="app-Profile__layout">
+        <nav className="app-Profile__nav" aria-label="Profile sections">
+          <ul className="app-Profile__navList">
+            {sections.map((section) => (
+              <li key={section.id}>
+                <a className="app-Profile__navLink" href={`#${section.id}`}>
+                  {section.label}
+                </a>
+              </li>
             ))}
-          </dl>
-          <p className="itsm-Page__footnote">
-            These come from your organisation&rsquo;s directory and are kept in step with it automatically. Ask your IT
-            team to change them there rather than here.
-          </p>
-        </Card>
+          </ul>
+        </nav>
 
-        <Card title="How we get in touch">
-          {preferencesFailed ? (
-            <EmptyState
-              tone="error"
-              title="Your notification settings could not be loaded"
-              description="Everything else on this page is up to date. Try again in a moment."
-            />
-          ) : (
-            <NotificationPreferences preferences={preferences} />
-          )}
-        </Card>
+        <div className="app-Profile__sections">
+          <section id="account" className="app-Profile__section" aria-labelledby="account-heading">
+            <h2 id="account-heading" className="app-Profile__heading">
+              Account
+            </h2>
+            <div className="app-Profile__group">
+              <div className="app-Profile__row app-Profile__identity">
+                <Avatar name={name} size="xl" decorative />
+                <div className="app-Profile__who">
+                  <p className="app-Profile__name">{name}</p>
+                  {directory.email ? <p className="app-Profile__email">{directory.email}</p> : null}
+                </div>
+              </div>
+              <dl className="app-Profile__facts">
+                {facts.map((fact) => (
+                  <div key={fact.id} className="app-Profile__row app-Profile__fact">
+                    <dt>{fact.label}</dt>
+                    <dd>{fact.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <p className="app-Profile__footnote">
+              From your organisation’s directory, and kept in step with it. To change any of these, ask your IT team.
+            </p>
+          </section>
 
-        <Card title="Appearance">
-          <ThemeChoice />
-        </Card>
+          {approver ? (
+            <section id="approvals" className="app-Profile__section" aria-labelledby="approvals-heading">
+              <h2 id="approvals-heading" className="app-Profile__heading">
+                Approvals
+              </h2>
+              <div className="app-Profile__group">
+                <AppLink href="/approvals" className="app-Profile__row app-Profile__link">
+                  <span className="app-Profile__linkIcon" aria-hidden="true">
+                    <Icon name="approvals" size="md" />
+                  </span>
+                  <span className="app-Profile__linkText">
+                    <span className="app-Profile__linkLabel">Requests waiting on your decision</span>
+                    <span className="app-Profile__linkDetail">
+                      {approvals === null ? 'Couldn’t check just now' : waiting > 0 ? approvalsWaitingLabel(waiting) : 'Nothing waiting on you'}
+                    </span>
+                  </span>
+                  {waiting > 0 ? (
+                    <Badge tone="accent" emphasis="solid" aria-hidden="true">
+                      {waiting > 99 ? '99+' : String(waiting)}
+                    </Badge>
+                  ) : null}
+                  <Icon name="chevron-right" size="sm" className="app-Profile__chevron" />
+                </AppLink>
+              </div>
+            </section>
+          ) : null}
 
-        <Card title="What you can do here">
-          {me.permissions.length === 0 ? (
-            <EmptyState title="No permissions" description="Ask your IT team if you expected to be able to do more." />
-          ) : (
-            <ul className="itsm-Chips">
-              {me.permissions.map((permission) => (
-                <li key={`${permission.key}:${permission.scope ?? ''}`}>
-                  <Badge srPrefix="Permission">{permission.key}</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+          <section id="notifications" className="app-Profile__section" aria-labelledby="notifications-heading">
+            <h2 id="notifications-heading" className="app-Profile__heading">
+              Notifications
+            </h2>
+            {preferences.ok ? (
+              <NotificationSettings
+                initial={settingsOf(preferences.value)}
+                email={directory.email}
+                zonePlace={zonePlace(me.timeZone)}
+                others={otherChannels(preferences.value)}
+              />
+            ) : (
+              <SectionProblem what="your notification settings" />
+            )}
+          </section>
+
+          <section id="appearance" className="app-Profile__section" aria-labelledby="appearance-heading">
+            <h2 id="appearance-heading" className="app-Profile__heading">
+              Appearance
+            </h2>
+            <AppearanceSettings />
+          </section>
+
+          {showDevices ? (
+            <section id="devices" className="app-Profile__section" aria-labelledby="devices-heading">
+              <h2 id="devices-heading" className="app-Profile__heading" tabIndex={-1}>
+                Devices
+              </h2>
+              {sessions.ok ? <SignedInDevices sessions={sessions.value} /> : <SectionProblem what="where you’re signed in" />}
+            </section>
+          ) : null}
+        </div>
       </div>
     </div>
   );

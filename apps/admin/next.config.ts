@@ -23,7 +23,13 @@ const csp = [
   // Next's runtime injects inline bootstrap scripts; `strict-dynamic` with a
   // nonce is the better answer and needs middleware, which is a change worth
   // making on its own rather than buried in the first app.
-  "script-src 'self' 'unsafe-inline'",
+  //
+  // `unsafe-eval` in development only: webpack's development build wraps
+  // every module in `eval()` for its source maps, and without it the browser
+  // refuses to run any of the console's client code — the page renders from
+  // the server and nothing on it responds. A production build never evals,
+  // and never gets this source.
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
@@ -34,6 +40,16 @@ const csp = [
   "base-uri 'self'",
   "form-action 'self'",
 ].join('; ');
+
+/** The host of `ADMIN_ORIGIN` (`admin.example.com`, with its port when it has one), or nothing. */
+function allowedActionOrigins(origin: string | undefined): string[] {
+  if (!origin) return [];
+  try {
+    return [new URL(origin).host];
+  } catch {
+    return [];
+  }
+}
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -47,8 +63,33 @@ const nextConfig: NextConfig = {
    */
   output: 'standalone',
   outputFileTracingRoot: join(import.meta.dirname, '..', '..'),
-  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/contracts', '@itsm/expr'],
+  transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/pwa', '@itsm/contracts', '@itsm/expr'],
   poweredByHeader: false,
+  /**
+   * Server components import the design system from its root entry
+   * (`import { Badge } from '@itsm/ui'`), and Next's client-reference pass
+   * then takes every `'use client'` module that entry re-exports — the form
+   * renderer and, through it, zod among them — into every route's first load,
+   * used or not. `sideEffects: false` does not help there, because the pass
+   * reads the import graph before anything is shaken out. Naming the package
+   * here makes Next rewrite each such import to the module that defines the
+   * name, so a route ships the client components it renders and no others
+   * (SPEC §3.7; 24–30 kB off every route of all three applications when this
+   * was added). `@itsm/ui/theme` is named too, as in the other two apps: the
+   * root layout imports the no-flash theme script from it, and without the
+   * rewrite that entry's client re-exports (the theme hooks) ride along.
+   */
+  experimental: {
+    optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme'],
+    /**
+     * Server Actions carry the platform pages' writes (SPEC §3.6 rule 7) and
+     * nothing else. Next already refuses an action whose `Origin` is not this
+     * app's own host; `ADMIN_ORIGIN` adds the public host for a deployment
+     * whose proxy forwards an internal one instead. Read when the app is
+     * built, which is where Next fixes its configuration.
+     */
+    serverActions: { allowedOrigins: allowedActionOrigins(process.env.ADMIN_ORIGIN) },
+  },
   /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension, which is what ECMAScript modules require and what `tsx`,
@@ -69,6 +110,13 @@ const nextConfig: NextConfig = {
       '.mjs': ['.mts', '.mjs'],
     };
     return config;
+  },
+  /**
+   * `/queues` became Workforce (SPEC §5.2). Permanent (308) so bookmarks and
+   * notification links move with it; the query string is carried over.
+   */
+  async redirects() {
+    return [{ source: '/queues', destination: '/workforce', permanent: true }];
   },
   async headers() {
     return [

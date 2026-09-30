@@ -1,0 +1,208 @@
+/*
+ * Security (SPEC §6.1 `/security/**`): the alerts' summary line and drawer,
+ * the role matrix and the registry's cells. Arrangement only, tokens
+ * throughout; the design system draws the table, cards and pills.
+ */
+
+/* ---- Alerts ------------------------------------------------------------------- */
+
+.app-Security__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Security__summaryIcon {
+  flex: none;
+}
+
+.app-SecurityAlert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-SecurityAlert__mono {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  overflow-wrap: anywhere;
+}
+
+.app-SecurityAlert__next {
+  margin: 0;
+}
+
+.app-Security__link {
+  color: var(--itsm-colour-text-link);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-Security__link:hover {
+    text-decoration: underline;
+  }
+}
+
+.app-Security__heading {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+}
+
+.app-Security__held {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-Security__quiet {
+  color: var(--itsm-colour-text-muted);
+}
+
+/* ---- The role matrix -------------------------------------------------------------- */
+
+/*
+ * Positioned, so the matrix's visually hidden words (absolutely positioned)
+ * are clipped by this box like everything else in it. Otherwise they were
+ * placed against the card, beyond the scroller's edge, and on a phone the
+ * whole page scrolled sideways instead of the matrix scrolling in its box.
+ */
+.app-Matrix__scroll {
+  position: relative;
+  overflow-x: auto;
+  border-radius: var(--itsm-radius-lg);
+}
+
+.app-Matrix {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Matrix th,
+.app-Matrix td {
+  padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  text-align: start;
+  vertical-align: middle;
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Matrix tbody tr:last-child th,
+.app-Matrix tbody tr:last-child td {
+  border-block-end: 0;
+}
+
+.app-Matrix__corner,
+.app-Matrix__area {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  min-inline-size: 11rem;
+  background: var(--itsm-colour-surface-raised);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Matrix__corner {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Matrix__role {
+  min-inline-size: 8.5rem;
+}
+
+.app-Matrix__roleButton {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-3xs);
+  inline-size: 100%;
+  margin: calc(var(--itsm-space-2xs) * -1) calc(var(--itsm-space-xs) * -1);
+  padding: var(--itsm-space-2xs) var(--itsm-space-xs);
+  border: 0;
+  border-radius: var(--itsm-radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .app-Matrix__roleButton:hover {
+    background: var(--itsm-colour-fill-hover);
+  }
+}
+
+.app-Matrix__roleButton[aria-pressed='true'] {
+  background: var(--itsm-colour-surface-selected);
+}
+
+.app-Matrix__roleName {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Matrix__roleCount {
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Matrix__cell {
+  white-space: nowrap;
+}
+
+.app-Matrix__cell[data-selected] {
+  background: var(--itsm-colour-surface-selected);
+}
+
+.app-Matrix__cell[data-level='manage'] {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Matrix__icon {
+  margin-inline-end: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-secondary);
+  vertical-align: -0.1em;
+}
+
+.app-Matrix__none {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Matrix__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs) var(--itsm-space-lg);
+  margin: var(--itsm-space-sm) 0 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Matrix__legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+}
+
+/* ---- Loading ------------------------------------------------------------------------- */
+
+.app-SecuritySkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-SecuritySkeleton__tabs {
+  display: flex;
+  gap: var(--itsm-space-lg);
+}

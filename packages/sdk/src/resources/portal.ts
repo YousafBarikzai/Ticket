@@ -1,7 +1,22 @@
 import type { FormDefinition, FormValues } from '@itsm/contracts';
-import type { Client } from '../client.js';
+import { ApiError, type Client } from '../client.js';
+import { markNotificationRead, notificationInbox, search, transitionBody } from './common.js';
 import { ticketQuery, type TicketFilter } from './workbench.js';
-import type { Me, Page, Ticket, Timeline } from './types.js';
+import type {
+  Article,
+  ArticleSummary,
+  Me,
+  NotificationInbox,
+  Page,
+  SearchOptions,
+  SearchResults,
+  SessionRow,
+  SlaTimers,
+  Ticket,
+  Timeline,
+} from './types.js';
+
+export type { Article, SearchHit } from './types.js';
 
 /**
  * What the requester portal asks the API for.
@@ -9,9 +24,10 @@ import type { Me, Page, Ticket, Timeline } from './types.js';
  * Separate from `workbench.ts` because the unit of growth is a *screen*, and
  * the two applications barely overlap: the portal reads the catalogue, raises
  * things, reads its own tickets, decides approvals and searches knowledge,
- * where the workbench works a queue. The three calls they share — `me`, a
- * ticket, its timeline — are re-exposed here rather than imported through the
- * other module, so neither application's surface is the other's to change.
+ * where the workbench works a queue. The calls they share — `me`, a ticket,
+ * its timeline, the bell, search — are re-exposed here rather than taken from
+ * the other surface (the shared grammar lives in `common.ts`), so neither
+ * application's surface is the other's to change.
  *
  * Everything here is written against `apps/api/src/routes`, not against doc 08.
  * The first pass at `workbench.ts` was written the other way round and had
@@ -45,40 +61,152 @@ export interface SubmitResult {
   approvalId: string | null;
 }
 
+/**
+ * Where a pending request has got to: "Step 2 of 3 · Line manager · due Friday".
+ * Null once the request is settled.
+ */
+export interface ApprovalCurrentStep {
+  /** Position among all the request's steps, skipped ones included. */
+  sequence: number;
+  name: string;
+  /** `blocked` when every approver on it has left and nobody can decide it. */
+  status: 'open' | 'blocked';
+  dueAt: string | null;
+  quorum: number;
+  decidedCount: number;
+}
+
+/**
+ * What is being approved, for the people asked to approve it — and only for
+ * them. Null for everybody else, the requester included, and `title` is null
+ * when the subject cannot be found; the page falls back to the step name.
+ */
+export interface ApprovalSubject {
+  /** The subject type: `request`, `change`, `workflow_run`, … */
+  kind: string;
+  ticketNumber?: string;
+  title: string | null;
+  /** The catalogue item a request was raised from, when it had a form. */
+  itemName?: string;
+  requesterName: string | null;
+}
+
+/**
+ * An approval request as `GET /approvals` lists it.
+ *
+ * Written from the route. An earlier version had a `reason` that the API has
+ * never sent, so every approval read "A request needs your approval" whatever
+ * it was for; what a request is about is in `subject`, for approvers.
+ */
 export interface ApprovalRequest {
   id: string;
+  policyId: string;
+  policyVersion: number;
   subjectType: string;
   subjectId: string;
+  /** The ticket this decision holds up, where there is one. */
+  ticketId: string | null;
+  /** `pending`, `approved`, `rejected`, … */
   status: string;
-  reason: string | null;
+  outcome: string | null;
+  requestedBy: string | null;
   requestedAt: string;
   decidedAt: string | null;
+  dueAt: string | null;
+  version: number;
+  /** All steps, skipped ones included, for "Step 2 of 3". */
+  stepCount: number;
+  currentStep: ApprovalCurrentStep | null;
+  subject: ApprovalSubject | null;
+  /**
+   * Never sent by the API. Kept, always undefined, so a page written against
+   * the old type still compiles while it moves to `subject`.
+   * @deprecated read `subject?.title`.
+   */
+  reason?: undefined;
 }
 
-export interface SearchHit {
-  entityType: string;
-  entityId: string;
-  title: string;
-  snippet: string;
-  rank: number;
-  facets: Record<string, unknown>;
+export interface ApprovalDecisionRow {
+  id: string;
+  stepId: string;
+  approverId: string;
+  /** Who actually decided, when a delegate acted for the named approver. */
+  actedById: string | null;
+  decision: 'approved' | 'rejected';
+  comment: string | null;
+  via: string;
+  decidedAt: string;
 }
 
-export interface Article {
-  key: string;
-  title: string;
+export interface ApprovalStepRow {
+  id: string;
+  requestId: string;
+  sequence: number;
+  name: string;
+  quorum: number;
+  approverIds: string[];
   status: string;
-  audience: string;
-  version: number | null;
-  summary: string | null;
-  /** Structured blocks, never an HTML string: an article is data, not markup. */
-  body: unknown[];
-  keywords: string[];
+  openedAt: string | null;
+  decidedAt: string | null;
+  dueAt: string | null;
+  onTimeout: string;
+  decisions: ApprovalDecisionRow[];
 }
+
+/** One catalogue answer as the requester gave it, labelled for somebody deciding on it. */
+export interface ApprovalAnswer {
+  field: string;
+  label: string;
+  value: unknown;
+  /** The answer in words: option labels, a person's name, Yes or No. Empty when unanswered. */
+  display: string;
+}
+
+export interface ApprovalDetail extends ApprovalRequest {
+  steps: ApprovalStepRow[];
+  /**
+   * The catalogue answers, for an approver of a request raised with a form:
+   * `[]` when the item had no form, null for anybody else and for subjects
+   * that are not catalogue requests.
+   */
+  answers: ApprovalAnswer[] | null;
+}
+
+/** A tenant's public status page, as `GET /status/<slug>` answers anything that is not a browser. */
+export interface PublicStatus {
+  page: { slug: string; name: string; description: string | null; supportUrl: string | null; path: string };
+  overall: PublicComponentStatus;
+  components: { key: string; name: string; description: string | null; group: string | null; status: PublicComponentStatus }[];
+  incidents: {
+    id: string;
+    title: string;
+    impact: string;
+    status: string;
+    startedAt: string;
+    resolvedAt: string | null;
+    /** Component keys. */
+    components: string[];
+    updates: { status: string; body: string; postedAt: string }[];
+  }[];
+  maintenance: {
+    id: string;
+    title: string;
+    body: string | null;
+    status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+    startsAt: string;
+    endsAt: string;
+    components: string[];
+  }[];
+  generatedAt: string;
+}
+
+export type PublicComponentStatus = 'operational' | 'degraded' | 'partial_outage' | 'major_outage' | 'maintenance';
 
 export interface QueueableRequest {
   /** The path on the API, without the proxy prefix. */
   readonly path: string;
+  /** Always a POST: the outbox replays creates, and only creates. */
+  readonly method: 'POST';
   readonly body: Record<string, unknown>;
 }
 
@@ -96,6 +224,7 @@ export const queueable = {
   reportIssue(input: { title: string; description?: string; urgency?: 'high' | 'medium' | 'low' }): QueueableRequest {
     return {
       path: '/api/v1/tickets',
+      method: 'POST',
       body: {
         type: 'incident',
         title: input.title,
@@ -111,14 +240,18 @@ export const queueable = {
   comment(idOrNumber: string, body: string): QueueableRequest {
     return {
       path: `/api/v1/tickets/${encodeURIComponent(idOrNumber)}/comments`,
+      method: 'POST',
       // A requester's message is always public; there is no internal note here.
-      body: { body, visibility: 'public' },
+      // `channel` says where it was written: without it the API records `api`,
+      // and a reply typed in the portal would read as an integration's.
+      body: { body, visibility: 'public', channel: 'portal' },
     };
   },
 
   decide(id: string, decision: 'approved' | 'rejected', comment?: string): QueueableRequest {
     return {
       path: `/api/v1/approvals/${encodeURIComponent(id)}/decide`,
+      method: 'POST',
       body: { decision, ...(comment ? { comment } : {}) },
     };
   },
@@ -144,6 +277,40 @@ export interface NotificationPreferenceInput {
 export function portal(client: Client) {
   return {
     me: (): Promise<Me> => client.request<Me>('/api/v1/me'),
+
+    notifications: (options: { unread?: boolean; limit?: number } = {}): Promise<NotificationInbox> =>
+      notificationInbox(client, options),
+
+    markNotificationRead: (id: string | 'all'): Promise<{ marked: number }> => markNotificationRead(client, id),
+
+    /** Where this person is signed in, for "sign out of that device". */
+    sessions: (): Promise<SessionRow[]> =>
+      client.request<{ data: SessionRow[] }>('/api/v1/me/sessions').then((body) => body.data),
+
+    endSession: (id: string): Promise<void> =>
+      client.request<void>(`/api/v1/me/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+    /**
+     * The tenant's public status page, or null when it has none.
+     *
+     * **Server-only.** The page lives at the API's root (`/status/<slug>`),
+     * outside `/api/v1`, because its URL is printed on things; the browser's
+     * client points at the BFF proxy, which forwards `/api/v1` and nothing
+     * else, so from a browser this can only fail. JSON is asked for by the
+     * `accept` header — the same URL is HTML to a browser.
+     */
+    publicStatus: async (slug: string): Promise<PublicStatus | null> => {
+      try {
+        return await client.request<PublicStatus>(`/status/${encodeURIComponent(slug)}`, {
+          headers: { accept: 'application/json' },
+        });
+      } catch (error) {
+        // No page, a page that is not public, or a slug nobody owns: all the
+        // same to a reader, and none of them worth an error on the home page.
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
 
     /**
      * What this person has asked to be told about, and how.
@@ -178,10 +345,17 @@ export function portal(client: Client) {
     catalogueItem: (key: string): Promise<CatalogueItemDetail> =>
       client.request(`/api/v1/catalogue/${encodeURIComponent(key)}`),
 
-    submitRequest: (key: string, answers: FormValues): Promise<SubmitResult> =>
+    /**
+     * `idempotencyKey` is one per intent: the caller mints it on the first
+     * press and sends the same key when it retries the same answers, so a
+     * reply lost on the way back cannot raise the request twice. Without it
+     * a fresh key is generated per call, as for every create.
+     */
+    submitRequest: (key: string, answers: FormValues, options: { idempotencyKey?: string } = {}): Promise<SubmitResult> =>
       client.request(`/api/v1/catalogue/${encodeURIComponent(key)}/submit`, {
         method: 'POST',
         body: { answers },
+        ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
       }),
 
     // ---- What I have raised ------------------------------------------------
@@ -219,12 +393,45 @@ export function portal(client: Client) {
         body: { to: 'reopened', reason },
       }),
 
+    /**
+     * The other moves a requester may make: `closed` from `resolved` ("Yes,
+     * it's fixed"), and cancelling their own request. A 403 means the ticket
+     * is no longer in a state that allows it — somebody moved it first — and
+     * a 409 that it changed since it was read.
+     */
+    transition: (idOrNumber: string, to: string, version: number, reason?: string) =>
+      client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/transitions`, {
+        method: 'POST',
+        ifMatch: version,
+        body: transitionBody(to, reason),
+      }),
+
+    slaTimers: (idOrNumber: string): Promise<SlaTimers> =>
+      client.request<SlaTimers>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/sla`),
+
     // ---- Approvals (MOD-17) ------------------------------------------------
 
-    approvals: (includeDecided = false): Promise<{ data: ApprovalRequest[] }> =>
-      client.request('/api/v1/approvals', { query: { includeDecided } }),
+    /**
+     * What is waiting on me; with `includeDecided`, what I have decided as
+     * well; with `ticketId`, how far the approvals on one of my own tickets
+     * have got. The boolean form is the original signature and still works.
+     *
+     * `false` is never sent (see `queryString`): the route used to read
+     * `includeDecided=false` as true, and this call was the one that showed
+     * everybody every decision they had ever made.
+     */
+    approvals: (
+      options: boolean | { includeDecided?: boolean; ticketId?: string } = {},
+    ): Promise<{ data: ApprovalRequest[] }> => {
+      const filter: { includeDecided?: boolean; ticketId?: string } =
+        typeof options === 'boolean' ? { includeDecided: options } : options;
+      return client.request('/api/v1/approvals', {
+        query: { includeDecided: filter.includeDecided, ticketId: filter.ticketId },
+      });
+    },
 
-    approval: (id: string): Promise<unknown> => client.request(`/api/v1/approvals/${encodeURIComponent(id)}`),
+    approval: (id: string): Promise<ApprovalDetail> =>
+      client.request<ApprovalDetail>(`/api/v1/approvals/${encodeURIComponent(id)}`),
 
     decide: (id: string, decision: 'approved' | 'rejected', comment?: string) => {
       const request = queueable.decide(id, decision, comment);
@@ -239,13 +446,11 @@ export function portal(client: Client) {
      * which is correct but has no typo tolerance. A screen that cannot tell
      * the difference cannot explain it to somebody who typed "pasword".
      */
-    search: (
-      q: string,
-      options: { types?: string; limit?: number } = {},
-    ): Promise<{ data: SearchHit[]; meta: { facets: Record<string, Record<string, number>>; engine: string } }> =>
-      client.request('/api/v1/search', {
-        query: { q, limit: options.limit ?? 20, ...(options.types ? { types: options.types } : {}) },
-      }),
+    search: (q: string, options: SearchOptions = {}): Promise<SearchResults> => search(client, q, options),
+
+    /** Published articles this person may read. The audience rule is the API's, applied per row. */
+    knowledge: (filter: { status?: string; category?: string; limit?: number } = {}): Promise<ArticleSummary[]> =>
+      client.request<{ data: ArticleSummary[] }>('/api/v1/knowledge', { query: { ...filter } }).then((body) => body.data),
 
     article: (key: string): Promise<Article> => client.request(`/api/v1/knowledge/${encodeURIComponent(key)}`),
 

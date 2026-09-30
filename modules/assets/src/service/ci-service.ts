@@ -383,7 +383,18 @@ export const listCiSchema = z.object({
   criticality: z.enum(CRITICALITIES).optional(),
   serviceId: z.string().uuid().optional(),
   search: z.string().max(200).optional(),
-  includeRetired: z.coerce.boolean().default(false),
+  /*
+   * Query-string text, read as exactly `true` or `false`. It was
+   * `z.coerce.boolean()`, which is `Boolean(value)`: every non-empty string is
+   * truthy, so `?includeRetired=false` listed the retired items it asked to
+   * leave out. The API's own routes use `booleanQuery()` for this; a module
+   * cannot import from the API, so the same rule is spelled out here, and any
+   * other spelling is a validation error rather than a guess.
+   */
+  includeRetired: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 

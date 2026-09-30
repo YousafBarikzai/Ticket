@@ -1,0 +1,126 @@
+/*
+ * Tickets (SPEC §6.1): the finder's title cell, the due cell and the
+ * summary drawer. Arrangement only, tokens throughout.
+ */
+
+/* A number never breaks at its hyphen. */
+.app-TicketNumber {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.app-TicketTitle {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+.app-TicketTitle__icon {
+  flex: none;
+  margin-block-start: 0.15em;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-TicketTitle__text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* Overdue says so in words; the colour only repeats it. */
+.app-TicketDue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  white-space: nowrap;
+}
+
+.app-TicketDue[data-overdue] {
+  color: var(--itsm-colour-danger-subtleText);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+/* ---- The summary drawer ------------------------------------------------ */
+
+.app-TicketDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-TicketDetail__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}
+
+.app-TicketDetail__heading {
+  margin: 0 0 var(--itsm-space-xs);
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-TicketDetail__timers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-TicketDetail__note,
+.app-TicketDetail__copy {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-TicketDetail__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-TicketDetail__copy code {
+  padding: 0 var(--itsm-space-2xs);
+  border-radius: var(--itsm-radius-sm);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-font-family-mono);
+}
+
+.app-TicketDetail__text {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 12;
+  line-clamp: 12;
+}
+
+.app-TicketDetail__loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+/* ---- Loading ------------------------------------------------------------ */
+
+.app-TicketsSkeleton__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-sm);
+}

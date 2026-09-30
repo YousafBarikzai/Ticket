@@ -1,66 +1,88 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { ApiError, type ApprovalRequest } from '@itsm/sdk';
+import { ApiError } from '@itsm/sdk';
 import { EmptyState } from '@itsm/ui';
-import { ApprovalDecision } from '../../../components/ApprovalDecision.js';
-import { apiFor, requireSession } from '../../../server/session.js';
-import { raisedAgo } from '../../../tickets/presentation.js';
+import { ApprovalsInbox, type InitialOpen } from '../../../approvals/ApprovalsInbox.js';
+import { inListOrder, itemOf, openIdOf, scopeOf } from '../../../approvals/model.js';
+import { readApprovals } from '../../../approvals/server.js';
+import { settle } from '../../../home/settle.js';
+import { mayOpen } from '../../../navigation.js';
+import { apiFor, currentApprovals, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
+import '../../../approvals/approvals.css';
 
 export const metadata: Metadata = { title: 'Approvals' };
 export const dynamic = 'force-dynamic';
 
-/**
- * What is waiting on this person's decision (MOD-17).
- *
- * Only what is open. A list that mixed decided approvals into undecided ones
- * would turn the one screen with a deadline on it into a reading exercise —
- * and an approval that sits for a week is a request that sits for a week,
- * which is the failure mode this whole module exists to prevent.
- */
-export default async function ApprovalsPage(): Promise<ReactNode> {
-  const session = await requireSession();
+type Params = Promise<Record<string, string | string[] | undefined>>;
 
-  let approvals: readonly ApprovalRequest[];
-  try {
-    approvals = (await apiFor(session).approvals()).data;
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 403) {
-      return <EmptyState title="Approvals are not yours to see" description="Nobody has made you an approver." />;
-    }
+/**
+ * Approvals (SPEC §6.3 `/approvals`, §5.4): what is waiting on this person's
+ * decision — never in the primary navigation (X-44), reached from the avatar
+ * menu, the Me tab, Home's "Approval waiting · Review" row and the palette.
+ *
+ * *To decide* by default; *Decided* (`?show=decided`) for what they have dealt
+ * with. `?open=approval:<id>` opens one in the sheet; on a full load the
+ * server reads it alongside the list, so the sheet opens with its contents.
+ *
+ * The waiting list is the layout's (one approvals call per request, shared
+ * through `cache()`), less anything this person has already answered on a
+ * step that needs more than one approval. The heading stays whatever
+ * happens: a list that could not be read says so under it, with Retry, and a
+ * person who is not an approver is told plainly.
+ */
+export default async function ApprovalsPage({ searchParams }: { searchParams: Params }): Promise<ReactNode> {
+  const session = await requireSession();
+  const [me, params] = await Promise.all([currentMe(), searchParams]);
+
+  const header = (
+    <header className="app-Approvals__header">
+      <h1 className="app-Approvals__title" tabIndex={-1}>
+        Approvals
+      </h1>
+    </header>
+  );
+
+  if (!mayOpen('/approvals', heldPermissions(me))) {
     return (
-      <EmptyState
-        tone="error"
-        title="Approvals could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The service could not be reached.'}
-      />
+      <div className="app-Page app-Approvals">
+        {header}
+        <EmptyState
+          tone="forbidden"
+          icon="lock"
+          headingLevel={2}
+          title="Approvals aren’t part of your account"
+          description="They’re for people who approve requests. If you expected to decide something here, ask your IT team."
+          action={{ id: 'home', label: 'Back to Home', href: '/' }}
+        />
+      </div>
     );
   }
 
-  if (approvals.length === 0) {
-    return <EmptyState title="Nothing waiting on you" description="When somebody needs a decision it will appear here." />;
-  }
+  const scope = scopeOf(params.show);
+  const openId = openIdOf(params.open);
+  const api = apiFor(session);
+  const actorId = me.actor.id;
+
+  const [read, opened] = await Promise.all([
+    currentApprovals().then((open) => readApprovals(api, actorId, open, scope)),
+    openId ? settle(api.approval(openId).catch((error: unknown) => (error instanceof ApiError && error.status === 404 ? ('missing' as const) : Promise.reject(error)))) : Promise.resolve(null),
+  ]);
+
+  const now = new Date();
+  const list = scope === 'waiting' ? read.waiting : read.decided;
+  const items = list ? inListOrder(list.map((approval) => itemOf(approval, now)), scope) : null;
+  const initialOpen: InitialOpen | null = openId ? { id: openId, detail: opened?.ok ? opened.value : null } : null;
 
   return (
-    <div className="itsm-Page">
-      <h1 className="itsm-Page__heading">Approvals</h1>
-      <p className="itsm-Page__lede">
-        {approvals.length === 1 ? 'One decision is waiting on you.' : `${approvals.length} decisions are waiting on you.`}
-      </p>
-
-      <ul className="itsm-Approvals">
-        {approvals.map((approval) => (
-          <li key={approval.id} className="itsm-Approvals__row">
-            <h2 className="itsm-Approvals__what">{approval.reason ?? 'A request needs your approval'}</h2>
-            <p className="itsm-Approvals__meta">
-              Asked{' '}
-              <time dateTime={approval.requestedAt} title={approval.requestedAt}>
-                {raisedAgo(approval.requestedAt)}
-              </time>
-            </p>
-            <ApprovalDecision id={approval.id} />
-          </li>
-        ))}
-      </ul>
+    <div className="app-Page app-Approvals">
+      {header}
+      <ApprovalsInbox
+        scope={scope}
+        items={items}
+        waitingCount={read.waiting?.length ?? null}
+        actorId={actorId}
+        initialOpen={initialOpen}
+      />
     </div>
   );
 }

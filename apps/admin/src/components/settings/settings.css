@@ -1,0 +1,485 @@
+/*
+ * Settings (SPEC §6.1 `/settings/**`): the search bar, the section cards and
+ * their rows, a row's inline editor, the history sheet, and the usage
+ * meters. Arrangement only, tokens throughout; the design system draws the
+ * controls, cards, pills and meters.
+ */
+
+/* ---- The page -------------------------------------------------------------- */
+
+/*
+ * The header (and its tabs) lines up with every other page in the console;
+ * what is under it keeps a readable measure, left-aligned beneath the title.
+ * Narrowing the whole page instead centred it, and the title then sat further
+ * in than on any other page.
+ */
+.app-Settings > :not(.itsm-PageHeader, .app-SettingsSkeleton__head) {
+  max-inline-size: 60rem;
+}
+
+/* ---- Search ---------------------------------------------------------------- */
+
+.app-SettingsSearch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+}
+
+.app-SettingsSearch__field {
+  flex: 1 1 18rem;
+  min-inline-size: 0;
+  max-inline-size: 32rem;
+}
+
+.app-SettingsSearch__status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-SettingsSearch__status:empty {
+  display: none;
+}
+
+.app-SettingsElsewhere__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-SettingsElsewhere__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+  padding-block: var(--itsm-space-sm);
+  border-block-end: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-SettingsElsewhere__item:last-child {
+  border-block-end: 0;
+}
+
+.app-SettingsElsewhere__link {
+  color: var(--itsm-colour-text-link);
+  font-weight: var(--itsm-font-weight-medium);
+  text-decoration: none;
+}
+
+.app-SettingsElsewhere__link:hover {
+  text-decoration: underline;
+}
+
+.app-SettingsElsewhere__meta,
+.app-SettingsElsewhere__more {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Sections and rows ----------------------------------------------------- */
+
+.app-SettingsSection__rows {
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+}
+
+.app-SettingsSection__footnote {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-SettingRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+  padding-block: var(--itsm-space-md);
+  border-block-end: 1px solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-sm);
+  scroll-margin-block: var(--itsm-space-4xl);
+  transition: background-color var(--itsm-duration-slow) var(--itsm-easing-standard);
+}
+
+.app-SettingRow:last-child {
+  border-block-end: 0;
+}
+
+.app-SettingRow:focus {
+  outline: none;
+}
+
+/* A row a link jumped to: tinted for a moment, then back. Colour only (motion is feedback). */
+.app-SettingRow[data-jumped] {
+  background-color: var(--itsm-colour-surface-selected);
+}
+
+.app-SettingRow__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-SettingRow__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  font-weight: var(--itsm-font-weight-medium);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-SettingRow__description {
+  margin: 0;
+  max-inline-size: 40rem;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-SettingRow__note,
+.app-SettingRow__hint,
+.app-FlagRow__consequence {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-FlagRow__consequence {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-SettingRow__error {
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-SettingRow__control {
+  display: flex;
+  justify-content: flex-end;
+  min-inline-size: 0;
+  padding-block-start: var(--itsm-space-3xs);
+}
+
+.app-SettingRow__readonly {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--itsm-space-3xs);
+  text-align: end;
+}
+
+.app-SettingRow__value {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-SettingRow__managed {
+  color: var(--itsm-colour-text-link);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-SettingRow__json {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 14rem;
+}
+
+.app-SettingRow__more {
+  padding-block-start: var(--itsm-space-3xs);
+}
+
+.app-SettingRow__spacer {
+  inline-size: var(--itsm-control-height-sm);
+}
+
+/* A structured value (several fields, or JSON): the control sits under the words. */
+.app-SettingRow--wide {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.app-SettingRow--wide .app-SettingRow__more {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.app-SettingRow--wide .app-SettingRow__control {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
+.app-SettingRow--wide .app-SettingRow__form,
+.app-SettingRow--wide .app-SettingRow__readonly {
+  align-items: flex-start;
+  text-align: start;
+}
+
+.app-SettingRow--wide .app-SettingRow__fields,
+.app-SettingRow--wide .app-SettingRow__actions {
+  justify-content: flex-start;
+}
+
+.app-SettingRow__form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--itsm-space-xs);
+  min-inline-size: 0;
+}
+
+.app-SettingRow__fields {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+}
+
+.app-SettingRow__part {
+  flex: 0 1 12rem;
+  min-inline-size: 9rem;
+}
+
+.app-SettingRow__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-SettingRow__noteField {
+  min-inline-size: 12rem;
+}
+
+/* Narrow: the control goes under the words, full width; ⋯ stays at the top end. */
+@container (max-width: 34rem) {
+  .app-SettingRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .app-SettingRow__text {
+    grid-column: 1;
+  }
+
+  .app-SettingRow__more {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .app-SettingRow__spacer {
+    display: none;
+  }
+
+  .app-SettingRow__control {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .app-SettingRow__form,
+  .app-SettingRow__readonly {
+    align-items: flex-start;
+    text-align: start;
+  }
+
+  .app-SettingRow__fields,
+  .app-SettingRow__actions {
+    justify-content: flex-start;
+  }
+}
+
+/* ---- AI -------------------------------------------------------------------- */
+
+.app-SettingsBudget {
+  display: grid;
+  max-inline-size: 28rem;
+}
+
+/* ---- History --------------------------------------------------------------- */
+
+.app-SettingHistory {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-SettingHistory__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-SettingHistory__version {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-2xs);
+  padding-block: var(--itsm-space-md);
+  border-block-end: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-SettingHistory__version:last-child {
+  border-block-end: 0;
+}
+
+.app-SettingHistory__head {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-SettingHistory__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-SettingHistory__value {
+  margin: 0;
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-SettingHistory__meta,
+.app-SettingHistory__reason,
+.app-SettingHistory__default,
+.app-SettingHistory__empty {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Usage & plan ---------------------------------------------------------- */
+
+.app-UsagePlan__name {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  font-weight: var(--itsm-text-title3-weight);
+  line-height: var(--itsm-text-title3-line);
+}
+
+.app-UsagePlan__text {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-UsageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--itsm-space-md);
+}
+
+.app-UsageMeter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-UsageMeter__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-UsageMeter__label {
+  margin: 0;
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-UsageMeter__period,
+.app-UsageMeter__lines,
+.app-UsageMeter__description {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-UsageMeter__description {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-UsageMeter__value {
+  margin: 0;
+  font-size: var(--itsm-text-title2-size);
+  font-weight: var(--itsm-text-title2-weight);
+  line-height: var(--itsm-text-title2-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-UsageMeter__state {
+  display: flex;
+}
+
+.app-UsageMeter__warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--itsm-space-xs);
+  margin-block-start: auto;
+  padding-block-start: var(--itsm-space-sm);
+  border-block-start: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-UsageMeter__field {
+  flex: 1 1 10rem;
+  min-inline-size: 0;
+}
+
+.app-UsageMeter__actions {
+  display: flex;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- Skeletons ------------------------------------------------------------- */
+
+.app-SettingsSkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-SettingsSkeleton__tabs,
+.app-SettingsSkeleton__search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-lg);
+}
+
+.app-SettingsSkeleton__search {
+  gap: var(--itsm-space-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-SettingRow {
+    transition: none;
+  }
+}

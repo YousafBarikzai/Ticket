@@ -1,0 +1,216 @@
+/*
+ * Integrations (SPEC §6.1 `/integrations/**`): the health cards, the cells
+ * of the failed-delivery, action and credential tables, and the drawers.
+ * Arrangement only, tokens throughout; the design system draws the rest.
+ */
+
+/* ---- Health cards -------------------------------------------------------- */
+
+.app-IntegrationsHealth {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--itsm-space-md);
+}
+
+/* ---- Table cells ------------------------------------------------------------ */
+
+.app-Integrations__count {
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Integrations__quiet {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Integrations__link {
+  color: var(--itsm-colour-text-link);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-Integrations__link:hover {
+    text-decoration: underline;
+  }
+}
+
+.app-Integrations__error {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Integrations__again {
+  color: var(--itsm-colour-danger-subtleText);
+  font-family: var(--itsm-font-family-sans);
+  font-weight: var(--itsm-text-headline-weight);
+}
+
+/* A credential beside the action that uses it: a dot in its state's colour, the reference, and the state in words. */
+.app-CredentialChip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-3xs) var(--itsm-space-xs);
+  max-inline-size: 100%;
+}
+
+.app-CredentialChip__dot {
+  flex: none;
+  inline-size: var(--itsm-space-xs);
+  block-size: var(--itsm-space-xs);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-neutral-solid);
+}
+
+.app-CredentialChip[data-tone='success'] .app-CredentialChip__dot {
+  background: var(--itsm-colour-success-solid);
+}
+
+.app-CredentialChip[data-tone='warning'] .app-CredentialChip__dot {
+  background: var(--itsm-colour-warning-solid);
+}
+
+.app-CredentialChip[data-tone='danger'] .app-CredentialChip__dot {
+  background: var(--itsm-colour-danger-solid);
+}
+
+.app-CredentialChip__ref {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  overflow-wrap: anywhere;
+}
+
+.app-CredentialChip__state {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-CredentialChip[data-tone='danger'] .app-CredentialChip__state {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-CredentialChip[data-tone='warning'] .app-CredentialChip__state {
+  color: var(--itsm-colour-warning-subtleText);
+}
+
+@media (forced-colors: active) {
+  .app-CredentialChip__dot {
+    background: CanvasText;
+  }
+}
+
+/* ---- Drawers ---------------------------------------------------------------- */
+
+.app-Delivery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-Delivery__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Delivery__heading {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-Delivery__lede {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-Delivery__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Delivery__error {
+  margin: 0;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+  color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-block-size: 16rem;
+  overflow: auto;
+}
+
+.app-Delivery__mono {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  overflow-wrap: anywhere;
+}
+
+.app-Delivery__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+/* ---- The signing secret, shown once ----------------------------------------- */
+
+.app-Secret {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Secret__value {
+  padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-md);
+  background: var(--itsm-colour-surface-sunken);
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.app-Secret > :last-child {
+  grid-column: 1 / -1;
+}
+
+/* ---- Skeletons -------------------------------------------------------------- */
+
+.app-IntegrationsSkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-IntegrationsSkeleton__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}
+
+.app-IntegrationsSkeleton__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-lg);
+}
+
+.app-IntegrationsSkeleton__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--itsm-space-md);
+}

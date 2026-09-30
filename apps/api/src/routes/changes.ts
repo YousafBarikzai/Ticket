@@ -10,6 +10,7 @@ import {
   templateSchema,
 } from '@itsm/module-change';
 import { contextOf } from '../plugins/context.js';
+import { booleanQuery } from './query.js';
 
 /** MOD-08-E3 changes, windows and standard templates. */
 export async function changeRoutes(app: FastifyInstance): Promise<void> {
@@ -48,7 +49,7 @@ export async function changeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/changes', async (request) => {
     const ctx = contextOf(request);
     const query = z
-      .object({ status: z.string().optional(), kind: z.string().optional(), open: z.coerce.boolean().optional() })
+      .object({ status: z.string().optional(), kind: z.string().optional(), open: booleanQuery().optional() })
       .parse(request.query);
     return { data: (await changeService.listChanges(ctx, query)).map(shape) };
   });

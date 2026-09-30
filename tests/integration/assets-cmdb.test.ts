@@ -142,6 +142,15 @@ describe('a class declares what its items carry', () => {
       criticality: 'critical',
     });
     expect(created.attributes).toEqual({ engine: 'postgres', environment: 'production' });
+
+    // Each item names its class, in the list and on its own, so a screen can
+    // say "Orders DB · Database server" and check attributes against it.
+    const classes = await request<{ data: { id: string; key: string }[] }>('/api/v1/ci-classes', { token: asAgent() });
+    const database = classes.body.data.find((row) => row.key === 'database')!;
+    const one = await request<{ classId: string }>(`/api/v1/cis/${created.id}`, { token: asAgent() });
+    expect(one.body.classId).toBe(database.id);
+    const listed = await request<{ data: { id: string; classId: string }[] }>('/api/v1/cis?classKey=database', { token: asAgent() });
+    expect(listed.body.data.find((row) => row.id === created.id)?.classId).toBe(database.id);
   });
 
   it('refuses a class loop rather than letting inheritance depend on where it is cut', async () => {
@@ -264,6 +273,30 @@ describe('a retired configuration item', () => {
     expect(still.status).toBe(200);
     expect(still.body.status).toBe('retired');
   }, 30_000);
+
+  it('is left out of the list unless asked for, and `false` means false', async () => {
+    const retired = await makeCi('retired-listing');
+    await request(`/api/v1/cis/${retired.id}/retire`, {
+      method: 'POST',
+      token: asAdmin(),
+      body: { reason: 'Replaced.' },
+    });
+    const listed = async (query: string) => {
+      const response = await request<{ data: Ci[] }>(`/api/v1/cis?search=${retired.name}${query}`, { token: asAgent() });
+      expect(response.status, query).toBe(200);
+      return response.body.data.map((item) => item.id);
+    };
+
+    expect(await listed('')).toEqual([]);
+    expect(await listed('&includeRetired=true')).toEqual([retired.id]);
+    // The regression: a coerced boolean read the word `false` as true.
+    expect(await listed('&includeRetired=false')).toEqual([]);
+    // A spelling that is neither is refused rather than guessed at.
+    for (const spelling of ['1', 'yes', '']) {
+      const refused = await request(`/api/v1/cis?includeRetired=${spelling}`, { token: asAgent() });
+      expect(refused.status, spelling).toBe(422);
+    }
+  }, 30_000);
 });
 
 describe('what touched this', () => {
@@ -346,6 +379,13 @@ describe('the asset register', () => {
     // never in two places at once, and the history survives.
     expect(held.body.assignments.filter((row) => row.returnedAt === null)).toHaveLength(1);
     expect(held.body.assignments.find((row) => row.returnedAt === null)!.userId).toBe(second);
+
+    // The lists name the current holder, so "who has what" needs no asset opened.
+    const listed = await request<{ data: { tag: string; holderId: string | null }[] }>('/api/v1/assets?search=LAP-001', { token: asAgent() });
+    expect(listed.body.data.find((row) => row.tag === 'LAP-001')?.holderId).toBe(second);
+    expect((await request('/api/v1/assets/LAP-001/return', { method: 'POST', token: asLead(), body: {} })).status).toBe(200);
+    const returned = await request<{ data: { tag: string; holderId: string | null }[] }>('/api/v1/assets?search=LAP-001', { token: asAgent() });
+    expect(returned.body.data.find((row) => row.tag === 'LAP-001')?.holderId).toBeNull();
   });
 
   it('refuses a cost with no currency, because nobody can add those up', async () => {

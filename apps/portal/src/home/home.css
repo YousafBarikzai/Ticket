@@ -1,0 +1,425 @@
+/*
+ * Home (SPEC §6.3 `/`, X-34): a centred hero with the one question, then the
+ * person's requests beside a "Good to know" card (≥ 1024 px), one column
+ * below. Arrangement only, from the design system's tokens; unlayered, so it
+ * wins over `@layer itsm.*` without `!important`.
+ */
+
+.app-Home {
+  --app-home-tile-height: 9.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xl);
+  padding-block: var(--itsm-space-md) var(--itsm-space-3xl);
+}
+
+/* ---- Hero ----------------------------------------------------------------- */
+
+.app-Home__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  padding-block: var(--itsm-space-xl) var(--itsm-space-sm);
+  text-align: center;
+}
+
+.app-Home__date {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-Home__greeting {
+  margin: 0;
+  font-size: var(--itsm-text-largeTitle-size);
+  line-height: var(--itsm-text-largeTitle-line);
+  font-weight: var(--itsm-text-largeTitle-weight);
+  letter-spacing: var(--itsm-text-largeTitle-tracking);
+  text-wrap: balance;
+}
+
+.app-Home__greeting:focus {
+  outline: none;
+}
+
+.app-Home__lede {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  letter-spacing: var(--itsm-text-title3-tracking);
+  text-wrap: balance;
+}
+
+.app-Home__ask {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: 46rem;
+  margin-block-start: var(--itsm-space-lg);
+}
+
+.app-Home__new {
+  flex: none;
+}
+
+@media (max-width: 47.9375rem) {
+  .app-Home__hero {
+    padding-block-start: var(--itsm-space-md);
+  }
+
+  .app-Home__ask {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-Home__new {
+    inline-size: 100%;
+  }
+}
+
+/* ---- The search field and its suggestions --------------------------------- */
+
+.app-HomeSearch {
+  position: relative;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  text-align: start;
+}
+
+.app-HomeSearch__field {
+  inline-size: 100%;
+}
+
+.app-HomeSearch__panel {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(100% + var(--itsm-space-xs));
+  z-index: var(--itsm-z-dropdown);
+  box-sizing: border-box;
+  max-block-size: min(60vh, 32rem);
+  padding: var(--itsm-space-xs);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-material-popover);
+  -webkit-backdrop-filter: var(--itsm-material-popover-filter);
+  backdrop-filter: var(--itsm-material-popover-filter);
+  box-shadow: var(--itsm-elevation-lg), var(--itsm-edge-highlight);
+}
+
+.app-HomeSearch__panel[hidden] {
+  display: none;
+}
+
+.app-HomeSearch__listbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-HomeSearch__group {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-HomeSearch__groupTitle {
+  padding: var(--itsm-space-2xs) var(--itsm-space-sm);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-HomeSearch__option {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  min-block-size: var(--itsm-control-height-md);
+  padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-md);
+  color: var(--itsm-colour-text-primary);
+  cursor: pointer;
+}
+
+.app-HomeSearch__option[aria-selected='true'] {
+  background: var(--itsm-colour-surface-selected);
+}
+
+.app-HomeSearch__option--report {
+  margin-block-start: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-link);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-HomeSearch__optionIcon,
+.app-HomeSearch__optionEnd {
+  flex: none;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-HomeSearch__option--report .app-HomeSearch__optionIcon,
+.app-HomeSearch__option--report .app-HomeSearch__optionEnd {
+  color: inherit;
+}
+
+.app-HomeSearch__optionText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-HomeSearch__optionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-HomeSearch__optionDetail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-HomeSearch__hint {
+  margin: var(--itsm-space-xs) 0 0;
+  padding: var(--itsm-space-xs) var(--itsm-space-sm) var(--itsm-space-2xs);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+}
+
+/* On a phone the field is a button that opens the full-screen flow; it looks like the field it stands for. */
+.app-HomeSearch__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--itsm-control-height-lg);
+  margin: 0;
+  padding-inline: var(--itsm-space-md);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-interactive);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-sm);
+  color: var(--itsm-colour-text-muted);
+  font: inherit;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  text-align: start;
+  cursor: text;
+}
+
+.app-HomeSearch__triggerIcon {
+  flex: none;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-HomeSearch__placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- The incident banner ------------------------------------------------- */
+
+.app-Home__incident {
+  box-sizing: border-box;
+  inline-size: 100%;
+}
+
+/* ---- Requests and "Good to know" ------------------------------------------ */
+
+.app-Home__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-xl);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .app-Home__grid:has(> .app-Home__aside) {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  }
+}
+
+.app-Home__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xl);
+  min-inline-size: 0;
+}
+
+.app-Home__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Home__sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Home__sectionTitle {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+  letter-spacing: var(--itsm-text-title3-tracking);
+}
+
+/* A row's "Yes, it's fixed" went in as a message (the API would not close it for a requester). */
+.app-Home__thanks {
+  margin: 0;
+  color: var(--itsm-colour-success-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-Home__skeleton {
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-Home__tilesSkeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
+  gap: var(--itsm-space-md);
+}
+
+/* ---- Good to know ---------------------------------------------------------- */
+
+.app-Good {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-Good__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Good__part + .app-Good__part {
+  padding-block-start: var(--itsm-space-lg);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Good__title {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-Good__overall {
+  margin: 0;
+}
+
+.app-Good__components,
+.app-Good__links,
+.app-Good__channels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Good__component {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Good__componentName {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-Good__link {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-xs);
+  color: var(--itsm-colour-text-link);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-Good__link:hover {
+    text-decoration: underline;
+  }
+}
+
+.app-Good__linkIcon {
+  flex: none;
+  margin-block-start: var(--itsm-space-3xs);
+}
+
+.app-Good__channels {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs) var(--itsm-space-md);
+}
+
+.app-Good__channel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Good__quiet {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+@media (forced-colors: active) {
+  .app-HomeSearch__panel {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+
+  .app-HomeSearch__option[aria-selected='true'] {
+    outline: var(--itsm-hairline) solid Highlight;
+  }
+
+  .app-HomeSearch__trigger {
+    border-color: CanvasText;
+  }
+}

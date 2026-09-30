@@ -16,6 +16,12 @@ name: Deploy
 # deployment with no domain of its own gets, and it is the deploy that
 # discovers those names — which is why the URLs below come from its outputs
 # rather than from an expression in this file.
+#
+# `vars.PORTAL_CHANNELS` is optional too: a comma list such as
+# `email,teams,slack`, set on the portal alone (it names the channels the
+# portal offers). Unset or empty leaves whatever the portal service already has,
+# so a value set by hand in Railway survives; a list that is not channel names
+# fails the plan step, before anything is deployed.
 
 on:
   pull_request:
@@ -181,6 +187,8 @@ jobs:
           echo "::notice::Preview deploys are off (set the RAILWAY_PREVIEWS variable to 'true' to turn them on), so this is a plan rather than a deploy."
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
             --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }} --dry-run
+        env:
+          PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
 
       - name: Deploy
         id: deploy
@@ -188,6 +196,7 @@ jobs:
         run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }} --ensure-services
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
@@ -313,6 +322,8 @@ jobs:
           echo "::notice::No Railway credentials configured, so this is a plan rather than a deploy."
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
             --environment production --tag ${{ needs.images.outputs.tag }} --dry-run
+        env:
+          PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
 
       - name: Deploy
         id: deploy
@@ -320,6 +331,7 @@ jobs:
         run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment production --tag ${{ needs.images.outputs.tag }} --ensure-services
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
@@ -386,6 +398,8 @@ jobs:
           echo "::notice::No Railway credentials configured, so this is a plan rather than a deploy."
           DEPLOY_DOMAIN=example.invalid pnpm exec tsx infra/scripts/railway-deploy.ts \
             --environment production --tag ${{ github.event.release.tag_name }} --dry-run
+        env:
+          PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
 
       - name: Deploy
         id: deploy
@@ -393,6 +407,7 @@ jobs:
         run: pnpm exec tsx infra/scripts/railway-deploy.ts --environment production --tag ${{ github.event.release.tag_name }}
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 

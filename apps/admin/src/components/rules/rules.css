@@ -1,0 +1,458 @@
+/*
+ * Rules: the list, the builder and its "Try it" panel (SPEC §6.1).
+ * Arrangement only, tokens throughout; imported by the three rules pages and
+ * their loading files. Cards are the design system's Surface; this file lays
+ * them out.
+ */
+
+/* ---- The list ------------------------------------------------------------ */
+
+.app-RuleChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-3xs) var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-RuleChips__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+.app-RuleChips__join {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+}
+
+.app-RuleChips__quiet {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-RuleState {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-RuleState__note {
+  flex-basis: 100%;
+  color: var(--itsm-colour-warning-subtleText);
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+}
+
+.app-Rules__scopeEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-2xl) var(--itsm-space-md);
+  color: var(--itsm-colour-text-secondary);
+  text-align: center;
+}
+
+.app-Rules__scopeEmpty p {
+  margin: 0;
+}
+
+/* ---- The builder: canvas beside the test panel --------------------------- */
+
+.app-RuleBuilder {
+  container: rulebuilder / inline-size;
+}
+
+.app-RuleBuilder__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-lg);
+  align-items: start;
+}
+
+/* Without the test panel (read-only, or a phone) the canvas keeps a readable measure. */
+.app-RuleBuilder__grid:not([data-panel]) {
+  max-inline-size: var(--itsm-content-default);
+}
+
+@container rulebuilder (min-width: 56rem) {
+  .app-RuleBuilder__grid[data-panel] {
+    grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr);
+  }
+
+  .app-RuleBuilder__panel {
+    position: sticky;
+    inset-block-start: var(--itsm-space-md);
+  }
+}
+
+.app-RuleBuilder__canvas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  min-inline-size: 0;
+}
+
+.app-RuleBuilder__fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The group's name is for assistive technology; each card has its own heading. */
+.app-RuleBuilder__legend {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app-RuleBuilder__key {
+  outline: none;
+}
+
+.app-RuleBuilder__tryBar {
+  position: sticky;
+  inset-block-end: calc(var(--itsm-space-sm) + var(--itsm-bottom-dock-height, 0px));
+  z-index: var(--itsm-z-sticky);
+}
+
+.app-BuilderCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  min-inline-size: 0;
+  scroll-margin-block-start: var(--itsm-space-xl);
+}
+
+.app-BuilderCard[data-invalid] {
+  box-shadow: inset 0 0 0 var(--itsm-border-thick) var(--itsm-colour-danger-border);
+}
+
+.app-BuilderCard__anchor {
+  block-size: 0;
+  outline: none;
+}
+
+.app-BuilderCard__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-BuilderCard__title {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  font-weight: var(--itsm-text-title3-weight);
+  line-height: var(--itsm-text-title3-line);
+  letter-spacing: var(--itsm-text-title3-tracking);
+}
+
+.app-BuilderCard__description {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-FieldProblem {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Then: action cards --------------------------------------------------- */
+
+.app-Actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Actions__empty,
+.app-Actions__limit {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Actions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-ActionCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-ActionCard[data-invalid] {
+  box-shadow: inset 0 0 0 var(--itsm-border-thick) var(--itsm-colour-danger-border);
+}
+
+.app-ActionCard__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-ActionCard__number {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--itsm-icon-lg);
+  block-size: var(--itsm-icon-lg);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-caption-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-ActionCard__type,
+.app-ActionCard__custom {
+  display: inline-flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  min-inline-size: 0;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-ActionCard__custom span {
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-ActionCard__type > :last-child {
+  flex: 1 1 auto;
+  max-inline-size: 20rem;
+}
+
+.app-ActionCard__tools {
+  display: inline-flex;
+  gap: var(--itsm-space-3xs);
+  margin-inline-start: auto;
+}
+
+.app-ActionCard__body,
+.app-ActionCard__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  min-inline-size: 0;
+}
+
+.app-ActionCard__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Advanced ------------------------------------------------------------- */
+
+.app-RuleOrder,
+.app-RuleMode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-xs);
+}
+
+.app-RuleOrder__sentence {
+  margin: 0;
+}
+
+.app-RuleOrder__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}
+
+.app-RuleMode__hint {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Try it --------------------------------------------------------------- */
+
+.app-TryIt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+}
+
+.app-TryIt__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-TryIt__lede {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-TryIt__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  inline-size: 100%;
+}
+
+.app-TryIt__summary {
+  margin: 0;
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-TryIt__summary[data-stale] {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-TryIt__tickets {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-TryIt__ticket {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--itsm-space-3xs) var(--itsm-space-xs);
+  padding-block: var(--itsm-space-xs);
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-TryIt__number {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  white-space: nowrap;
+}
+
+.app-TryIt__number a {
+  color: var(--itsm-colour-text-link);
+}
+
+.app-TryIt__ticketTitle {
+  overflow: hidden;
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-TryIt__effects {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-3xs);
+}
+
+/* ---- History -------------------------------------------------------------- */
+
+.app-RuleHistory {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  max-inline-size: var(--itsm-content-default);
+}
+
+.app-RuleHistory__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-VersionCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-VersionCard__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-VersionCard__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-VersionCard__action {
+  margin-inline-start: auto;
+}
+
+.app-VersionCard__meta {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Skeletons ------------------------------------------------------------ */
+
+.app-RulesSkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding-block-end: var(--itsm-space-md);
+}
+
+.app-RulesSkeleton__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}
+
+.app-RulesSkeleton__tabs,
+.app-RulesSkeleton__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-md);
+}
+
+.app-RulesSkeleton__toolbar {
+  padding-block-end: var(--itsm-space-md);
+}

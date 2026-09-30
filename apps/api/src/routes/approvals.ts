@@ -2,16 +2,30 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { approvalService, policyDefinitionSchema, SUBJECT_TYPES } from '@itsm/module-approvals';
 import { contextOf } from '../plugins/context.js';
+import { booleanQuery } from './query.js';
 
 /** MOD-17 approvals. */
 export async function approvalRoutes(app: FastifyInstance): Promise<void> {
   const byId = z.object({ id: z.string().uuid() });
 
-  /** What is waiting on me. The first screen an approver opens. */
+  /**
+   * What is waiting on me — the first screen an approver opens — or, with
+   * `ticketId`, how far the approvals on one of my own tickets have got.
+   *
+   * `includeDecided` is read as exactly `true` or `false` (query.ts): it used to
+   * be coerced, and `?includeDecided=false` then meant "include decided".
+   */
   app.get('/approvals', async (request) => {
     const ctx = contextOf(request);
-    const query = z.object({ includeDecided: z.coerce.boolean().optional() }).parse(request.query);
-    return { data: await approvalService.listMyApprovals(ctx, query) };
+    const query = z
+      .object({ includeDecided: booleanQuery(false), ticketId: z.string().uuid().optional() })
+      .parse(request.query);
+    const options = { includeDecided: query.includeDecided };
+    return {
+      data: query.ticketId
+        ? await approvalService.listApprovalsForTicket(ctx, query.ticketId, options)
+        : await approvalService.listMyApprovals(ctx, options),
+    };
   });
 
   app.get('/approvals/:id', async (request) => {

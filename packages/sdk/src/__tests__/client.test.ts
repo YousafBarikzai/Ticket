@@ -96,6 +96,24 @@ describe('talking to the API', () => {
     expect(calls[0]!.url).toBe('https://api.test/api/v1/tickets?status=open&limit=25');
   });
 
+  it('leaves a false boolean out of the query, and sends a true one', async () => {
+    // Routes that coerced their booleans read `includeDecided=false` as true,
+    // which listed every approval ever decided. Absent is false everywhere.
+    const { calls, fetchImpl } = recorder({ body: {} });
+    await createClient({ baseUrl: 'https://api.test', fetch: fetchImpl }).request('/api/v1/approvals', {
+      query: { includeDecided: false, unread: true },
+    });
+    expect(calls[0]!.url).toBe('https://api.test/api/v1/approvals?unread=true');
+  });
+
+  it('sends the word false when a caller spells it, for the filter where false means something', async () => {
+    const { calls, fetchImpl } = recorder({ body: {} });
+    await createClient({ baseUrl: 'https://api.test', fetch: fetchImpl }).request('/api/v1/major-incidents', {
+      query: { open: 'false' },
+    });
+    expect(calls[0]!.url).toBe('https://api.test/api/v1/major-incidents?open=false');
+  });
+
   it('escapes what goes into a query', async () => {
     const { calls, fetchImpl } = recorder({ body: {} });
     await createClient({ baseUrl: 'https://api.test', fetch: fetchImpl }).request('/api/v1/tickets', {

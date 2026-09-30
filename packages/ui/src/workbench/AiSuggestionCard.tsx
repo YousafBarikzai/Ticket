@@ -1,10 +1,12 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Badge } from '../web/Badge.js';
+import { StatusPill } from '../display/StatusPill.js';
+import { Icon } from '../icons/Icon.js';
+import { useOptionalItsm } from '../provider/ItsmProvider.js';
+import type { IconName, Tone } from '../types.js';
 import { Button } from '../web/Button.js';
 import { cx } from '../web/cx.js';
-import type { IntentName } from '../tokens/tokens.js';
 
 /**
  * A suggestion, its reasoning, and what it was based on.
@@ -30,6 +32,16 @@ import type { IntentName } from '../tokens/tokens.js';
  * anybody ever learns whether this helps; a card that only displays is a card
  * that teaches the platform nothing. Once an outcome is recorded the actions
  * go and the outcome stays, because an outcome is recorded once (MOD-09).
+ *
+ * `actions` narrows the buttons to the outcomes a surface can record — a
+ * summary has nothing to edit first, so it offers `['accept', 'reject']`.
+ * It is a list rather than "whichever handlers were passed", because callers
+ * (and the pinned tests) pass some handlers and still expect all three
+ * buttons in their fixed order. `acceptLabel` renames the first where "Use
+ * it" undersells what happens ("Insert into reply").
+ *
+ * It is marked as the AI's by a sparkle and its name — never by the accent
+ * blue, which means "you can press this" (SPEC §1.2).
  */
 
 export type ConfidenceBand = 'low' | 'medium' | 'high';
@@ -47,6 +59,10 @@ export interface SuggestionEvidence {
 
 export type SuggestionOutcome = 'pending' | 'accepted' | 'edited' | 'rejected';
 
+export type SuggestionAction = 'accept' | 'edit' | 'reject';
+
+const ALL_ACTIONS: readonly SuggestionAction[] = ['accept', 'edit', 'reject'];
+
 export interface AiSuggestionCardProps {
   /** What the capability produced, already turned into something readable. */
   readonly children: ReactNode;
@@ -61,10 +77,20 @@ export interface AiSuggestionCardProps {
   readonly onAccept?: () => void;
   readonly onEdit?: () => void;
   readonly onReject?: () => void;
+  /** The accept button's words. Default "Use it". */
+  readonly acceptLabel?: string;
+  /**
+   * The accept button's emphasis. Default `primary`; `tinted` where the card
+   * sits beside a view whose one filled button is something else (the
+   * workbench composer's Send, SPEC §1.1).
+   */
+  readonly acceptVariant?: 'primary' | 'tinted' | 'secondary';
+  /** Which outcomes to offer, always in the order accept, edit, reject. Default all three. */
+  readonly actions?: readonly SuggestionAction[];
   readonly className?: string;
 }
 
-const CONFIDENCE_INTENT: Record<ConfidenceBand, IntentName> = {
+const CONFIDENCE_TONE: Record<ConfidenceBand, Tone> = {
   low: 'warning',
   medium: 'info',
   high: 'success',
@@ -82,10 +108,22 @@ const KIND_LABEL: Record<SuggestionEvidence['kind'], string> = {
   'known-error': 'Known error',
 };
 
+const KIND_ICON: Record<SuggestionEvidence['kind'], IconName> = {
+  article: 'knowledge',
+  ticket: 'ticket',
+  'known-error': 'triangle-alert',
+};
+
 const OUTCOME_LABEL: Record<Exclude<SuggestionOutcome, 'pending'>, string> = {
   accepted: 'Accepted as written',
   edited: 'Edited before sending',
   rejected: 'Rejected',
+};
+
+const OUTCOME_ICON: Record<Exclude<SuggestionOutcome, 'pending'>, IconName> = {
+  accepted: 'circle-check',
+  edited: 'pencil',
+  rejected: 'circle-x',
 };
 
 export function AiSuggestionCard({
@@ -100,9 +138,14 @@ export function AiSuggestionCard({
   onAccept,
   onEdit,
   onReject,
+  acceptLabel = 'Use it',
+  acceptVariant = 'primary',
+  actions = ALL_ACTIONS,
   className,
 }: AiSuggestionCardProps): ReactNode {
+  const Link = useOptionalItsm()?.Link;
   const decided = outcome !== 'pending';
+  const offer = (action: SuggestionAction): boolean => actions.includes(action);
 
   // `article`, not `section`. A named `section` is a `region` landmark, and a
   // ticket with three suggestions on it then has three landmarks carrying the
@@ -115,15 +158,17 @@ export function AiSuggestionCard({
     <article
       className={cx('itsm-AiSuggestion', className)}
       aria-label={`${title} — suggested by AI`}
+      aria-busy={busy || undefined}
       data-capability={capability}
       data-outcome={outcome}
     >
       <header className="itsm-AiSuggestion__head">
+        <span className="itsm-AiSuggestion__mark" aria-hidden="true">
+          <Icon name="sparkles" size="sm" />
+        </span>
         <h3 className="itsm-AiSuggestion__title">{title}</h3>
         {/* Said in words as well as colour: the band is the whole calibration. */}
-        <Badge intent={CONFIDENCE_INTENT[confidence]} srPrefix="Confidence">
-          {CONFIDENCE_LABEL[confidence]}
-        </Badge>
+        <StatusPill className="itsm-AiSuggestion__confidence" label={CONFIDENCE_LABEL[confidence]} tone={CONFIDENCE_TONE[confidence]} icon="auto" size="sm" />
       </header>
 
       <div className="itsm-AiSuggestion__body">{children}</div>
@@ -139,17 +184,25 @@ export function AiSuggestionCard({
           // Said plainly. An empty list reads as an oversight, and "nothing"
           // is the most important thing a person can know about an answer.
           <p className="itsm-AiSuggestion__noEvidence">
-            Nothing in the knowledge base or in earlier tickets. Check this one yourself before sending it.
+            <Icon name="triangle-alert" size="sm" className="itsm-AiSuggestion__noEvidenceIcon" />
+            <span>Nothing in the knowledge base or in earlier tickets. Check this one yourself before sending it.</span>
           </p>
         ) : (
           <ul className="itsm-AiSuggestion__evidenceList">
             {evidence.map((item) => (
               <li key={`${item.kind}:${item.id}`} className="itsm-AiSuggestion__evidenceItem">
+                <Icon name={KIND_ICON[item.kind]} size="sm" className="itsm-AiSuggestion__evidenceIcon" />
                 <span className="itsm-AiSuggestion__evidenceKind">{KIND_LABEL[item.kind]}</span>
                 {item.href ? (
-                  <a className="itsm-AiSuggestion__evidenceLink" href={item.href}>
-                    {item.title}
-                  </a>
+                  Link ? (
+                    <Link className="itsm-AiSuggestion__evidenceLink" href={item.href}>
+                      {item.title}
+                    </Link>
+                  ) : (
+                    <a className="itsm-AiSuggestion__evidenceLink" href={item.href}>
+                      {item.title}
+                    </a>
+                  )
                 ) : (
                   <span className="itsm-AiSuggestion__evidenceLink">{item.title}</span>
                 )}
@@ -163,19 +216,26 @@ export function AiSuggestionCard({
 
       {decided ? (
         <p className="itsm-AiSuggestion__outcome" data-outcome={outcome}>
+          <Icon name={OUTCOME_ICON[outcome as Exclude<SuggestionOutcome, 'pending'>]} size="sm" className="itsm-AiSuggestion__outcomeIcon" />
           {OUTCOME_LABEL[outcome as Exclude<SuggestionOutcome, 'pending'>]}
         </p>
       ) : (
         <div className="itsm-AiSuggestion__actions">
-          <Button variant="primary" onClick={onAccept} disabled={busy}>
-            Use it
-          </Button>
-          <Button variant="secondary" onClick={onEdit} disabled={busy}>
-            Edit first
-          </Button>
-          <Button variant="ghost" onClick={onReject} disabled={busy}>
-            Not useful
-          </Button>
+          {offer('accept') ? (
+            <Button variant={acceptVariant} onClick={onAccept} disabled={busy}>
+              {acceptLabel}
+            </Button>
+          ) : null}
+          {offer('edit') ? (
+            <Button variant="secondary" onClick={onEdit} disabled={busy}>
+              Edit first
+            </Button>
+          ) : null}
+          {offer('reject') ? (
+            <Button variant="ghost" onClick={onReject} disabled={busy}>
+              Not useful
+            </Button>
+          ) : null}
         </div>
       )}
     </article>

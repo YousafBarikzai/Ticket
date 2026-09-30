@@ -50,6 +50,25 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@itsm/ui', '@itsm/sdk', '@itsm/bff', '@itsm/pwa', '@itsm/contracts', '@itsm/expr'],
   poweredByHeader: false,
   /**
+   * Server components import the design system from its root entry
+   * (`import { Badge } from '@itsm/ui'`), and Next's client-reference pass
+   * then takes every `'use client'` module that entry re-exports — the form
+   * renderer and, through it, zod among them — into every route's first load,
+   * used or not. `sideEffects: false` does not help there, because the pass
+   * reads the import graph before anything is shaken out. Naming the package
+   * here makes Next rewrite each such import to the module that defines the
+   * name, so a route ships the client components it renders and no others
+   * (SPEC §3.7; 24–30 kB off every route of all three applications when this
+   * was added).
+   *
+   * The rewrite matches the import's specifier exactly, so a subpath is its
+   * own entry. `@itsm/ui/theme` is here for the root layout, which imports
+   * only the pre-paint script from it: unoptimised, the theme barrel's
+   * `ThemeProvider` became a client reference of the root layout and shipped
+   * a second time on every route (the providers already carry it).
+   */
+  experimental: { optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme'] },
+  /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension, which is what ECMAScript modules require and what `tsx`,
    * `tsc` and Vitest all resolve back to the `.ts` file on disk. A bundler has

@@ -2,7 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { CANONICAL_STATES } from '@itsm/module-ticket';
 import type { CatalogueItem } from '@itsm/sdk';
 import { groupByService, UNGROUPED } from '../catalogue/group.js';
-import { needsYou, raisedAgo, requesterState, typeLabel, URGENCY_CHOICES } from '../tickets/presentation.js';
+import { DEFAULT_SERVICE_ICON, SERVICE_TOPICS, serviceIcon, topicFor, topicHref } from '../catalogue/icons.js';
+import {
+  PROGRESS_STEPS,
+  needsYou,
+  nextAction,
+  progressOf,
+  raisedAgo,
+  requesterState,
+  typeLabel,
+  URGENCY_CHOICES,
+  yoursFirst,
+} from '../tickets/presentation.js';
 
 describe('what a state means to the person who raised it', () => {
   it('names a party in every label, because that is the whole question', () => {
@@ -95,5 +106,117 @@ describe('grouping the catalogue', () => {
 
   it('returns nothing for nothing', () => {
     expect(groupByService([])).toEqual([]);
+  });
+});
+
+describe('how a state is drawn', () => {
+  it('gives every canonical state a pill tone and its own icon, so it reads without colour', () => {
+    for (const state of CANONICAL_STATES) {
+      const shown = requesterState(state);
+      expect(shown.icon, state).not.toBe('dot');
+      expect(['neutral', 'info', 'success', 'warning', 'danger']).toContain(shown.tone);
+    }
+  });
+
+  it('keeps the accent blue for things that can be pressed: no state is drawn in it', () => {
+    for (const state of [...CANONICAL_STATES, 'awaiting_parts_l3']) expect(requesterState(state).tone).not.toBe('accent');
+  });
+
+  it('draws the one state that is the requester’s to answer in warning', () => {
+    expect(requesterState('pending_requester').tone).toBe('warning');
+  });
+});
+
+describe('what happens next (nextAction)', () => {
+  it('asks for a reply when the desk asked something', () => {
+    expect(nextAction('pending_requester')).toEqual({ kind: 'reply', label: 'Reply needed', tone: 'warning', yours: true });
+  });
+
+  it('asks for a word on a fix, because "Yes, it’s fixed" closes it', () => {
+    expect(nextAction('resolved')).toMatchObject({ kind: 'confirm', label: 'Confirm it’s fixed', yours: true });
+  });
+
+  it('says plainly when nothing is needed — never "Nothing to do. We’ll update you"', () => {
+    for (const state of ['new', 'in_progress', 'reopened', 'pending_third_party', 'pending_approval', 'awaiting_parts_l3']) {
+      expect(nextAction(state), state).toMatchObject({ kind: 'none', label: 'No action needed', yours: false });
+    }
+  });
+
+  it('says nothing at all about a request that is over', () => {
+    expect(nextAction('closed').label).toBeNull();
+    expect(nextAction('cancelled').label).toBeNull();
+  });
+
+  it('marks exactly two canonical states as the requester’s to move', () => {
+    expect(CANONICAL_STATES.filter((state) => nextAction(state).yours).sort()).toEqual(['pending_requester', 'resolved']);
+  });
+
+  it('pins the requester’s rows first and keeps each half in its order', () => {
+    const rows = [
+      { id: 'a', status: 'in_progress' },
+      { id: 'b', status: 'resolved' },
+      { id: 'c', status: 'new' },
+      { id: 'd', status: 'pending_requester' },
+    ];
+    expect(yoursFirst(rows).map((row) => row.id)).toEqual(['b', 'd', 'a', 'c']);
+    expect(yoursFirst([])).toEqual([]);
+  });
+});
+
+describe('where a request has got to (the four-step progress)', () => {
+  it('has four steps, the same for every request', () => {
+    expect(PROGRESS_STEPS).toEqual(['Received', 'Being worked on', 'Resolved', 'Closed']);
+  });
+
+  it('places every canonical state on one of them', () => {
+    for (const state of CANONICAL_STATES) {
+      const progress = progressOf(state);
+      expect(progress.current, state).toBeGreaterThanOrEqual(0);
+      expect(progress.current, state).toBeLessThan(PROGRESS_STEPS.length);
+    }
+  });
+
+  it('names who a paused request is waiting for on the step itself', () => {
+    expect(progressOf('pending_requester')).toEqual({ current: 1, currentLabel: 'Waiting for you' });
+    expect(progressOf('pending_approval')).toEqual({ current: 1, currentLabel: 'Waiting for approval' });
+    expect(progressOf('pending_third_party')).toEqual({ current: 1, currentLabel: 'Waiting on a supplier' });
+  });
+
+  it('ends a withdrawn request on the last step, named for what happened', () => {
+    expect(progressOf('cancelled')).toEqual({ current: 3, currentLabel: 'Cancelled' });
+    expect(progressOf('new').current).toBe(0);
+    expect(progressOf('resolved').current).toBe(2);
+    expect(progressOf('awaiting_parts_l3').current).toBe(1);
+  });
+});
+
+describe('a glyph for a service (catalogue/icons.ts)', () => {
+  it('recognises the guided tiles’ two topics from the words tenants use', () => {
+    expect(topicFor('Access & accounts')?.id).toBe('access');
+    expect(topicFor('Passwords and MFA')?.id).toBe('access');
+    expect(topicFor('Devices & equipment')?.id).toBe('devices');
+    expect(topicFor('Laptops')?.id).toBe('devices');
+    expect(SERVICE_TOPICS.slice(0, 2).map((topic) => topic.label)).toEqual(['Access & accounts', 'Devices & equipment']);
+  });
+
+  it('matches whole words only, whatever the case or accents', () => {
+    expect(topicFor('Apps')?.id).toBe('software');
+    expect(topicFor('Happiness survey')).toBeNull();
+    expect(topicFor('ÉQUIPEMENT')?.id).toBe('devices');
+  });
+
+  it('falls back to the summary, then to a neutral grid rather than a guess', () => {
+    expect(serviceIcon('Workplace', 'A new laptop for a starter')).toBe('assets');
+    expect(serviceIcon('Facilities', null, undefined)).toBe(DEFAULT_SERVICE_ICON);
+  });
+
+  it('sends a guided tile to the matching service, or to the catalogue filtered by the topic', () => {
+    const services = [
+      { key: 'workplace', name: 'Workplace' },
+      { key: 'identity', name: 'Identity & access' },
+    ];
+    expect(topicHref('access', services)).toBe('/catalogue#identity');
+    expect(topicHref('devices', services)).toBe('/catalogue?q=device');
+    expect(topicHref('nothing-like-it', services)).toBe('/catalogue');
   });
 });

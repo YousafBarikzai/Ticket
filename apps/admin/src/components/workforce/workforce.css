@@ -1,0 +1,435 @@
+/*
+ * Workforce (SPEC §6.1): the Now summary and status menus, the on-call rota
+ * cards, the cover and availability dialogs, and the shift and skill
+ * drawers. Arrangement only, tokens throughout.
+ */
+
+/* ---- Now ---------------------------------------------------------------- */
+
+.app-NowSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm) var(--itsm-space-lg);
+}
+
+.app-NowSummary__line {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-NowSummary__onCall {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-NowSummary__label {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-NowStatus {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-NowStatus__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  margin: calc(-1 * var(--itsm-space-3xs));
+  padding: var(--itsm-space-3xs);
+  border: 0;
+  border-radius: var(--itsm-radius-pill);
+  background: transparent;
+  color: var(--itsm-colour-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .app-NowStatus__trigger:hover {
+    background: var(--itsm-colour-fill-hover);
+  }
+}
+
+.app-NowStatus__trigger[aria-expanded='true'] {
+  background: var(--itsm-colour-fill-pressed);
+}
+
+.app-NowStatus__chevron {
+  font-size: var(--itsm-text-caption-size);
+}
+
+.app-NowStatus__note {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+}
+
+.app-Availability,
+.app-Cover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-WorkforceActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs);
+  padding-block-start: var(--itsm-space-xs);
+}
+
+.app-WorkforceFieldError {
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- On call ------------------------------------------------------------ */
+
+.app-Rotas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+  gap: var(--itsm-space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-RotaCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  block-size: 100%;
+}
+
+.app-RotaCard__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-RotaCard__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-RotaCard__meta,
+.app-RotaCard__label,
+.app-RotaCard__next,
+.app-RotaCard__reason,
+.app-Cover__zone {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-RotaCard__now {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+}
+
+.app-RotaCard__who {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-RotaCard__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  font-weight: var(--itsm-text-title3-weight);
+  line-height: var(--itsm-text-title3-line);
+}
+
+.app-RotaCard__subhead {
+  margin: 0 0 var(--itsm-space-xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-RotaCard__order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs) var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: rota;
+}
+
+.app-RotaCard__order > li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  counter-increment: rota;
+}
+
+.app-RotaCard__order > li::before {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-caption-size);
+  font-variant-numeric: tabular-nums;
+  content: counter(rota) '.';
+}
+
+.app-RotaCard__coverList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-RotaCard__cover {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-2xs) var(--itsm-space-2xs) var(--itsm-space-2xs) var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-RotaCard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- New and Edit rota ------------------------------------------------ */
+
+.app-RotaForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-RotaForm__pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+.app-RotaForm__members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-RotaForm__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-RotaForm__member {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-2xs) var(--itsm-space-2xs) var(--itsm-space-2xs) var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-RotaForm__position {
+  inline-size: 1.25rem;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-caption-size);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.app-RotaForm__name {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-RotaForm__moves {
+  display: inline-flex;
+  flex: none;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-Cover__span {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--itsm-space-sm);
+}
+
+/* ---- Routing ------------------------------------------------------------ */
+
+.app-Routing__team {
+  max-inline-size: 28rem;
+}
+
+.app-Routing__policy,
+.app-Routing__answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Routing__settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  max-inline-size: 36rem;
+}
+
+.app-Routing__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Routing__explain {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+  margin-block-end: var(--itsm-space-md);
+}
+
+.app-Routing__explain > :first-child {
+  inline-size: min(100%, 28rem);
+}
+
+.app-Routing__verdict {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-Routing__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  padding-inline-start: var(--itsm-space-lg);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* ---- Shifts and skills --------------------------------------------------- */
+
+.app-ShiftDetail,
+.app-SkillDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-SkillDetail > p {
+  margin: 0;
+}
+
+.app-ShiftDetail__heading {
+  margin: 0 0 var(--itsm-space-xs);
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-ShiftDetail__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-ShiftDetail__people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-ShiftDetail__people > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-ShiftDetail__person {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-ShiftDetail__span {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Loading ------------------------------------------------------------ */
+
+.app-WorkforceSkeleton__summary {
+  block-size: 4rem;
+  border-radius: var(--itsm-radius-2xl);
+}
+
+.app-WorkforceSkeleton__head,
+.app-WorkforceSkeleton__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-WorkforceSkeleton__title {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-WorkforceSkeleton__tabs {
+  display: flex;
+  gap: var(--itsm-space-lg);
+  padding-block-end: var(--itsm-space-xs);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-WorkforceSkeleton__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+  gap: var(--itsm-space-md);
+}

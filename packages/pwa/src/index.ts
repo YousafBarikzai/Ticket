@@ -10,7 +10,12 @@
  *               tests: private browsing makes IndexedDB throw.
  *   sync.ts     draining the queue, one item at a time, oldest first.
  *   client.ts   registration, `submitOrQueue`, and `useOutbox` for the screen.
+ *   update.ts   "A new version is ready · Reload": the page's half of updates.
+ *   clear.ts    `clearLocalData()`, what sign-out forgets.
+ *   offline-pages.ts  `cachedPages()`, for the `/offline` screen's list.
  *   sw.ts       the service worker, bundled into each app's public/sw.js.
+ *   live/       one server-sent-events stream per tab; its own subpath,
+ *               `@itsm/pwa/live`, because admin uses it without the rest.
  */
 export {
   afterAttempt,
@@ -23,7 +28,9 @@ export {
   outcomeOf,
   pendingCount,
   MAX_ATTEMPTS,
+  newIdempotencyKey,
   QUEUEABLE,
+  SENDING_LEASE_MS,
   type Attempt,
   type ItemStatus,
   type OutboxItem,
@@ -47,5 +54,18 @@ export {
   submitOrQueue,
   useOutbox,
   type OutboxView,
+  type SubmitDeps,
   type SubmitResult,
 } from './client.js';
+export {
+  applyUpdate,
+  useServiceWorkerUpdate,
+  watchForUpdate,
+  type ContainerLike,
+  type RegistrationLike,
+  type ServiceWorkerUpdate,
+  type WorkerLike,
+} from './update.js';
+export { clearLocalData, isDraftKey, isPersonalCache, type ClearOptions, type ClearReport } from './clear.js';
+export { cachedPages } from './offline-pages.js';
+export { DRAIN_OUTBOX, OUTBOX_DRAINED, SKIP_WAITING } from './messages.js';

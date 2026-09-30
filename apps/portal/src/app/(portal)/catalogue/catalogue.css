@@ -1,0 +1,446 @@
+/*
+ * Services and asking for one (SPEC §6.3 `/catalogue`, `/catalogue/[key]`):
+ * the heading and a search, service chips that stay under the top bar, a
+ * card grid per service; then an item's request as one card of steps beside
+ * a summary of what happens next. Arrangement only, from the design
+ * system's tokens; unlayered, so it wins over `@layer itsm.*` without
+ * `!important`.
+ */
+
+/* ---- Services -------------------------------------------------------------- */
+
+.app-Catalogue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  padding-block: var(--itsm-space-lg) var(--itsm-space-3xl);
+}
+
+.app-Services__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Services__title,
+.app-ServiceRequest__title {
+  margin: 0;
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.app-Services__title:focus,
+.app-ServiceRequest__title:focus {
+  outline: none;
+}
+
+.app-Services__lede,
+.app-ServiceRequest__lede {
+  margin: 0;
+  max-inline-size: 65ch;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  letter-spacing: var(--itsm-text-body-tracking);
+}
+
+.app-Services {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xl);
+}
+
+.app-Services__search {
+  max-inline-size: var(--itsm-content-narrow);
+}
+
+/*
+ * The chips: a row that stays under the top bar while the services scroll
+ * past, and scrolls sideways on its own when it is wider than the screen.
+ * Opaque, on the canvas (glass is for the frame's own bars, D6).
+ */
+.app-Services__chips {
+  position: sticky;
+  inset-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top));
+  z-index: var(--itsm-z-sticky);
+  margin-block: calc(-1 * var(--itsm-space-md));
+  margin-inline: calc(-1 * var(--itsm-space-2xs));
+  padding-block: var(--itsm-space-2xs);
+  background: var(--itsm-colour-surface-canvas);
+}
+
+.app-Services__chipList {
+  display: flex;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  /* Room for the focus ring, which the sideways scroller would otherwise clip. */
+  padding: var(--itsm-space-2xs);
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.app-Services__chipList::-webkit-scrollbar {
+  display: none;
+}
+
+.app-Services__chip {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--itsm-control-height-sm);
+  padding-inline: var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+@media (hover: hover) {
+  .app-Services__chip:hover {
+    background: var(--itsm-colour-fill-hover);
+  }
+}
+
+.app-Services__chip:active {
+  background: var(--itsm-colour-fill-pressed);
+}
+
+/* The service in view: a solid, quiet pill (selected, not a call to action). */
+.app-Services__chip[aria-current] {
+  background: var(--itsm-colour-surface-selected);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Services__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  /* A chip's jump lands the heading below the top bar and the chips, not under them. */
+  scroll-margin-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-control-height-sm) + var(--itsm-space-lg));
+}
+
+.app-Services__service {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+  letter-spacing: var(--itsm-text-title3-tracking);
+}
+
+.app-Services__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---- Asking for one ---------------------------------------------------------- */
+
+.app-ServiceRequest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  padding-block: var(--itsm-space-md) var(--itsm-space-3xl);
+}
+
+.app-ServiceRequest__back {
+  align-self: flex-start;
+  margin-inline-start: calc(-1 * var(--itsm-space-xs));
+  margin-block-end: calc(-1 * var(--itsm-space-sm));
+}
+
+.app-ServiceRequest__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  max-inline-size: var(--itsm-content-narrow);
+}
+
+.app-ServiceRequest__eyebrow {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+/* One column on a phone; the form (720) beside the summary (320) from 1024 px. */
+.app-ServiceRequest__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--itsm-space-xl);
+}
+
+@media (min-width: 64rem) {
+  .app-ServiceRequest__layout {
+    grid-template-columns: minmax(0, var(--itsm-content-narrow)) minmax(16rem, 20rem);
+    justify-content: start;
+    column-gap: var(--itsm-space-2xl);
+  }
+
+  .app-ServiceRequest__rail {
+    position: sticky;
+    inset-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
+  }
+}
+
+.app-ServiceRequest__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  min-inline-size: 0;
+}
+
+/*
+ * The form in one card. Its action bar (sticky at the bottom of the view on
+ * a long step) reaches the card's edges, so when it floats it reads as the
+ * card's own footer.
+ */
+.app-ServiceRequest__card {
+  --app-request-pad: var(--itsm-space-lg);
+  box-sizing: border-box;
+  padding: var(--app-request-pad) var(--app-request-pad) 0;
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-ServiceRequest__card .itsm-FormRenderer__actions {
+  margin-inline: calc(-1 * var(--app-request-pad));
+  padding-inline: var(--app-request-pad);
+  border-end-start-radius: var(--itsm-radius-2xl);
+  border-end-end-radius: var(--itsm-radius-2xl);
+}
+
+@media (max-width: 47.9375rem) {
+  .app-ServiceRequest__card {
+    --app-request-pad: var(--itsm-space-md);
+  }
+}
+
+/* The skeleton has no action bar to close the card, so it keeps its bottom padding. */
+.app-ServiceRequest__card--loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  padding-block-end: var(--app-request-pad);
+}
+
+.app-ServiceRequest__plain {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+  padding-block-end: var(--app-request-pad);
+}
+
+.app-ServiceRequest__plainTitle {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+  letter-spacing: var(--itsm-text-title3-tracking);
+}
+
+.app-ServiceRequest__quiet {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+/* The summary beside the form: what is being asked for, and what happens after. */
+.app-ServiceRequest__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-lg);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-ServiceRequest__railItem {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+  letter-spacing: var(--itsm-text-headline-tracking);
+  overflow-wrap: anywhere;
+}
+
+.app-ServiceRequest__railService {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-ServiceRequest__railTitle {
+  margin: var(--itsm-space-sm) 0 0;
+  padding-block-start: var(--itsm-space-sm);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-ServiceRequest__next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: app-next;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-ServiceRequest__next > li {
+  display: grid;
+  grid-template-columns: var(--itsm-icon-lg) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--itsm-space-xs);
+  counter-increment: app-next;
+}
+
+.app-ServiceRequest__next > li::before {
+  content: counter(app-next);
+  display: grid;
+  place-items: center;
+  inline-size: var(--itsm-icon-lg);
+  block-size: var(--itsm-icon-lg);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-ServiceRequest__draft {
+  margin-block-start: var(--itsm-space-2xs);
+}
+
+/* ---- Requested ------------------------------------------------------------------ */
+
+.app-ServiceDone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-2xl) var(--itsm-space-lg);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+  text-align: center;
+  animation: app-ServiceDone-in var(--itsm-duration-normal) var(--itsm-easing-entrance);
+}
+
+@keyframes app-ServiceDone-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes app-ServiceDone-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-ServiceDone {
+    animation-name: app-ServiceDone-fade;
+  }
+}
+
+:root[data-itsm-motion='reduced'] .app-ServiceDone {
+  animation-name: app-ServiceDone-fade;
+}
+
+.app-ServiceDone__mark {
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--itsm-icon-2xl) + var(--itsm-space-md));
+  block-size: calc(var(--itsm-icon-2xl) + var(--itsm-space-md));
+  margin-block-end: var(--itsm-space-2xs);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-success-subtle);
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-ServiceDone__mark[data-tone='neutral'] {
+  background: var(--itsm-colour-neutral-subtle);
+  color: var(--itsm-colour-neutral-subtleText);
+}
+
+.app-ServiceDone__title {
+  margin: 0;
+  font-size: var(--itsm-text-title2-size);
+  line-height: var(--itsm-text-title2-line);
+  font-weight: var(--itsm-text-title2-weight);
+  letter-spacing: var(--itsm-text-title2-tracking);
+}
+
+.app-ServiceDone__title:focus {
+  outline: none;
+}
+
+.app-ServiceDone__number {
+  white-space: nowrap;
+}
+
+.app-ServiceDone__body {
+  margin: 0;
+  max-inline-size: 36ch;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  text-wrap: balance;
+}
+
+.app-ServiceDone__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--itsm-space-xs);
+  margin-block-start: var(--itsm-space-sm);
+}
+
+@media (max-width: 47.9375rem) {
+  .app-ServiceDone__actions {
+    flex-direction: column;
+    align-self: stretch;
+  }
+}
+
+@media (forced-colors: active) {
+  .app-Services__chip[aria-current] {
+    outline: var(--itsm-hairline) solid CanvasText;
+  }
+
+  .app-ServiceRequest__card,
+  .app-ServiceRequest__summary,
+  .app-ServiceDone {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}

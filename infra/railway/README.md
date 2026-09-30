@@ -23,9 +23,9 @@ JSON cannot, because something reads it.
 | 2 | `worker-comms` | `worker` | no | 2 | `WORKER_QUEUES=comms`, `EMAIL_TRANSPORT`, `SMTP_URL` |
 | 2 | `worker-data` | `worker` | no | 1 | `WORKER_QUEUES=data` |
 | 3 | `api` | `api` | `api.` | 2 | `API_PORT`, `DATABASE_URL_APP`, `DATABASE_URL_PLATFORM`, `REDIS_URL`, `OIDC_ISSUER` |
-| 4 | `portal` | `portal` | `help.` | 2 | `PORTAL_ORIGIN`, `API_BASE_URL`, `REDIS_URL`, `OIDC_*` |
-| 4 | `workbench` | `workbench` | `desk.` | 2 | `WORKBENCH_ORIGIN`, `API_BASE_URL`, `REDIS_URL`, `OIDC_*` |
-| 4 | `admin` | `admin` | `admin.` | 1 | `ADMIN_ORIGIN`, `API_BASE_URL`, `REDIS_URL`, `OIDC_*` |
+| 4 | `portal` | `portal` | `help.` | 2 | the three `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*`, `PORTAL_CHANNELS` |
+| 4 | `workbench` | `workbench` | `desk.` | 2 | the three `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*` |
+| 4 | `admin` | `admin` | `admin.` | 1 | the three `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*` |
 | — | `keycloak` | upstream image | `auth.` | 2 | own PostgreSQL |
 | — | `meilisearch` | upstream image | no | 1 | `MEILI_MASTER_KEY`, persistent volume |
 | — | `postgres`, `postgres-keycloak`, `redis` | managed | no | — | — |
@@ -34,6 +34,19 @@ The three web applications hold no build-time configuration at all: there is no
 `NEXT_PUBLIC_` anything in `packages/bff` on purpose, so one image per commit
 runs unchanged in a preview, in staging and in production, and the only thing
 that differs is the environment it is given.
+
+Every web application is given all three origins — `PORTAL_ORIGIN`,
+`WORKBENCH_ORIGIN` and `ADMIN_ORIGIN` — not only its own, because each one links
+to the others (the app switcher, "Open in Workbench", "View as requester", the
+portal links in an agent's reply). Each BFF still checks requests against its
+own origin only. The three share a phase and are deployed in two passes,
+hostnames first and variables second, so none of them is given a sibling's
+origin before that sibling has one. The API is given none of them.
+
+`PORTAL_CHANNELS` is set on the portal alone, from the GitHub variable of the
+same name (`email,teams,slack`, say). Unset or empty, the deploy leaves the
+portal's value as it is, so a value set by hand in Railway survives; a list that
+is not channel names stops the deploy before its first call.
 
 The queue families are split across services on purpose: a burst of indexing or
 AI work must not starve outbox publishing or the SLA timers

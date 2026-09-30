@@ -1,4 +1,5 @@
 import type { CatalogueItem } from '@itsm/sdk';
+import { serviceMatches } from '../client/palette.js';
 
 /**
  * Grouping the catalogue by service.
@@ -14,13 +15,33 @@ import type { CatalogueItem } from '@itsm/sdk';
  * "Everything else" sorts last however the locale collates, because a bucket
  * that lands in the middle of the alphabet reads as a service called
  * Everything.
+ *
+ * Each group carries its `anchor`, the id of its section on `/catalogue`: the
+ * service's own key, so Home's topic tiles (`/catalogue#<serviceKey>`, WP14's
+ * `topicHref`) land on it.
  */
 
 export const UNGROUPED = 'Everything else';
 
+/** The section id for items with no service. Not a key a service can have (keys never contain a colon). */
+export const UNGROUPED_ANCHOR = 'services:other';
+
 export interface CatalogueGroup {
   readonly service: string;
+  /** The section's id: the service's key, or a slug of its name when the key is missing. */
+  readonly anchor: string;
   readonly items: CatalogueItem[];
+}
+
+/** An id from a service's name, for a service whose key did not come through. */
+function slug(name: string): string {
+  const folded = name
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `service-${folded || 'unnamed'}`;
 }
 
 export function groupByService(items: readonly CatalogueItem[]): CatalogueGroup[] {
@@ -38,5 +59,24 @@ export function groupByService(items: readonly CatalogueItem[]): CatalogueGroup[
       if (b === UNGROUPED) return -1;
       return a.localeCompare(b, 'en-GB');
     })
-    .map(([service, list]) => ({ service, items: list }));
+    .map(([service, list]) => ({
+      service,
+      anchor: service === UNGROUPED ? UNGROUPED_ANCHOR : (list.find((item) => item.serviceKey)?.serviceKey ?? slug(service)),
+      items: list,
+    }));
+}
+
+/**
+ * The items a search keeps: every word somewhere in the name, summary,
+ * description or service — the rule Home's suggestions, the palette and
+ * `/search` already use, so the four never disagree about what matches.
+ */
+export function filterCatalogue(items: readonly CatalogueItem[], query: string): CatalogueItem[] {
+  const words = query.trim();
+  return words ? items.filter((item) => serviceMatches(item, words)) : [...items];
+}
+
+/** Where "‹ Services" goes from an item: its service's section, so Back lands where the person came from. */
+export function serviceHref(serviceKey: string | null | undefined): string {
+  return serviceKey ? `/catalogue#${encodeURIComponent(serviceKey)}` : '/catalogue';
 }

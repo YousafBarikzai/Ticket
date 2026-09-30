@@ -1,96 +1,64 @@
 import type { ReactNode } from 'react';
-import Link from 'next/link';
 import type { Metadata } from 'next';
-import { ApiError, type Ticket } from '@itsm/sdk';
-import { Badge, EmptyState } from '@itsm/ui';
-import { apiFor, requireSession } from '../../../server/session.js';
-import { needsYou, raisedAgo, requesterState, typeLabel } from '../../../tickets/presentation.js';
+import { settle } from '../../../home/settle.js';
+import { NewRequestButton } from '../../../requests/NewRequestButton.js';
+import { itemOf, filterFor, PAGE_SIZE, queryOf, scopeOf } from '../../../requests/model.js';
+import { RequestsBrowser } from '../../../requests/RequestsBrowser.js';
+import { apiFor, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
+import '../../../requests/requests.css';
 
-export const metadata: Metadata = { title: 'My tickets' };
+export const metadata: Metadata = { title: 'My requests' };
 export const dynamic = 'force-dynamic';
 
+type Params = Promise<Record<string, string | string[] | undefined>>;
+
+/** How many "needs you" requests are counted before the badge says "99+". */
+const COUNT_LIMIT = 100;
+
 /**
- * Everything this person has raised.
+ * My requests (SPEC §6.3 `/tickets`): everything this person has raised,
+ * scoped — Open (default), Needs you (n), Resolved, All — and searchable,
+ * with what needs them first. The heading and New request are always there,
+ * whatever the list says; a list that failed to load says so rather than
+ * "Nothing open".
  *
- * Open first and closed after, rather than one list sorted by date: a portal's
- * job is to answer "what is happening with my thing", and a ticket closed
- * three months ago is not an answer. `?all=1` shows the lot, because "where is
- * that request from last quarter" is a real question too.
- *
- * No table. On a phone a five-column table is a horizontal scroll, and this is
- * the screen most likely to be opened on one.
+ * Three reads start together: the scope's first page, the needs-you count
+ * for its segment, and the unread notifications that put a dot on a row.
+ * The count and the dots are allowed to fail quietly; the list is not.
  */
-export default async function MyTicketsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}): Promise<ReactNode> {
-  const showAll = (await searchParams).all === '1';
+export default async function MyRequestsPage({ searchParams }: { searchParams: Params }): Promise<ReactNode> {
   const session = await requireSession();
+  const [me, params] = await Promise.all([currentMe(), searchParams]);
+  const held = heldPermissions(me);
+  const scope = scopeOf(params.show, params.all);
+  const q = queryOf(params.q);
+  const api = apiFor(session);
 
-  let tickets: readonly Ticket[];
-  try {
-    const page = await apiFor(session).myTickets(
-      showAll ? { limit: 100 } : { statusCategory: 'new,open,pending,resolved', limit: 100 },
-    );
-    tickets = page.data;
-  } catch (error) {
-    return (
-      <EmptyState
-        tone="error"
-        title="Your tickets could not be loaded"
-        description={error instanceof ApiError ? error.message : 'The service could not be reached.'}
-      />
-    );
-  }
+  const [list, needs, notifications] = await Promise.all([
+    settle(api.myTickets({ ...filterFor(scope), ...(q ? { q } : {}), limit: PAGE_SIZE })),
+    settle(api.myTickets({ ...filterFor('needs'), limit: COUNT_LIMIT })),
+    held.has('notification.read') ? settle(api.notifications({ unread: true, limit: 100 })) : Promise.resolve(null),
+  ]);
 
-  if (tickets.length === 0) {
-    return (
-      <EmptyState
-        title={showAll ? 'You have never raised anything' : 'Nothing open'}
-        description={showAll ? 'When you report something it will appear here.' : 'Nothing of yours is with us.'}
-        action={<Link href="/report">Report an issue</Link>}
-        {...(showAll ? {} : { secondaryAction: <Link href="/tickets?all=1">Show everything, including closed</Link> })}
-      />
-    );
-  }
+  const unread = notifications?.ok
+    ? [...new Set(notifications.value.data.map((notification) => notification.ticketId).filter((id): id is string => typeof id === 'string'))]
+    : [];
 
   return (
-    <div className="itsm-Page">
-      <h1 className="itsm-Page__heading">My tickets</h1>
-
-      <ul className="itsm-Tickets">
-        {tickets.map((ticket) => {
-          const state = requesterState(ticket.status);
-          return (
-            <li key={ticket.id} className="itsm-Tickets__row" data-needs-you={needsYou(ticket.status) ? 'true' : 'false'}>
-              <Link className="itsm-Tickets__title" href={`/tickets/${ticket.number}`}>
-                {ticket.title}
-              </Link>
-              <p className="itsm-Tickets__meta">
-                <Badge intent={state.intent} srPrefix="Status">
-                  {state.label}
-                </Badge>
-                <span>{typeLabel(ticket.type)}</span>
-                <span className="itsm-Tickets__number">{ticket.number}</span>
-                <time dateTime={ticket.createdAt} title={ticket.createdAt}>
-                  {raisedAgo(ticket.createdAt)}
-                </time>
-              </p>
-              {/* The sentence that says whose move it is. */}
-              <p className="itsm-Tickets__detail">{state.detail}</p>
-            </li>
-          );
-        })}
-      </ul>
-
-      <p className="itsm-Page__footnote">
-        {showAll ? (
-          <Link href="/tickets">Show only what is still open</Link>
-        ) : (
-          <Link href="/tickets?all=1">Show everything, including closed</Link>
-        )}
-      </p>
+    <div className="app-Page app-Requests">
+      <header className="app-Requests__header">
+        <h1 className="app-Requests__title" tabIndex={-1}>
+          My requests
+        </h1>
+        <NewRequestButton />
+      </header>
+      <RequestsBrowser
+        scope={scope}
+        q={q}
+        needsCount={needs.ok ? { count: needs.value.data.length, capped: needs.value.nextCursor !== null } : null}
+        initial={list.ok ? { rows: list.value.data.map(itemOf), nextCursor: list.value.nextCursor } : null}
+        unread={unread}
+      />
     </div>
   );
 }

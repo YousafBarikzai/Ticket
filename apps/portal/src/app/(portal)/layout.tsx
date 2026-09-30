@@ -1,90 +1,82 @@
 import type { ReactNode } from 'react';
-import { redirect } from 'next/navigation';
-import { AppShell } from '@itsm/ui';
-import { apiFor, currentSession } from '../../server/session.js';
-import { OfflineStatus } from '../../components/OfflineStatus.js';
-import { SignOutButton } from '../../components/SignOutButton.js';
+import type { Me } from '@itsm/sdk';
+import { Button, StatusScreen } from '@itsm/ui';
+import { PortalProviders } from '../../components/PortalProviders.js';
+import { PortalShell } from '../../components/PortalShell.js';
+import { portalCan, portalFrame, switcherFor } from '../../navigation.js';
+import { currentApprovals, currentMe, heldPermissions, isTenantSuspended } from '../../server/session.js';
 
 /**
- * Everything behind a session.
+ * Everything behind a session: the portal frame (SPEC §5.1, §5.4).
  *
- * The route group exists so that `/sign-in` and `/signed-out` are not wrapped
- * in a shell that needs the session they are there to obtain — a layout that
- * redirects to sign-in, rendered by the sign-in page, is an infinite loop and
- * a classic one.
+ * The route group exists so that `/sign-in`, `/signed-out` and `/offline` are
+ * not wrapped in a frame that needs the session they are there to obtain — a
+ * layout that redirects to sign-in, rendered by the sign-in page, is an
+ * infinite loop and a classic one.
  *
- * The navigation is built from what the person can actually do. A requester
- * with no approvals waiting is not shown an approvals link that leads to an
- * empty page; an account without `catalogue.read` is not shown a catalogue it
- * would be refused. The API is still the enforcer — this only decides what is
- * worth offering.
+ * One `/me` and one approvals call, both shared with the page under it
+ * through `cache()` (F6). The approvals call is skipped without
+ * `approval.read`, leaves decided ones out (F34), and failing softly: an
+ * approvals module that is unavailable must not take the navigation with it.
+ * Then plain data for the client frame — names, the navigation model built
+ * from the person's permissions, booleans. No function crosses to the
+ * client.
+ *
+ * A suspended workspace is a full-screen state of its own (F7), not an
+ * error page; any other failure to read the person reaches the root error
+ * boundary, which offers Try again.
  */
 
+function Suspended(): ReactNode {
+  return (
+    <StatusScreen
+      brand="portal"
+      illustration="forbidden"
+      title="This workspace is suspended"
+      body="Nobody can use it until it’s restored. Your IT team can tell you more."
+    >
+      <form method="post" action="/api/session/logout">
+        <Button type="submit" variant="secondary" size="lg" fullWidth>
+          Sign out
+        </Button>
+      </form>
+    </StatusScreen>
+  );
+}
+
+/** Under the name in the avatar menu: the person's organisation, else the workspace. */
+function detailOf(me: Me): string | undefined {
+  return me.organisations[0]?.name ?? me.tenant?.name ?? undefined;
+}
+
 export default async function PortalLayout({ children }: { children: ReactNode }): Promise<ReactNode> {
-  const session = await currentSession();
-  if (!session) redirect('/api/session/login');
-
-  const api = apiFor(session);
-  const me = await api.me();
-  const held = new Set(me.permissions.map((permission) => permission.key));
-
-  // A count, not a boolean: "Approvals (2)" is the whole reason somebody opens
-  // the portal on a day they were not going to. Failing softly, because an
-  // approvals module that is unavailable must not take the navigation with it.
-  let waiting = 0;
-  if (held.has('approval.read')) {
-    try {
-      waiting = (await api.approvals()).data.length;
-    } catch {
-      waiting = 0;
-    }
+  let me: Me;
+  try {
+    me = await currentMe();
+  } catch (error) {
+    if (isTenantSuspended(error)) return <Suspended />;
+    throw error;
   }
 
-  /*
-   * The five the brief asks for, in its order: Home, My requests, Services,
-   * Knowledge, Profile.
-   *
-   * Approvals is the sixth and is not in that list. It is kept because
-   * removing it would take away a screen people use, and because it is already
-   * the brief's own progressive disclosure done properly: it appears only for
-   * somebody who has approvals to give, carrying the number waiting, and is
-   * invisible to everybody else. A requester's navigation is still five items.
-   *
-   * The labels are the brief's words rather than the ones that were here.
-   * "My requests" and "Services" are what a person coming to a service desk
-   * calls these; "My tickets" and "Request something" are what the people who
-   * run one call them.
-   */
-  const nav = [
-    { id: 'home', label: 'Home', href: '/' },
-    { id: 'tickets', label: 'My requests', href: '/tickets' },
-    ...(held.has('catalogue.read') ? [{ id: 'catalogue', label: 'Services', href: '/catalogue' }] : []),
-    ...(held.has('knowledge.read') ? [{ id: 'knowledge', label: 'Knowledge', href: '/knowledge' }] : []),
-    ...(held.has('approval.read')
-      ? [{ id: 'approvals', label: 'Approvals', href: '/approvals', ...(waiting > 0 ? { badge: waiting } : {}) }]
-      : []),
-    { id: 'profile', label: 'Profile', href: '/profile' },
-  ];
+  const held = heldPermissions(me);
+  const can = portalCan(held);
+  const approvals = can.readApprovals ? await currentApprovals() : null;
+  const waiting = approvals?.length ?? 0;
+  const detail = detailOf(me);
 
   return (
-    <AppShell
-      brand={
-        <span>
-          <strong>Help</strong>
-          {me.tenant ? <span className="itsm-AppShell__tenant"> · {me.tenant.name}</span> : null}
-        </span>
-      }
-      navItems={nav}
-      navLabel="Portal"
-      headerEnd={
-        <>
-          <span className="itsm-AppShell__who">{me.actor.displayName ?? 'Signed in'}</span>
-          <SignOutButton />
-        </>
-      }
-    >
-      <OfflineStatus />
-      {children}
-    </AppShell>
+    <PortalProviders locale={me.locale} timeZone={me.timeZone} {...(me.actor.id ? { storageScope: me.actor.id } : {})}>
+      <PortalShell
+        user={{ id: me.actor.id, name: me.actor.displayName ?? 'Signed in', ...(detail ? { detail } : {}) }}
+        {...(me.tenant ? { tenantName: me.tenant.name } : {})}
+        frame={portalFrame(can, waiting)}
+        switcher={switcherFor(held, { workbench: process.env.WORKBENCH_ORIGIN, admin: process.env.ADMIN_ORIGIN })}
+        can={can}
+        approvalsWaiting={waiting}
+        renderedAt={new Date().toISOString()}
+      >
+        {children}
+      </PortalShell>
+    </PortalProviders>
   );
 }

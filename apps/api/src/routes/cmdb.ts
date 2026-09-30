@@ -33,6 +33,9 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
   }) => ({
     id: item.id,
     name: item.name,
+    // Which class it is: a list cannot say "Orders DB · Database server", or
+    // check the item's attributes against its class, without it.
+    classId: item.classId,
     status: item.status,
     criticality: item.criticality,
     externalKey: item.externalKey,
@@ -206,9 +209,17 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- assets ------------------------------------------------------------
+  // The register's two lists say who holds each asset now. Without it, "who
+  // has what" — the question the register exists to answer — meant opening
+  // every asset in turn.
+  const withHolders = async (ctx: ReturnType<typeof contextOf>, rows: readonly Parameters<typeof asset>[0][]) => {
+    const holders = await assetService.currentHolders(ctx, rows.map((row) => row.id));
+    return rows.map((row) => ({ ...asset(row), holderId: holders.get(row.id) ?? null }));
+  };
+
   app.get('/assets', async (request) => {
     const ctx = contextOf(request);
-    return { data: (await assetService.listAssets(ctx, request.query as never)).map(asset) };
+    return { data: await withHolders(ctx, await assetService.listAssets(ctx, request.query as never)) };
   });
 
   app.post('/assets', async (request, reply) => {
@@ -262,9 +273,10 @@ export async function cmdbRoutes(app: FastifyInstance): Promise<void> {
     const query = z.object({ withinDays: z.coerce.number().int().min(1).max(365).default(30) }).parse(request.query);
     const rows = await assetService.warrantiesExpiring(ctx, query.withinDays);
     const now = Date.now();
+    const held = await withHolders(ctx, rows);
     return {
-      data: rows.map((row) => ({
-        ...asset(row),
+      data: rows.map((row, index) => ({
+        ...held[index]!,
         expired: Boolean(row.warrantyEndsOn && row.warrantyEndsOn.getTime() < now),
       })),
     };

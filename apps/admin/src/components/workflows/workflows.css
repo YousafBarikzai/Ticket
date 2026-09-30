@@ -1,0 +1,623 @@
+/*
+ * Workflows: the list, the runs, a workflow's page and its diagram
+ * (SPEC §6.1). Arrangement only, tokens throughout; imported by the three
+ * workflow pages and their loading files.
+ */
+
+/* ---- Last runs: a thin stacked bar and its words ------------------------- */
+
+.app-RunMix {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  min-inline-size: 0;
+}
+
+.app-RunMix__bar {
+  display: flex;
+  flex: 0 0 4.5rem;
+  gap: var(--itsm-hairline);
+  block-size: var(--itsm-space-xs);
+  overflow: hidden;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-track);
+}
+
+.app-RunMix__part {
+  flex-basis: 0;
+  min-inline-size: var(--itsm-space-3xs);
+}
+
+.app-RunMix__part[data-part='completed'] {
+  background: var(--itsm-colour-success-solid);
+}
+
+.app-RunMix__part[data-part='active'] {
+  background: var(--itsm-colour-info-solid);
+}
+
+.app-RunMix__part[data-part='failed'] {
+  background: var(--itsm-colour-danger-solid);
+}
+
+.app-RunMix__part[data-part='cancelled'] {
+  background: var(--itsm-colour-neutral-solid);
+}
+
+.app-RunMix__words {
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  white-space: nowrap;
+}
+
+.app-RunMix__words--quiet {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-RunMix__words--failed {
+  color: var(--itsm-colour-danger-subtleText);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+@media (forced-colors: active) {
+  .app-RunMix__bar {
+    outline: var(--itsm-hairline) solid CanvasText;
+  }
+
+  .app-RunMix__part {
+    background: CanvasText;
+  }
+}
+
+/* ---- Runs ----------------------------------------------------------------- */
+
+.app-Runs__quiet {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Runs__ticket {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  white-space: nowrap;
+}
+
+.app-Runs__error {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-Freshness {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  white-space: nowrap;
+}
+
+/* ---- A run's drawer ------------------------------------------------------- */
+
+.app-RunDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-RunDetail__error {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.app-RunDetail__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-RunDetail__heading {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-RunDetail__quiet {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-RunSteps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-RunSteps__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  padding-block: var(--itsm-space-xs);
+  padding-inline-start: var(--itsm-space-sm);
+  border-inline-start: var(--itsm-border-thick) solid var(--itsm-colour-border-subtle);
+}
+
+.app-RunSteps__step[data-status='failed'] {
+  border-inline-start-color: var(--itsm-colour-danger-border);
+}
+
+.app-RunSteps__step[data-status='done'] {
+  border-inline-start-color: var(--itsm-colour-success-border);
+}
+
+.app-RunSteps__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-RunSteps__name {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-RunSteps__attempt,
+.app-RunSteps__when {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-RunSteps__error {
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.app-RunActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- A workflow's page ------------------------------------------------------ */
+
+.app-Workflow {
+  container: workflow / inline-size;
+}
+
+.app-Workflow__overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-md);
+  margin-block-end: var(--itsm-space-lg);
+}
+
+@container workflow (min-width: 52rem) {
+  .app-Workflow__overview {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.app-Workflow__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Workflow__description {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Check {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Check__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-Check__clean {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-Check__summary {
+  margin: 0;
+}
+
+.app-Check__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Check__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-WorkflowGraph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  padding-block-start: var(--itsm-space-md);
+}
+
+.app-WorkflowGraph__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-md);
+  align-items: start;
+}
+
+@container workflow (min-width: 56rem) {
+  .app-WorkflowGraph__body[data-with-panel] {
+    grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
+  }
+}
+
+.app-WorkflowGraph__main {
+  min-inline-size: 0;
+}
+
+.app-NodePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-NodePanel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-NodePanel__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-WorkflowVersions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  max-inline-size: var(--itsm-content-default);
+  margin: 0;
+  padding: var(--itsm-space-md) 0 0;
+  list-style: none;
+}
+
+.app-WfVersion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-WfVersion__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-WfVersion__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-text-headline-weight);
+  line-height: var(--itsm-text-headline-line);
+}
+
+.app-WfVersion__action {
+  margin-inline-start: auto;
+}
+
+.app-WfVersion__meta,
+.app-WfVersion__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-WfVersion__note {
+  color: var(--itsm-colour-text-primary);
+}
+
+/* ---- The diagram ------------------------------------------------------------ */
+
+.app-Flow__scroll {
+  overflow: auto;
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-Flow__canvas {
+  position: relative;
+  margin-inline: auto;
+}
+
+.app-Flow__edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.app-Flow__edge path {
+  fill: none;
+  stroke: var(--itsm-colour-border-strong);
+  stroke-width: 1.5;
+}
+
+.app-Flow__edge[data-back] path {
+  stroke-dasharray: 4 4;
+}
+
+.app-Flow__arrow {
+  fill: var(--itsm-colour-border-strong);
+}
+
+.app-Flow__edgeLabel {
+  fill: var(--itsm-colour-text-secondary);
+  font-family: var(--itsm-font-family-sans);
+  font-size: var(--itsm-text-caption-size);
+  paint-order: stroke;
+  stroke: var(--itsm-colour-surface-sunken);
+  stroke-width: 4;
+}
+
+.app-Flow__nodes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Flow__node {
+  position: absolute;
+}
+
+.app-Flow__box {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  inline-size: 100%;
+  block-size: 100%;
+  padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+  color: var(--itsm-colour-text-primary);
+  font: inherit;
+  text-align: start;
+}
+
+button.app-Flow__box {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button.app-Flow__box:hover {
+    background: var(--itsm-colour-surface-hover);
+  }
+}
+
+.app-Flow__node[data-selected] .app-Flow__box {
+  border-color: var(--itsm-colour-border-focus);
+  background: var(--itsm-colour-surface-selected);
+}
+
+.app-Flow__node[data-start] .app-Flow__box {
+  border-width: var(--itsm-border-thick);
+}
+
+.app-Flow__node[data-state='current'] .app-Flow__box {
+  border-color: var(--itsm-colour-info-border);
+  background: var(--itsm-colour-info-subtle);
+}
+
+.app-Flow__node[data-state='done'] .app-Flow__box {
+  border-color: var(--itsm-colour-success-border);
+}
+
+.app-Flow__node[data-state='failed'] .app-Flow__box,
+.app-Flow__node[data-problem] .app-Flow__box {
+  border-color: var(--itsm-colour-danger-border);
+  background: var(--itsm-colour-danger-subtle);
+}
+
+.app-Flow__node[data-unreachable] .app-Flow__box {
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.app-Flow__icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  inline-size: var(--itsm-icon-xl);
+  block-size: var(--itsm-icon-xl);
+  border-radius: var(--itsm-radius-md);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Flow__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-Flow__title {
+  overflow: hidden;
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-font-weight-medium);
+  line-height: var(--itsm-text-subheadline-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-Flow__type {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+}
+
+@media (forced-colors: active) {
+  .app-Flow__edge path {
+    stroke: CanvasText;
+  }
+
+  .app-Flow__arrow {
+    fill: CanvasText;
+  }
+
+  .app-Flow__node[data-selected] .app-Flow__box,
+  .app-Flow__node[data-state] .app-Flow__box,
+  .app-Flow__node[data-problem] .app-Flow__box {
+    border-color: Highlight;
+  }
+}
+
+/* ---- The Steps outline ------------------------------------------------------- */
+
+.app-Steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Steps__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-Steps__step[data-selected] {
+  background: var(--itsm-colour-surface-selected);
+}
+
+.app-Steps__step[data-unreachable] {
+  outline: var(--itsm-hairline) dashed var(--itsm-colour-border-strong);
+}
+
+.app-Steps__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Steps__number {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--itsm-icon-lg);
+  block-size: var(--itsm-icon-lg);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-caption-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Steps__type {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Steps__title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--itsm-colour-text-primary);
+  font: inherit;
+  font-weight: var(--itsm-font-weight-semibold);
+  text-align: start;
+}
+
+button.app-Steps__title {
+  color: var(--itsm-colour-text-link);
+  cursor: pointer;
+}
+
+.app-Steps__does,
+.app-Steps__end {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Steps__next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Steps__next li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Steps__condition {
+  color: var(--itsm-colour-text-secondary);
+}
+
+/* ---- Skeletons -------------------------------------------------------------- */
+
+.app-WorkflowsSkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding-block-end: var(--itsm-space-md);
+}
+
+.app-WorkflowsSkeleton__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}
+
+.app-WorkflowsSkeleton__tabs,
+.app-WorkflowsSkeleton__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-md);
+  padding-block-end: var(--itsm-space-md);
+}

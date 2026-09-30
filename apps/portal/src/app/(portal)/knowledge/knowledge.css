@@ -1,0 +1,426 @@
+/*
+ * Knowledge (SPEC §6.3 `/knowledge`, `/knowledge?q=`, `/knowledge/[key]`):
+ * the heading and a large search, category chips, lists of articles as quiet
+ * rows on one card; an article at the reading width with its end card.
+ * Arrangement only, from the design system's tokens; unlayered, so it wins
+ * over `@layer itsm.*` without `!important`.
+ */
+
+/* ---- Browse and search ----------------------------------------------------------- */
+
+.app-Knowledge {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xl);
+  max-inline-size: var(--itsm-content-medium);
+  padding-block: var(--itsm-space-lg) var(--itsm-space-3xl);
+}
+
+.app-Knowledge__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Knowledge__title,
+.app-Article__title {
+  margin: 0;
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.app-Knowledge__title:focus,
+.app-Article__title:focus {
+  outline: none;
+}
+
+.app-Knowledge__lede {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  letter-spacing: var(--itsm-text-body-tracking);
+}
+
+.app-Knowledge__search {
+  margin-block-start: var(--itsm-space-md);
+}
+
+.app-Knowledge__browse {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xl);
+}
+
+.app-Knowledge__chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Knowledge__chip {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--itsm-control-height-sm);
+  padding-inline: var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+@media (hover: hover) {
+  .app-Knowledge__chip:hover {
+    background: var(--itsm-colour-fill-hover);
+  }
+}
+
+.app-Knowledge__chip:active {
+  background: var(--itsm-colour-fill-pressed);
+}
+
+.app-Knowledge__chip[aria-current] {
+  background: var(--itsm-colour-surface-selected);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+/* Popular beside Recently added once there is room; one after the other below it; one list alone takes the width. */
+.app-Knowledge__overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  align-items: start;
+  gap: var(--itsm-space-xl);
+}
+
+.app-Knowledge__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Knowledge__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+}
+
+.app-Knowledge__sectionTitle {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+  letter-spacing: var(--itsm-text-title3-tracking);
+  overflow-wrap: anywhere;
+}
+
+.app-Knowledge__count,
+.app-Knowledge__quiet {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* Articles as rows on one card; the title is the one link, and its hit area covers the row. */
+.app-Knowledge__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+  overflow: hidden;
+}
+
+.app-Knowledge__item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+.app-Knowledge__item + .app-Knowledge__item {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+@media (hover: hover) {
+  .app-Knowledge__item:hover {
+    background: var(--itsm-colour-surface-hover);
+  }
+}
+
+.app-Knowledge__icon {
+  flex: none;
+  margin-block-start: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Knowledge__chevron {
+  flex: none;
+  align-self: center;
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Knowledge__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Knowledge__link {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.app-Knowledge__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+@supports selector(:has(*)) {
+  .app-Knowledge__link:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .app-Knowledge__item:has(.app-Knowledge__link:focus-visible) {
+    outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+    outline-offset: calc(-1 * var(--itsm-focus-width));
+  }
+}
+
+.app-Knowledge__meta {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-Knowledge__snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Knowledge__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+  margin-block-start: var(--itsm-space-md);
+  padding-block-start: var(--itsm-space-lg);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+/* ---- An article --------------------------------------------------------------------- */
+
+.app-Article {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  padding-block: var(--itsm-space-md) var(--itsm-space-3xl);
+}
+
+.app-Article__back {
+  align-self: flex-start;
+  margin-inline-start: calc(-1 * var(--itsm-space-xs));
+  margin-block-end: calc(-1 * var(--itsm-space-sm));
+}
+
+.app-Article__crumbs {
+  margin-block-end: calc(-1 * var(--itsm-space-sm));
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Article__crumbList {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* "Knowledge › How-to": the separator is drawn, not read. */
+.app-Article__crumbList > li + li::before {
+  content: '›';
+  content: '›' / '';
+  margin-inline-end: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Article__crumbList a {
+  color: var(--itsm-colour-text-link);
+  text-decoration: none;
+}
+
+.app-Article__crumbList a:hover {
+  text-decoration: underline;
+}
+
+.app-Article__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Article__lede {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  letter-spacing: var(--itsm-text-title3-tracking);
+  text-wrap: pretty;
+}
+
+.app-Article__meta {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-Article__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  padding-block-end: var(--itsm-space-sm);
+}
+
+.app-Article__more {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Article__moreTitle {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+/* ---- The end of an article ------------------------------------------------------------ */
+
+.app-ArticleEnd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-lg);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-ArticleEnd__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+.app-ArticleEnd__quiet {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-ArticleEnd__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}
+
+.app-ArticleEnd__explain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-ArticleEnd__thanks {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-ArticleEnd__thanks:focus {
+  outline: none;
+}
+
+.app-ArticleEnd__thanks:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-focus-offset);
+  border-radius: var(--itsm-radius-sm);
+}
+
+.app-ArticleEnd__thanksIcon {
+  flex: none;
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-ArticleEnd__still {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+}
+
+@media (max-width: 47.9375rem) {
+  .app-ArticleEnd__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (forced-colors: active) {
+  .app-Knowledge__chip[aria-current] {
+    outline: var(--itsm-hairline) solid CanvasText;
+  }
+
+  .app-Knowledge__list,
+  .app-ArticleEnd {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}

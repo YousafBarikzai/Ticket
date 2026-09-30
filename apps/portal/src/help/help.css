@@ -1,0 +1,407 @@
+/*
+ * "How can we help?" — the flow, in its sheet and on `/report` (SPEC §6.3).
+ *
+ * Arrangement only, from the design system's tokens; unlayered, so it wins
+ * over the `@layer itsm.*` rules without `!important`. Loaded with the sheet's
+ * own chunk (and with the report page), never by a page that does not show
+ * the flow.
+ */
+
+/* ---- The sheet ------------------------------------------------------------ */
+
+/*
+ * A phone gets the whole screen (X-92): the flow is a task, not a glance, and
+ * the tab bar is hidden while it is open. The design system's bottom sheet
+ * stops at 92 % of the height; this one does not, and keeps clear of the
+ * status bar on a notched phone.
+ */
+@media (max-width: 47.9375rem) {
+  .app-HelpSheet.itsm-Sheet--auto,
+  .app-HelpSheet.itsm-Sheet--auto[data-snap='half'] {
+    inline-size: 100%;
+    max-inline-size: none;
+    block-size: 100dvh;
+    padding-block-start: var(--itsm-safe-area-top);
+    border-radius: 0;
+  }
+
+  /* A page-sized sheet has no grabber: the close button (and Escape) end it. */
+  .app-HelpSheet .itsm-Sheet__handle {
+    display: none;
+  }
+}
+
+.app-HelpFlow__footer {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--itsm-space-sm);
+}
+
+/* "Draft saved · 10:42" sits at the start; the buttons keep the end. */
+.app-HelpFlow__saved {
+  margin-inline-end: auto;
+}
+
+@media (max-width: 47.9375rem) {
+  .app-HelpFlow__footer > .itsm-Button {
+    flex: 1 1 10rem;
+  }
+
+  .app-HelpFlow__saved {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---- Both steps ------------------------------------------------------------- */
+
+.app-HelpFlow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-HelpFlow__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  margin: 0;
+}
+
+/* ---- Step 1: what might already help --------------------------------------- */
+
+.app-HelpFlow__issueText {
+  margin: 0;
+}
+
+.app-HelpFlow__suggested {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  transition: opacity var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+/* Asking again: the old answers stay put and dim a little, rather than vanishing and jumping back. */
+.app-HelpFlow__suggested--busy {
+  opacity: 0.6;
+}
+
+.app-HelpFlow__lead {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-HelpFlow__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-HelpFlow__groupTitle {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-HelpFlow__options {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+  overflow: hidden;
+}
+
+.app-HelpFlow__options > li + li {
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+/* One row per suggestion: the whole row is the target, as on iOS. */
+.app-HelpFlow__option {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--itsm-control-height-lg);
+  margin: 0;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: 0;
+  background: transparent;
+  color: var(--itsm-colour-text-primary);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+@media (hover: hover) {
+  .app-HelpFlow__option:hover {
+    background: var(--itsm-colour-surface-hover);
+  }
+}
+
+.app-HelpFlow__option:focus-visible {
+  outline-offset: calc(-1 * var(--itsm-focus-width));
+}
+
+.app-HelpFlow__optionIcon {
+  flex: none;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-HelpFlow__optionText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-HelpFlow__optionTitle {
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.app-HelpFlow__optionDetail {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-HelpFlow__optionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs) var(--itsm-space-xs);
+}
+
+.app-HelpFlow__number {
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.app-HelpFlow__optionEnd {
+  flex: none;
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-HelpFlow__quiet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* ---- An answer, opened inside the flow ------------------------------------- */
+
+.app-HelpAnswer {
+  gap: var(--itsm-space-md);
+}
+
+.app-HelpAnswer__title {
+  margin: 0;
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  font-weight: var(--itsm-text-title3-weight);
+  letter-spacing: var(--itsm-text-title3-tracking);
+  text-wrap: balance;
+}
+
+.app-HelpAnswer__title:focus {
+  outline: none;
+}
+
+.app-HelpAnswer__summary {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-HelpAnswer__full {
+  margin: 0;
+}
+
+/* ---- The ending: sent, or kept for later ------------------------------------ */
+
+.app-HelpDone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  padding-block: var(--itsm-space-xl);
+  text-align: center;
+  animation: app-HelpDone-in var(--itsm-duration-normal) var(--itsm-easing-entrance) both;
+}
+
+.app-HelpDone:focus {
+  outline: none;
+}
+
+.app-HelpDone:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-focus-offset);
+  border-radius: var(--itsm-radius-xl);
+}
+
+.app-HelpDone__mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: calc(var(--itsm-space-4xl) + var(--itsm-space-md));
+  block-size: calc(var(--itsm-space-4xl) + var(--itsm-space-md));
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-success-subtle);
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-HelpDone__mark--queued {
+  background: var(--itsm-colour-info-subtle);
+  color: var(--itsm-colour-info-subtleText);
+}
+
+.app-HelpDone__title {
+  margin: 0;
+  font-size: var(--itsm-text-title2-size);
+  line-height: var(--itsm-text-title2-line);
+  font-weight: var(--itsm-text-title2-weight);
+  letter-spacing: var(--itsm-text-title2-tracking);
+  text-wrap: balance;
+}
+
+.app-HelpDone__number {
+  font-variant-numeric: tabular-nums slashed-zero;
+  white-space: nowrap;
+}
+
+/* The promise's live region stays in place (so it is heard when it fills) without holding a gap open. */
+.app-HelpDone__slot:empty {
+  margin-block-start: calc(-1 * var(--itsm-space-sm));
+}
+
+.app-HelpDone__promise {
+  margin: 0;
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  animation: app-HelpDone-fade var(--itsm-duration-normal) var(--itsm-easing-standard) both;
+}
+
+.app-HelpDone__next {
+  max-inline-size: 34rem;
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  text-wrap: pretty;
+}
+
+@keyframes app-HelpDone-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes app-HelpDone-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: the ending fades in and does not grow (SPEC §6.3). */
+@media (prefers-reduced-motion: reduce) {
+  .app-HelpDone {
+    animation-name: app-HelpDone-fade;
+  }
+}
+
+:root[data-itsm-motion='reduced'] .app-HelpDone {
+  animation-name: app-HelpDone-fade;
+}
+
+@media (forced-colors: active) {
+  .app-HelpFlow__options {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+
+  .app-HelpDone__mark {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}
+
+/* ---- `/report`: the same flow on a page ------------------------------------- */
+
+.app-Report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  padding-block: var(--itsm-space-lg) var(--itsm-space-2xl);
+}
+
+.app-Report__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Report__step {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Report__title {
+  margin: 0;
+  font-size: var(--itsm-text-largeTitle-size);
+  line-height: var(--itsm-text-largeTitle-line);
+  font-weight: var(--itsm-text-largeTitle-weight);
+  letter-spacing: var(--itsm-text-largeTitle-tracking);
+}
+
+.app-Report__lede {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-Report__card {
+  padding: var(--itsm-space-lg);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.app-Report__actions {
+  padding-block-start: var(--itsm-space-md);
+  margin-block-start: var(--itsm-space-lg);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+@media (max-width: 47.9375rem) {
+  .app-Report__card {
+    padding: var(--itsm-space-md);
+  }
+}

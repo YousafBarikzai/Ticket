@@ -1,0 +1,172 @@
+/*
+ * Audit log (SPEC §6.1 `/audit`): the sequence line, the timeline's cells and
+ * the event drawer. Arrangement only, tokens throughout; the design system
+ * draws the table, the chips, the pager and the diff.
+ */
+
+/* ---- The sequence check ---------------------------------------------------- */
+
+.app-Audit__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Audit__checkIcon {
+  flex: none;
+  margin-block-start: var(--itsm-space-3xs);
+  color: var(--itsm-colour-success-subtleText);
+}
+
+.app-Audit__check[data-state='warning'] .app-Audit__checkIcon {
+  color: var(--itsm-colour-warning-subtleText);
+}
+
+.app-Audit__checkText {
+  color: var(--itsm-colour-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Audit__checkHint {
+  display: block;
+  color: var(--itsm-colour-text-secondary);
+}
+
+/* ---- Timeline cells -------------------------------------------------------------- */
+
+.app-Audit__time,
+.app-Audit__seq {
+  color: var(--itsm-colour-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.app-Audit__seq {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Audit__system {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  color: var(--itsm-colour-text-secondary);
+  min-inline-size: 0;
+}
+
+.app-Audit__sentence {
+  display: inline;
+  overflow-wrap: anywhere;
+}
+
+.app-Audit__target {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Audit__target[data-technical] {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+.app-Audit__reason {
+  display: block;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Audit__link {
+  color: var(--itsm-colour-text-link);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-Audit__link:hover {
+    text-decoration: underline;
+  }
+}
+
+/* ---- The event drawer -------------------------------------------------------------- */
+
+.app-Audit__seqPill {
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-pill);
+  color: var(--itsm-colour-text-secondary);
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--itsm-space-xs);
+}
+
+.app-AuditEvent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xl);
+}
+
+.app-AuditEvent__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-AuditEvent__quiet {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-AuditEvent__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+.app-AuditEvent__mono {
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-footnote-size);
+  overflow-wrap: anywhere;
+}
+
+.app-AuditEvent__changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-AuditEvent__heading {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+}
+
+.app-AuditEvent__retry {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- Loading ---------------------------------------------------------------------------- */
+
+.app-AuditSkeleton__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}
+
+.app-AuditSkeleton__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}

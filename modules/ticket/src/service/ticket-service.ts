@@ -343,6 +343,47 @@ export async function countTickets(ctx: TenantContext, filter: repo.ListFilter =
   return transaction(ctx, async (tx) => repo.countTickets(tx, filter, scope));
 }
 
+/** Where a counted view stops counting. */
+export const COUNT_CAP = 1000;
+
+export interface CappedCount {
+  /** The number of matching tickets, or `COUNT_CAP` when there are more. */
+  count: number;
+  /** True when there were more than `COUNT_CAP`, so `count` is a floor. */
+  capped: boolean;
+}
+
+/**
+ * How many tickets a list with this filter would page through, for a view's
+ * badge (WA1).
+ *
+ * The same permission check and the same scope predicate as `listTickets`, so
+ * a badge can never promise a ticket the list will not show. Capped, because
+ * the number is for a sidebar and "999+" says everything a badge can usefully
+ * say: the database stops at `COUNT_CAP + 1` rows instead of counting a
+ * tenant's whole history every time an agent's views refresh, and the one
+ * extra row is how the answer knows it was cut short.
+ */
+export async function countTicketsUpTo(ctx: TenantContext, filter: repo.ListFilter = {}, cap = COUNT_CAP): Promise<CappedCount> {
+  authz.require(ctx, 'ticket.read');
+  const scope = scopeFilterFor(ctx);
+  const counted = await transaction(ctx, async (tx) => repo.countTickets(tx, filter, scope, cap + 1));
+  return counted > cap ? { count: cap, capped: true } : { count: counted, capped: false };
+}
+
+/**
+ * Whether this reader works the desk rather than raising tickets on it: a
+ * `ticket.read` scope of `team` or `any`, not `own`.
+ *
+ * One definition, because two questions depend on it — which custom fields a
+ * reader is shown, and whether they see a ticket's event history — and if the
+ * answers ever disagreed, one door would hand out what the other withholds.
+ */
+export function worksTheDesk(ctx: TenantContext): boolean {
+  const scope = authz.effectiveScope(ctx, 'ticket.read');
+  return scope === 'team' || scope === 'any';
+}
+
 /**
  * Turns the caller's permission scope into a SQL predicate, so a list query
  * filters in the database rather than loading rows and discarding them.
@@ -687,21 +728,49 @@ export async function addComment(ctx: TenantContext, idOrNumber: string, input: 
 }
 
 /**
- * The merged timeline. Internal notes are filtered out for anyone without the
- * internal-note permission, and a contract test asserts they never appear in a
- * requester's projection.
+ * The merged timeline.
+ *
+ * What a reader is given depends on who they are, and the two contract tests
+ * (`ticket-lifecycle`, `requester-timeline`) hold it to MOD-02-E1-S2: internal
+ * notes and agent-only fields are never returned to a requester.
+ *
+ * - Internal notes are left out for anyone without the internal-note
+ *   permission on this ticket, and so are the files attached to them: a
+ *   filename such as `salary-review.xlsx` is itself the note's content.
+ * - Events are left out entirely for a reader who does not work the desk.
+ *   Their payloads are the desk's working record — an `updated` event carries
+ *   every changed field before and after, custom fields included, whatever
+ *   their classification; `status.changed` carries the agent's reason;
+ *   `assigned` names the person and the routing method — and none of it was
+ *   written for the requester. Filtering payloads key by key would need a rule
+ *   per event type that every new event type then had to remember; leaving
+ *   them out fails closed. The requester's view of progress is the ticket's
+ *   own status and the public conversation, which is what the portal shows.
+ *
+ * Custom fields on `ticket` are the caller's to lens, as on every other ticket
+ * read: the route does it with the same reader definition (`worksTheDesk`).
  */
 export async function getTimeline(ctx: TenantContext, idOrNumber: string) {
   return transaction(ctx, async (tx) => {
     const ticket = await loadVisible(tx, ctx, idOrNumber);
     const includeInternal = authz.can(ctx, 'ticket.comment.internal', { aggregate: 'ticket', record: ticket });
+    const includeEvents = worksTheDesk(ctx);
 
-    const [comments, ticketEvents, tasks, attachments] = await Promise.all([
+    const [comments, ticketEvents, tasks, clean] = await Promise.all([
       repo.listComments(tx, ticket.id, includeInternal),
-      repo.listEvents(tx, ticket.id),
+      includeEvents ? repo.listEvents(tx, ticket.id) : Promise.resolve([]),
       repo.listTasks(tx, ticket.id),
       repo.listAttachments(tx, ticket.id, true),
     ]);
+
+    // A file attached to a comment is shown only with that comment. The
+    // comments list is already the reader's, so "its comment is in the list"
+    // is the whole rule; a file attached to the ticket itself has no comment
+    // to hide behind and is shown to anybody who may read the ticket.
+    const shownComments = new Set(comments.map((comment) => comment.id));
+    const attachments = includeInternal
+      ? clean
+      : clean.filter((attachment) => attachment.commentId === null || shownComments.has(attachment.commentId));
 
     const entries = [
       ...comments.map((c) => ({ kind: 'comment' as const, at: c.createdAt, comment: c })),
@@ -709,7 +778,7 @@ export async function getTimeline(ctx: TenantContext, idOrNumber: string) {
       ...tasks.map((t) => ({ kind: 'task' as const, at: t.createdAt, task: t })),
     ].sort((a, b) => a.at.getTime() - b.at.getTime());
 
-    return { ticket, entries, attachments, includeInternal };
+    return { ticket, entries, attachments, includeInternal, includeEvents };
   });
 }
 
@@ -837,6 +906,67 @@ export async function addWatcher(ctx: TenantContext, idOrNumber: string, userId:
     return tx.ticketWatcher.create({
       data: { id: newId(), tenantId: ctx.tenantId, ticketId: ticket.id, userId, reason },
     });
+  });
+}
+
+export interface LinkedTicket {
+  linkType: string;
+  createdAt: Date;
+  ticket: repo.TicketRow;
+}
+
+/**
+ * The tickets this one is linked to, from this ticket's side (WA5).
+ *
+ * `linkTickets` stores every link twice, once from each end with the inverse
+ * type, so reading the rows this ticket is the source of already gives each
+ * relationship in the words that suit it here ("blocks" on one side, "caused
+ * by" on the other) without a union.
+ *
+ * A linked ticket the reader may not see is left out rather than shown as a
+ * number: a link can outlive the reader's access to its target — the target
+ * moved to another team since — and the title, status and even the existence
+ * of somebody else's ticket are not this ticket's to disclose.
+ */
+export async function listLinks(ctx: TenantContext, idOrNumber: string): Promise<LinkedTicket[]> {
+  return transaction(ctx, async (tx) => {
+    const ticket = await loadVisible(tx, ctx, idOrNumber);
+    const links = await repo.listLinks(tx, ticket.id);
+    if (links.length === 0) return [];
+
+    const targets = await repo.findManyById(tx, [...new Set(links.map((link) => link.targetId))]);
+    const visible = new Map(
+      targets
+        .filter((target) => authz.can(ctx, 'ticket.read', { aggregate: 'ticket', record: target }))
+        .map((target) => [target.id, target]),
+    );
+    return links
+      .filter((link) => visible.has(link.targetId))
+      .map((link) => ({ linkType: link.linkType, createdAt: link.createdAt, ticket: visible.get(link.targetId)! }));
+  });
+}
+
+export interface WatcherRow {
+  userId: string;
+  reason: string;
+  createdAt: Date;
+}
+
+/**
+ * Who is watching a ticket (WA5).
+ *
+ * The desk sees everybody, which is what makes "add a watcher" safe to use:
+ * the agent can see who is already told. A requester sees only their own row.
+ * The other watchers are colleagues somebody copied in and agents following
+ * the ticket, and which of them are on it is the desk's business — the same
+ * privacy line as the portal showing a team rather than a person.
+ */
+export async function listWatchers(ctx: TenantContext, idOrNumber: string): Promise<WatcherRow[]> {
+  return transaction(ctx, async (tx) => {
+    const ticket = await loadVisible(tx, ctx, idOrNumber);
+    const rows = await repo.listWatchers(tx, ticket.id);
+    const shown = worksTheDesk(ctx) ? rows : rows.filter((row) => row.userId === ctx.actor.id);
+    return shown.map((row) => ({ userId: row.userId, reason: row.reason, createdAt: row.createdAt }));
   });
 }
 

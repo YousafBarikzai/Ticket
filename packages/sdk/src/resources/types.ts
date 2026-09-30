@@ -8,6 +8,8 @@
  * to prevent.
  */
 
+import type { LinkType } from '@itsm/contracts';
+
 export interface Page<T> {
   data: T[];
   nextCursor: string | null;
@@ -97,6 +99,12 @@ export interface Timeline {
   ticket: Ticket;
   /** Whether this is the agent view or the requester view. */
   includesInternal: boolean;
+  /**
+   * Whether `event` entries were included. They are only for people who work
+   * the desk: a requester's timeline has comments and tasks and nothing else,
+   * so an empty history of changes is not mistaken for no changes at all.
+   */
+  includesEvents: boolean;
   entries: TimelineEntry[];
   attachments: TimelineAttachment[];
 }
@@ -246,4 +254,281 @@ export interface TimeSummary {
   currency: string | null;
   elapsedMinutes: number;
   entries: number;
+}
+
+// ---------------------------------------------------------------------------
+// Shared by more than one surface
+//
+// People, teams, notifications and a ticket's surroundings are read by the
+// workbench, the portal and the console alike. Written down once here, so the
+// three applications cannot drift into three ideas of what a person is.
+// ---------------------------------------------------------------------------
+
+export interface UserRow {
+  id: string;
+  email: string;
+  displayName: string;
+  status: string;
+  primaryOrgId: string | null;
+  /** Someone from outside the organisation: a supplier, a customer's contact. */
+  isExternal: boolean;
+}
+
+/**
+ * How to ask the directory for people.
+ *
+ * `ids` resolves a known set at once — the names beside a page of tickets —
+ * instead of one request per person. The API takes at most 200 in one call;
+ * the SDK splits a longer list and puts the answers back together.
+ */
+export interface UserQuery {
+  q?: string;
+  limit?: number;
+  status?: string;
+  ids?: readonly string[];
+}
+
+/** A team as the directory lists it, to anyone who works the desk. */
+export interface TeamListRow {
+  id: string;
+  key: string;
+  name: string;
+  orgId: string;
+  /** Current members who are active: a deactivated person keeps the row but is not counted. */
+  memberCount: number;
+}
+
+export interface TeamMemberRow {
+  userId: string;
+  displayName: string;
+  isLead: boolean;
+  since: string;
+}
+
+export interface NotificationRow {
+  id: string;
+  subject: string | null;
+  body: string;
+  ticketId: string | null;
+  eventType: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+/** A page of the bell, with the unread count for the badge whatever the page holds. */
+export interface NotificationInbox {
+  unread: number;
+  data: NotificationRow[];
+}
+
+/** One of this person's signed-in sessions, for "sign out everywhere else". */
+export interface SessionRow {
+  id: string;
+  device: string | null;
+  ip: string | null;
+  lastSeenAt: string;
+  expiresAt: string;
+}
+
+/** `{ count, capped }`: when `capped`, the true number is at least `count`, so say "999+". */
+export interface TicketCount {
+  count: number;
+  capped: boolean;
+}
+
+export interface CategoryRow {
+  id: string;
+  key: string;
+  name: string;
+  /** Materialised path, for sorting and indenting a tree without rebuilding it. */
+  path: string;
+  parentId: string | null;
+  orgId: string | null;
+  defaultGroupId: string | null;
+  isActive: boolean;
+}
+
+/** The contracts' vocabulary, so a new link type is one edit rather than two. */
+export type TicketLinkType = LinkType;
+
+/** A link from this ticket's side. Tickets the reader may not see are left out, not redacted. */
+export interface TicketLinkRow {
+  linkType: TicketLinkType;
+  createdAt: string;
+  ticket: { id: string; number: string; type: string; title: string; status: string; statusCategory: string };
+}
+
+/** A requester sees only their own row; the desk sees everybody's. */
+export interface WatcherRow {
+  userId: string;
+  reason: string;
+  createdAt: string;
+}
+
+/** Everything the API would take to raise a ticket; it fills in the defaults. */
+export interface CreateTicketInput {
+  type?: 'incident' | 'request' | 'problem' | 'change' | 'task' | 'question';
+  title: string;
+  description?: string;
+  descriptionFormat?: 'text' | 'html';
+  priority?: 'P1' | 'P2' | 'P3' | 'P4';
+  impact?: 'high' | 'medium' | 'low';
+  urgency?: 'high' | 'medium' | 'low';
+  requesterId?: string;
+  affectedUserId?: string;
+  serviceId?: string;
+  categoryId?: string;
+  groupId?: string;
+  assigneeId?: string;
+  orgId?: string;
+  parentId?: string;
+  sourceChannel?: 'portal' | 'email' | 'api' | 'slack' | 'teams' | 'whatsapp' | 'voice' | 'mobile' | 'import' | 'system';
+  custom?: Record<string, unknown>;
+}
+
+/**
+ * The fields a PATCH may change. Status, assignee and group are not among
+ * them: those move through a transition or an assignment, which carry their
+ * own rules and history.
+ */
+export interface TicketPatch {
+  title?: string;
+  description?: string | null;
+  priority?: 'P1' | 'P2' | 'P3' | 'P4';
+  impact?: 'high' | 'medium' | 'low' | null;
+  urgency?: 'high' | 'medium' | 'low' | null;
+  serviceId?: string | null;
+  categoryId?: string | null;
+  affectedUserId?: string | null;
+  custom?: Record<string, unknown>;
+}
+
+/** What a transition may carry besides the state. `resolutionCode` matters when resolving. */
+export interface TransitionOptions {
+  reason?: string;
+  resolutionCode?: string;
+}
+
+/** An article as a list shows it: no body, which only the reading page needs. */
+export interface ArticleSummary {
+  id: string;
+  key: string;
+  title: string;
+  status: string;
+  audience: string;
+  categoryId: string | null;
+  keywords: string[];
+  viewCount: number;
+  helpfulCount: number;
+  unhelpfulCount: number;
+  reviewDueAt: string | null;
+  updatedAt: string;
+  publishedAt: string | null;
+}
+
+/** What `/search` indexes. Knowledge articles are `knowledge`, not `article`. */
+export type SearchType = 'ticket' | 'knowledge';
+
+export interface SearchHit {
+  entityType: string;
+  entityId: string;
+  title: string;
+  snippet: string;
+  rank: number;
+  facets: Record<string, unknown>;
+}
+
+export interface SearchResults {
+  data: SearchHit[];
+  /**
+   * `engine` is worth surfacing: when the search server is down the answer
+   * comes from the PostgreSQL projection, which is correct but has no typo
+   * tolerance and counts facets over the page only.
+   */
+  meta: { facets: Record<string, Record<string, number>>; engine: string };
+}
+
+export interface SearchOptions {
+  /**
+   * What to search. `'article'` is accepted for callers written before the
+   * index was named, and sent as `knowledge`: the API matches nothing for
+   * `article`, so a knowledge search spelled that way quietly found nothing.
+   */
+  types?: SearchType | 'article' | readonly SearchType[];
+  /**
+   * Facet filters: `{ status: ['open', 'in_progress'], priority: 'P1' }`.
+   * Values of one field are "any of"; different fields are "all of".
+   */
+  filter?: Record<string, string | readonly string[]>;
+  /** Facets to count, e.g. `['status', 'priority']`. */
+  facets?: readonly string[];
+  limit?: number;
+}
+
+/** A running timer, or null when the person has none. */
+export interface RunningTimer {
+  ticketId: string;
+  activityTypeId: string;
+  note: string | null;
+  startedAt: string;
+}
+
+export interface TimeEntryRow {
+  id: string;
+  ticketId: string;
+  taskId: string | null;
+  userId: string;
+  kind: string;
+  minutes: number;
+  note: string | null;
+  ratePerHour: number;
+  currency: string;
+  cost: number;
+  billable: boolean;
+  loggedAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  activityKey?: string | null;
+  activityName?: string | null;
+}
+
+export interface ActivityTypeRow {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  billable: boolean;
+  ratePerHour: number;
+  currency: string;
+  isSystem: boolean;
+  isActive: boolean;
+  teamRates: { teamId: string; ratePerHour: number; currency: string }[];
+}
+
+export type AvailabilityStatus = 'available' | 'busy' | 'away' | 'off_shift' | 'left';
+
+export interface AvailabilityInput {
+  status: AvailabilityStatus;
+  /** Omitted means yourself; somebody else's needs the `any` scope. */
+  userId?: string;
+  reason?: string;
+  /** An ISO instant after which the status lapses back to the default. */
+  until?: string;
+  capacity?: number | null;
+}
+
+export interface Article {
+  key: string;
+  title: string;
+  status: string;
+  audience: string;
+  version: number | null;
+  summary: string | null;
+  /** Structured blocks, never an HTML string: an article is data, not markup. */
+  body: unknown[];
+  keywords: string[];
+  helpfulCount: number;
+  unhelpfulCount: number;
+  reviewDueAt: string | null;
+  publishedAt: string | null;
 }

@@ -27,6 +27,7 @@ import {
   letterSpacing,
   lineHeight,
   radius,
+  shadowAlphaCap,
   spacing,
   textStyle,
   themeNames,
@@ -91,15 +92,19 @@ function nativeTextStyle(token: TextStyleToken): NativeTextStyle {
   };
 }
 
-function nativeShadow(level: ElevationToken, shadowColour: string): NativeShadowStyle {
+function nativeShadow(level: ElevationToken, shadowColour: string, strength: number): NativeShadowStyle {
   const layers = elevation[level];
-  if (layers.length === 0) {
+  if (layers.length === 0 || strength === 0) {
     return { shadowColor: shadowColour, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0, shadowRadius: 0, elevation: 0 };
   }
   // React Native draws one shadow, so the deepest layer wins and the others'
   // opacity is folded in — the visual weight matters more than the geometry.
+  // The theme's strength applies as it does on the web, with the same cap.
   const deepest = layers.reduce((a, b) => (b.blur > a.blur ? b : a));
-  const combinedOpacity = Math.min(1, layers.reduce((sum, l) => sum + l.opacity, 0));
+  const combinedOpacity = Math.min(
+    1,
+    layers.reduce((sum, l) => sum + Math.min(shadowAlphaCap, l.opacity * strength), 0),
+  );
   return {
     shadowColor: shadowColour,
     shadowOffset: { width: 0, height: deepest.offsetY },
@@ -115,11 +120,16 @@ export function createNativeTheme(name: ThemeName): NativeTheme {
   for (const token of Object.keys(textStyle) as TextStyleToken[]) text[token] = nativeTextStyle(token);
 
   const shadow = {} as Record<ElevationToken, NativeShadowStyle>;
-  for (const level of Object.keys(elevation) as ElevationToken[]) shadow[level] = nativeShadow(level, palette.shadow);
+  for (const level of Object.keys(elevation) as ElevationToken[]) {
+    shadow[level] = nativeShadow(level, palette.shadow, palette.shadowStrength);
+  }
 
   return {
     name,
-    scheme: name === 'dark' ? 'dark' : 'light',
+    // From the palette, so both dark themes darken the status bar and the
+    // keyboard. It used to be keyed on the theme's name, and `apple-dark`
+    // came out light.
+    scheme: palette.scheme,
     colour: palette,
     spacing,
     radius,

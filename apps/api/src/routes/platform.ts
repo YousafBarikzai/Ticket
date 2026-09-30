@@ -31,6 +31,11 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
         status: tenant.status,
         region: tenant.region,
         createdAt: tenant.createdAt.toISOString(),
+        // Additive: the console's tenant list shows the plan and the drawer
+        // the AI regions without a call per tenant.
+        planKey: tenant.planKey ?? null,
+        aiAllowedRegions: tenant.aiAllowedRegions,
+        suspendedAt: tenant.suspendedAt?.toISOString() ?? null,
       })),
     };
   });

@@ -1,72 +1,53 @@
 'use client';
 
-import { cloneElement, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { useStableId } from '../a11y/ids.js';
+import { cloneElement, isValidElement, type ReactElement, type ReactNode } from 'react';
+import { TooltipImpl } from '../overlays/TooltipImpl.js';
+import { useOptionalItsm } from '../provider/ItsmProvider.js';
 
 export interface TooltipProps {
   /** Short, supplementary text. Anything the user must read to proceed belongs on the page. */
   readonly content: ReactNode;
-  /** A single focusable element. The tooltip attaches `aria-describedby` to it. */
-  readonly children: ReactElement<{ 'aria-describedby'?: string }>;
+  /** A single focusable element that forwards its ref and spreads the props it is given. */
+  readonly children: ReactElement<{ 'aria-describedby'?: string; 'aria-label'?: string }>;
+  readonly side?: 'top' | 'right' | 'bottom' | 'left';
+  /** A shortcut in the hotkey notation (`mod+k`), shown as key caps after the text. */
+  readonly shortcut?: string;
+  /** Hover delay; 500 ms, and none within 300 ms of another tooltip closing. */
   readonly delayMs?: number;
-  /** Set for a control whose only label is its icon; the tooltip then names it rather than describing it. */
+  /**
+   * Set for a control whose only label is its icon: the text then names the
+   * control (`aria-label`, always present) instead of describing it while
+   * the bubble is up. Prefer `IconButton`, whose `label` is required.
+   */
   readonly asLabel?: boolean;
+  /** Turns this one off. The provider's `features.tooltips` turns them all off (the portal). */
+  readonly disabled?: boolean;
+  readonly className?: string;
 }
 
 /**
- * A hover/focus tooltip meeting SC 1.4.13: dismissible with Escape, hoverable
- * (the bubble sits inside the hover target's wrapper, so moving onto it does
- * not dismiss it), and persistent until the pointer or focus leaves.
+ * A hover and keyboard-focus tooltip: `surface.inverse`, `footnote`, at most
+ * 240 px wide, portalled above everything.
+ *
+ * Supplementary only (SPEC §4.3): never the only carrier of information,
+ * never on touch, and off entirely where the provider says tooltips are off.
+ * It meets WCAG 1.4.13 — Escape dismisses it without moving focus, the
+ * pointer can move onto it, and it stays until the pointer or focus leaves.
+ *
+ * With `asLabel`, the child is named by the tooltip's text up front, so the
+ * control has a name whether or not the bubble ever shows.
  */
-export function Tooltip({ content, children, delayMs = 400, asLabel = false }: TooltipProps): ReactNode {
-  const id = useStableId('itsm-tooltip');
-  const [open, setOpen] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+export function Tooltip({ content, children, side, shortcut, delayMs, asLabel = false, disabled = false, className }: TooltipProps): ReactNode {
+  const tooltipsOn = useOptionalItsm()?.features.tooltips ?? true;
+  const named =
+    asLabel && typeof content === 'string' && isValidElement(children) && !children.props['aria-label']
+      ? cloneElement(children, { 'aria-label': content })
+      : children;
 
-  const show = (immediate: boolean): void => {
-    if (timer.current) clearTimeout(timer.current);
-    // Keyboard focus shows it at once: a delay would make a keyboard user wait
-    // for something a mouse user gets by hovering on the way past.
-    if (immediate) setOpen(true);
-    else timer.current = setTimeout(() => setOpen(true), delayMs);
-  };
-
-  const hide = (): void => {
-    if (timer.current) clearTimeout(timer.current);
-    setOpen(false);
-  };
-
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') hide();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open]);
-
-  const trigger = cloneElement(children, {
-    [asLabel ? 'aria-labelledby' : 'aria-describedby']: open ? id : undefined,
-  } as { 'aria-describedby'?: string });
-
+  if (disabled || !tooltipsOn) return named;
   return (
-    <span
-      className="itsm-Tooltip"
-      onMouseEnter={() => show(false)}
-      onMouseLeave={hide}
-      onFocus={() => show(true)}
-      onBlur={hide}
-    >
-      {trigger}
-      {open ? (
-        <span role="tooltip" id={id} className="itsm-Tooltip__bubble">
-          {content}
-        </span>
-      ) : null}
-    </span>
+    <TooltipImpl content={content} side={side} shortcut={shortcut} delayMs={delayMs} describes={!asLabel} className={className}>
+      {named}
+    </TooltipImpl>
   );
 }

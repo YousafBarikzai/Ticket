@@ -1,4 +1,4 @@
-import { afterAttempt, dueNow, type OutboxItem, type OutboxStore } from './outbox.js';
+import { afterAttempt, dueNow, SENDING_LEASE_MS, type OutboxItem, type OutboxStore } from './outbox.js';
 
 /**
  * Draining the outbox.
@@ -55,8 +55,10 @@ export async function drainOutbox(store: OutboxStore, deps: SyncDeps = {}): Prom
     // Marked before the request, so a second drain starting while this one is
     // in flight does not send it twice. The idempotency key would make that
     // harmless at the API; it would still be a wasted round trip and a
-    // confusing log.
-    await store.put({ ...item, status: 'sending' });
+    // confusing log. The mark is a lease rather than a lock: a drain that dies
+    // mid-request (a closed tab, a stopped worker) leaves the item due again
+    // once the lease runs out, instead of "sending" for ever.
+    await store.put({ ...item, status: 'sending', nextAttemptAt: clock() + SENDING_LEASE_MS });
 
     let updated: OutboxItem;
     try {
@@ -76,6 +78,11 @@ export async function drainOutbox(store: OutboxStore, deps: SyncDeps = {}): Prom
       // No answer at all: the network, not the server.
       updated = afterAttempt(item, { status: 0 }, clock());
     }
+
+    // Gone while it was in flight: discarded by the person, or cleared by a
+    // sign-out. Writing it back would resurrect it — on a shared machine, into
+    // the next person's queue — so its answer is dropped instead.
+    if (!(await store.all()).some((entry) => entry.id === item.id)) continue;
 
     await store.put(updated);
     deps.onChange?.(updated);

@@ -1,0 +1,576 @@
+/*
+ * The inbox (SPEC §6.2): the list pane, its rows and the ticket beside it.
+ *
+ * Arrangement only, like `globals.css`: every colour, space, size and
+ * duration is a design-system custom property, so a token change reaches
+ * the inbox with the rest of the product. Unlayered, so it wins over the
+ * design system's `@layer itsm.*` rules without `!important` — except once,
+ * where the split view's width is an inline style (phones, below).
+ *
+ * From 768 px (the content panel's own width) the inbox fills the panel edge
+ * to edge and each pane scrolls on its own; below that it is one column and
+ * the window scrolls, as a phone expects. Logical properties throughout.
+ */
+
+/* ---- The frame ------------------------------------------------------------ */
+
+.app-Inbox {
+  --app-inbox-block: calc(100dvh - var(--itsm-topbar-height));
+  --app-inbox-top: var(--itsm-topbar-height);
+}
+
+@media (min-width: 64rem) {
+  .app-Inbox {
+    --app-inbox-block: calc(100dvh - 2 * var(--itsm-panel-inset));
+    --app-inbox-top: 0px;
+  }
+}
+
+.app-InboxList {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-InboxEmpty {
+  display: grid;
+  place-items: center;
+  min-block-size: 100%;
+  padding: var(--itsm-space-xl) var(--itsm-page-gutter);
+}
+
+/* One column: the list alone, the window scrolls, the ticket opens as a page. */
+@container itsm-page (max-width: 47.9999rem) {
+  .app-Inbox__split > .itsm-SplitView__separator,
+  .app-Inbox__split > .itsm-SplitView__pane:not(:first-child) {
+    display: none;
+  }
+  .app-Inbox__split > .itsm-SplitView__pane:first-child {
+    flex: 1 1 auto;
+    /* The split view sets the list's width inline; one column overrides it. */
+    inline-size: auto !important;
+    overflow: visible;
+  }
+  .app-Inbox {
+    margin-inline: calc(-1 * var(--itsm-page-gutter));
+    margin-block-start: calc(-1 * var(--itsm-page-gutter));
+  }
+  .app-InboxHeader {
+    inset-block-start: var(--app-inbox-top);
+  }
+}
+
+/* Two panes: edge to edge in the content panel, each pane its own scroller. */
+@container itsm-page (min-width: 48rem) {
+  .app-Inbox {
+    block-size: var(--app-inbox-block);
+    min-block-size: 24rem;
+    margin: calc(-1 * var(--itsm-page-gutter));
+  }
+}
+
+/* The panel is rounded from 1024 px: so is what fills it. */
+@media (min-width: 64rem) {
+  @container itsm-page (min-width: 48rem) {
+    .app-Inbox {
+      overflow: clip;
+      border-radius: var(--itsm-radius-xl);
+    }
+  }
+}
+
+/* ---- The list pane's header ----------------------------------------------- */
+
+.app-InboxHeader {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--itsm-z-sticky);
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md) var(--itsm-space-md) var(--itsm-space-sm);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-InboxHeader .app-InboxHeader__page {
+  margin-block-end: 0;
+}
+/* A pane, not a page: the view's name at `title2`, the count beside it. */
+.app-InboxHeader .app-InboxHeader__page h1 {
+  font-size: var(--itsm-text-title2-size);
+  line-height: var(--itsm-text-title2-line);
+  letter-spacing: var(--itsm-text-title2-tracking);
+}
+
+.app-InboxHeader__select {
+  display: none;
+}
+@media (pointer: coarse) {
+  .app-InboxHeader__select {
+    display: inline-flex;
+  }
+}
+
+/* ---- The list ------------------------------------------------------------- */
+
+.app-TicketList {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.app-TicketList__progress {
+  position: sticky;
+  inset-block-start: var(--app-inbox-header, 0px);
+  z-index: var(--itsm-z-sticky);
+  block-size: 0;
+  overflow: visible;
+}
+
+.app-TicketList__notice {
+  margin: var(--itsm-space-sm) var(--itsm-space-md) 0;
+}
+
+/* "3 new · Show": a capsule floating under the header, taking no room, so nothing moves when it appears. */
+.app-TicketList__new {
+  position: sticky;
+  inset-block-start: calc(var(--app-inbox-header, 0px) + var(--itsm-space-xs));
+  z-index: var(--itsm-z-sticky);
+  display: flex;
+  justify-content: center;
+  block-size: 0;
+  overflow: visible;
+}
+.app-TicketList__newButton {
+  block-size: var(--itsm-control-height-sm);
+  padding-inline: var(--itsm-space-sm);
+  border: 0;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-brand-solid);
+  color: var(--itsm-colour-brand-solidText);
+  box-shadow: var(--itsm-elevation-lg);
+  font: inherit;
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  cursor: pointer;
+}
+.app-TicketList__newButton:hover {
+  background: var(--itsm-colour-brand-solidHover);
+}
+
+.app-TicketList > .itsm-EmptyState,
+.app-TicketList > .itsm-ProblemState {
+  margin: var(--itsm-space-xl) var(--itsm-space-md);
+}
+.app-TicketList > .itsm-SkeletonList {
+  padding: var(--itsm-space-xs) var(--itsm-space-md);
+}
+
+.app-TicketList__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-TicketList__more {
+  padding: var(--itsm-space-md);
+}
+
+.app-TicketList__bulk {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: var(--itsm-z-sticky);
+  margin-block-start: auto;
+}
+/* A narrow pane: the actions scroll sideways rather than push the pane wider. */
+.app-TicketList__bulk .itsm-BulkActionBar__actions {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* ---- A row ---------------------------------------------------------------- */
+
+.app-TicketRow {
+  --app-row-bg: var(--itsm-colour-surface-raised);
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-block-size: var(--itsm-row-height-2line);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  background: var(--app-row-bg);
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+@media (hover: hover) {
+  .app-TicketRow:hover {
+    --app-row-bg: var(--itsm-colour-surface-hover);
+  }
+}
+.app-TicketRow[data-checked] {
+  --app-row-bg: var(--itsm-colour-surface-accentHover);
+}
+.app-TicketRow[data-current] {
+  --app-row-bg: var(--itsm-colour-surface-selected);
+}
+/* Selected: surface.selected, a 3 px accent bar at the start, the title in 600 (SPEC §1.10). */
+.app-TicketRow[data-current]::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  background: var(--itsm-colour-accent);
+}
+
+/* One ring for the whole row when its link has keyboard focus. */
+.app-TicketRow:has(.app-TicketRow__link:focus-visible) {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-accent);
+  outline-offset: calc(-1 * var(--itsm-focus-width));
+}
+.app-TicketRow__link:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* The gutter: the unread dot, or the checkbox on hover, focus, or once anything is ticked. */
+.app-TicketRow__gutter {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.app-TicketRow__gutter > * {
+  grid-area: 1 / 1;
+}
+.app-TicketRow__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-accent);
+}
+.app-TicketRow__check {
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+.app-TicketRow:focus-within .app-TicketRow__check,
+.app-TicketList[data-selecting] .app-TicketRow__check {
+  opacity: 1;
+}
+.app-TicketRow:focus-within .app-TicketRow__dot,
+.app-TicketList[data-selecting] .app-TicketRow__dot {
+  display: none;
+}
+@media (hover: hover) {
+  .app-TicketRow:hover .app-TicketRow__check {
+    opacity: 1;
+  }
+  .app-TicketRow:hover .app-TicketRow__dot {
+    display: none;
+  }
+}
+/* Touch: no hover to reveal it, so a tap on the gutter opens the ticket until "Select" is on. */
+@media (pointer: coarse) {
+  .app-TicketList:not([data-selecting]) .app-TicketRow__check {
+    pointer-events: none;
+  }
+}
+
+/*
+ * The link: two lines, its hit area stretched over the whole row. The second
+ * line runs the full width, under the time as well: in a 360 px pane the
+ * time's column is where the requester's name would otherwise have gone.
+ */
+.app-TicketRow__link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title end'
+    'meta meta';
+  align-content: center;
+  column-gap: var(--itsm-space-sm);
+  row-gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+  padding-block: var(--itsm-space-xs);
+  color: var(--itsm-colour-text-primary);
+  text-decoration: none;
+}
+.app-TicketRow__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.app-TicketRow__title {
+  grid-area: title;
+  overflow: hidden;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  letter-spacing: var(--itsm-text-callout-tracking);
+  font-weight: var(--itsm-font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-TicketRow[data-unread] .app-TicketRow__title,
+.app-TicketRow[data-current] .app-TicketRow__title {
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-TicketRow__end {
+  grid-area: end;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.app-TicketRow__due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  font-weight: var(--itsm-font-weight-medium);
+}
+/* A later deadline, shown because the list is in deadline order: as quiet as an age. */
+.app-TicketRow__due:not([data-urgency]) {
+  font-weight: var(--itsm-font-weight-regular);
+}
+.app-TicketRow__due[data-urgency='soon'] {
+  color: var(--itsm-colour-warning-subtleText);
+}
+.app-TicketRow__due[data-urgency='breached'] {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-TicketRow__meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  white-space: nowrap;
+}
+.app-TicketRow__meta > * {
+  flex: none;
+}
+.app-TicketRow__meta > .app-TicketRow__requester,
+.app-TicketRow__meta > .app-TicketRow__team {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* When the line is short of room the team gives way first: who asked matters more. */
+.app-TicketRow__meta > .app-TicketRow__team {
+  flex-shrink: 12;
+}
+/* A pane too narrow for it drops the team from the line (it stays in the row's description); widen the pane to see it. */
+@container (max-width: 25.99rem) {
+  .app-TicketRow__meta > .app-TicketRow__team {
+    display: none;
+  }
+}
+.app-TicketRow__meta > * + *::before {
+  content: '·';
+  content: '·' / '';
+  display: inline-block;
+  padding-inline: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-muted);
+}
+.app-TicketRow__meta > .app-TicketRow__pill {
+  margin-inline-start: var(--itsm-space-2xs);
+}
+.app-TicketRow__meta > .app-TicketRow__pill::before {
+  content: none;
+}
+.app-TicketRow__number {
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.app-TicketRow__priority {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+.app-TicketRow__priority[data-priority='P1'] {
+  color: var(--itsm-colour-danger-subtleText);
+}
+.app-TicketRow__priority[data-priority='P2'] {
+  color: var(--itsm-colour-warning-subtleText);
+}
+.app-TicketRow__moved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-muted);
+}
+.app-TicketRow[data-moved] .app-TicketRow__title {
+  color: var(--itsm-colour-text-secondary);
+}
+
+/* The assignee sits at the end of the second line, in room the line keeps free for it. */
+.app-TicketRow__avatar {
+  grid-area: meta;
+  justify-self: end;
+}
+.app-TicketRow__link[data-avatar] > .app-TicketRow__meta {
+  padding-inline-end: calc(1.25rem + var(--itsm-space-xs));
+}
+
+/* The ⋯ button: shown on hover and focus with a fine pointer, always on touch. */
+.app-TicketRow__menu {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--itsm-space-3xs);
+}
+@media (hover: hover) and (pointer: fine) {
+  .app-TicketRow__more {
+    opacity: 0;
+    transition: opacity var(--itsm-duration-fast) var(--itsm-easing-standard);
+  }
+  .app-TicketRow:hover .app-TicketRow__more,
+  .app-TicketRow:focus-within .app-TicketRow__more,
+  .app-TicketRow__more[aria-expanded='true'] {
+    opacity: 1;
+  }
+}
+
+/* Compact: one line, 36 px — the title, then its number and state, then the time. */
+:where([data-itsm-density='compact']) .app-TicketRow {
+  min-block-size: 2.25rem;
+}
+:where([data-itsm-density='compact']) .app-TicketRow__link {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'title meta end';
+  padding-block: var(--itsm-space-2xs);
+}
+:where([data-itsm-density='compact']) .app-TicketRow__requester,
+:where([data-itsm-density='compact']) .app-TicketRow__team,
+:where([data-itsm-density='compact']) .app-TicketRow__avatar {
+  display: none;
+}
+:where([data-itsm-density='compact']) .app-TicketRow__link[data-avatar] > .app-TicketRow__meta {
+  padding-inline-end: 0;
+}
+
+/* Changed by a live update: the background fades from selected over 1.2 s; nothing moves (SPEC §1.9). */
+@keyframes app-TicketRow-flash {
+  from {
+    background-color: var(--itsm-colour-surface-selected);
+  }
+}
+.app-TicketRow[data-flash] {
+  animation: app-TicketRow-flash 1.2s var(--itsm-easing-standard);
+}
+.app-TicketRow__updated {
+  display: none;
+  position: absolute;
+  inset-block-start: var(--itsm-space-xs);
+  inset-inline-end: var(--itsm-space-2xs);
+  inline-size: 0.375rem;
+  block-size: 0.375rem;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-accent);
+}
+/* Reduced motion: no fade, a still "Updated" dot instead. */
+@media (prefers-reduced-motion: reduce) {
+  .app-TicketRow[data-flash] {
+    animation: none;
+  }
+  .app-TicketRow[data-flash] .app-TicketRow__updated {
+    display: block;
+  }
+}
+:root[data-itsm-motion='reduced'] .app-TicketRow[data-flash] {
+  animation: none;
+}
+:root[data-itsm-motion='reduced'] .app-TicketRow[data-flash] .app-TicketRow__updated {
+  display: block;
+}
+
+/* Long lists: rows out of view skip layout and paint (SPEC §3.7). */
+.app-TicketList[data-long] .app-TicketRow {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--itsm-row-height-2line);
+}
+
+@media (forced-colors: active) {
+  .app-TicketRow[data-current]::before,
+  .app-TicketRow__dot,
+  .app-TicketRow__updated {
+    background: Highlight;
+  }
+  .app-TicketList__newButton {
+    border: 1px solid ButtonText;
+  }
+}
+
+/* ---- Bulk: "Assign to…" and the results -------------------------------------- */
+
+.app-InboxAssign__label {
+  display: block;
+  margin-block-end: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+
+.app-InboxReport__section + .app-InboxReport__section {
+  margin-block-start: var(--itsm-space-lg);
+}
+.app-InboxReport__heading {
+  margin: 0 0 var(--itsm-space-xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+.app-InboxReport__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.app-InboxReport__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--itsm-space-sm);
+  padding-block: var(--itsm-space-xs);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+.app-InboxReport__number {
+  color: var(--itsm-colour-text-secondary);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.app-InboxReport__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-InboxReport__reason {
+  grid-column: 2;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+.app-InboxReport__item[data-tone='danger'] .app-InboxReport__reason {
+  color: var(--itsm-colour-danger-subtleText);
+}

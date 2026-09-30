@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { PriorityMatrixRow } from '@itsm/sdk';
-import { LEVELS, completeMatrix, matrixValue } from '../matrix.js';
+import {
+  LEVELS,
+  changedCells,
+  completeMatrix,
+  defaultFor,
+  matrixSignature,
+  matrixValue,
+  recommendedMatrix,
+  withCell,
+} from '../matrix.js';
 
 /**
  * The nine cells, checked against the rule the API enforces.
@@ -55,5 +64,58 @@ describe('completing the matrix', () => {
   it('is stable, so saving an untouched grid changes nothing', () => {
     const once = completeMatrix([]);
     expect(completeMatrix(once)).toEqual(once);
+  });
+});
+
+describe('the recommended matrix ("Reset to recommended")', () => {
+  it('exports the diagonal rule the page resets to', () => {
+    expect(defaultFor('high', 'high')).toBe('P1');
+    expect(defaultFor('high', 'medium')).toBe('P2');
+    expect(defaultFor('medium', 'high')).toBe('P2');
+    expect(defaultFor('high', 'low')).toBe('P3');
+    expect(defaultFor('medium', 'medium')).toBe('P3');
+    expect(defaultFor('medium', 'low')).toBe('P4');
+    expect(defaultFor('low', 'low')).toBe('P4');
+  });
+
+  it('resets every cell to the recommendation, whatever was stored, still nine cells', () => {
+    const odd = completeMatrix([]).map((cell) => ({ ...cell, priority: 'P1' as const }));
+    const reset = recommendedMatrix();
+    expect(reset).toHaveLength(9);
+    expect(reset).toEqual(completeMatrix([]));
+    expect(changedCells(odd, reset)).toBe(8);
+  });
+});
+
+describe('editing a cell', () => {
+  it('changes exactly one cell and keeps all nine', () => {
+    const before = completeMatrix([]);
+    const after = withCell(before, 'low', 'high', 'P1');
+    expect(after).toHaveLength(9);
+    expect(matrixValue(after, 'low', 'high')).toBe('P1');
+    expect(changedCells(before, after)).toBe(1);
+    expect(new Set(after.map((row) => `${row.impact}:${row.urgency}`)).size).toBe(9);
+  });
+
+  it('completes a partial grid before editing, so the result can always be sent', () => {
+    expect(withCell([{ impact: 'high', urgency: 'high', priority: 'P2' }], 'low', 'low', 'P3')).toHaveLength(9);
+  });
+
+  it('counts no change when a cell is set back to what it was', () => {
+    const before = completeMatrix([]);
+    const after = withCell(withCell(before, 'low', 'low', 'P1'), 'low', 'low', 'P4');
+    expect(changedCells(before, after)).toBe(0);
+  });
+});
+
+describe('resyncing from the server', () => {
+  it('fingerprints the stored grid independent of the order the API sends it in', () => {
+    const cells = completeMatrix([]);
+    expect(matrixSignature([...cells].reverse())).toBe(matrixSignature(cells));
+  });
+
+  it('changes when any cell changes, so a refreshed page replaces the draft', () => {
+    const cells = completeMatrix([]);
+    expect(matrixSignature(withCell(cells, 'medium', 'medium', 'P1'))).not.toBe(matrixSignature(cells));
   });
 });

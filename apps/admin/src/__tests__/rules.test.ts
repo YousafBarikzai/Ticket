@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { exprSchema } from '@itsm/expr';
-import { coerce, describeAction, fromExpression, toAction, toExpression, type Condition } from '../rules.js';
+import { coerce, describeAction, emptyAction, fromAction, fromExpression, toAction, toExpression, ACTION_TYPES, type Condition } from '../rules.js';
 
 /**
  * The translation between rows on a screen and the rules engine's expression
@@ -127,5 +127,71 @@ describe('actions', () => {
     expect(describeAction({ type: 'startWorkflow', definitionKey: 'joiner' })).toContain('joiner');
     expect(describeAction({ type: 'invented' })).toContain('does not draw');
     expect(describeAction(null)).toBe('an unreadable action');
+  });
+});
+
+describe('the actions the builder adds (SPEC §3.8)', () => {
+  const blank = { reason: '', to: '' };
+
+  it('starts a workflow by its key', () => {
+    expect(toAction({ type: 'startWorkflow', value: ' request-fulfilment ', ...blank })).toEqual({ type: 'startWorkflow', definitionKey: 'request-fulfilment' });
+  });
+
+  it('sets impact or urgency with a level, as setField', () => {
+    expect(toAction({ type: 'setField', field: 'impact', value: 'high', ...blank })).toEqual({ type: 'setField', field: 'impact', value: 'high' });
+    expect(toAction({ type: 'setField', field: 'urgency', value: 'low', ...blank })).toEqual({ type: 'setField', field: 'urgency', value: 'low' });
+    // A draft that never chose a field is impact, which is what the editor shows first.
+    expect(toAction({ type: 'setField', value: 'medium', ...blank })).toEqual({ type: 'setField', field: 'impact', value: 'medium' });
+  });
+
+  it('assigns to a team by its id', () => {
+    expect(toAction({ type: 'assignGroup', value: '0190aaaa-0000-7000-8000-000000000001', ...blank })).toEqual({
+      type: 'assignGroup',
+      groupId: '0190aaaa-0000-7000-8000-000000000001',
+    });
+  });
+
+  it('offers eight kinds of action, each with a starting value', () => {
+    expect(ACTION_TYPES.map((type) => type.value)).toEqual(['setPriority', 'setStatus', 'sendNotification', 'assignStrategy', 'assignGroup', 'addTag', 'startWorkflow', 'setField']);
+    for (const { value } of ACTION_TYPES) expect(emptyAction(value).type).toBe(value);
+    expect(emptyAction('setField')).toMatchObject({ field: 'impact', value: 'high' });
+    expect(emptyAction('sendNotification').to).toBe('requester');
+  });
+});
+
+describe('a stored action back into the builder', () => {
+  const round = (action: Record<string, unknown>): unknown => {
+    const draft = fromAction(action);
+    return draft ? toAction(draft) : null;
+  };
+
+  it('round-trips every action it draws', () => {
+    for (const action of [
+      { type: 'setPriority', priority: 'P1', reason: 'High impact and high urgency reported at creation' },
+      { type: 'setStatus', status: 'in_progress', reason: 'The requester replied' },
+      { type: 'setStatus', status: 'resolved' },
+      { type: 'addTag', tag: 'vip' },
+      { type: 'assignStrategy', strategy: 'least_loaded' },
+      { type: 'sendNotification', template: 'ticket.created.group', to: 'group' },
+      { type: 'startWorkflow', definitionKey: 'joiner' },
+      { type: 'setField', field: 'urgency', value: 'high' },
+      { type: 'assignGroup', groupId: '0190aaaa-0000-7000-8000-000000000001' },
+    ]) {
+      expect(round(action), JSON.stringify(action)).toEqual(action);
+    }
+  });
+
+  it('refuses what it would change by drawing — the builder keeps those as they are', () => {
+    // setField on a field that takes an id or a date is not impact/urgency.
+    expect(fromAction({ type: 'setField', field: 'categoryId', value: '0190aaaa-0000-7000-8000-000000000001' })).toBeNull();
+    expect(fromAction({ type: 'setField', field: 'impact', value: 3 })).toBeNull();
+    expect(fromAction({ type: 'setCategory', categoryId: 'x' })).toBeNull();
+    expect(fromAction({ type: 'addWatcher', userId: 'x' })).toBeNull();
+    expect(fromAction({ type: 'linkDuplicate', of: 'x' })).toBeNull();
+    // A field the builder has no control for would be dropped on save.
+    expect(fromAction({ type: 'addTag', tag: 'vip', note: 'kept by the API' })).toBeNull();
+    expect(fromAction({ type: 'invented' })).toBeNull();
+    expect(fromAction(null)).toBeNull();
+    expect(fromAction(['setPriority'])).toBeNull();
   });
 });

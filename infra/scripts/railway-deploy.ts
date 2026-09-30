@@ -139,6 +139,69 @@ export function hostsFor(catalogue: Catalogue, domain: string, environment: stri
 }
 
 /**
+ * The three web applications, and the variable each reads its own public
+ * origin from. The BFF in each app names its own (`originEnvVar`), so this is
+ * the one place the three spellings are listed together.
+ */
+export const WEB_ORIGINS: Readonly<Record<string, string>> = {
+  portal: 'PORTAL_ORIGIN',
+  workbench: 'WORKBENCH_ORIGIN',
+  admin: 'ADMIN_ORIGIN',
+};
+
+/** Deploy-wide settings that are configuration, not credentials. */
+export interface DeploySettings {
+  /** `PORTAL_CHANNELS` as the deploy was given it: a comma list such as `email,teams,slack`. */
+  readonly portalChannels?: string | undefined;
+}
+
+/**
+ * `PORTAL_CHANNELS`, tidied, or null when there is nothing to set.
+ *
+ * A requester cannot read the tenant's channel accounts, so the portal learns
+ * which channels to mention from configuration. Lower-cased, trimmed and
+ * de-duplicated so `Email, teams,,email` is `email,teams`; empty — which is
+ * what an unset GitHub variable arrives as — is nothing to set. Anything that
+ * is not a plain name is refused here, at deploy time, rather than rendered
+ * verbatim on every requester's home page.
+ */
+export function portalChannels(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  const names = raw
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => name.length > 0);
+  const refused = names.filter((name) => !/^[a-z][a-z0-9-]{0,31}$/.test(name));
+  if (refused.length > 0) {
+    throw new Error(
+      `PORTAL_CHANNELS is a comma list of channel names such as email,teams,slack; not a channel name: ${refused.map((name) => JSON.stringify(name)).join(', ')}`,
+    );
+  }
+  return names.length > 0 ? [...new Set(names)].join(',') : null;
+}
+
+/**
+ * One phase, in two passes: every service's image and hostname first, then
+ * every service's variables and redeploy.
+ *
+ * The web applications share a phase and each now carries the others'
+ * origins. Without a domain of our own a hostname exists only once it has
+ * been asked for, so a single pass per service would set the portal's
+ * variables from whichever siblings happened to answer first — a race, won
+ * differently on every deploy. Two passes make the map complete before any
+ * variable is read from it, and keep the order that matters within a service:
+ * the domain before the variables, the variables before the redeploy.
+ */
+export async function inTwoPasses<T>(
+  phase: readonly ServiceDefinition[],
+  prepare: (service: ServiceDefinition) => Promise<T>,
+  release: (service: ServiceDefinition, prepared: T) => Promise<void>,
+): Promise<void> {
+  const prepared = await Promise.all(phase.map((service) => prepare(service)));
+  await Promise.all(phase.map((service, index) => release(service, prepared[index] as T)));
+}
+
+/**
  * Every variable this deploy sets on one service.
  *
  * These were computed since the pipeline was written, printed in its dry run,
@@ -157,16 +220,32 @@ export function hostsFor(catalogue: Catalogue, domain: string, environment: stri
  * — which is why the upsert below sets these keys and leaves the rest alone
  * rather than replacing the collection.
  */
-export function variablesFor(service: ServiceDefinition, hosts: ReadonlyMap<string, string>): Record<string, string> {
-  const own: Record<string, string> = { portal: 'PORTAL_ORIGIN', workbench: 'WORKBENCH_ORIGIN', admin: 'ADMIN_ORIGIN' };
+export function variablesFor(
+  service: ServiceDefinition,
+  hosts: ReadonlyMap<string, string>,
+  settings: DeploySettings = {},
+): Record<string, string> {
   const variables: Record<string, string> = { ...service.variables };
 
   const apiHost = hosts.get('api');
   const mine = hosts.get(service.name);
+  const web = Object.hasOwn(WEB_ORIGINS, service.name);
 
-  // Its own public URL, under whichever name that application reads.
-  const name = own[service.name];
-  if (name && mine) variables[name] = `https://${mine}`;
+  /*
+   * Every web application's origin, to every web application — not only its
+   * own. Each BFF reads its own origin by name (`originEnvVar`), so the other
+   * two are inert to the origin check and the OIDC redirect; they are what the
+   * app switcher, "Open in Workbench", "View as requester" and the portal
+   * links in an agent's reply are built from. A host that is not known yet
+   * sets nothing, and the link it would have made degrades to a copyable
+   * number rather than pointing at `https://undefined`.
+   */
+  if (web) {
+    for (const [app, variable] of Object.entries(WEB_ORIGINS)) {
+      const host = hosts.get(app);
+      if (host) variables[variable] = `https://${host}`;
+    }
+  }
   if (service.name === 'api' && mine) variables.PUBLIC_BASE_URL = `https://${mine}`;
 
   // Where the three web applications find the API. Server components call it
@@ -174,7 +253,13 @@ export function variablesFor(service: ServiceDefinition, hosts: ReadonlyMap<stri
   // three and it is the public hostname rather than an internal one: the
   // browser never talks to it, but the OIDC redirect and the origin check are
   // both expressed in public terms.
-  if (name && apiHost) variables.API_BASE_URL = `https://${apiHost}`;
+  if (web && apiHost) variables.API_BASE_URL = `https://${apiHost}`;
+
+  // The channels the portal's "Good to know" card names. Only when the deploy
+  // was given a list: absent, a value somebody set by hand in Railway stays,
+  // because the upsert never removes what it does not name.
+  const channels = portalChannels(settings.portalChannels);
+  if (service.name === 'portal' && channels) variables.PORTAL_CHANNELS = channels;
 
   /*
    * The port, told to Railway in the only way Railway reads it.
@@ -510,6 +595,10 @@ async function main(): Promise<void> {
   // Without one, Railway invents a host per public service and the deploy has
   // to ask for it before it can tell the applications their own origin.
   const domain = process.env.DEPLOY_DOMAIN;
+  // Read before anything is touched, so a malformed list fails the deploy
+  // before the first call rather than halfway through a phase.
+  const settings: DeploySettings = { portalChannels: process.env.PORTAL_CHANNELS };
+  portalChannels(settings.portalChannels);
 
   const phases = phasesOf(catalogue, options.environment);
 
@@ -531,7 +620,7 @@ async function main(): Promise<void> {
         const host = planned.get(service.name);
         if (host) console.log(`      domain https://${host}${service.port ? ` -> :${service.port}` : ''}`);
         else if (service.public) console.log(`      domain <generated>${service.port ? ` -> :${service.port}` : ''}`);
-        for (const [name, value] of Object.entries(variablesFor(service, planned))) {
+        for (const [name, value] of Object.entries(variablesFor(service, planned, settings))) {
           console.log(`      ${name}=${value}`);
         }
         if (!domain && service.public) console.log('      *_ORIGIN / API_BASE_URL set once Railway has named the host');
@@ -577,8 +666,9 @@ Create one named exactly ${options.environment} in Railway, or deploy to one of 
 
   for (const [index, phase] of phases.entries()) {
     console.log(`phase ${index}: ${phase.map((one) => one.name).join(', ')}`);
-    await Promise.all(
-      phase.map(async (service) => {
+    await inTwoPasses(
+      phase,
+      async (service): Promise<string> => {
         let serviceId = services.get(service.name);
 
         if (!serviceId) {
@@ -637,11 +727,13 @@ Create one named exactly ${options.environment} in Railway, or deploy to one of 
             console.log(`  ${service.name} at https://${host} (Railway generated)`);
           }
         }
-
+        return serviceId;
+      },
+      async (service, serviceId) => {
         // Before the redeploy, so the instance that starts already has them.
         // A worker that came up with WORKER_QUEUES unset would consume every
         // family for as long as it took the next deploy to correct it.
-        const variables = variablesFor(service, hosts);
+        const variables = variablesFor(service, hosts, settings);
         if (Object.keys(variables).length > 0) {
           await callApi(
             SET_VARIABLES,
@@ -652,7 +744,7 @@ Create one named exactly ${options.environment} in Railway, or deploy to one of 
 
         await callApi(REDEPLOY, { serviceId, environmentId }, token);
         console.log(`  ${service.name} -> ${imageFor(catalogue, service, options.tag)}`);
-      }),
+      },
     );
   }
 

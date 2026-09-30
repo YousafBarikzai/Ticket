@@ -1,0 +1,468 @@
+/*
+ * The ticket inspector (SPEC §6.2, X-12): a calm column of properties beside
+ * the conversation, or the same content in a sheet. Imported by the inspector
+ * itself, so only the ticket's routes carry it.
+ *
+ * Arrangement only: every colour, space, size and duration is a design-system
+ * custom property. Unlayered, so it wins over the design system's
+ * `@layer itsm.*` rules without `!important`. Logical properties throughout.
+ */
+
+.app-Insp {
+  container: app-insp / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  min-inline-size: 0;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  letter-spacing: var(--itsm-text-callout-tracking);
+}
+
+/* ---- Sections -------------------------------------------------------------- */
+
+.app-Insp__section + .app-Insp__section {
+  padding-block-start: var(--itsm-space-xs);
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+/* The rows line up with the section's name rather than under its chevron: the column is narrow. */
+.app-Insp__section > .itsm-Disclosure__content {
+  padding-inline-start: 0;
+  padding-block: var(--itsm-space-2xs) var(--itsm-space-xs);
+}
+
+.app-Insp__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+.app-Insp__summaryIcon {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Insp__summaryCount {
+  margin-inline-start: auto;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Insp__empty {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- Rows: label beside value, stacked when the column is narrow ------------ */
+
+.app-InspRows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.app-InspRow {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 36%) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+  padding-block: var(--itsm-space-2xs);
+}
+
+@container app-insp (max-width: 16rem) {
+  .app-InspRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+.app-InspRow__label {
+  padding-block-start: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+
+.app-InspRow__value {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-InspRow__text,
+.app-InspRow__none {
+  display: block;
+  padding-block: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-InspRow__none {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-InspRow__hint {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- The requester -------------------------------------------------------- */
+
+.app-Person {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+  padding-block: var(--itsm-space-2xs) var(--itsm-space-sm);
+}
+
+.app-Person__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Person__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Person__detail {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  overflow-wrap: anywhere;
+}
+
+.app-Person__more {
+  color: var(--itsm-colour-text-link);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  text-decoration: none;
+}
+
+.app-Person__more:hover {
+  text-decoration: underline;
+}
+
+/* ---- AI triage: the strip and the rows ------------------------------------- */
+
+.app-Triage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-Triage__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Triage__line {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+/* The AI is marked by a sparkle and its name, never by the accent (SPEC §1.2). */
+.app-Triage__mark,
+.app-TriageRow__mark {
+  flex: none;
+  color: var(--itsm-colour-info-subtleText);
+}
+
+.app-Triage__actions {
+  display: flex;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Triage__progress {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Triage__progress:empty {
+  display: none;
+}
+
+.app-Triage__warningText {
+  margin: 0 0 var(--itsm-space-2xs);
+}
+
+.app-Triage__warningActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Triage__noteList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Triage__note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Triage__note p {
+  margin: 0;
+}
+
+.app-TriageRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-2xs);
+  padding: var(--itsm-space-xs);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+}
+
+.app-TriageRow[data-kind='applied'] {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+  background: none;
+}
+
+.app-TriageRow__line {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs) var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-TriageRow__value {
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-TriageRow__confidence {
+  display: block;
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-TriageRow__line > .app-TriageRow__mark {
+  align-self: flex-start;
+  margin-block-start: var(--itsm-space-3xs);
+}
+
+.app-TriageRow__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+/* ---- SLA -------------------------------------------------------------------- */
+
+.app-InspSla {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-InspSla__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-InspSla__row + .app-InspSla__row {
+  padding-block-start: var(--itsm-space-xs);
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-InspSla__row[data-headline] .itsm-SlaClock {
+  font-size: var(--itsm-text-body-size);
+}
+
+.app-InspSla__when {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-InspSla__row[data-state='breached'] .app-InspSla__when {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+/* ---- Connections ------------------------------------------------------------ */
+
+.app-Connections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Connections__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Connections__heading {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+
+.app-Connections__tags,
+.app-Connections__people,
+.app-Connections__links {
+  display: flex;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Connections__tags {
+  flex-wrap: wrap;
+}
+
+.app-Connections__people,
+.app-Connections__links {
+  flex-direction: column;
+}
+
+.app-Connections__person {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Connections__link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 var(--itsm-space-xs);
+  align-items: baseline;
+}
+
+.app-Connections__linkType {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Connections__linkNumber {
+  justify-self: start;
+  color: var(--itsm-colour-text-link);
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-decoration: none;
+}
+
+.app-Connections__linkNumber:hover {
+  text-decoration: underline;
+}
+
+.app-Connections__linkTitle,
+.app-Connections__linkStatus {
+  grid-column: 2;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Connections__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+  padding-block-start: var(--itsm-space-3xs);
+}
+
+.app-LinkForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+/* ---- Tasks ------------------------------------------------------------------ */
+
+.app-Tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Tasks__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Tasks__item[data-done] {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Tasks__add {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Tasks__add > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+@media (forced-colors: active) {
+  .app-Triage,
+  .app-TriageRow[data-kind='suggested'] {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
+}

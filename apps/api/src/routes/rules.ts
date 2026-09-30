@@ -75,4 +75,22 @@ export async function ruleRoutes(app: FastifyInstance): Promise<void> {
     const body = z.object({ sampleSize: z.number().int().min(1).max(500).optional() }).parse(request.body ?? {});
     return ruleService.testRule(ctx, idOrKey.parse(request.params).idOrKey, body.sampleSize);
   });
+
+  /**
+   * The same dry run for a definition that has not been saved: the builder's
+   * "Try it" panel sends what is on the canvas. Testing a stored rule means
+   * saving it first, and saving an edit to a published rule takes it offline.
+   * A static path, so it never reaches the `:idOrKey` routes.
+   */
+  app.post('/rules/dry-run', async (request) => {
+    const ctx = contextOf(request);
+    const body = z
+      .object({
+        definition: ruleService.dryRunDefinitionSchema.strict(),
+        sampleSize: z.number().int().min(1).max(500).optional(),
+      })
+      .strict()
+      .parse(request.body ?? {});
+    return ruleService.dryRunDefinition(ctx, body.definition, body.sampleSize);
+  });
 }
