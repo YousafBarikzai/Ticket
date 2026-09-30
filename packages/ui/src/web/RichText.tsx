@@ -1,6 +1,4 @@
-'use client';
-
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode, Ref } from 'react';
 import type { RichBlock, RichInline } from '@itsm/contracts';
 import { cx } from './cx.js';
 
@@ -21,11 +19,18 @@ import { cx } from './cx.js';
  * Extracted from `FormRenderer`, where it lived privately, when the portal
  * needed to render an article body: two renderers for one document format
  * would be two places for that guarantee to be weakened.
+ *
+ * Server-safe (no directive): an article renders on the server with no
+ * JavaScript sent for it. It takes `Prose`'s flow rules — block spacing,
+ * underlined links, list markers — at the size of whatever it sits in, so a
+ * form's instructions read at the form's size and an article inside
+ * `<Prose size="lg">` reads at the article's.
  */
 
-export interface RichTextProps {
+export interface RichTextProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'content'> {
   readonly content: readonly RichBlock[];
   readonly className?: string;
+  readonly ref?: Ref<HTMLDivElement>;
 }
 
 function inline(run: RichInline, key: number): ReactNode {
@@ -46,9 +51,9 @@ function inline(run: RichInline, key: number): ReactNode {
   return <span key={key}>{node}</span>;
 }
 
-export function RichText({ content, className }: RichTextProps): ReactNode {
+export function RichText({ content, className, ref, ...rest }: RichTextProps): ReactNode {
   return (
-    <div className={cx('itsm-RichText', className)}>
+    <div {...rest} ref={ref} className={cx('itsm-RichText', className)}>
       {content.map((block, index) => {
         if (block.type === 'paragraph') return <p key={index}>{block.content.map(inline)}</p>;
         if (block.type === 'list') {

@@ -180,9 +180,9 @@ export {
 
 /* -------------------------------------------------------------------- Display */
 export { Badge, type BadgeProps } from './web/Badge.js';
-export { Avatar, initials, type AvatarProps, type AvatarSize, type PresenceStatus } from './web/Avatar.js';
+export { Avatar, initials, type AvatarKind, type AvatarProps, type AvatarSize, type PresenceStatus } from './web/Avatar.js';
 export { Card, type CardProps } from './web/Card.js';
-export { Tile, TileGrid, type TileProps } from './web/Tile.js';
+export { Tile, TileGrid, type TileGridProps, type TileProps } from './web/Tile.js';
 export {
   Table,
   // The name the redesign's catalogue uses for it, beside `DataTable`. Same component.
@@ -194,7 +194,15 @@ export {
   type TableSort,
 } from './web/Table.js';
 export { RichText, asRichBlocks, type RichTextProps } from './web/RichText.js';
-export { Timeline, relativeTime, type TimelineEvent, type TimelineProps } from './web/Timeline.js';
+export {
+  Timeline,
+  relativeTime,
+  type TimelineActor,
+  type TimelineEvent,
+  type TimelineFilter,
+  type TimelineKind,
+  type TimelineProps,
+} from './web/Timeline.js';
 export { RelativeTime, type RelativeTimeProps } from './format/RelativeTime.js';
 export {
   ActivityFeed,
@@ -202,6 +210,7 @@ export {
   DescriptionList,
   Disclosure,
   FileChip,
+  isDisclosureKey,
   Prose,
   StatusPill,
   Stepper,
@@ -215,6 +224,7 @@ export {
   type DescriptionListProps,
   type DisclosureProps,
   type FileChipProps,
+  type FileChipState,
   type ProseProps,
   type StatusPillProps,
   type StepStatus,

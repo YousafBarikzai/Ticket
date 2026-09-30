@@ -20,9 +20,17 @@ import { Skeleton } from './Skeleton.js';
  * component and supplies the two props below. A server component cannot reach
  * them, because it has nothing to put in them.
  *
- * `Skeleton` is a client component and is still used here. That is fine and it
- * is the distinction worth keeping hold of: rendering a client component from
- * a server one is ordinary; passing it a *function* is what fails.
+ * `Skeleton` is used for the loading rows; it is server-safe too. Rendering a
+ * client component from a server one would also be fine — that is the
+ * distinction worth keeping hold of: passing a client component a *function*
+ * is what fails.
+ *
+ * Styling is all from the stylesheet: alignment is a `data-align` attribute
+ * and an activatable row a `data-activatable` one, so the only inline style
+ * left is a column's width — dynamic geometry, which is what inline style is
+ * for (SPEC §3.3 rule 6). Rows answer hover with a background only, never a
+ * movement (SPEC §1.9): the old row lift out-ranked the reduced-motion rule
+ * and moved rows for people who had asked for nothing to move.
  */
 
 export type SortDirection = 'ascending' | 'descending';
@@ -79,6 +87,9 @@ export interface TableProps<Row> {
   readonly grid?: boolean;
 }
 
+/** Loading-row bone widths, cycled so the rows look like data rather than a grid of identical bars. */
+const skeletonWidths = ['72%', '48%', '60%', '36%', '54%'];
+
 export function Table<Row>({
   caption,
   captionHidden = false,
@@ -108,7 +119,8 @@ export function Table<Row>({
                 <th
                   key={column.key}
                   scope="col"
-                  style={{ width: column.width, textAlign: column.align ?? 'start' }}
+                  data-align={column.align === 'end' ? 'end' : undefined}
+                  style={column.width ? { inlineSize: column.width } : undefined}
                   // `aria-sort` belongs on the header cell, not the button, and
                   // only the column actually sorted may carry it.
                   aria-sort={column.sortable && active ? sort.direction : undefined}
@@ -122,10 +134,10 @@ export function Table<Row>({
         <tbody>
           {loading
             ? Array.from({ length: skeletonRows }, (_, rowIndex) => (
-                <tr key={`skeleton-${rowIndex}`}>
-                  {columns.map((column) => (
-                    <td key={column.key}>
-                      <Skeleton />
+                <tr key={`skeleton-${rowIndex}`} className="itsm-Table__skeletonRow">
+                  {columns.map((column, columnIndex) => (
+                    <td key={column.key} data-align={column.align === 'end' ? 'end' : undefined}>
+                      <Skeleton width={skeletonWidths[(rowIndex + columnIndex) % skeletonWidths.length]} height={12} />
                     </td>
                   ))}
                 </tr>
@@ -143,10 +155,10 @@ export function Table<Row>({
                     onFocus={handles?.onFocus}
                     onKeyDown={handles?.onKeyDown}
                     onClick={handles?.onClick}
-                    style={handles?.onClick ? { cursor: 'pointer' } : undefined}
+                    data-activatable={handles?.onClick ? '' : undefined}
                   >
                     {columns.map((column) => (
-                      <td key={column.key} style={{ textAlign: column.align ?? 'start' }}>
+                      <td key={column.key} data-align={column.align === 'end' ? 'end' : undefined}>
                         {column.cell(row)}
                       </td>
                     ))}
@@ -154,7 +166,7 @@ export function Table<Row>({
                 );
               })}
           {!loading && rows.length === 0 ? (
-            <tr>
+            <tr className="itsm-Table__emptyRow">
               <td colSpan={columns.length}>{empty ?? 'Nothing to show'}</td>
             </tr>
           ) : null}

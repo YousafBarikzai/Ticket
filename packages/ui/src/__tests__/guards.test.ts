@@ -164,9 +164,9 @@ const ALLOWED_HANDLERS: Readonly<Record<string, { readonly names: readonly strin
  * ships the module to the browser and turns every server caller's props into
  * a serialisation boundary.
  *
- * `web/Badge.tsx` and `web/Avatar.tsx` are named by the SPEC too but are still
- * client components until the display package moves them to `data-tone`
- * (§3.3 rule 6); they join this list then.
+ * The display group's are here too: `Badge` and `Avatar` joined when they
+ * moved to `data-tone` (§3.3 rule 6), and the rest of §4.6's S column with
+ * them.
  */
 const SERVER_SAFE = [
   'icons/Icon.tsx',
@@ -183,6 +183,14 @@ const SERVER_SAFE = [
   'display/StatusPill.tsx',
   'display/DescriptionList.tsx',
   'display/Stepper.tsx',
+  'display/Surface.tsx',
+  'display/AvatarStack.tsx',
+  'display/Disclosure.tsx',
+  'display/Prose.tsx',
+  'display/FileChip.tsx',
+  'web/Badge.tsx',
+  'web/Avatar.tsx',
+  'web/RichText.tsx',
   'theme/theme-script.ts',
   // Not the `theme` barrel: it re-exports `ThemeProvider`, a client module.
   // The script and the preference rules are what a server layout imports.
