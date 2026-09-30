@@ -280,6 +280,22 @@ describe('the frame’s states', () => {
     expect(document.activeElement?.textContent).toBe('Sign in again');
   });
 
+  it('gives focus back to where the person was on Not now, and keeps saying so in the banner', async () => {
+    mount({ page: <button type="button">Save reply</button> });
+    await settle();
+    const save = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Save reply')!;
+    save.focus();
+    act(() => reportSessionEnded('action'));
+    await until(() => document.querySelector('[role="alertdialog"]') !== null);
+    await settle();
+    click([...document.querySelectorAll('[role="alertdialog"] button')].find((button) => button.textContent === 'Not now')!);
+    await settle();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(document.activeElement).toBe(save);
+    await until(() => document.querySelector('.itsm-GlobalBanner') !== null);
+    expect(document.querySelector('.itsm-GlobalBanner')?.textContent).toContain('Your session ended');
+  });
+
   it('says a page shown offline is a copy, and from when', async () => {
     mount();
     await settle();

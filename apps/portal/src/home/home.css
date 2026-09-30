@@ -285,6 +285,15 @@
   letter-spacing: var(--itsm-text-title3-tracking);
 }
 
+/* A row's "Yes, it's fixed" went in as a message (the API would not close it for a requester). */
+.app-Home__thanks {
+  margin: 0;
+  color: var(--itsm-colour-success-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
 .app-Home__skeleton {
   padding: var(--itsm-space-sm) var(--itsm-space-md);
   border-radius: var(--itsm-radius-xl);

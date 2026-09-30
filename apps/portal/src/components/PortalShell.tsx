@@ -239,12 +239,28 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
   const online = useOnline();
   const copyAt = useCopyTime(renderedAt);
 
-  /* Sign-out: ask about unsent work, forget this device's copies, then post the form. */
-  const [discarding, setDiscarding] = useState<{ count: number; resolve(ok: boolean): void } | null>(null);
-  const discardingRef = useRef(discarding);
-  discardingRef.current = discarding;
+  /*
+   * The session-ended dialog is mounted the first time it is wanted and then
+   * stays mounted, closed, like every other overlay here. Unmounting a modal
+   * while it is open drops focus on `<body>`: the page behind is still inert
+   * at the moment focus would go back to the opener.
+   */
+  const [sessionDialogWanted, setSessionDialogWanted] = useState(false);
+  if (ended === 'action' && !sessionDialogWanted) setSessionDialogWanted(true);
+
+  /*
+   * Sign-out: ask about unsent work, forget this device's copies, then post
+   * the form. The confirmation stays mounted once asked (see above), keeping
+   * the last count so its words do not change while it animates closed.
+   */
+  const [discard, setDiscard] = useState<{ readonly open: boolean; readonly count: number } | null>(null);
+  const discardAnswer = useRef<((ok: boolean) => void) | null>(null);
   const beforeSignOut = useCallback(async (): Promise<boolean> => {
-    const confirmDiscard = (count: number): Promise<boolean> => new Promise<boolean>((resolve) => setDiscarding({ count, resolve }));
+    const confirmDiscard = (count: number): Promise<boolean> =>
+      new Promise<boolean>((resolve) => {
+        discardAnswer.current = resolve;
+        setDiscard({ open: true, count });
+      });
     try {
       const { forgetThisDevice } = await loadStatus();
       return await forgetThisDevice(confirmDiscard);
@@ -259,8 +275,9 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
     });
   }, [beforeSignOut]);
   const closeDiscard = useCallback((ok: boolean) => {
-    discardingRef.current?.resolve(ok);
-    setDiscarding(null);
+    discardAnswer.current?.(ok);
+    discardAnswer.current = null;
+    setDiscard((previous) => (previous ? { ...previous, open: false } : previous));
   }, []);
 
   /* The palette's view of all of the above. */
@@ -321,14 +338,14 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
             {...(helpRequest ? { request: helpRequest } : {})}
           />
         ) : null}
-        {discarding ? (
+        {discard ? (
           <LazyConfirmDialog
-            open
+            open={discard.open}
             onOpenChange={(open) => {
               if (!open) closeDiscard(false);
             }}
             spec={{
-              title: `Sign out and discard ${discarding.count === 1 ? 'an unsent item' : `${discarding.count} unsent items`}?`,
+              title: `Sign out and discard ${discard.count === 1 ? 'an unsent item' : `${discard.count} unsent items`}?`,
               body: 'They haven’t reached the service desk yet. Signing out removes them from this device.',
               confirmLabel: 'Sign out and discard',
               cancelLabel: 'Stay signed in',
@@ -337,9 +354,9 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
             onConfirm={async () => closeDiscard(true)}
           />
         ) : null}
-        {ended === 'action' ? (
+        {sessionDialogWanted ? (
           <LazyDialog
-            open
+            open={ended === 'action'}
             onClose={() => setEnded('background')}
             role="alertdialog"
             initialFocusRef={signInRef}

@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import type { ApprovalRequest } from '@itsm/sdk';
 import { Button, RelativeTime } from '@itsm/ui';
 import { formatDateTime } from '@itsm/ui/format';
 import { LiveRefresh } from '../../../../client/live.js';
+import { NOT_FOUND_METADATA, NotFoundScreen } from '../../../../components/NotFoundScreen.js';
 import { settle } from '../../../../home/settle.js';
 import { Conversation } from '../../../../requests/Conversation.js';
 import { MarkSeen } from '../../../../requests/MarkSeen.js';
@@ -32,6 +33,7 @@ type Search = Promise<Record<string, string | string[] | undefined>>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { id } = await params;
   const read = await readTicket(id);
+  if (!read.ok && read.status === 404) return NOT_FOUND_METADATA;
   return { title: read.ok ? read.ticket.title : id };
 }
 
@@ -57,7 +59,8 @@ export default async function RequestPage({ params, searchParams }: { params: Pa
   const held = heldPermissions(me);
 
   if (!read.ok) {
-    if (read.status === 404) notFound();
+    // Returned, not thrown: the response is already streaming (see NotFoundScreen).
+    if (read.status === 404) return <NotFoundScreen />;
     if (read.status === 401) redirect(await loginHref());
     return (
       <div className="app-Page app-Page--reading app-Request">

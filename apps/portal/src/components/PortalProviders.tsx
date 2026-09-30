@@ -8,6 +8,8 @@ import { ItsmProvider, type ItsmRouter } from '@itsm/ui';
 import { RouteFocus, RouteProgress } from '@itsm/ui/shell';
 import { AppLink } from '../app/AppLink.js';
 import { useHydrated } from './PortalShell.js';
+// Listens for the browser's install offer from the first load, for Profile's "Install the app".
+import '../client/install-offer.js';
 
 /**
  * Everything the portal's screens stand on (SPEC §5.1, D11): the design

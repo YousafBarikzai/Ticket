@@ -53,6 +53,14 @@ const browserApi = {
 };
 vi.mock('../client/api.js', () => ({ api: browserApi }));
 
+// "Yes, it's fixed" falls back to a message when the API will not close a request for a requester.
+const submitOrQueue = vi.fn(async (_input: unknown) => ({ ok: true as const, queued: false, idempotencyKey: 'key-1' }));
+vi.mock('@itsm/pwa', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@itsm/pwa')>()),
+  submitOrQueue: (input: unknown) => submitOrQueue(input),
+  newIdempotencyKey: () => 'key-1',
+}));
+
 const notify = vi.fn();
 vi.mock('@itsm/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@itsm/ui')>();
@@ -94,6 +102,9 @@ const search = await import('../app/(portal)/search/page.js');
 const model = await import('../home/model.js');
 const { HomeSearch } = await import('../home/HomeSearch.js');
 const { ResolutionActions } = await import('../home/ResolutionActions.js');
+// "Yes, it's fixed" loads its rules on first use; loaded once here so a press is a matter of promises.
+await import('../requests/resolution.js');
+await import('@itsm/pwa');
 const { YourRequestsSkeleton } = await import('../home/sections.js');
 const { FOCUS_HOME_SEARCH } = await import('../home/events.js');
 const { forgetCatalogue, SUGGEST_DELAY_MS } = await import('../help/suggestions.js');
@@ -233,6 +244,7 @@ beforeEach(() => {
   router.push.mockClear();
   router.refresh.mockClear();
   notify.mockClear();
+  submitOrQueue.mockClear();
   forgetCatalogue();
   setPhone(false);
   Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true });
@@ -600,7 +612,7 @@ describe('Yes, it’s fixed', () => {
   it('closes the request on the version the page read', async () => {
     mountActions();
     await clickAsync(button('Yes, it’s fixed'));
-    expect(browserApi.transition).toHaveBeenCalledWith('INC-000002', 'closed', 3);
+    expect(browserApi.transition).toHaveBeenCalledWith('INC-000002', 'closed', 3, undefined);
     expect(notify).toHaveBeenCalledWith('Thanks, we’ve closed it', { tone: 'success' });
     expect(router.refresh).toHaveBeenCalled();
   });
@@ -610,8 +622,28 @@ describe('Yes, it’s fixed', () => {
     browserApi.ticket.mockResolvedValue({ status: 'resolved', version: 4 });
     mountActions();
     await clickAsync(button('Yes, it’s fixed'));
-    expect(browserApi.transition).toHaveBeenLastCalledWith('INC-000002', 'closed', 4);
+    expect(browserApi.transition).toHaveBeenLastCalledWith('INC-000002', 'closed', 4, undefined);
     expect(notify).toHaveBeenCalledWith('Thanks, we’ve closed it', { tone: 'success' });
+  });
+
+  it('counts a close that landed but lost its answer as done, not as a failure', async () => {
+    browserApi.transition.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    browserApi.ticket.mockResolvedValue({ status: 'closed', version: 4 });
+    mountActions();
+    await clickAsync(button('Yes, it’s fixed'));
+    expect(browserApi.transition).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith('Thanks, we’ve closed it', { tone: 'success' });
+    expect(notify).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tone: 'danger' }));
+  });
+
+  it('confirms with a message when the API will not close it for a requester, and thanks them on the row', async () => {
+    browserApi.transition.mockRejectedValueOnce(new ApiError(403, null, 'forbidden'));
+    browserApi.ticket.mockResolvedValue({ status: 'resolved', version: 3 });
+    mountActions();
+    await clickAsync(button('Yes, it’s fixed'));
+    expect(submitOrQueue).toHaveBeenCalledTimes(1);
+    expect(submitOrQueue.mock.calls[0]![0]).toMatchObject({ body: { body: 'Confirmed fixed. Thanks!', visibility: 'public', channel: 'portal' }, idempotencyKey: 'key-1' });
+    expect(text()).toContain('Thanks for confirming');
   });
 
   it('says so when the request has moved on meanwhile', async () => {
@@ -621,6 +653,16 @@ describe('Yes, it’s fixed', () => {
     await clickAsync(button('Yes, it’s fixed'));
     expect(browserApi.transition).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith('This request has moved on since the page loaded', { tone: 'info' });
+  });
+
+  it('keeps the rules and the outbox out of Home’s first load, loading them when a row can be confirmed', () => {
+    // Paths through a variable: Vite rewrites `new URL('<literal>', import.meta.url)` into an asset URL.
+    const read = (path: string): string => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+    const hook = read('../requests/useConfirmFixed.ts');
+    expect(hook).not.toMatch(/^import (?!type )[^;]*from '(\.\/resolution\.js|@itsm\/pwa)';/m);
+    expect(hook).toContain("import('./resolution.js')");
+    const row = read('../home/ResolutionActions.tsx');
+    expect(row).not.toMatch(/from '(@itsm\/pwa|\.\.\/requests\/resolution\.js)'/);
   });
 
   it('needs a connection', () => {

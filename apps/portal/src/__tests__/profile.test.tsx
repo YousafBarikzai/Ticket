@@ -455,6 +455,30 @@ describe('devices', () => {
     expect([...section('devices').querySelectorAll('.app-Devices__name')].map((node) => node.textContent)).toEqual(['A browser']);
   });
 
+  it('offers Install the app when the browser offered it before this page was opened, and only once', async () => {
+    const { spendInstallOffer } = await import('../client/install-offer.js');
+    // The browser offers once, soon after the document loads — usually on another page than this one.
+    const prompt = vi.fn(async () => undefined);
+    let answer!: (choice: { outcome: 'accepted' | 'dismissed' }) => void;
+    const offer = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
+      prompt,
+      userChoice: new Promise<{ outcome: 'accepted' | 'dismissed' }>((resolve) => (answer = resolve)),
+    });
+    window.dispatchEvent(offer);
+    expect(offer.defaultPrevented).toBe(true);
+
+    serverApi.sessions.mockResolvedValue(sessions);
+    await openProfile();
+    const install = [...section('devices').querySelectorAll('button')].find((node) => node.textContent?.includes('Install'));
+    expect(section('devices').textContent).toContain('Install the app');
+    await clickAsync(install!);
+    expect(prompt).toHaveBeenCalledTimes(1);
+    await act(async () => answer({ outcome: 'dismissed' }));
+    await settle();
+    expect(section('devices').textContent).not.toContain('Install the app');
+    spendInstallOffer();
+  });
+
   it('needs a connection to sign anything out', async () => {
     serverApi.sessions.mockResolvedValue(sessions);
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });

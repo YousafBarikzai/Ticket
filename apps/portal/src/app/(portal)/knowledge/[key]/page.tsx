@@ -1,5 +1,5 @@
 import { cache, type ReactNode } from 'react';
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ApiError, type Article } from '@itsm/sdk';
 import { Button, EmptyState } from '@itsm/ui';
@@ -7,6 +7,7 @@ import { AppLink } from '../../../AppLink.js';
 import { SectionProblem } from '../../../../home/SectionProblem.js';
 import { ArticleEnd } from '../../../../knowledge/ArticleEnd.js';
 import { ArticleList } from '../../../../knowledge/Browse.js';
+import { NOT_FOUND_METADATA, NotFoundScreen } from '../../../../components/NotFoundScreen.js';
 import { mayOpen } from '../../../../navigation.js';
 import { apiFor, currentMe, heldPermissions, loginHref, requireSession } from '../../../../server/session.js';
 import { categoryHref, dayOf, moreIn, readingTime } from '../categories.js';
@@ -25,7 +26,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { key } = await params;
   try {
     return { title: (await readArticle(key)).title };
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return NOT_FOUND_METADATA;
     return { title: 'Knowledge' };
   }
 }
@@ -69,7 +71,8 @@ export default async function ArticlePage({ params }: { params: Params }): Promi
   const [read, shelves] = await Promise.all([settleArticle(readArticle(key)), readShelves(apiFor(session))]);
 
   if (read.kind !== 'ok') {
-    if (read.kind === 'missing') notFound();
+    // Returned, not thrown: the response is already streaming (see NotFoundScreen).
+    if (read.kind === 'missing') return <NotFoundScreen />;
     if (read.kind === 'signed-out') redirect(await loginHref());
     return (
       <div className="app-Page app-Page--reading app-Article">

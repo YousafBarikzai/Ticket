@@ -50,21 +50,6 @@
   min-inline-size: 0;
 }
 
-/*
- * On a narrow phone the four scopes share the width by their words rather
- * than in equal quarters, so "Needs you 2" and "Resolved" are read whole
- * instead of cut short.
- */
-@media (max-width: 29.9375rem) {
-  .app-Requests__scopes .itsm-SegmentedControl__list {
-    grid-auto-columns: auto;
-  }
-
-  .app-Requests__scopes .itsm-SegmentedControl__segment {
-    padding-inline: var(--itsm-space-xs);
-  }
-}
-
 @media (min-width: 48rem) {
   .app-Requests__controls {
     flex-direction: row;

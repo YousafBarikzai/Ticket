@@ -455,7 +455,11 @@ describe('an article', () => {
 
   it('is a 404 for an article that does not exist or is not theirs, and keeps a heading when the read fails', async () => {
     serverApi.article.mockRejectedValue(new ApiError(404, null, 'no'));
-    await expect(articlePage.default({ params: Promise.resolve({ key: 'secret' }) })).rejects.toThrow('not found');
+    // Returned, not thrown (the page streams behind its skeleton; see NotFoundScreen).
+    await show(articlePage.default({ params: Promise.resolve({ key: 'secret' }) }));
+    expect(document.querySelector('h1')?.textContent).toBe('We couldn’t find that');
+    await expect(articlePage.generateMetadata({ params: Promise.resolve({ key: 'secret' }) })).resolves.toEqual({ title: 'Not found', robots: { index: false } });
+    cleanupDocument();
     serverApi.article.mockRejectedValue(new ApiError(500, null, 'boom'));
     await show(articlePage.default({ params: Promise.resolve({ key: 'vpn-setup' }) }));
     expect(document.querySelector('h1')?.textContent).toBe('Knowledge');

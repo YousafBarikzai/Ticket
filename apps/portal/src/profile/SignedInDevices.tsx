@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { SessionRow } from '@itsm/sdk';
 import { Button, Icon, RelativeTime, VisuallyHidden, notify } from '@itsm/ui';
 import { api } from '../client/api.js';
+import { spendInstallOffer, useInstallOffer } from '../client/install-offer.js';
 import { problemOf, reportSessionEnded } from '../client/useAction.js';
 import { sessionLabel, sessionsInOrder } from './model.js';
 import { useOnline } from './online.js';
@@ -121,13 +122,6 @@ export function SignedInDevices({ sessions }: SignedInDevicesProps): ReactNode {
 
 /* ------------------------------------------------------------ Install */
 
-interface InstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-  readonly userChoice: Promise<{ readonly outcome: 'accepted' | 'dismissed' }>;
-}
-
-type Offer = { readonly kind: 'prompt'; readonly event: InstallPromptEvent } | { readonly kind: 'ios' } | null;
-
 function standalone(): boolean {
   return window.matchMedia?.('(display-mode: standalone)').matches === true || (navigator as { standalone?: boolean }).standalone === true;
 }
@@ -139,36 +133,28 @@ function isIosSafari(): boolean {
 
 /**
  * "Install the app": a button where the browser has offered to install
- * (`beforeinstallprompt`), the Share-sheet steps on an iPhone or iPad, and
- * nothing once it is installed or where neither applies.
+ * (`beforeinstallprompt`, kept by the frame since the page loaded: see
+ * `client/install-offer.ts`), the Share-sheet steps on an iPhone or iPad,
+ * and nothing once it is installed or where neither applies.
  */
 function InstallApp(): ReactNode {
-  const [offer, setOffer] = useState<Offer>(null);
+  const prompt = useInstallOffer();
+  const [where, setWhere] = useState<'browser' | 'ios' | 'installed'>('browser');
 
   useEffect(() => {
-    if (standalone()) return;
-    if (isIosSafari()) setOffer({ kind: 'ios' });
-    const onPrompt = (event: Event): void => {
-      event.preventDefault();
-      setOffer({ kind: 'prompt', event: event as InstallPromptEvent });
-    };
-    const onInstalled = (): void => setOffer(null);
-    window.addEventListener('beforeinstallprompt', onPrompt);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
+    if (standalone()) setWhere('installed');
+    else if (isIosSafari()) setWhere('ios');
   }, []);
 
-  if (!offer) return null;
-  if (offer.kind === 'ios') {
+  if (where === 'installed') return null;
+  if (where === 'ios') {
     return (
       <p className="app-Profile__row app-Profile__note">
         To add Help to your Home Screen, tap Share, then Add to Home Screen.
       </p>
     );
   }
+  if (!prompt) return null;
   return (
     <div className="app-Profile__row app-Devices__install">
       <span className="app-Devices__text">
@@ -180,8 +166,8 @@ function InstallApp(): ReactNode {
         variant="tinted"
         iconStart="download"
         onClick={() => {
-          void offer.event.prompt();
-          void offer.event.userChoice.then(() => setOffer(null)).catch(() => setOffer(null));
+          void prompt.prompt().catch(() => undefined);
+          void prompt.userChoice.finally(spendInstallOffer).catch(() => undefined);
         }}
       >
         Install

@@ -1,5 +1,5 @@
 import { cache, type ReactNode } from 'react';
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ApiError, type CatalogueItem, type CatalogueItemDetail } from '@itsm/sdk';
 import { Button, EmptyState } from '@itsm/ui';
@@ -7,6 +7,7 @@ import { serviceHref } from '../../../../catalogue/group.js';
 import { RequestFlow } from '../../../../catalogue/RequestFlow.js';
 import { SectionProblem } from '../../../../home/SectionProblem.js';
 import { settle } from '../../../../home/settle.js';
+import { NOT_FOUND_METADATA, NotFoundScreen } from '../../../../components/NotFoundScreen.js';
 import { mayOpen } from '../../../../navigation.js';
 import { apiFor, currentMe, heldPermissions, loginHref, requireSession } from '../../../../server/session.js';
 import '../catalogue.css';
@@ -23,7 +24,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   try {
     // The item's name, never its key (F38).
     return { title: (await readItem(key)).name };
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return NOT_FOUND_METADATA;
     return { title: 'Services' };
   }
 }
@@ -69,7 +71,8 @@ export default async function CatalogueItemPage({ params }: { params: Params }):
   const [item, list] = await Promise.all([settleItem(readItem(key)), settle(apiFor(session).catalogue())]);
 
   if (item.kind !== 'ok') {
-    if (item.kind === 'missing') notFound();
+    // Returned, not thrown: the response is already streaming (see NotFoundScreen).
+    if (item.kind === 'missing') return <NotFoundScreen />;
     if (item.kind === 'signed-out') redirect(await loginHref());
     return (
       <div className="app-Page app-ServiceRequest">

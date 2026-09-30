@@ -158,7 +158,7 @@ export function RequestsBrowser({ scope, q, needsCount, initial, unread }: Reque
   return (
     <>
       <div className="app-Requests__controls">
-        <SegmentedControl mode="nav" label="Show requests" options={options} value={scope} fullWidth className="app-Requests__scopes" />
+        <SegmentedControl mode="nav" label="Show requests" options={options} value={scope} fullWidth wrap className="app-Requests__scopes" />
         <SearchField
           className="app-Requests__search"
           label="Search your requests"

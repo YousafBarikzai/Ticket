@@ -583,7 +583,13 @@ describe('a request', () => {
 
   it('is not found when the API says so, and moves an id to its number', async () => {
     serverApi.ticket.mockRejectedValue(new ApiError(404, null, 'not found'));
-    await expect(openRequest('INC-000404')).rejects.toThrow('not found');
+    // The not-found screen is returned, not thrown: the page streams behind its skeleton, and a
+    // notFound() there surfaced as React error #419 in production browsers.
+    await openRequest('INC-000404');
+    expect(document.querySelector('h1')?.textContent).toBe('We couldn’t find that');
+    expect(text()).not.toContain('INC-000404');
+    await expect(detailPage.generateMetadata({ params: Promise.resolve({ id: 'INC-000404' }) })).resolves.toEqual({ title: 'Not found', robots: { index: false } });
+    cleanupDocument();
 
     serverApi.ticket.mockResolvedValue(ticket('INC-000123', 'resolved'));
     await expect(openRequest('0b0c4d1e-5c6a-4f6b-9d7e-2a1b3c4d5e6f', { fixed: 'no' })).rejects.toThrow('redirect /tickets/INC-000123?fixed=no');
@@ -686,7 +692,7 @@ describe('the composer', () => {
     expect(submitOrQueue.mock.calls[0]![0]).toMatchObject({
       action: 'add-comment',
       path: '/api/proxy/api/v1/tickets/INC-000123/comments',
-      body: { body: 'Here is the log', visibility: 'public' },
+      body: { body: 'Here is the log', visibility: 'public', channel: 'portal' },
       idempotencyKey: 'key-1',
     });
     await act(async () => finish({ ok: true, queued: false, idempotencyKey: 'key-1' }));

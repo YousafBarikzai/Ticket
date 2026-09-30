@@ -187,8 +187,14 @@ describe('New request in the top bar (X-84)', () => {
     for (const path of ['/', '/tickets', '/tickets/', '/report', '/tickets?show=needs']) expect(showsNewRequest(path, everyone), path).toBe(false);
   });
 
+  it('is not offered beside a request’s own primary action, nor inside a service’s form', () => {
+    for (const path of ['/tickets/INC-000123', '/tickets/INC-000123?fixed=no', '/tickets/REQ-000002/', '/catalogue/new-laptop', '/catalogue/new-laptop#top']) {
+      expect(showsNewRequest(path, everyone), path).toBe(false);
+    }
+  });
+
   it('is offered everywhere else', () => {
-    for (const path of ['/tickets/INC-000123', '/catalogue', '/knowledge/vpn', '/profile', '/approvals', '/search']) expect(showsNewRequest(path, everyone), path).toBe(true);
+    for (const path of ['/catalogue', '/catalogue?q=vpn', '/knowledge', '/knowledge/vpn', '/profile', '/approvals', '/search']) expect(showsNewRequest(path, everyone), path).toBe(true);
   });
 
   it('is never offered without ticket.create', () => {

@@ -241,15 +241,20 @@ export function portalFrame(can: PortalCan, waiting: number): PortalFrameModel {
 }
 
 /**
- * Whether the top bar offers *New request* here. Not where the page already
- * has it as its own primary action — Home's hero and My requests' header —
- * and not on the report page, which is the flow itself (X-84: one primary
- * per view). Not at all without `ticket.create`.
+ * Whether the top bar offers *New request* here (X-84: one primary per view).
+ * Not where the page already has it as its own primary action — Home's hero
+ * and My requests' header — and not on the report page, which is the flow
+ * itself. Not on a request (`/tickets/<n>`), whose hero card carries the one
+ * thing to do there (Reply, Is it fixed?, Report it again), nor on a service
+ * being requested (`/catalogue/<key>`), whose form ends in its own primary
+ * and is a full-screen flow on phones. Not at all without `ticket.create`.
  */
 export function showsNewRequest(pathname: string, can: Pick<PortalCan, 'createTickets'>): boolean {
   if (!can.createTickets) return false;
   const path = pathname.split(/[?#]/)[0]!.replace(/\/+$/, '') || '/';
-  return path !== '/' && path !== '/tickets' && path !== '/report';
+  if (path === '/' || path === '/tickets' || path === '/report') return false;
+  const segments = path.split('/').filter(Boolean);
+  return !(segments.length === 2 && (segments[0] === 'tickets' || segments[0] === 'catalogue'));
 }
 
 /* ------------------------------------------------------------ App switcher */

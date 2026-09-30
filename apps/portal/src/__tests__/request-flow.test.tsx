@@ -466,7 +466,11 @@ describe('an item’s page', () => {
 
   it('is a 404 for an item that does not exist or is not theirs, and keeps a heading when the read fails', async () => {
     serverApi.catalogueItem.mockRejectedValue(new ApiError(404, null, 'no'));
-    await expect(itemPage.default({ params: Promise.resolve({ key: 'secret' }) })).rejects.toThrow('not found');
+    // Returned, not thrown (the page streams behind its skeleton; see NotFoundScreen).
+    await show(itemPage.default({ params: Promise.resolve({ key: 'secret' }) }));
+    expect(document.querySelector('h1')?.textContent).toBe('We couldn’t find that');
+    await expect(itemPage.generateMetadata({ params: Promise.resolve({ key: 'secret' }) })).resolves.toEqual({ title: 'Not found', robots: { index: false } });
+    cleanupDocument();
 
     serverApi.catalogueItem.mockRejectedValue(new ApiError(500, null, 'boom'));
     await show(itemPage.default({ params: Promise.resolve({ key: 'system-access' }) }));
