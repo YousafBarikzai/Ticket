@@ -27,10 +27,35 @@ export interface TabsProps {
    * a panel fetches data.
    */
   readonly activation?: 'automatic' | 'manual';
+  /**
+   * `underline` (default): a row of tabs over a hairline, the selected one
+   * marked by an accent bar. `segmented`: the tabs on a track with the
+   * selected one raised, like a `SegmentedControl` — for a short set of
+   * panels inside a card or a sheet.
+   */
+  readonly variant?: 'underline' | 'segmented';
   readonly className?: string;
 }
 
-export function Tabs({ label, items, value, defaultValue, onChange, activation = 'automatic', className }: TabsProps): ReactNode {
+/**
+ * Tabs for switching panels in place. Sections that are separate pages are a
+ * `TabNav` of links instead.
+ *
+ * The selected tab is marked in `text.primary` at weight 600 with the
+ * accent bar (or the raised segment) — never in link blue, which would read as
+ * "go somewhere". Each label reserves the width of its bold self, so the row
+ * does not shift when the selection moves.
+ */
+export function Tabs({
+  label,
+  items,
+  value,
+  defaultValue,
+  onChange,
+  activation = 'automatic',
+  variant = 'underline',
+  className,
+}: TabsProps): ReactNode {
   const baseId = useStableId('itsm-tabs');
   const [uncontrolled, setUncontrolled] = useState(() => defaultValue ?? items.find((item) => !item.disabled)?.id ?? '');
   const selectedId = value ?? uncontrolled;
@@ -58,7 +83,7 @@ export function Tabs({ label, items, value, defaultValue, onChange, activation =
   const selected = items[selectedIndex];
 
   return (
-    <div className={cx('itsm-Tabs', className)}>
+    <div className={cx('itsm-Tabs', `itsm-Tabs--${variant}`, className)}>
       <div role="tablist" aria-label={label} aria-orientation="horizontal" className="itsm-Tabs__list">
         {items.map((item, index) => {
           const itemProps = roving.getItemProps(index);
@@ -89,7 +114,9 @@ export function Tabs({ label, items, value, defaultValue, onChange, activation =
                 roving.setActiveIndex(index);
               }}
             >
-              {item.label}
+              <span className="itsm-Tabs__label" data-text={typeof item.label === 'string' ? item.label : undefined}>
+                {item.label}
+              </span>
               {item.badge}
             </button>
           );
