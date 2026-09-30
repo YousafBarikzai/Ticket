@@ -21,7 +21,7 @@ useDefault = true
 
 [allowlist]
 description = """
-Three narrow exemptions, two of them about the same eight words.
+Four narrow exemptions, two of them about the same eight words.
 
 1. Business rule and approval policy keys.
 
@@ -60,6 +60,16 @@ Exempted as two exact sentence fragments, each with fixed text on both sides of
 the string. Nothing can be appended or prepended to turn either into a match for
 a real credential, which is the property that matters: the point of an exemption
 is that it fits the thing it excuses and nothing else.
+
+4. Keyboard shortcuts.
+
+The design system names a shortcut as `keys: 'mod+shift+enter'` (a hotkey) or
+`keys="mod+shift+enter"` (the key caps that show it), and a chord of three
+words is enough entropy for the generic-api-key rule. The pattern admits only
+a chord: one or more modifier names from a closed list, each followed by `+`,
+then one final key from a closed list or a single lower-case letter or digit.
+Every character of a match comes from that vocabulary, so no credential can be
+one.
 """
 regexTarget = "line"
 # Case-sensitive on purpose. An earlier draft used (?i) for the field name,
@@ -75,4 +85,7 @@ regexes = [
   # The two historical prose lines, each bounded by fixed text on both sides.
   """`Bearer sk_live_notarealkey`, written as a redaction-test fixture""",
   """would also have exempted `sk_live_notarealkeyBUTLONGER` —""",
+  # A shortcut chord and nothing else: closed vocabularies on both sides of
+  # every `+`, quotes on both ends.
+  '''keys\s*[:=]\s*['"](?:(?:mod|shift|alt|ctrl|meta)\+)+(?:enter|escape|tab|space|backspace|delete|arrow(?:up|down|left|right)|[a-z0-9])['"]''',
 ]
