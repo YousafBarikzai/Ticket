@@ -136,6 +136,8 @@ export function useTicketWorkspace(): WorkspaceApi | null {
 
 /* --------------------------------------------------------- Small hooks */
 
+const NO_COMMANDS: readonly CommandItem[] = [];
+
 /** How wide the workspace is: the inspector is a column from here, a sheet below. */
 const INSPECTOR_COLUMN_MIN = 800;
 const INSPECTOR_PREF_KEY = 'itsm-wb-inspector';
@@ -153,6 +155,29 @@ function useWidth(ref: RefObject<HTMLElement | null>): number {
     return () => observer.disconnect();
   }, [ref]);
   return width;
+}
+
+/**
+ * Whether the workspace is on screen. The one-column inbox (a phone, a narrow
+ * window) hides the detail pane rather than unmounting it, and a ticket the
+ * person cannot see must not answer the keyboard: `i` would assign it, `]`
+ * would open its details over the list. Where the browser cannot say
+ * (`checkVisibility` is missing), it counts as shown, as before.
+ */
+function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
+  const [onScreen, setOnScreen] = useState(true);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof element.checkVisibility !== 'function') return;
+    const check = (): void => setOnScreen(element.checkVisibility());
+    check();
+    if (typeof ResizeObserver === 'undefined') return;
+    // Hiding an ancestor takes this element's size to nothing, and showing it gives it back: either way it reports.
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return onScreen;
 }
 
 function readStorage(storage: 'local' | 'session', key: string): string | null {
@@ -861,27 +886,29 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
     [bundle, mode, client, number, gate, writer],
   );
 
-  /* Keyboard (SPEC §5.6): the ticket's keys, anywhere in the ticket or the list beside it. */
+  /* Keyboard (SPEC §5.6): the ticket's keys, anywhere in the ticket or the list beside it — while it is on screen. */
+  const onScreen = useOnScreen(rootRef);
   const assignedToMe = me !== null && ticket.assigneeId?.toLowerCase() === me;
-  useHotkey({ keys: 'r', description: 'Reply', group: 'This ticket', enabled: can.reply, handler: () => composer.current?.open('reply') });
-  useHotkey({ keys: 'n', description: 'Internal note', group: 'This ticket', enabled: can.note, handler: () => composer.current?.open('note') });
-  useHotkey({ keys: 'e', description: 'Edit title', group: 'This ticket', enabled: can.update && !gate, handler: () => setEditingTitle(true) });
+  useHotkey({ keys: 'r', description: 'Reply', group: 'This ticket', enabled: onScreen && can.reply, handler: () => composer.current?.open('reply') });
+  useHotkey({ keys: 'n', description: 'Internal note', group: 'This ticket', enabled: onScreen && can.note, handler: () => composer.current?.open('note') });
+  useHotkey({ keys: 'e', description: 'Edit title', group: 'This ticket', enabled: onScreen && can.update && !gate, handler: () => setEditingTitle(true) });
   useHotkey({
     keys: 'i',
     description: 'Assign to me',
     group: 'This ticket',
-    enabled: can.assign && me !== null && !assignedToMe,
+    enabled: onScreen && can.assign && me !== null && !assignedToMe,
     handler: () => me && change({ kind: 'assign', assigneeId: me }),
   });
-  useHotkey({ keys: 'a', description: 'Assignee', group: 'This ticket', enabled: can.assign, handler: (_event, hot) => openMenuFrom('assignee', hot.invoker) });
-  useHotkey({ keys: 't', description: 'Team', group: 'This ticket', enabled: can.assign && Boolean(teams?.length), handler: (_event, hot) => openMenuFrom('team', hot.invoker) });
-  useHotkey({ keys: 's', description: 'Status', group: 'This ticket', enabled: can.transition, handler: (_event, hot) => openMenuFrom('status', hot.invoker) });
-  useHotkey({ keys: 'p', description: 'Priority, then 1–4', group: 'This ticket', enabled: can.update, handler: (_event, hot) => openMenuFrom('priority', hot.invoker) });
-  useHotkey({ keys: ']', description: 'Show or hide details', group: 'This ticket', handler: toggleInspector });
+  useHotkey({ keys: 'a', description: 'Assignee', group: 'This ticket', enabled: onScreen && can.assign, handler: (_event, hot) => openMenuFrom('assignee', hot.invoker) });
+  useHotkey({ keys: 't', description: 'Team', group: 'This ticket', enabled: onScreen && can.assign && Boolean(teams?.length), handler: (_event, hot) => openMenuFrom('team', hot.invoker) });
+  useHotkey({ keys: 's', description: 'Status', group: 'This ticket', enabled: onScreen && can.transition, handler: (_event, hot) => openMenuFrom('status', hot.invoker) });
+  useHotkey({ keys: 'p', description: 'Priority, then 1–4', group: 'This ticket', enabled: onScreen && can.update, handler: (_event, hot) => openMenuFrom('priority', hot.invoker) });
+  useHotkey({ keys: ']', description: 'Show or hide details', group: 'This ticket', enabled: onScreen, handler: toggleInspector });
   useHotkey({
     keys: '.',
     description: 'More actions',
     group: 'This ticket',
+    enabled: onScreen,
     handler: (_event, hot) => {
       returnFocus.current = hot.invoker && !rootRef.current?.contains(hot.invoker) ? hot.invoker : null;
       setMoreOpen(true);
@@ -891,13 +918,14 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
     keys: 'o',
     description: 'Open full page',
     group: 'This ticket',
-    enabled: mode === 'pane',
+    enabled: onScreen && mode === 'pane',
     handler: () => router.push(`/tickets/${encodeURIComponent(number)}`),
   });
   useHotkey({
     keys: 'mod+shift+enter',
     description: 'Send options',
     group: 'This ticket',
+    enabled: onScreen,
     allowInFields: true,
     handler: () => composer.current?.openSendOptions(),
   });
@@ -921,7 +949,8 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
     items.push({ id: 'ticket-details', label: inspectorOpen ? 'Hide details' : 'Show details', icon: 'panel-right', shortcut: ']', group, run: toggleInspector });
     return items.map((item) => ({ ...item, description: number }));
   }, [can, me, assignedToMe, canResolve, openResolve, teams?.length, mode, number, link, copy, change, openMenuFrom, inspectorOpen, toggleInspector]);
-  useRegisterCommands(commands, [commands]);
+  // A ticket hidden by the one-column inbox offers nothing in the palette either.
+  useRegisterCommands(onScreen ? commands : NO_COMMANDS, [commands, onScreen]);
 
   /* Condense the header once the conversation (or, on a phone, the page) has scrolled. */
   const onConversationScroll = useCallback(() => {

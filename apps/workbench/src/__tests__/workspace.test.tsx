@@ -237,6 +237,25 @@ describe('changing the ticket', () => {
     expect(assign?.headers['if-match']).toBe('"4"');
   });
 
+  it('keeps its keys to itself while the one-column inbox hides it', async () => {
+    // jsdom has no layout: say the pane is hidden, as `display: none` does in a browser.
+    const proto = HTMLElement.prototype as unknown as { checkVisibility?: () => boolean };
+    proto.checkVisibility = () => false;
+    try {
+      await mountWorkspace({ bundle: bundle({ ticket: ticket({ assigneeId: null }) }) });
+      key(document.body, 's');
+      await flush();
+      expect(menuItem('Wait on requester')).toBeNull();
+      key(document.body, 'i');
+      key(document.body, 'r');
+      await flush(4);
+      expect(writes()).toEqual([]);
+      expect(document.activeElement?.tagName).not.toBe('TEXTAREA');
+    } finally {
+      delete proto.checkVisibility;
+    }
+  });
+
   it('sets the priority with p, then a number', async () => {
     await mountWorkspace();
     key(document.body, 'p');

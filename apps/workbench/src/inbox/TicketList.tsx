@@ -906,6 +906,7 @@ export function TicketList({
                 moved={entry.moved ? (movedLabels.get(row.id) ?? 'No longer in this view') : null}
                 flash={flashing.has(row.id)}
                 now={now}
+                byDue={view.sort === 'dueAt' || view.sort === '-dueAt'}
                 tabStop={index === kb.activeIndex ? kb.activeColumn : null}
                 menuOpen={menuFor === row.id}
                 menuItems={menuFor === row.id ? menuItemsFor(row) : NO_ITEMS}

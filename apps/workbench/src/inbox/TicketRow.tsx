@@ -55,6 +55,8 @@ export interface TicketRowProps {
   readonly moved: string | null;
   readonly flash: boolean;
   readonly now: number;
+  /** The list is ordered by deadline, so the row shows its deadline rather than its age. */
+  readonly byDue?: boolean;
   /** Which of this row's controls holds the list's one tab stop, if any. */
   readonly tabStop: CollectionColumn | null;
   readonly menuOpen: boolean;
@@ -80,8 +82,15 @@ function control(index: number, column: CollectionColumn, tabStop: CollectionCol
   return { tabIndex: (tabStop === column ? 0 : -1) as 0 | -1, 'data-itsm-control': column, 'data-itsm-row': index };
 }
 
-/** The end of the first line: the deadline when it matters (open work only; a waiting clock is paused), else when it last changed. */
-function RowTime({ row, now, locale }: { readonly row: ListRow; readonly now: number; readonly locale?: string }): ReactNode {
+/**
+ * The time at the end of line 1. A deadline within the hour, or missed, is
+ * always shown, loud (SPEC §6.2). Otherwise it is the time the list is
+ * ordered by: in a list sorted by deadline (Due soon, My work) a later
+ * deadline is shown quietly, because "updated 17 hr ago" beside a row placed
+ * by its deadline explains nothing about why it sits there. A paused ticket's
+ * clock is stopped, so it shows its age instead.
+ */
+function RowTime({ row, now, locale, byDue }: { readonly row: ListRow; readonly now: number; readonly locale?: string; readonly byDue: boolean }): ReactNode {
   const urgency = row.statusCategory === 'open' ? dueUrgency(row.dueAt, now) : null;
   if (urgency === 'breached' || urgency === 'soon') {
     return (
@@ -90,6 +99,9 @@ function RowTime({ row, now, locale }: { readonly row: ListRow; readonly now: nu
         {dueText(row.dueAt, now, locale)}
       </span>
     );
+  }
+  if (byDue && urgency === 'later') {
+    return <span className="app-TicketRow__due">{dueText(row.dueAt, now, locale)}</span>;
   }
   return <RelativeTime className="app-TicketRow__time" date={row.updatedAt} />;
 }
@@ -108,6 +120,7 @@ function TicketRowView({
   moved,
   flash,
   now,
+  byDue = false,
   tabStop,
   menuOpen,
   menuItems,
@@ -160,6 +173,7 @@ function TicketRowView({
         href={href}
         prefetch={false}
         className="app-TicketRow__link"
+        data-avatar={assignee ? '' : undefined}
         aria-label={rowLabel(row, unread)}
         aria-describedby={descriptionId}
         aria-current={current ? 'true' : undefined}
@@ -168,7 +182,7 @@ function TicketRowView({
       >
         <span className="app-TicketRow__title">{row.title}</span>
         <span className="app-TicketRow__end">
-          <RowTime row={row} now={now} locale={locale} />
+          <RowTime row={row} now={now} locale={locale} byDue={byDue} />
         </span>
         <span className="app-TicketRow__meta">
           <span className="app-TicketRow__number">{row.number}</span>

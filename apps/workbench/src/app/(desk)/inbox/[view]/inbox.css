@@ -283,13 +283,17 @@
   }
 }
 
-/* The link: two lines, its hit area stretched over the whole row. */
+/*
+ * The link: two lines, its hit area stretched over the whole row. The second
+ * line runs the full width, under the time as well: in a 360 px pane the
+ * time's column is where the requester's name would otherwise have gone.
+ */
 .app-TicketRow__link {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     'title end'
-    'meta avatar';
+    'meta meta';
   align-content: center;
   column-gap: var(--itsm-space-sm);
   row-gap: var(--itsm-space-3xs);
@@ -335,6 +339,10 @@
   align-items: center;
   gap: var(--itsm-space-3xs);
   font-weight: var(--itsm-font-weight-medium);
+}
+/* A later deadline, shown because the list is in deadline order: as quiet as an age. */
+.app-TicketRow__due:not([data-urgency]) {
+  font-weight: var(--itsm-font-weight-regular);
 }
 .app-TicketRow__due[data-urgency='soon'] {
   color: var(--itsm-colour-warning-subtleText);
@@ -412,9 +420,13 @@
   color: var(--itsm-colour-text-secondary);
 }
 
+/* The assignee sits at the end of the second line, in room the line keeps free for it. */
 .app-TicketRow__avatar {
-  grid-area: avatar;
+  grid-area: meta;
   justify-self: end;
+}
+.app-TicketRow__link[data-avatar] > .app-TicketRow__meta {
+  padding-inline-end: calc(1.25rem + var(--itsm-space-xs));
 }
 
 /* The ⋯ button: shown on hover and focus with a fine pointer, always on touch. */
@@ -450,6 +462,9 @@
 :where([data-itsm-density='compact']) .app-TicketRow__team,
 :where([data-itsm-density='compact']) .app-TicketRow__avatar {
   display: none;
+}
+:where([data-itsm-density='compact']) .app-TicketRow__link[data-avatar] > .app-TicketRow__meta {
+  padding-inline-end: 0;
 }
 
 /* Changed by a live update: the background fades from selected over 1.2 s; nothing moves (SPEC §1.9). */

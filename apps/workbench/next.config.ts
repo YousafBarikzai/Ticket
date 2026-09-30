@@ -23,7 +23,13 @@ const csp = [
   // Next's runtime injects inline bootstrap scripts; `strict-dynamic` with a
   // nonce is the better answer and needs middleware, which is a change worth
   // making on its own rather than buried in the first app.
-  "script-src 'self' 'unsafe-inline'",
+  //
+  // `unsafe-eval` in development only: webpack's development build wraps
+  // every module in `eval()` for its source maps, and without it the browser
+  // refuses to run any of the desk's client code — the page renders from the
+  // server and nothing on it responds. A production build never evals, and
+  // never gets this source.
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
@@ -60,8 +66,14 @@ const nextConfig: NextConfig = {
    * name, so a route ships the client components it renders and no others
    * (SPEC §3.7; 24–30 kB off every route of all three applications when this
    * was added).
+   *
+   * The rewrite matches the import's specifier exactly, so a subpath is its
+   * own entry. `@itsm/ui/theme` is here for the root layout, which imports
+   * only the pre-paint script from it: unoptimised, the theme barrel's
+   * `ThemeProvider` became a client reference of the root layout and shipped
+   * a second time on every route (the providers already carry it).
    */
-  experimental: { optimizePackageImports: ['@itsm/ui'] },
+  experimental: { optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme'] },
   /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension, which is what ECMAScript modules require and what `tsx`,

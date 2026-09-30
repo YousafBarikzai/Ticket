@@ -8,8 +8,7 @@ import { Dialog, PersonPicker, type PersonOption } from '@itsm/ui/overlays';
 import { api } from '../../client/api.js';
 import { searchPeople } from '../../client/desk-list.js';
 import { deskKeys } from '../../client/query-client.js';
-import { eventType } from '../../client/mutations.js';
-import { personName, problemOf, stateLabel, type PeopleMap } from '../../inbox/presentation.js';
+import { personName, problemOf, stateLabel, ticketEventType, type PeopleMap } from '../../inbox/presentation.js';
 import type { WorkspaceApi } from '../TicketWorkspace.js';
 import { inspectorKeys, linksQuery, tagsQuery, watchersQuery } from './queries.js';
 
@@ -51,7 +50,7 @@ export function linkLines(rows: readonly TicketLinkRow[] | null | undefined, ent
   const lines: LinkLine[] = [];
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
-    if (entry.kind !== 'event' || eventType(entry.type) !== 'ticket.linked') continue;
+    if (entry.kind !== 'event' || ticketEventType(entry.type) !== 'ticket.linked') continue;
     const number = entry.payload?.targetNumber;
     const type = entry.payload?.linkType;
     if (typeof number !== 'string' || seen.has(number)) continue;

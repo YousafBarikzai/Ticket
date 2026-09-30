@@ -1,6 +1,6 @@
 import { ApiError, type Ticket, type TicketPatch, type TimelineEntry } from '@itsm/sdk';
 import type { ConflictChange } from '@itsm/ui/overlays';
-import { personName, priorityLabel, stateLabel, type PeopleMap } from '../inbox/presentation.js';
+import { personName, priorityLabel, stateLabel, ticketEventType, type PeopleMap } from '../inbox/presentation.js';
 import { transitionsFrom } from '../queue/transitions.js';
 import { api } from './api.js';
 import type { CategorySummary, TeamSummary } from './desk-ticket.js';
@@ -263,25 +263,15 @@ const EVENT_FOR: Readonly<Record<ChangedField, readonly string[]>> = {
   custom: ['ticket.updated'],
 };
 
-/**
- * An event's type in the catalogue's spelling. The timeline stores the short
- * form (`status.changed`, `assigned`) while the event catalogue — and
- * `describeEvent` — name them in full (`ticket.status.changed`); both are
- * read as the full one.
- */
-export function eventType(type: string): string {
-  return type.startsWith('ticket.') ? type : `ticket.${type}`;
-}
-
 /** Who changed a field since `since`, and when: the newest event that records it, from the fresh history. */
 function whoChanged(field: ChangedField, entries: readonly TimelineEntry[], since: string, directory: Directory): { by?: string; at?: string } {
   const after = Date.parse(since);
   const types = EVENT_FOR[field];
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
-    if (entry.kind !== 'event' || !types.includes(eventType(entry.type))) continue;
+    if (entry.kind !== 'event' || !types.includes(ticketEventType(entry.type))) continue;
     if (!Number.isNaN(after) && Date.parse(entry.at) <= after) break;
-    if (eventType(entry.type) === 'ticket.updated') {
+    if (ticketEventType(entry.type) === 'ticket.updated') {
       const changed = entry.payload?.changed;
       if (!changed || typeof changed !== 'object' || !(field in changed)) continue;
     }

@@ -17,7 +17,6 @@ import {
   type TimelineFilter,
 } from '@itsm/ui';
 import type { TicketBundle } from '../client/desk-ticket.js';
-import { eventType } from '../client/mutations.js';
 import { describeEvent, personName, type PeopleMap } from '../inbox/presentation.js';
 import { INBOX_REGIONS } from '../inbox/views.js';
 
@@ -53,13 +52,6 @@ function eventActor(entry: TimelineEventEntry, people: PeopleMap, me: string | n
   const id = entry.actorId.toLowerCase();
   const person = people[id];
   return { name: personName(id, people, me), kind: 'person', ...(person ? { initials: person.initials } : {}) };
-}
-
-/** An event with the catalogue's type spelling and lower-case ids, as `describeEvent` reads it. */
-function normalised(entry: TimelineEventEntry): TimelineEventEntry {
-  const payload = { ...(entry.payload ?? {}) };
-  if (typeof payload.assigneeId === 'string') payload.assigneeId = payload.assigneeId.toLowerCase();
-  return { ...entry, type: eventType(entry.type), actorId: entry.actorId?.toLowerCase() ?? null, payload };
 }
 
 function Message({ text }: { readonly text: string }): ReactNode {
@@ -131,10 +123,10 @@ export function conversationModel(
       });
       continue;
     }
-    const event = normalised(entry);
-    const line = describeEvent(event, people, me);
+    // `describeEvent` reads the timeline's short types and ids as they come.
+    const line = describeEvent(entry, people, me);
     if (!line) continue;
-    const actor = eventActor(event, people, me);
+    const actor = eventActor(entry, people, me);
     const prefix = `${actor.name} `;
     const title = line.text.startsWith(prefix) ? line.text.slice(prefix.length) : line.text;
     events.push({

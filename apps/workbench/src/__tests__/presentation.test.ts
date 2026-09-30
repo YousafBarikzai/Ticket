@@ -22,6 +22,7 @@ import {
   rowDescription,
   rowLabel,
   stateLabel,
+  ticketEventType,
   typeLabel,
 } from '../inbox/presentation.js';
 import * as legacy from '../queue/presentation.js';
@@ -207,6 +208,34 @@ describe('a history, in words (F22)', () => {
 
   it('still shows an event it has never heard of, in plain words', () => {
     expect(describeEvent(event('ticket.sla_paused', {}), people)?.text).toBe('Jo Bloggs · sla paused');
+    expect(describeEvent(event('sla_paused', {}), people)?.text).toBe('Jo Bloggs · sla paused');
+  });
+
+  // The ticket timeline stores the short type (`insertTicketEvent(…, 'status.changed')`);
+  // the live stream and the catalogue use the full one. Both must read the same.
+  it('reads the timeline’s short event types exactly as the full ones', () => {
+    const cases: readonly [string, Record<string, unknown>][] = [
+      ['comment.added', { commentId: 'c1' }],
+      ['created', { channel: 'email' }],
+      ['imported', {}],
+      ['status.changed', { from: 'new', to: 'in_progress', reason: 'Picked up' }],
+      ['assigned', { assigneeId: ADA, method: 'rule' }],
+      ['updated', { changed: { priority: {} } }],
+      ['task.completed', { title: 'Order a token' }],
+      ['linked', { linkType: 'relates_to' }],
+    ];
+    for (const [type, payload] of cases) {
+      expect(describeEvent(event(type, payload), people), type).toEqual(describeEvent(event(`ticket.${type}`, payload), people));
+    }
+    expect(describeEvent(event('status.changed', { from: 'new', to: 'in_progress' }), people)?.text).toBe('Jo Bloggs moved it from New to In progress');
+    expect(describeEvent(event('assigned', { assigneeId: JO }), people)?.text).toBe('Jo Bloggs took it');
+    expect(ticketEventType('status.changed')).toBe('ticket.status.changed');
+    expect(ticketEventType('ticket.assigned')).toBe('ticket.assigned');
+  });
+
+  it('matches people whatever case the ids arrive in', () => {
+    const shouted = event('assigned', { assigneeId: ADA.toUpperCase() }, { actorId: JO.toUpperCase() });
+    expect(describeEvent(shouted, people)?.text).toBe('Jo Bloggs assigned it to Ada Lovelace');
   });
 });
 

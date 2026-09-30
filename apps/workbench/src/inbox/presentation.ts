@@ -300,7 +300,19 @@ function actorOf(entry: TimelineEventEntry, people: PeopleMap, me?: string | nul
   if (entry.actorType === 'ai') return 'AI triage';
   if (entry.actorType === 'workflow' || entry.actorType === 'rule') return 'An automation';
   if (!entry.actorId || entry.actorType === 'system' || entry.actorType === 'service') return 'The system';
-  return personName(entry.actorId, people, me);
+  return personName(entry.actorId.toLowerCase(), people, me);
+}
+
+/**
+ * An event's type in the catalogue's spelling (`ticket.status.changed`).
+ *
+ * The ticket timeline stores the short form (`status.changed`, `assigned`,
+ * `updated` — `insertTicketEvent` writes them so) while the event catalogue,
+ * the live stream and these words name them in full. Both are read as the full
+ * one, so a caller never has to know which it was handed.
+ */
+export function ticketEventType(type: string): string {
+  return type.startsWith('ticket.') ? type : `ticket.${type}`;
 }
 
 /**
@@ -311,14 +323,19 @@ function actorOf(entry: TimelineEventEntry, people: PeopleMap, me?: string | nul
  * old timeline showed. An event this does not know is still shown — as its
  * type in plain words — rather than hidden, because a missing line in a
  * history reads as nothing having happened.
+ *
+ * It takes the timeline's entry as the API sends it: the short type
+ * (`status.changed`) or the full one (`ticket.status.changed`), ids in any
+ * case.
  */
 export function describeEvent(entry: TimelineEventEntry, people: PeopleMap = {}, me?: string | null): EventLine | null {
   const payload = entry.payload ?? {};
   const actor = actorOf(entry, people, me);
   const reason = text(payload.reason);
   const withReason = (line: string): EventLine => (reason ? { text: line, detail: `“${reason}”` } : { text: line });
+  const type = ticketEventType(entry.type);
 
-  switch (entry.type) {
+  switch (type) {
     case 'ticket.comment.added':
       return null;
     case 'ticket.created': {
@@ -334,7 +351,8 @@ export function describeEvent(entry: TimelineEventEntry, people: PeopleMap = {},
       return withReason(from ? `${actor} moved it from ${stateLabel(from)} to ${stateLabel(to)}` : `${actor} moved it to ${stateLabel(to)}`);
     }
     case 'ticket.assigned': {
-      const assignee = text(payload.assigneeId);
+      // Ids are compared with the directory's lower-case keys, whatever case the payload used.
+      const assignee = text(payload.assigneeId)?.toLowerCase() ?? null;
       const method = METHOD_WORD[text(payload.method) ?? ''];
       const who = assignee ? personName(assignee, people, me) : null;
       const line = who ? (who === actor ? `${actor} took it` : `${actor} assigned it to ${who}`) : `${actor} unassigned it`;
@@ -358,7 +376,7 @@ export function describeEvent(entry: TimelineEventEntry, people: PeopleMap = {},
     case 'ticket.attachment.added':
       return { text: `${actor} attached ${text(payload.filename) ?? 'a file'}` };
     default: {
-      const words = entry.type.replace(/^ticket\./, '').replaceAll('.', ' ').replaceAll('_', ' ');
+      const words = type.replace(/^ticket\./, '').replaceAll('.', ' ').replaceAll('_', ' ');
       return { text: `${actor} · ${words}` };
     }
   }

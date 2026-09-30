@@ -227,7 +227,8 @@
   line-height: var(--itsm-text-title3-line);
   letter-spacing: var(--itsm-text-title3-tracking);
   overflow-wrap: anywhere;
-  text-wrap: balance;
+  /* Pretty, not balance: a balanced title keeps its full width, which left the pencil stranded a gap away from the text. */
+  text-wrap: pretty;
   outline: none;
 }
 

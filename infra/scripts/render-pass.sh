@@ -159,9 +159,17 @@ if sign_in portal "$PORTAL" "ada.requester@$TENANT.test"; then
 fi
 
 if sign_in workbench "$WORKBENCH" "sam.agent@$TENANT.test"; then
-  redirects "$WORKBENCH" / /queue
-  check "$WORKBENCH" /queue /offline
-  check "$WORKBENCH" "$(first_link "$WORKBENCH" /queue '/tickets/')"
+  # `/` lands on the inbox, which lands on the last view (My work the first
+  # time); old /queue links and bookmarks follow to the matching view.
+  redirects "$WORKBENCH" / /inbox
+  redirects "$WORKBENCH" /inbox /inbox/
+  redirects "$WORKBENCH" '/queue?assignee=none' /inbox/unassigned
+  check "$WORKBENCH" /inbox/mine /inbox/unassigned /inbox/due /inbox/waiting /inbox/all /inbox/resolved /offline
+  check "$WORKBENCH" \
+    "$(first_link "$WORKBENCH" /inbox/mine '/inbox/team/')" \
+    "$(first_link "$WORKBENCH" /inbox/all '/tickets/')"
+  # A view, team or ticket that does not exist is a 404 before anything streams.
+  answers "$WORKBENCH" 404 /inbox/nonsense /inbox/team/not-a-uuid /tickets/INC-999999
 fi
 
 if sign_in admin "$ADMIN" "alex.admin@$TENANT.test"; then

@@ -134,6 +134,38 @@ describe('a row', () => {
     expect(waiting!.querySelector('.app-TicketRow__pill')?.textContent).toContain('Waiting on requester');
   });
 
+  it('shows a later deadline, quietly, when the list is in deadline order — never for a paused clock', () => {
+    const rows = [
+      row({ number: 'INC-1', dueAt: minutes(30) }),
+      row({ number: 'INC-3', dueAt: minutes(300) }),
+      row({ number: 'INC-4', status: 'pending_requester', statusCategory: 'paused', dueAt: minutes(400) }),
+      row({ number: 'INC-5', dueAt: null }),
+    ];
+    for (const view of ['due', 'mine'] as const) {
+      mountList({ view, rows, props: { renderedAt: NOW } });
+      const [soon, later, waiting, none] = rowElements();
+      expect(soon!.querySelector('.app-TicketRow__due')?.getAttribute('data-urgency')).toBe('soon');
+      expect(later!.querySelector('.app-TicketRow__due')?.textContent).toBe('Due in 5 h');
+      expect(later!.querySelector('.app-TicketRow__due')?.hasAttribute('data-urgency')).toBe(false);
+      expect(later!.getAttribute('data-urgency')).toBeNull();
+      expect(waiting!.querySelector('.app-TicketRow__due')).toBeNull();
+      expect(waiting!.querySelector('time')).not.toBeNull();
+      expect(none!.querySelector('time')).not.toBeNull();
+      cleanupDocument();
+    }
+    // Newest first: the age, as before.
+    mountList({ view: 'all', params: { sort: 'createdAt' }, rows, props: { renderedAt: NOW } });
+    expect(rowElements()[1]!.querySelector('.app-TicketRow__due')).toBeNull();
+  });
+
+  it('keeps room at the end of line two for the assignee, and only where one is shown', () => {
+    mountList({ view: 'all', rows: [row({ number: 'INC-1', assigneeId: JO }), row({ number: 'INC-2', assigneeId: null })] });
+    expect(links().map((link) => link.hasAttribute('data-avatar'))).toEqual([true, false]);
+    cleanupDocument();
+    mountList({ view: 'mine', rows: [row({ number: 'INC-3', assigneeId: ME })] });
+    expect(links()[0]!.hasAttribute('data-avatar')).toBe(false);
+  });
+
   it('marks the ticket open beside the list as current', () => {
     mountList({ rows: [row({ number: 'INC-1' }), row({ number: 'INC-2' })], props: { selected: 'INC-2' } });
     expect(links().map((link) => link.getAttribute('aria-current'))).toEqual([null, 'true']);
