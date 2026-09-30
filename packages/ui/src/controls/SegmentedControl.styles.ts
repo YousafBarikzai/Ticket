@@ -154,6 +154,32 @@ export const segmentedControlStyles = layer(
   color: var(--itsm-colour-text-muted);
 }
 
+/*
+ * The wrap option: equal where there is room, by their words where there is not, and
+ * onto another row before anything is cut short. Each segment starts from
+ * nothing and grows equally, but never below its own words; a flex row wraps
+ * when those minimums no longer fit. The thumb is placed from the selected
+ * segment's box, row included, so it follows onto a second row.
+ */
+.itsm-SegmentedControl--wrap .itsm-SegmentedControl__list {
+  display: flex;
+  flex-wrap: wrap;
+}
+.itsm-SegmentedControl--wrap .itsm-SegmentedControl__list > li,
+.itsm-SegmentedControl--wrap .itsm-SegmentedControl__list > .itsm-SegmentedControl__segment {
+  flex: 1 1 0;
+  min-inline-size: max-content;
+}
+.itsm-SegmentedControl--wrap.itsm-SegmentedControl--fullWidth {
+  container: itsm-segmented / inline-size;
+}
+@container itsm-segmented (width < 22rem) {
+  .itsm-SegmentedControl__segment,
+  .itsm-SegmentedControl--sm .itsm-SegmentedControl__segment {
+    padding-inline: var(--itsm-space-xs);
+  }
+}
+
 /* The thumb, and the selected segment's own background until the thumb is placed. */
 
 .itsm-SegmentedControl__thumb {

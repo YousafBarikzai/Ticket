@@ -114,7 +114,7 @@ describe('Toaster', () => {
     }
   };
   const toasts = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('[data-sonner-toast]')];
-  const region = (): HTMLElement => document.querySelector<HTMLElement>('section[aria-label="Notifications"]')!;
+  const region = (): HTMLElement => document.querySelector<HTMLElement>('section[aria-label="Status messages"]')!;
   const button = (label: string): HTMLButtonElement | undefined =>
     // By its label, which a busy button follows with a hidden "Loading…".
     [...document.querySelectorAll<HTMLButtonElement>('[data-sonner-toast] button')].find((candidate) => candidate.textContent?.startsWith(label) && label !== '');

@@ -91,6 +91,17 @@ export const tabBarStyles = layer(
 .itsm-TabBar__item[aria-current="page"] .itsm-TabBar__label {
   font-weight: var(--itsm-font-weight-semibold);
 }
+/*
+ * The narrowest phones (320 px) give each of five tabs 64 px. A nine-letter
+ * label ("Knowledge") measures 64–65 px at footnote size, depending on the
+ * font and how the device rounds, and was cut to "Knowled…". A little
+ * negative tracking gives it room without making the type smaller.
+ */
+@media (max-width: 22.4375rem) {
+  .itsm-TabBar__label {
+    letter-spacing: -0.02em;
+  }
+}
 .itsm-TabBar__badge {
   position: absolute;
   inset-block-start: calc(-1 * var(--itsm-space-2xs));

@@ -141,6 +141,17 @@ ${mq.belowMd} {
   .itsm-Sheet--lg {
     max-inline-size: calc(100vw - 2 * var(--_inset));
   }
+  /*
+   * A sheet from the bottom spans the screen edge to edge, whatever its size.
+   * The size classes' cap above (for edge sheets, which float an inset off
+   * each side) used to reach bottom and auto sheets too, and a bottom sheet
+   * anchored at the left came out 16 px short, with a strip of page on the
+   * right.
+   */
+  .itsm-Sheet--auto,
+  .itsm-Sheet--bottom {
+    max-inline-size: none;
+  }
 }
 
 /* A short viewport (a phone on its side): the bottom sheet takes the screen. */

@@ -56,10 +56,20 @@ export function useFocusReturn(active: boolean, contentRef: RefObject<HTMLElemen
     return () => {
       const target = origin.current;
       origin.current = null;
-      const focused = document.activeElement;
       const content = contentRef.current;
-      const lost = !focused || focused === document.body || (content !== null && content.contains(focused)) || !focused.isConnected;
-      if (lost && target?.isConnected) target.focus();
+      const restore = (): void => {
+        const focused = document.activeElement;
+        const lost = !focused || focused === document.body || (content !== null && content.contains(focused)) || !focused.isConnected;
+        if (lost && target?.isConnected) target.focus();
+      };
+      // Closed by `open={false}`, `InertOutside` has already released the page
+      // (its cleanup runs first; see inert.ts), so focus can go back now. But
+      // an overlay *unmounted* while open runs its cleanups parent first: the
+      // opener is still inert here and `focus()` would do nothing, leaving
+      // focus on `<body>`. Then it goes back once this commit's cleanups have
+      // all run — a microtask later, before the browser paints.
+      if (target?.closest('[inert]')) queueMicrotask(restore);
+      else restore();
     };
   }, [active, contentRef]);
 }

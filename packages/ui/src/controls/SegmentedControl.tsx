@@ -34,6 +34,15 @@ export interface SegmentedControlProps {
   readonly onValueChange?: (value: string) => void;
   readonly size?: 'sm' | 'md';
   readonly fullWidth?: boolean;
+  /**
+   * When the width runs short (a phone), the segments share it by their words
+   * — and, if even that is not enough, wrap onto another row — rather than
+   * being cut short in equal parts ("Needs you 1" read as "Needs…"). Where
+   * there is room they are equal, as without it. With `fullWidth` the
+   * segments also tighten their padding in a narrow container, so four short
+   * scopes stay on one row at 320 px.
+   */
+  readonly wrap?: boolean;
   readonly className?: string;
 }
 
@@ -122,6 +131,7 @@ export function SegmentedControl({
   onValueChange,
   size = 'md',
   fullWidth = false,
+  wrap = false,
   className,
 }: SegmentedControlProps): ReactNode {
   const root = useRef<HTMLElement | null>(null);
@@ -135,7 +145,7 @@ export function SegmentedControl({
   const layoutKey = options
     .map((option) => [option.value, option.label, option.count ?? '', option.icon ?? ''].join('\u0000'))
     .join('\u0001');
-  const { ready, animate } = useThumb(root, selectedIndex, [layoutKey, size, fullWidth]);
+  const { ready, animate } = useThumb(root, selectedIndex, [layoutKey, size, fullWidth, wrap]);
   const setRoot = useCallback((node: HTMLElement | null) => {
     root.current = node;
   }, []);
@@ -170,6 +180,7 @@ export function SegmentedControl({
     'itsm-SegmentedControl',
     `itsm-SegmentedControl--${size}`,
     fullWidth && 'itsm-SegmentedControl--fullWidth',
+    wrap && 'itsm-SegmentedControl--wrap',
     className,
   );
   const state = {

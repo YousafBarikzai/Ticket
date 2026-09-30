@@ -14,6 +14,7 @@ import {
   settle,
 } from '../../web/__tests__/support/render.js';
 import { Sheet, type SheetCloseReason, type SheetProps } from '../Sheet.js';
+import { sheetStyles } from '../Sheet.styles.js';
 
 vi.mock('../../web/IconButtonTooltip.js', () => ({ IconButtonTooltip: () => null }));
 
@@ -205,5 +206,26 @@ describe('Sheet from the bottom', () => {
     const { sheet } = open();
     expect(sheet.querySelector('.itsm-Sheet__handle')).toBeNull();
     expect(sheet.hasAttribute('data-snap')).toBe(false);
+  });
+});
+
+describe('Sheet widths on a phone', () => {
+  /** The rules inside the below-md media query, in order. */
+  function belowMdRules(): string {
+    const start = sheetStyles.indexOf('@media (max-width: 47.9375rem) {');
+    expect(start).toBeGreaterThan(-1);
+    return sheetStyles.slice(start, sheetStyles.indexOf('\n}\n', start));
+  }
+
+  it('caps an edge sheet one inset short of each side', () => {
+    expect(belowMdRules()).toMatch(/\.itsm-Sheet--md,\s*\.itsm-Sheet--lg \{\s*max-inline-size: calc\(100vw - 2 \* var\(--_inset\)\);/);
+  });
+
+  it('lets a bottom or auto sheet of any size span the screen, with no strip at the side', () => {
+    const rules = belowMdRules();
+    const cap = rules.indexOf('max-inline-size: calc(100vw');
+    const uncap = rules.search(/\.itsm-Sheet--auto,\s*\.itsm-Sheet--bottom \{\s*max-inline-size: none;/);
+    // Same specificity as the size classes' cap, so it has to come after it.
+    expect(uncap).toBeGreaterThan(cap);
   });
 });

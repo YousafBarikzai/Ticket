@@ -17,7 +17,7 @@ import { problemText } from './problem-text.js';
 import { TOAST_DURATION, ToastStore, ToastTimers, toastDuration, type ToastRecord } from './toast-store.js';
 
 export interface ToasterProps {
-  /** The region's name, "Notifications" by default. */
+  /** The region's name, "Status messages" by default (`messages.toastRegion`). */
   readonly label?: string;
 }
 
@@ -168,7 +168,7 @@ function initialDirection(): 'ltr' | 'rtl' {
  */
 export function Toaster({ label }: ToasterProps): ReactNode {
   const messages = useOptionalItsm()?.messages ?? defaultMessages;
-  const name = label ?? messages.notifications;
+  const name = label ?? messages.toastRegion;
   const sectionRef = useRef<HTMLElement | null>(null);
   const [dir] = useState(initialDirection);
 

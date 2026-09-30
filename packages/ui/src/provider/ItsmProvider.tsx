@@ -169,7 +169,7 @@ export function ItsmProvider({
         {children}
         {toaster ? (
           <Suspense fallback={null}>
-            <LazyToaster label={value.messages.notifications} />
+            <LazyToaster label={value.messages.toastRegion} />
           </Suspense>
         ) : null}
       </ThemeProvider>

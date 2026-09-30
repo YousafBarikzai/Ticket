@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TestProvider } from '../../provider/__tests__/support/provider.js';
 import { activeElement, cleanupDocument, click, focus, press, render } from '../../web/__tests__/support/render.js';
 import { SegmentedControl, type SegmentedControlProps, type SegmentedOption } from '../SegmentedControl.js';
+import { segmentedControlStyles } from '../SegmentedControl.styles.js';
 
 /*
  * The three modes are three promises (X-61, SPEC §3.8): `value` selects as
@@ -168,6 +169,45 @@ describe('SegmentedControl', () => {
     // jsdom lays nothing out, so the thumb is never placed and the fallback stays.
     expect(root.hasAttribute('data-ready')).toBe(false);
     expect(radios()[0]?.hasAttribute('data-selected')).toBe(true);
+  });
+
+  describe('wrap', () => {
+    const SCOPES: readonly SegmentedOption[] = [
+      { value: 'open', label: 'Open', href: '/tickets' },
+      { value: 'needs', label: 'Needs you', href: '/tickets?show=needs', count: 1 },
+      { value: 'resolved', label: 'Resolved', href: '/tickets?show=resolved' },
+      { value: 'all', label: 'All', href: '/tickets?show=all' },
+    ];
+
+    it('is off unless asked for, so equal segments stay as they were', () => {
+      render(<SegmentedControl label="Show requests" mode="nav" options={SCOPES} value="open" fullWidth />);
+      expect(document.querySelector('.itsm-SegmentedControl')!.classList.contains('itsm-SegmentedControl--wrap')).toBe(false);
+      expect(segmentedControlStyles).toMatch(/\.itsm-SegmentedControl__list \{[^}]*grid-auto-columns: minmax\(0, 1fr\);/);
+    });
+
+    it('lets segments share the width by their words and wrap before any is cut short', () => {
+      render(<SegmentedControl label="Show requests" mode="nav" options={SCOPES} value="needs" fullWidth wrap />);
+      const root = document.querySelector('.itsm-SegmentedControl')!;
+      expect(root.classList.contains('itsm-SegmentedControl--wrap')).toBe(true);
+      // Nothing about the links changes: still a named nav with the current one marked.
+      expect(root.tagName).toBe('NAV');
+      expect(root.querySelector('[aria-current="page"]')?.textContent).toBe('Needs you, 1');
+      expect(segmentedControlStyles).toMatch(/\.itsm-SegmentedControl--wrap \.itsm-SegmentedControl__list \{\s*display: flex;\s*flex-wrap: wrap;/);
+      // Equal from nothing where there is room, never narrower than the words.
+      expect(segmentedControlStyles).toMatch(/\.itsm-SegmentedControl--wrap \.itsm-SegmentedControl__list > li,\s*\.itsm-SegmentedControl--wrap \.itsm-SegmentedControl__list > \.itsm-SegmentedControl__segment \{\s*flex: 1 1 0;\s*min-inline-size: max-content;/);
+    });
+
+    it('tightens a full-width control’s padding in a narrow container', () => {
+      expect(segmentedControlStyles).toContain('.itsm-SegmentedControl--wrap.itsm-SegmentedControl--fullWidth {\n  container: itsm-segmented / inline-size;');
+      expect(segmentedControlStyles).toMatch(/@container itsm-segmented \(width < 22rem\) \{[^}]*padding-inline: var\(--itsm-space-xs\);/);
+    });
+
+    it('wraps a radio group too', () => {
+      render(<Harness mode="value" />);
+      cleanupDocument();
+      render(<SegmentedControl label="Composer mode" mode="value" options={OPTIONS} value="reply" wrap />);
+      expect(document.querySelector('.itsm-SegmentedControl--wrap [role="radiogroup"]')).not.toBeNull();
+    });
   });
 
   it('moves its tab stop to a selection made elsewhere', () => {

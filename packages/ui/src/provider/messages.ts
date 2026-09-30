@@ -28,6 +28,12 @@ export interface UiMessages {
   readonly undo: string;
   readonly cancel: string;
   readonly notifications: string;
+  /**
+   * The toasts' live region. Not "Notifications": that is the bell's name, and
+   * a page with a Notifications section (a profile's settings) would then have
+   * two landmarks of the same name (axe `landmark-unique`).
+   */
+  readonly toastRegion: string;
   readonly back: string;
   readonly dismiss: string;
   readonly copy: string;
@@ -66,6 +72,7 @@ export const defaultMessages: UiMessages = {
   undo: 'Undo',
   cancel: 'Cancel',
   notifications: 'Notifications',
+  toastRegion: 'Status messages',
   back: 'Back',
   dismiss: 'Dismiss',
   copy: 'Copy',

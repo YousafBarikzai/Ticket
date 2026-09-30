@@ -129,7 +129,7 @@ describe('the lazily mounted toaster', () => {
   it('mounts on the first notify(), and receives what was queued before it', async () => {
     vi.useFakeTimers();
     const { container } = render(
-      <TestProvider messages={{ notifications: 'Alerts' }}>
+      <TestProvider messages={{ toastRegion: 'Alerts' }}>
         <span />
       </TestProvider>,
     );
