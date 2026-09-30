@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { Suggestion } from '@itsm/sdk';
-import { evidenceFor, hrefForEvidence, renderSuggestion } from '../ai/render.js';
+import {
+  articleHref,
+  articleKeyOf,
+  copyTextFor,
+  evidenceFor,
+  hrefForEvidence,
+  noteFor,
+  renderSuggestion,
+  ticketNumberOf,
+  titleFor,
+} from '../ai/render.js';
 
 describe('rendering what each capability produced', () => {
   it('splits a reply draft into paragraphs and offers it to the composer', () => {
@@ -69,14 +79,60 @@ describe('evidence', () => {
     expect(hrefForEvidence(suggestion.evidence[0]!)).toBe('/tickets/INC-900');
   });
 
-  it('leaves an article as text rather than linking to a page that does not exist', () => {
-    // A dead link says the reference was checkable when it was not.
-    expect(hrefForEvidence(suggestion.evidence[1]!)).toBeUndefined();
+  it('opens an article in the article sheet over the page (SPEC §3.8: ?open=article:<key>)', () => {
+    expect(hrefForEvidence(suggestion.evidence[1]!)).toBe('?open=article:KB-12');
+  });
+
+  it('keeps the open ticket and the filters when it opens an article, replacing any other drawer', () => {
+    const here = { pathname: '/inbox/mine', search: 't=INC-000123&q=vpn&open=article:KB-1' };
+    expect(hrefForEvidence(suggestion.evidence[1]!, here)).toBe('/inbox/mine?t=INC-000123&q=vpn&open=article:KB-12');
+    expect(articleHref('reset the vpn', { pathname: '/tickets/INC-1', search: '' })).toBe('/tickets/INC-1?open=article:reset%20the%20vpn');
+  });
+
+  it('leaves a known error as text: the workbench has no page for one, and a dead link says it was checkable', () => {
+    expect(hrefForEvidence({ kind: 'known-error', id: 'k', title: 'Certificate expiry', ref: 'KE-3', extract: '' })).toBeUndefined();
+  });
+
+  it('reads back which article or ticket a link opens, so the panel can open it in place', () => {
+    expect(articleKeyOf('/inbox/mine?t=INC-1&open=article:KB-12')).toBe('KB-12');
+    expect(articleKeyOf('?open=article%3AKB-12')).toBe('KB-12');
+    expect(articleKeyOf('/inbox/mine?open=rule:x')).toBeNull();
+    expect(articleKeyOf('/tickets/INC-900')).toBeNull();
+    expect(ticketNumberOf('/tickets/INC-900')).toBe('INC-900');
+    expect(ticketNumberOf('/tickets/INC-900/edit')).toBeNull();
+    expect(ticketNumberOf('?open=article:KB-12')).toBeNull();
   });
 
   it('copies rather than aliasing, so the card cannot mutate the record', () => {
     const copied = evidenceFor(suggestion);
     expect(copied[0]).not.toBe(suggestion.evidence[0]);
     expect(copied[0]).toEqual(suggestion.evidence[0]);
+  });
+});
+
+describe('what each card offers', () => {
+  it('turns a summary into an internal note, with its next steps as a list', () => {
+    expect(noteFor('ticket-summary', { summary: 'VPN failing since Tuesday.', nextSteps: ['Check the certificate'] })).toBe(
+      'VPN failing since Tuesday.\n\nNext steps:\n- Check the certificate',
+    );
+    expect(noteFor('ticket-summary', { summary: 'Just this.' })).toBe('Just this.');
+  });
+
+  it('offers nothing to note from a reply draft or an unreadable summary', () => {
+    expect(noteFor('reply-draft', { text: 'Hello' })).toBe('');
+    expect(noteFor('ticket-summary', { summary: 7 })).toBe('');
+  });
+
+  it('copies an article draft as plain text, title first', () => {
+    expect(copyTextFor('article-draft', { title: 'Reset', summary: 'When it fails.', body: ['Open it.', 'Reset it.'] })).toBe(
+      'Reset\n\nWhen it fails.\n\nOpen it.\n\nReset it.',
+    );
+    expect(copyTextFor('reply-draft', { text: 'Hello' })).toBe('');
+  });
+
+  it('names each card in the desk’s words', () => {
+    expect(titleFor('reply-draft')).toBe('Suggested reply');
+    expect(titleFor('similar-work')).toBe('Similar work');
+    expect(titleFor('something-new')).toBe('Suggestion');
   });
 });

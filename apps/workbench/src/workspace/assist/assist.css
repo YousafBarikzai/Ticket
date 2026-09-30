@@ -1,0 +1,178 @@
+/*
+ * Assist and the article sheet (SPEC §6.2). Loaded with them: Assist when its
+ * section is first opened, the sheet with the workspace.
+ *
+ * Arrangement only: every colour, space and size is a design-system custom
+ * property. Unlayered, logical properties throughout.
+ */
+
+.app-Assist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  min-inline-size: 0;
+}
+
+.app-Assist__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Assist__withheldList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Assist__withheld {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Assist__withheldName {
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-Assist__running {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-2xs) var(--itsm-space-xs);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-sunken);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Assist__runningText {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.app-Assist__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+.app-Assist__card p {
+  overflow-wrap: anywhere;
+}
+
+.app-Assist__inserted,
+.app-Assist__prose {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Assist__older > .itsm-Disclosure__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding-inline-start: 0;
+}
+
+.app-Assist__articles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  padding-block-start: var(--itsm-space-xs);
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-Assist__heading {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+
+.app-Assist__articleList {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--itsm-space-xs));
+  padding: 0;
+  list-style: none;
+}
+
+.app-Assist__article {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  inline-size: 100%;
+  box-sizing: border-box;
+  padding: var(--itsm-space-xs);
+  border: 0;
+  border-radius: var(--itsm-radius-lg);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+.app-Assist__article:hover {
+  background: var(--itsm-colour-surface-hover);
+}
+
+.app-Assist__articleTitle {
+  color: var(--itsm-colour-text-link);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-Assist__articleSnippet {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- The article sheet ------------------------------------------------------ */
+
+.app-Article {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Article__meta {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Article__summary {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Article__empty {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Article__loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+@media (forced-colors: active) {
+  .app-Assist__running,
+  .app-Assist__article:hover {
+    outline: var(--itsm-hairline) solid CanvasText;
+  }
+}

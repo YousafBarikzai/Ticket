@@ -66,6 +66,7 @@ import { INBOX_REGIONS } from '../inbox/views.js';
 import { transitionsFrom } from '../queue/transitions.js';
 import { Composer, sendFailure, type ComposerHandle, type ComposerMode } from './Composer.js';
 import { Conversation, conversationModel, newSinceId, type QueuedMessage } from './Conversation.js';
+import { ArticleSheet } from './ArticleSheet.js';
 import { Header, type Neighbours } from './Header.js';
 import { Inspector } from './inspector/Inspector.js';
 import { NextStep, nextStepFor } from './NextStep.js';
@@ -114,10 +115,12 @@ export type WriteOutcome = 'done' | 'conflict' | 'failed';
 export interface WorkspaceApi {
   readonly bundle: TicketBundle;
   readonly mode: 'pane' | 'page';
+  /** Why nothing can be changed right now ("Needs a connection"), for a control to say so; absent when changes are possible. */
+  readonly gate?: string;
   /** Re-reads the ticket: after a write made elsewhere (a triage accept). */
   refresh(): Promise<void>;
-  /** A change with the workspace's conflict handling and feedback. */
-  change(change: TicketChange): Promise<WriteOutcome>;
+  /** A change with the workspace's conflict handling and feedback (and, optionally, what to offer after it lands). */
+  change(change: TicketChange, options?: ChipChangeOptions): Promise<WriteOutcome>;
   /** Adds text to the reply (an AI draft's "Insert into reply", an article link) without losing what is there. */
   insertIntoReply(text: string, options?: { readonly suggestionId?: string; readonly mode?: ComposerMode }): void;
   /** Opens the composer in a mode. */
@@ -329,7 +332,7 @@ function useWriter(number: string, directory: Directory, onSessionEnded: () => v
                 already
                   ? `Someone else already made this change`
                   : `Someone else changed ${field === 'status' ? 'the status' : 'this ticket'} first`,
-                { tone: 'info', description: `It’s now ${valueText(field, theirs, latestDirectory.current)}.` },
+                { tone: 'info', description: `It’s now ${valueText(field, theirs, latestDirectory.current, change.kind === 'custom' ? change.key : undefined)}.` },
               );
               return 'conflict';
             }
@@ -847,10 +850,11 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
     () => ({
       bundle,
       mode,
+      ...(gate ? { gate } : {}),
       refresh: async () => {
         await client.invalidateQueries({ queryKey: deskKeys.ticket(number) });
       },
-      change: (next) => (gate ? Promise.resolve('failed' as const) : writer.run(next)),
+      change: (next, options) => (gate ? Promise.resolve('failed' as const) : writer.run(next, options)),
       insertIntoReply: (text, options) => composer.current?.insert(text, options),
       openComposer: (which) => composer.current?.open(which),
     }),
@@ -1103,6 +1107,9 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
       ) : null}
 
       {sessionEnded ? <SessionEnded onClose={() => setSessionEnded(false)} /> : null}
+
+      {/* `?open=article:<key>`: an article from Assist's evidence or suggestions, read over the ticket (WP25). */}
+      <ArticleSheet />
     </>
   );
 

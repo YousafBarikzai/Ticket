@@ -39,6 +39,22 @@ export interface WorkspacePermissions {
   readonly watch: boolean;
   /** `identity.user.read`: search people for "Assign to…". */
   readonly readPeople: boolean;
+  /*
+   * The inspector's and Assist's rights (WP25). Optional so that a bundle
+   * cached before they existed still reads — absent is "no".
+   */
+  /** `ai.read`: triage suggestions and Assist are shown. */
+  readonly aiRead?: boolean;
+  /** `ai.suggest`: accept, dismiss and undo triage; ask Assist; record what became of a suggestion. */
+  readonly ai?: boolean;
+  /** `ticket.task.manage`: add and complete tasks. */
+  readonly tasks?: boolean;
+  /** `ticket.link`: link this ticket to another. */
+  readonly link?: boolean;
+  /** `knowledge.read`: open an article in the sheet. */
+  readonly knowledge?: boolean;
+  /** `search.query`: suggested articles. */
+  readonly search?: boolean;
 }
 
 export interface WorkspaceViewer {
@@ -111,6 +127,12 @@ export function permissionsFrom(held: ReadonlySet<string>, includesInternal: boo
     create: held.has('ticket.create'),
     watch: held.has('ticket.watch'),
     readPeople: held.has('identity.user.read'),
+    aiRead: held.has('ai.read'),
+    ai: held.has('ai.suggest'),
+    tasks: held.has('ticket.task.manage'),
+    link: held.has('ticket.link'),
+    knowledge: held.has('knowledge.read'),
+    search: held.has('search.query'),
   };
 }
 

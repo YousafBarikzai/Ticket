@@ -180,7 +180,9 @@
   background: var(--itsm-colour-surface-hover);
 }
 
-/* ---- The new-ticket sheet (→ WP25) --------------------------------------- */
+/* ---- The new-ticket sheet (WP25) ------------------------------------------ */
+
+/* Global because the frame opens the sheet from every page (`c`, the compose button, the palette). */
 
 .app-NewTicket {
   display: flex;
@@ -188,111 +190,120 @@
   gap: var(--itsm-space-lg);
 }
 
-/* ---- Legacy: the assistance panel (→ WP25) ------------------------------- */
-
-.itsm-Suggestions__withheld {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
+.app-NewTicket__failure:focus {
+  outline: none;
 }
 
-.itsm-Suggestions__error {
-  color: var(--itsm-colour-danger-subtleText);
-  font-size: var(--itsm-font-size-sm);
-}
-
-.itsm-Suggestions {
+.app-NewTicket__group {
   display: flex;
   flex-direction: column;
-  gap: var(--itsm-space-sm);
-}
-
-.itsm-Suggestions__heading {
-  font-size: var(--itsm-font-size-lg);
-  font-weight: var(--itsm-font-weight-semibold);
+  gap: var(--itsm-space-md);
+  min-inline-size: 0;
   margin: 0;
+  padding: var(--itsm-space-md) 0 0;
+  border: 0;
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
 }
 
-.itsm-Suggestions__actions {
+.app-NewTicket__legend {
+  float: left;
+  inline-size: 100%;
+  margin: 0 0 var(--itsm-space-2xs);
+  padding: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+
+.app-NewTicket__legend + * {
+  clear: left;
+}
+
+.app-NewTicket__static {
+  display: flex;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-NewTicket__staticLabel {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+
+.app-NewTicket__pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--itsm-space-md);
+}
+
+/* The live priority preview (X-45): what the two choices make, before it is saved. */
+.app-NewTicket__preview {
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--itsm-space-2xs) var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-surface-sunken);
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-NewTicket__preview[data-state='none'] {
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+.app-NewTicket__note,
+.app-NewTicket__error {
+  margin: calc(-1 * var(--itsm-space-xs)) 0 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-NewTicket__error {
+  margin: var(--itsm-space-3xs) 0 0;
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-NewTicket__more > .itsm-Disclosure__content {
+  padding-inline-start: 0;
+}
+
+.app-NewTicket__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  padding-block-start: var(--itsm-space-xs);
+}
+
+.app-NewTicket__footer {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-Suggestions__withheld {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Suggestions__pending {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-}
-
-/* Suggested triage (ADR-0051). */
-.itsm-Triage {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  border-radius: var(--itsm-radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-xs);
-  padding: var(--itsm-space-sm);
-}
-
-.itsm-Triage__heading {
-  font-size: var(--itsm-font-size-lg);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin: 0;
-}
-
-.itsm-Triage__note,
-.itsm-Triage__line {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-  margin: 0;
-}
-
-.itsm-Triage__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.itsm-Triage__item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-}
-
-/*
- * A major-incident answer is tinted as well as labelled: the badge says
- * "Check this" in words, so the tint is never the only signal (SC 1.4.1).
- */
-.itsm-Triage__item[data-kind='warning'] {
-  background: var(--itsm-colour-warning-subtle);
-  border: var(--itsm-border-hair) solid var(--itsm-colour-warning-border);
-  border-radius: var(--itsm-radius-md);
-  padding: var(--itsm-space-xs);
-}
-
-.itsm-Triage__field {
   align-items: center;
-  display: flex;
-  gap: var(--itsm-space-2xs);
-  margin: 0;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+  inline-size: 100%;
 }
 
-.itsm-Triage__actions {
+.app-NewTicket__draft {
   display: flex;
-  gap: var(--itsm-space-2xs);
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  min-inline-size: 0;
 }
 
-.itsm-Triage__error {
-  color: var(--itsm-colour-danger-subtleText);
-  font-size: var(--itsm-font-size-sm);
-  margin: 0;
+.app-NewTicket__actions {
+  display: flex;
+  gap: var(--itsm-space-xs);
+  margin-inline-start: auto;
+}
+
+@media (forced-colors: active) {
+  .app-NewTicket__preview {
+    border: var(--itsm-hairline) solid CanvasText;
+  }
 }

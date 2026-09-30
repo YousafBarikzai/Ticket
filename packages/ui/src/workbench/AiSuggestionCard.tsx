@@ -79,6 +79,12 @@ export interface AiSuggestionCardProps {
   readonly onReject?: () => void;
   /** The accept button's words. Default "Use it". */
   readonly acceptLabel?: string;
+  /**
+   * The accept button's emphasis. Default `primary`; `tinted` where the card
+   * sits beside a view whose one filled button is something else (the
+   * workbench composer's Send, SPEC §1.1).
+   */
+  readonly acceptVariant?: 'primary' | 'tinted' | 'secondary';
   /** Which outcomes to offer, always in the order accept, edit, reject. Default all three. */
   readonly actions?: readonly SuggestionAction[];
   readonly className?: string;
@@ -133,6 +139,7 @@ export function AiSuggestionCard({
   onEdit,
   onReject,
   acceptLabel = 'Use it',
+  acceptVariant = 'primary',
   actions = ALL_ACTIONS,
   className,
 }: AiSuggestionCardProps): ReactNode {
@@ -215,7 +222,7 @@ export function AiSuggestionCard({
       ) : (
         <div className="itsm-AiSuggestion__actions">
           {offer('accept') ? (
-            <Button variant="primary" onClick={onAccept} disabled={busy}>
+            <Button variant={acceptVariant} onClick={onAccept} disabled={busy}>
               {acceptLabel}
             </Button>
           ) : null}
