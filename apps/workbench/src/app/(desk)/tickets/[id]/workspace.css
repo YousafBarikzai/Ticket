@@ -1,0 +1,914 @@
+/*
+ * The ticket workspace (SPEC §6.2): the header and its chips, the
+ * conversation, the composer and the inspector — beside the inbox list and
+ * as the full ticket page. Imported by the workspace itself, so both routes
+ * that show it carry it.
+ *
+ * Arrangement only, like `globals.css`: every colour, space, size and
+ * duration is a design-system custom property, so a token change reaches the
+ * ticket with the rest of the product. Unlayered, so it wins over the design
+ * system's `@layer itsm.*` rules without `!important`. Logical properties
+ * throughout.
+ *
+ * Two shapes. **Contained** (the inbox pane, and the page from 768 px): the
+ * workspace fills its box, the header and the composer stay put, and the
+ * conversation and the inspector scroll on their own — the way Mail reads a
+ * message. **Flow** (the page below 768 px): one column, the window scrolls,
+ * the header sticks under the top bar and the composer to the bottom edge.
+ */
+
+/* ---- The frame ------------------------------------------------------------ */
+
+.app-Ws {
+  --app-ws-block: calc(100dvh - var(--itsm-topbar-height));
+  --app-ws-top: var(--itsm-topbar-height);
+  --app-ws-gutter: var(--itsm-space-lg);
+  --app-ws-measure: 52rem;
+  position: relative;
+  outline: none;
+}
+
+@media (min-width: 64rem) {
+  .app-Ws {
+    --app-ws-block: calc(100dvh - 2 * var(--itsm-panel-inset));
+    --app-ws-top: 0px;
+  }
+}
+
+.app-Ws__frame {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-Ws[data-mode='pane'],
+.app-Ws[data-mode='pane'] > .app-Ws__frame {
+  block-size: 100%;
+}
+
+/* The page, from 768 px: edge to edge in the content panel, like the inbox. */
+@container itsm-page (min-width: 48rem) {
+  .app-Ws[data-mode='page'] {
+    block-size: var(--app-ws-block);
+    min-block-size: 28rem;
+    margin: calc(-1 * var(--itsm-page-gutter));
+  }
+  .app-Ws[data-mode='page'] > .app-Ws__frame {
+    block-size: 100%;
+  }
+}
+
+@media (min-width: 64rem) {
+  @container itsm-page (min-width: 48rem) {
+    .app-Ws[data-mode='page'] {
+      overflow: clip;
+      border-radius: var(--itsm-radius-xl);
+    }
+  }
+}
+
+/* The page below 768 px: one column, the window scrolls. */
+@container itsm-page (max-width: 47.9999rem) {
+  .app-Ws[data-mode='page'] {
+    --app-ws-gutter: var(--itsm-page-gutter);
+    margin-inline: calc(-1 * var(--itsm-page-gutter));
+    margin-block-start: calc(-1 * var(--itsm-page-gutter));
+  }
+  .app-Ws[data-mode='page'] .app-WsHeader {
+    position: sticky;
+    inset-block-start: var(--app-ws-top);
+    z-index: var(--itsm-z-sticky);
+  }
+  .app-Ws[data-mode='page'] .app-Conversation {
+    overflow: visible;
+  }
+  .app-Ws[data-mode='page'] .app-Composer {
+    position: sticky;
+    inset-block-end: var(--itsm-bottom-dock-height);
+    z-index: var(--itsm-z-sticky);
+  }
+  /* The chips become one row that scrolls sideways (SPEC §6.2, phones). */
+  .app-Ws[data-mode='page'] .app-Chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-inline: calc(-1 * var(--app-ws-gutter));
+    padding-inline: var(--app-ws-gutter);
+    padding-block: var(--itsm-space-3xs);
+  }
+  .app-Ws[data-mode='page'] .app-Chips > * {
+    flex: none;
+  }
+}
+
+.app-Ws__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+.app-Ws__main {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.app-Ws__inspector {
+  box-sizing: border-box;
+  flex: 0 0 var(--itsm-inspector-width);
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--itsm-space-md);
+  border-inline-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-Ws__banner {
+  flex: none;
+  margin: var(--itsm-space-sm) var(--app-ws-gutter) 0;
+}
+
+.app-Ws__state {
+  display: grid;
+  place-items: center;
+  min-block-size: 100%;
+  box-sizing: border-box;
+  padding: var(--itsm-space-xl) var(--itsm-page-gutter);
+}
+
+.app-Ws__skeleton {
+  padding: var(--itsm-space-lg);
+}
+
+/* ---- The header ----------------------------------------------------------- */
+
+/* Opaque (SPEC D6): the ticket header is never glass. */
+.app-WsHeader {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-md) var(--app-ws-gutter) var(--itsm-space-sm);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-WsHeader[data-condensed] {
+  gap: var(--itsm-space-xs);
+  padding-block-start: var(--itsm-space-sm);
+}
+
+.app-WsHeader__top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+}
+
+.app-WsHeader__identity {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-WsHeader__back {
+  align-self: flex-start;
+  margin-inline-start: calc(-1 * var(--itsm-space-xs));
+  margin-block-end: var(--itsm-space-3xs);
+}
+
+.app-WsHeader__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--itsm-space-3xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
+}
+
+.app-WsHeader[data-condensed] .app-WsHeader__meta {
+  display: none;
+}
+
+.app-WsHeader__number {
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-medium);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.app-WsHeader__channel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-WsHeader__titleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+.app-WsHeader__title {
+  margin: 0;
+  min-inline-size: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-title3-size);
+  font-weight: var(--itsm-text-title3-weight);
+  line-height: var(--itsm-text-title3-line);
+  letter-spacing: var(--itsm-text-title3-tracking);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  outline: none;
+}
+
+@container itsm-page (min-width: 48rem) {
+  .app-Ws[data-mode='page'] .app-WsHeader__title {
+    font-size: var(--itsm-text-title2-size);
+    line-height: var(--itsm-text-title2-line);
+    letter-spacing: var(--itsm-text-title2-tracking);
+  }
+}
+
+@container itsm-page (min-width: 64rem) {
+  .app-Ws[data-mode='page'] .app-WsHeader__title {
+    font-size: var(--itsm-text-title1-size);
+    font-weight: var(--itsm-text-title1-weight);
+    line-height: var(--itsm-text-title1-line);
+    letter-spacing: var(--itsm-text-title1-tracking);
+  }
+}
+
+/* Condensed: one line of title, at the size of a list group heading. */
+.app-Ws .app-WsHeader[data-condensed] .app-WsHeader__title {
+  overflow: hidden;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  letter-spacing: var(--itsm-text-headline-tracking);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.app-WsHeader__edit {
+  flex: none;
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-WsHeader__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-WsHeader__stepper {
+  display: inline-flex;
+  gap: var(--itsm-space-3xs);
+  margin-inline-end: var(--itsm-space-2xs);
+  padding-inline-end: var(--itsm-space-2xs);
+  border-inline-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+}
+
+.app-TitleEditor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-TitleEditor > .itsm-Input {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  font-size: var(--itsm-text-headline-size);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-TitleEditor__error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- The property chips --------------------------------------------------- */
+
+/* `position: relative` holds the chips' visually hidden words inside the row, so a row that scrolls sideways (phones) never widens the page. */
+.app-Chips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs) var(--itsm-space-xs);
+}
+
+.app-Chips__end {
+  display: inline-flex;
+  margin-inline-start: auto;
+}
+
+.app-Chip {
+  gap: var(--itsm-space-2xs);
+  max-inline-size: 20rem;
+}
+
+.app-Chip .itsm-Button__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+}
+
+.app-Chip__label {
+  flex: none;
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+.app-Chip__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.app-Chip--static {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-block-size: var(--itsm-control-height-sm);
+  max-inline-size: 20rem;
+  padding: 0 var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-pill);
+  box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-subtle);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  letter-spacing: var(--itsm-text-callout-tracking);
+}
+
+.app-Chip__note {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Chip__none {
+  color: var(--itsm-colour-text-muted);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+/* The status's tone, always beside its word (SC 1.4.1). */
+.app-Chip__dot {
+  flex: none;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+  background: var(--itsm-colour-neutral-border);
+}
+.app-Chip__dot[data-tone='info'] {
+  background: var(--itsm-colour-info-border);
+}
+.app-Chip__dot[data-tone='warning'] {
+  background: var(--itsm-colour-warning-border);
+}
+.app-Chip__dot[data-tone='success'] {
+  background: var(--itsm-colour-success-border);
+}
+.app-Chip__dot[data-tone='danger'] {
+  background: var(--itsm-colour-danger-border);
+}
+
+.app-Chip__flag {
+  display: inline-flex;
+}
+.app-Chip__flag[data-priority='P1'] {
+  color: var(--itsm-colour-danger-subtleText);
+}
+.app-Chip__flag[data-priority='P2'] {
+  color: var(--itsm-colour-warning-subtleText);
+}
+
+/* Someone else changed it: a background flash that fades (SPEC §1.9), never movement. */
+.app-Chip[data-flash],
+.app-Chip--static[data-flash] {
+  animation: app-ws-flash 1.2s var(--itsm-easing-standard);
+}
+
+@keyframes app-ws-flash {
+  from {
+    background-color: var(--itsm-colour-surface-selected);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-Chip[data-flash],
+  .app-Chip--static[data-flash] {
+    animation: none;
+    box-shadow: inset 0 0 0 var(--itsm-border-thick) var(--itsm-colour-accent);
+  }
+}
+:root[data-itsm-motion='reduced'] .app-Chip[data-flash],
+:root[data-itsm-motion='reduced'] .app-Chip--static[data-flash] {
+  animation: none;
+  box-shadow: inset 0 0 0 var(--itsm-border-thick) var(--itsm-colour-accent);
+}
+
+.app-NextStep {
+  flex: none;
+}
+
+/* ---- The SLA, as words ---------------------------------------------------- */
+
+.app-Sla {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-block-size: var(--itsm-control-height-sm);
+  padding-inline: var(--itsm-space-xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-Sla--button {
+  border: 0;
+  border-radius: var(--itsm-radius-pill);
+  background: transparent;
+  font: inherit;
+  font-size: var(--itsm-text-callout-size);
+  cursor: pointer;
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+.app-Sla--button:hover {
+  background: var(--itsm-colour-fill-hover);
+}
+
+.app-Sla__chevron {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-SlaList {
+  display: grid;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---- The conversation ----------------------------------------------------- */
+
+.app-Conversation {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+  scroll-padding-block: var(--itsm-space-md);
+}
+
+.app-Conversation__inner {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  max-inline-size: var(--app-ws-measure);
+  margin-inline: auto;
+  padding: var(--itsm-space-lg) var(--app-ws-gutter);
+}
+
+.app-Conversation__filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs) var(--itsm-space-sm);
+}
+
+.app-Conversation__hiddenNotes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Conversation__earlier {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  min-block-size: var(--itsm-control-height-sm);
+  padding: 0 var(--itsm-space-sm);
+  border: 0;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-secondary);
+  font: inherit;
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  cursor: pointer;
+}
+
+.app-Conversation__earlier:hover {
+  background: var(--itsm-colour-fill-pressed);
+}
+
+.app-Message {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The original request: its own card, first, whoever wrote what after it. */
+.app-Original {
+  padding: var(--itsm-space-md) var(--itsm-space-lg) var(--itsm-space-md);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow:
+    inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-subtle),
+    var(--itsm-elevation-xs);
+}
+
+.app-Original__head {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Original__who {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.app-Original__name {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-callout-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-callout-line);
+}
+
+.app-Original__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Original__channel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-Original__body {
+  margin: var(--itsm-space-sm) 0 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  letter-spacing: var(--itsm-text-body-tracking);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.app-Original__body[data-folded] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.app-Original__body--empty {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-Original__more {
+  margin-block-start: var(--itsm-space-2xs);
+  padding: 0;
+  border: 0;
+  border-radius: var(--itsm-radius-xs);
+  background: none;
+  color: var(--itsm-colour-text-link);
+  font: inherit;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  cursor: pointer;
+}
+
+/* Messages the outbox holds: the desk's side, dashed until they are sent. */
+.app-Queued {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Queued__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--itsm-space-2xs);
+  max-inline-size: min(85%, 40rem);
+}
+
+.app-Queued__bubble {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--itsm-space-2xs);
+  padding: calc(var(--itsm-space-xs) + var(--itsm-space-3xs)) var(--itsm-space-sm);
+  border: var(--itsm-hairline) dashed var(--itsm-colour-border-interactive);
+  border-radius: var(--itsm-radius-xl);
+  border-end-end-radius: var(--itsm-radius-xs);
+  background: var(--itsm-colour-surface-sunken);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-Queued__item[data-internal] .app-Queued__bubble {
+  border-color: var(--itsm-colour-warning-border);
+  background: var(--itsm-colour-warning-subtle);
+}
+
+.app-Queued__status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Queued__status--failed {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+/* "Ada replied just now · Show": floats above the composer and takes no room. */
+.app-Ws__arrived {
+  position: relative;
+  z-index: var(--itsm-z-sticky);
+  display: flex;
+  justify-content: center;
+  block-size: 0;
+}
+
+.app-Ws__arrived > * {
+  position: absolute;
+  inset-block-end: var(--itsm-space-sm);
+  box-shadow: var(--itsm-elevation-md);
+}
+
+/* ---- The composer --------------------------------------------------------- */
+
+/* Opaque and anchored to the bottom of the conversation. */
+.app-Composer {
+  flex: none;
+  padding: var(--itsm-space-sm) var(--app-ws-gutter) var(--itsm-space-md);
+  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raised);
+  outline: none;
+}
+
+.app-Composer__form {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  max-inline-size: var(--app-ws-measure);
+  margin-inline: auto;
+  padding: var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow:
+    inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-subtle),
+    var(--itsm-elevation-xs);
+  transition:
+    background-color var(--itsm-duration-normal) var(--itsm-easing-standard),
+    box-shadow var(--itsm-duration-normal) var(--itsm-easing-standard);
+}
+
+/*
+ * The third statement that a note is internal, after the mode and the
+ * button: the warning tint and a lock. A tint alone would fail SC 1.4.1; a
+ * tint *as well as* the words is what makes it visible at a glance.
+ */
+.app-Composer__form[data-internal='true'] {
+  background: var(--itsm-colour-warning-subtle);
+  box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-warning-border);
+}
+
+.app-Composer__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs) var(--itsm-space-sm);
+}
+
+.app-Composer__channel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Composer__form[data-internal='true'] .app-Composer__channel {
+  color: var(--itsm-colour-warning-subtleText);
+}
+
+.app-Composer__label {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-text-subheadline-weight);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Composer__line {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Composer__line > .itsm-Textarea {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.app-Composer__field {
+  max-block-size: 40vh;
+  resize: none;
+}
+
+.app-Composer__mode {
+  flex: none;
+}
+
+/* Open: the shortcut on the left, Send on the right. */
+.app-Composer__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs) var(--itsm-space-sm);
+}
+
+.app-Composer__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin-inline-end: auto;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+@media (pointer: coarse) {
+  .app-Composer__keys {
+    visibility: hidden;
+  }
+}
+
+.app-Composer__send {
+  flex: none;
+}
+
+.app-Composer__restored,
+.app-Composer__hint,
+.app-Composer__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Composer__error {
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+}
+
+/* At rest: one line, "Reply to Ada…" — the field alone; the frame, the mode and Send come with focus. */
+.app-Composer:not([data-expanded]) .app-Composer__top {
+  display: none;
+}
+
+.app-Composer:not([data-expanded]) .app-Composer__form {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-Composer:not([data-expanded]) .app-Composer__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A short window (a phone held sideways, a keyboard up): writing takes the whole screen (X-93). */
+@media (max-height: 31.25rem) {
+  .app-Composer[data-expanded] {
+    position: fixed;
+    inset: 0;
+    z-index: var(--itsm-z-dialog);
+    display: flex;
+    flex-direction: column;
+    padding: var(--itsm-space-sm);
+  }
+  .app-Composer[data-expanded] .app-Composer__form {
+    flex: 1 1 auto;
+    inline-size: 100%;
+    max-inline-size: none;
+  }
+  .app-Composer[data-expanded] .app-Composer__line {
+    flex: 1 1 auto;
+    align-items: stretch;
+  }
+  .app-Composer[data-expanded] .app-Composer__line > .itsm-Textarea {
+    block-size: auto;
+  }
+  .app-Composer[data-expanded] .app-Composer__field {
+    max-block-size: none;
+  }
+}
+
+/* ---- Resolve… ------------------------------------------------------------- */
+
+.app-Resolve {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Resolve__label {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-text-subheadline-weight);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Resolve__note {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Resolve__error {
+  margin: 0;
+  color: var(--itsm-colour-danger-subtleText);
+  font-size: var(--itsm-text-callout-size);
+}
+
+.app-Resolve__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs);
+}
+
+/* ---- Forced colours ------------------------------------------------------- */
+
+@media (forced-colors: active) {
+  .app-Chip__dot {
+    background: CanvasText;
+  }
+  .app-Queued__bubble,
+  .app-Original,
+  .app-Composer__form {
+    border: 1px solid CanvasText;
+  }
+}

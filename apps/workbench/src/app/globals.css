@@ -8,8 +8,9 @@
  * wins over the design system's `@layer itsm.*` rules without `!important`.
  *
  * New rules use the `app-` prefix (SPEC §8.0 rule 6). The `itsm-` blocks
- * further down belong to the legacy ticket screen and leave with it (WP24,
- * WP25).
+ * further down belong to the legacy assistance panel and leave with it
+ * (WP25). The ticket workspace's own rules are in `workspace.css` beside the
+ * ticket page.
  *
  * Logical properties throughout (`inline-size`, `margin-block`,
  * `padding-inline`), for the same reason `@itsm/ui` uses them: the product
@@ -187,143 +188,16 @@
   gap: var(--itsm-space-lg);
 }
 
-/* ---- Legacy: the ticket workspace (→ WP24, WP25) ------------------------- */
+/* ---- Legacy: the assistance panel (→ WP25) ------------------------------- */
 
-/*
- * Three panes on a wide screen, one column on a narrow one. The order in the
- * DOM is facts → thread → assistance, which is also the order they are read
- * aloud and the order they stack on a phone: what the ticket *is*, then what
- * happened, then what a machine thinks about it. Grid areas put the facts pane
- * on the side visually without moving it in the document.
- */
-.itsm-Ticket {
-  display: grid;
-  gap: var(--itsm-space-lg);
-  grid-template-areas: 'head' 'facts' 'thread' 'assist';
-}
-
-@media (min-width: 60rem) {
-  .itsm-Ticket {
-    grid-template-areas:
-      'head head head'
-      'facts thread assist';
-    grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(16rem, 22rem);
-  }
-}
-
-.itsm-Ticket__head {
-  grid-area: head;
-}
-
-.itsm-Ticket__facts {
-  grid-area: facts;
-}
-
-.itsm-Ticket__thread {
-  grid-area: thread;
-  min-inline-size: 0;
-}
-
-.itsm-Ticket__assist {
-  grid-area: assist;
-}
-
-.itsm-Ticket__number {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-sm);
-  margin: 0;
-}
-
-.itsm-Ticket__title {
-  font-size: var(--itsm-font-size-2xl);
-  font-weight: var(--itsm-font-weight-semibold);
-  margin-block: var(--itsm-space-3xs) var(--itsm-space-xs);
-}
-
-.itsm-Ticket__badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--itsm-space-2xs);
-  margin: 0;
-}
-
-.itsm-Ticket__properties {
-  display: grid;
-  gap: var(--itsm-space-3xs) var(--itsm-space-sm);
-  grid-template-columns: auto 1fr;
-  margin: 0 0 var(--itsm-space-md);
-}
-
-.itsm-Ticket__properties dt {
-  color: var(--itsm-colour-text-muted);
-  font-size: var(--itsm-font-size-xs);
-}
-
-.itsm-Ticket__properties dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.itsm-Ticket__sla {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-2xs);
-  margin-block-end: var(--itsm-space-md);
-}
-
-.itsm-TicketActions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-xs);
-}
-
-.itsm-TicketActions__move {
-  display: flex;
-  gap: var(--itsm-space-2xs);
-}
-
-.itsm-TicketActions__final,
 .itsm-Suggestions__withheld {
   color: var(--itsm-colour-text-muted);
   font-size: var(--itsm-font-size-sm);
 }
 
-.itsm-TicketActions__error,
-.itsm-Composer__error,
 .itsm-Suggestions__error {
   color: var(--itsm-colour-danger-subtleText);
   font-size: var(--itsm-font-size-sm);
-}
-
-.itsm-Composer {
-  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-  border-radius: var(--itsm-radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-xs);
-  margin-block-start: var(--itsm-space-md);
-  padding: var(--itsm-space-sm);
-}
-
-/*
- * The third statement that a note is internal, after the label and the button.
- * A tint alone would fail SC 1.4.1; a tint *as well as* two pieces of text is
- * what makes the state visible at a glance to everybody else.
- */
-.itsm-Composer[data-internal='true'] {
-  background: var(--itsm-colour-warning-subtle);
-  border-color: var(--itsm-colour-warning-border);
-}
-
-.itsm-Composer__label {
-  font-weight: var(--itsm-font-weight-medium);
-}
-
-.itsm-Composer__actions {
-  align-items: center;
-  display: flex;
-  gap: var(--itsm-space-sm);
-  justify-content: space-between;
 }
 
 .itsm-Suggestions {

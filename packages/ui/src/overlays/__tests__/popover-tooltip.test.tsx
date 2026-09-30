@@ -204,4 +204,37 @@ describe('SplitButton', () => {
     await settle();
     expect(onPrimary).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the main action busy without losing its name, and swallows presses meanwhile', () => {
+    const onPrimary = vi.fn();
+    render(<SplitButton primary={{ id: 'send', label: 'Send' }} onPrimary={onPrimary} loading loadingLabel="Sending…" items={[{ id: 'later', label: 'Send later' }]} />);
+    const main = document.querySelector<HTMLButtonElement>('.itsm-SplitButton__main')!;
+    expect(main.getAttribute('aria-busy')).toBe('true');
+    expect(main.textContent).toContain('Send');
+    expect(main.textContent).toContain('Sending…');
+    click(main);
+    expect(onPrimary).not.toHaveBeenCalled();
+    expect(document.querySelector<HTMLButtonElement>('.itsm-SplitButton__more')!.disabled).toBe(true);
+  });
+
+  it('disables its alternatives with the main action when asked', () => {
+    render(<SplitButton primary={{ id: 'send', label: 'Send', disabled: true }} menuDisabled menuOpen items={[{ id: 'later', label: 'Send later' }]} />);
+    expect(document.querySelector<HTMLButtonElement>('.itsm-SplitButton__main')!.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('.itsm-SplitButton__more')!.disabled).toBe(true);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('opens its menu when the caller says so (a shortcut), and reports closing', async () => {
+    const onMenuOpenChange = vi.fn();
+    const { rerender } = render(
+      <SplitButton primary={{ id: 'send', label: 'Send' }} items={[{ id: 'resolve', label: 'Send and resolve' }]} menuOpen={false} onMenuOpenChange={onMenuOpenChange} />,
+    );
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    rerender(<SplitButton primary={{ id: 'send', label: 'Send' }} items={[{ id: 'resolve', label: 'Send and resolve' }]} menuOpen onMenuOpenChange={onMenuOpenChange} />);
+    await settle();
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain('Send and resolve');
+    press(activeElement()!, 'Escape');
+    await settle();
+    expect(onMenuOpenChange).toHaveBeenCalledWith(false);
+  });
 });

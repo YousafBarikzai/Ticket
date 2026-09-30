@@ -19,6 +19,15 @@ export interface SplitButtonProps {
   readonly onPrimary?: () => void;
   /** The main segment may be its form's only submit button; the chevron is always `type=button`. */
   readonly type?: 'button' | 'submit';
+  /** The main action is under way: a spinner in the main segment (label and width kept), both segments inert. */
+  readonly loading?: boolean;
+  /** What the spinner means, for screen readers ("Sending…"). */
+  readonly loadingLabel?: string;
+  /** Controls the menu, for a caller that opens it from a shortcut (the composer's `mod+shift+Enter`). */
+  readonly menuOpen?: boolean;
+  /** The alternatives are unavailable too (nothing to send yet): the chevron is disabled with the main segment. */
+  readonly menuDisabled?: boolean;
+  readonly onMenuOpenChange?: (open: boolean) => void;
   readonly className?: string;
 }
 
@@ -32,9 +41,24 @@ export interface SplitButtonProps {
  * aligned to the button's end. `primary.disabledReason` keeps the main
  * segment focusable and explaining itself while the menu stays usable, and
  * `primary.confirm` asks before acting (a submit is completed after the
- * answer with the same button as submitter).
+ * answer with the same button as submitter). `loading` shows the main
+ * action under way, as a `Button` does; `menuOpen` lets a shortcut open the
+ * menu.
  */
-export function SplitButton({ primary, items, variant = 'primary', size = 'md', onPrimary, type = 'button', className }: SplitButtonProps): ReactNode {
+export function SplitButton({
+  primary,
+  items,
+  variant = 'primary',
+  size = 'md',
+  onPrimary,
+  type = 'button',
+  loading = false,
+  loadingLabel,
+  menuOpen,
+  menuDisabled = false,
+  onMenuOpenChange,
+  className,
+}: SplitButtonProps): ReactNode {
   const mainRef = useRef<HTMLButtonElement | null>(null);
   const [confirming, setConfirming] = useState(false);
   const unavailable = primary.disabled === true;
@@ -72,6 +96,8 @@ export function SplitButton({ primary, items, variant = 'primary', size = 'md', 
         iconStart={primary.icon}
         disabled={unavailable && reason === undefined}
         disabledReason={reason}
+        loading={loading}
+        loadingLabel={loadingLabel}
         aria-keyshortcuts={primary.shortcut ? ariaKeyShortcuts(primary.shortcut) : undefined}
         onClick={onClick}
       >
@@ -80,8 +106,10 @@ export function SplitButton({ primary, items, variant = 'primary', size = 'md', 
       <Menu
         align="end"
         items={items}
+        {...(menuOpen === undefined ? {} : { open: menuOpen && !loading && !menuDisabled })}
+        onOpenChange={onMenuOpenChange}
         trigger={
-          <Button className="itsm-SplitButton__more" variant={variant} size={size} type="button" aria-label={moreLabel}>
+          <Button className="itsm-SplitButton__more" variant={variant} size={size} type="button" aria-label={moreLabel} disabled={loading || menuDisabled}>
             <Icon name="chevron-down" size={size === 'lg' ? 'md' : 'sm'} />
           </Button>
         }

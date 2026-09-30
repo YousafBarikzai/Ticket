@@ -3,11 +3,14 @@ import { redirect } from 'next/navigation';
 import { HydrationBoundary, QueryClient, dehydrate } from '@tanstack/react-query';
 import { ApiError, type Me } from '@itsm/sdk';
 import type { Problem } from '@itsm/ui';
+import { directoryKeys, toTeams, type TicketBundle } from '../../../../client/desk-ticket.js';
+import { deskKeys } from '../../../../client/query-client.js';
 import { InboxPage, type InboxPermissions } from '../../../../inbox/InboxPage.js';
 import { problemOf, type PeopleMap } from '../../../../inbox/presentation.js';
 import { listKey, peopleIdsOf, seedPages, toListRow, type ListPage } from '../../../../inbox/queries.js';
 import { inboxViewFrom, isUuid, type InboxView, type SearchParams, type TeamSummary, type ViewRef } from '../../../../inbox/views.js';
 import { resolvePeople } from '../../../../server/people.js';
+import { loadTicketBundle } from '../../tickets/[id]/bundle.js';
 import { apiFor, currentMe, currentTeams, heldPermissions, loginHref, requireSession } from '../../../../server/session.js';
 import './inbox.css';
 
@@ -48,6 +51,15 @@ async function firstPage(view: InboxView): Promise<ListPage> {
   return { rows, nextCursor: page.nextCursor, people: await resolvePeople(peopleIdsOf(rows)) };
 }
 
+/** The selected ticket's bundle, or nothing: the workspace loads it itself (with its own states) when this cannot. */
+async function selectedTicket(number: string, me: Me): Promise<TicketBundle | null> {
+  try {
+    return await loadTicketBundle(apiFor(await requireSession()), number, me);
+  } catch {
+    return null;
+  }
+}
+
 export async function InboxRoute({ viewRef, params }: { readonly viewRef: ViewRef; readonly params: SearchParams }): Promise<ReactNode> {
   const [me, tenantTeams] = await Promise.all([currentMe(), currentTeams()]);
   const can = permissionsOf(me);
@@ -55,9 +67,11 @@ export async function InboxRoute({ viewRef, params }: { readonly viewRef: ViewRe
 
   // Names for people the URL filters by ("Requester: Ada"), fetched beside the list.
   const filterPeople = [view.filters.requester, isUuid(view.filters.assignee) ? view.filters.assignee : ''].filter(Boolean);
-  const [listResult, knownPeople] = await Promise.all([
+  const [listResult, knownPeople, selected] = await Promise.all([
     can.read ? firstPage(view).then((page) => ({ page }), (error: unknown) => ({ error })) : Promise.resolve({ error: null }),
     filterPeople.length > 0 ? resolvePeople(filterPeople) : Promise.resolve<PeopleMap>({}),
+    // The ticket open beside the list (`?t=`), so a deep link paints it at once (WP24's workspace reads this entry).
+    can.read && view.selected ? selectedTicket(view.selected, me) : Promise.resolve(null),
   ]);
 
   let problem: Problem | null = null;
@@ -69,6 +83,9 @@ export async function InboxRoute({ viewRef, params }: { readonly viewRef: ViewRe
   } else {
     problem = listResult.error === null ? { status: 403 } : problemOf(listResult.error);
   }
+
+  if (selected && view.selected) queryClient.setQueryData(deskKeys.ticket(view.selected), selected);
+  if (tenantTeams) queryClient.setQueryData(directoryKeys.teams(), toTeams(tenantTeams));
 
   const allTeams: TeamSummary[] = (tenantTeams ?? []).map((team) => ({ id: team.id.toLowerCase(), name: team.name }));
   const names = new Map(allTeams.map((team) => [team.id, team.name]));
