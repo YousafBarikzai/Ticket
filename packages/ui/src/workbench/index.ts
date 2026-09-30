@@ -10,6 +10,7 @@ export {
   AiSuggestionCard,
   type AiSuggestionCardProps,
   type ConfidenceBand,
+  type SuggestionAction,
   type SuggestionEvidence,
   type SuggestionOutcome,
 } from './AiSuggestionCard.js';

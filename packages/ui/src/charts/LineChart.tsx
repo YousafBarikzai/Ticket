@@ -1,46 +1,18 @@
 import type { ReactNode } from 'react';
-import { cx } from '../web/cx.js';
-import type { ChartSlot, ChartTableMode } from './types.js';
+import { XYChart, type ChartSeries, type LineChartProps } from './xy.js';
 
-export interface ChartSeries {
-  readonly id: string;
-  readonly label: string;
-  readonly slot?: ChartSlot;
-  /** `y: null` is a gap, not a zero. */
-  readonly points: readonly { readonly x: string; readonly y: number | null }[];
-}
-
-export interface LineChartProps {
-  readonly title: string;
-  readonly description?: string;
-  readonly series: readonly ChartSeries[];
-  readonly xType: 'time' | 'category';
-  readonly yFormat?: Intl.NumberFormatOptions;
-  /** Default 220. */
-  readonly height?: number;
-  readonly baseline?: 'zero' | 'auto';
-  readonly stacked?: boolean;
-  readonly legend?: 'auto' | 'none';
-  readonly directLabels?: 'end' | 'none';
-  readonly table?: ChartTableMode;
-  /** Adds the client hover and keyboard layer; without it the chart is static server-rendered SVG. */
-  readonly interactive?: boolean;
-  readonly emptyText?: string;
-  readonly loading?: boolean;
-  readonly className?: string;
-}
+export type { ChartSeries, LineChartProps };
 
 /**
- * Values over time or across categories. Server-safe static SVG, with an
- * optional client layer for the crosshair and keyboard readout. Replaces the
- * drafts' `TimeSeries`.
+ * Values over time or across categories, as 2 px lines. Server-safe static
+ * SVG, with an optional client layer (`interactive`) for the crosshair and
+ * keyboard readout. Replaces the drafts' `TimeSeries`.
  *
- * Stub (SPEC §4.8): renders the titled figure; the charts package draws it.
+ * One series has no legend (the title names it) and a value at its end; two
+ * to four are labelled where they end as well as in the legend, unless their
+ * ends collide, when the legend alone carries them. Every value is also in
+ * the table under "View as table".
  */
-export function LineChart({ title, height = 220, className }: LineChartProps): ReactNode {
-  return (
-    <figure className={cx('itsm-LineChart', className)} data-height={height}>
-      <figcaption>{title}</figcaption>
-    </figure>
-  );
+export function LineChart(props: LineChartProps): ReactNode {
+  return <XYChart kind="line" props={props} />;
 }
