@@ -107,10 +107,14 @@ describe('my tickets', () => {
 });
 
 describe('replying and reopening', () => {
-  it('sends a requester’s message as public, always', async () => {
+  it('sends a requester’s message as public, always, and says it came from the portal', async () => {
     const { calls, client } = recording({ id: 'c-1' });
     await client.comment('INC-1', 'still broken');
-    expect(calls[0]!.body).toEqual({ body: 'still broken', visibility: 'public' });
+    expect(calls[0]!.body).toEqual({ body: 'still broken', visibility: 'public', channel: 'portal' });
+  });
+
+  it('queues the same body it sends online', () => {
+    expect(queueable.comment('INC-1', 'still broken').body).toEqual({ body: 'still broken', visibility: 'public', channel: 'portal' });
   });
 
   it('reopens with the version as If-Match and a reason', async () => {

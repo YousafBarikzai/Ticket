@@ -242,7 +242,9 @@ export const queueable = {
       path: `/api/v1/tickets/${encodeURIComponent(idOrNumber)}/comments`,
       method: 'POST',
       // A requester's message is always public; there is no internal note here.
-      body: { body, visibility: 'public' },
+      // `channel` says where it was written: without it the API records `api`,
+      // and a reply typed in the portal would read as an integration's.
+      body: { body, visibility: 'public', channel: 'portal' },
     };
   },
 
