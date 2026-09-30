@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import { joinIds, useIds } from '../a11y/ids.js';
+import { useMappedFieldError } from '../formkit/form-context.js';
 import { Icon } from '../icons/Icon.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import { defaultMessages } from '../provider/messages.js';
@@ -106,7 +107,7 @@ export function FormField({
   label,
   children,
   hint,
-  error,
+  error: ownError,
   required = false,
   optional = false,
   counter,
@@ -118,6 +119,11 @@ export function FormField({
   const ids = useIds('itsm-field', ['control', 'hint', 'error', 'count'] as const);
   const messages = useOptionalItsm()?.messages ?? defaultMessages;
   const controlId = id ?? ids.control;
+  // Inside a `Form`, the message a failed submit mapped onto this control
+  // (by its id) shows here without the caller passing it; an explicit
+  // `error` wins.
+  const mappedError = useMappedFieldError(controlId);
+  const error = ownError ?? mappedError;
   const hasHint = hint !== undefined && hint !== null && hint !== false && hint !== '';
   const length = useControlLength(counter ? controlId : null);
 

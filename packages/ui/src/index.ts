@@ -124,18 +124,31 @@ export {
 /* ------------------------------------------------------------------- Form kit */
 export { FormField, type FieldControlProps, type FormFieldProps } from './web/FormField.js';
 export {
+  DraftNotice,
+  DraftStatus,
   Form,
+  FormActions,
   FormErrorSummary,
   FormSection,
   InlineEdit,
+  focusField,
+  useDraft,
+  useFormState,
+  type DraftController,
+  type DraftNoticeProps,
+  type DraftStatusProps,
+  type FormActionsProps,
   type FormAutosave,
+  type FormErrorSummaryError,
   type FormErrorSummaryProps,
   type FormProps,
   type FormSectionProps,
+  type FormState,
   type FormSubmitResult,
   type InlineEditOption,
   type InlineEditProps,
   type InlineEditResult,
+  type UseDraftOptions,
 } from './formkit/index.js';
 
 /* ------------------------------------------------------------------- Feedback */
