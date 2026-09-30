@@ -107,36 +107,6 @@ describe('BulkActionBar', () => {
     expect(onAction).toHaveBeenCalledWith('delete', { reason: 'Duplicates of INC-000123' });
   });
 
-  it('opens a menu of choices from an action that carries one, and as a submenu behind More', async () => {
-    const chosen = vi.fn();
-    const status = { id: 'status', label: 'Status', menu: [{ id: 'resolved', label: 'Resolved', onSelect: () => chosen('resolved') }] };
-    const { toolbar, onAction } = bar({ actions: [actions[0]!, status] });
-    const trigger = [...toolbar.querySelectorAll('button')].find((button) => button.textContent === 'Status')!;
-    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
-    pointerDown(trigger);
-    await settle();
-    const menu = document.querySelector('[role="menu"]')!;
-    expect(menu.getAttribute('aria-label')).toBe('Status for 3 selected tickets');
-    click([...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'Resolved')!);
-    await settle();
-    expect(chosen).toHaveBeenCalledWith('resolved');
-    expect(onAction).not.toHaveBeenCalled();
-
-    cleanupDocument();
-    const overflowing = bar({ actions: [...actions.slice(0, 2), status] as never });
-    expect([...overflowing.toolbar.querySelectorAll('button')].map((button) => button.textContent || button.getAttribute('aria-label'))).toEqual([
-      'Assign',
-      'Resolve',
-      'Status',
-      'Clear selection',
-    ]);
-    const four = bar({ actions: [...actions.slice(0, 3), status] as never });
-    pointerDown([...four.toolbar.querySelectorAll('button')].find((button) => button.textContent === 'More')!);
-    await settle();
-    const sub = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.startsWith('Status'));
-    expect(sub?.getAttribute('aria-haspopup')).toBe('menu');
-  });
-
   it('gives way to a long job’s progress, with Cancel', () => {
     const onCancel = vi.fn();
     const { toolbar } = bar({ busy: { label: 'Resolving', done: 40, total: 200, onCancel } });

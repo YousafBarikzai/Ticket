@@ -1,0 +1,48 @@
+/*
+ * Pieces the Command centre and the Insights pages share: the refetch line
+ * and the technical-key chip. Arrangement only, tokens throughout; imported
+ * by each of those pages.
+ */
+
+/* The 2 px refetch line (SPEC §4.10): content stays, nothing dims. */
+.app-Refetch {
+  position: relative;
+}
+
+.app-Refetch[aria-busy='true']::before {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 2px;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-accent);
+  content: '';
+  animation: itsm-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-Refetch[aria-busy='true']::before {
+    animation: none;
+  }
+}
+
+:root[data-itsm-motion='reduced'] .app-Refetch[aria-busy='true']::before {
+  animation: none;
+}
+
+/* ---- A technical key, for people who asked to see keys ------------------- */
+
+.app-TechnicalKey {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-TechnicalKey code {
+  padding: 0 var(--itsm-space-2xs);
+  border-radius: var(--itsm-radius-sm);
+  background: var(--itsm-colour-fill-secondary);
+  color: var(--itsm-colour-text-secondary);
+  font-family: var(--itsm-font-family-mono);
+  font-size: var(--itsm-text-caption-size);
+}

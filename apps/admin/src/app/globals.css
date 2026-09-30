@@ -645,15 +645,13 @@
  * above rather than styled as a warning — neither is an error, and an amber
  * panel at the foot of every page teaches people to ignore amber panels.
  */
-.itsm-Admin__note,
-.itsm-Admin__withheld {
+.itsm-Admin__note {
   border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   color: var(--itsm-colour-text-secondary);
   padding-block-start: var(--itsm-space-md);
 }
 
-.itsm-Admin__note h2,
-.itsm-Admin__withheld h2 {
+.itsm-Admin__note h2 {
   font-size: var(--itsm-font-size-sm);
   font-weight: var(--itsm-font-weight-semibold);
   letter-spacing: 0.04em;
@@ -664,15 +662,6 @@
 .itsm-Admin__note p {
   margin: 0;
   max-inline-size: 70ch;
-}
-
-.itsm-Admin__withheld ul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-3xs);
-  list-style: none;
-  margin: 0;
-  padding: 0;
 }
 
 .itsm-Admin__error {

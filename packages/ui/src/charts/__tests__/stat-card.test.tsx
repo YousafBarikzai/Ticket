@@ -61,6 +61,15 @@ describe('the value', () => {
   it('formats percentages as percentages', () => {
     expect(text(card({ value: 0.942, format: { style: 'percent', maximumFractionDigits: 1 } }).querySelector('.itsm-StatCard__number'))).toBe('94.2%');
   });
+
+  it('writes minutes as a duration, and says the units in full', () => {
+    const root = card({ value: 72, format: { duration: 'minutes' } });
+    expect(text(root.querySelector('.itsm-StatCard__number'))).toBe('1 h 12 min');
+    expect(root.querySelector('.itsm-StatCard__number')?.getAttribute('aria-hidden')).toBe('true');
+    expect(text(root.querySelector('.itsm-StatCard__value .itsm-visually-hidden'))).toBe('1 hour 12 minutes');
+    // Two parts at most: a long wait reads in days and hours.
+    expect(text(card({ value: 3 * 24 * 60 + 5 * 60 + 7, format: { duration: 'minutes' } }).querySelector('.itsm-StatCard__number'))).toBe('3 d 5 h');
+  });
 });
 
 describe('the delta chip', () => {

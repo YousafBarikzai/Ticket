@@ -399,8 +399,6 @@ export const EXCLUDED: readonly { readonly route: string; readonly read: readonl
  * the same change.
  */
 export const PENDING: ReadonlySet<string> = new Set([
-  '/insights/metrics',
-  '/insights/reports',
   '/workforce/on-call',
   '/workforce/shifts',
   '/workforce/skills',
@@ -676,7 +674,9 @@ export const CREATE_COMMANDS: readonly CreateCommand[] = [
   { id: 'new-calendar', label: 'New calendar', href: '/sla/calendars?new=1', permission: 'sla.policy.manage', icon: 'calendar', keywords: ['business hours'] },
   { id: 'add-person', label: 'Add person', href: '/people?new=1', permission: 'identity.user.manage', icon: 'user-plus', keywords: ['invite', 'user'] },
   { id: 'add-credential', label: 'Add credential', href: '/integrations/credentials?new=1', permission: 'integration.credential.manage', icon: 'key' },
-  { id: 'new-dashboard', label: 'New dashboard', href: '/insights?new=1', permission: 'analytics.manage', icon: 'insights' },
+  // No "New dashboard" yet: making and editing dashboards is SPEC [Plus] and
+  // not built, and a command that lands on a page with nothing to do is worse
+  // than no command. Add it back with the dashboard editor.
 ];
 
 /** The create commands this person may run whose page exists. */

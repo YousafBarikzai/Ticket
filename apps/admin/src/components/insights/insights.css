@@ -1,0 +1,315 @@
+/*
+ * Insights: dashboards, metrics and reports (SPEC §6.1, MOD-12).
+ *
+ * Arrangement only; everything visual is a design-system token. Imported by
+ * the three Insights pages and their skeletons. Dashboards read on a twelve-
+ * column grid that honours each widget's width from a wide page down, and
+ * stack full width once the page is narrow (a container query on the view,
+ * because the dashboard list beside it and the sidebar both take room).
+ */
+
+.app-Insights {
+  container: insights / inline-size;
+  gap: var(--itsm-space-lg);
+}
+
+/* ---- Dashboards: list + view ---------------------------------------------- */
+
+.app-Dashboards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-lg);
+  align-items: start;
+}
+
+.app-Dashboards__nav {
+  display: none;
+}
+
+.app-Dashboards__picker {
+  max-inline-size: 24rem;
+}
+
+@container insights (min-width: 64rem) {
+  .app-Dashboards {
+    grid-template-columns: 14rem minmax(0, 1fr);
+  }
+
+  .app-Dashboards__nav {
+    display: block;
+    position: sticky;
+    inset-block-start: var(--itsm-space-lg);
+  }
+
+  .app-Dashboards__picker {
+    display: none;
+  }
+}
+
+.app-Dashboard {
+  container: dashboard / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  min-inline-size: 0;
+}
+
+.app-Dashboard__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+}
+
+.app-Dashboard__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Dashboard__title h2 {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-title2-size);
+  line-height: var(--itsm-text-title2-line);
+  font-weight: var(--itsm-text-title2-weight);
+  letter-spacing: var(--itsm-text-title2-tracking);
+}
+
+.app-Dashboard__description {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Dashboard__actions {
+  display: inline-flex;
+  flex: none;
+  gap: var(--itsm-space-3xs);
+}
+
+/* ---- The widget grid -------------------------------------------------- */
+
+.app-Widgets {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-md);
+  align-items: stretch;
+}
+
+.app-Widget {
+  display: flex;
+  min-inline-size: 0;
+}
+
+.app-Widget > * {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* Two stat widgets a row on a phone, like every stat grid (X-94). */
+@container dashboard (min-width: 20rem) {
+  .app-Widgets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-Widget {
+    grid-column: span 2;
+  }
+
+  .app-Widget[data-width='1'],
+  .app-Widget[data-width='2'],
+  .app-Widget[data-width='3'] {
+    grid-column: span 1;
+  }
+}
+
+@container dashboard (min-width: 48rem) {
+  .app-Widgets {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .app-Widget {
+    grid-column: span 12;
+  }
+
+  .app-Widget[data-width='1'] { grid-column: span 1; }
+  .app-Widget[data-width='2'] { grid-column: span 2; }
+  .app-Widget[data-width='3'] { grid-column: span 3; }
+  .app-Widget[data-width='4'] { grid-column: span 4; }
+  .app-Widget[data-width='5'] { grid-column: span 5; }
+  .app-Widget[data-width='6'] { grid-column: span 6; }
+  .app-Widget[data-width='7'] { grid-column: span 7; }
+  .app-Widget[data-width='8'] { grid-column: span 8; }
+  .app-Widget[data-width='9'] { grid-column: span 9; }
+  .app-Widget[data-width='10'] { grid-column: span 10; }
+  .app-Widget[data-width='11'] { grid-column: span 11; }
+}
+
+.app-Widget__ghost {
+  padding: var(--itsm-space-lg);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-Widget__ghostChart {
+  margin-block-start: var(--itsm-space-md);
+}
+
+.app-Widget__empty {
+  margin: 0;
+  padding-block: var(--itsm-space-lg);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  text-align: center;
+}
+
+/* ---- Metric explorer --------------------------------------------------- */
+
+.app-Explorer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-Explorer__measure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Explorer__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--itsm-space-md);
+}
+
+.app-Explorer__controls > .itsm-FormField {
+  flex: 1 1 12rem;
+  max-inline-size: 18rem;
+}
+
+.app-Explorer__control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Explorer__label {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-Explorer__missing {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+}
+
+/* ---- Report runs -------------------------------------------------------- */
+
+.app-Runs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-Runs__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Runs__summary {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+}
+
+.app-Runs__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Runs__run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+  padding-block: var(--itsm-space-md);
+}
+
+.app-Runs__run + .app-Runs__run {
+  border-block-start: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-Runs__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Runs__period {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Runs__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Runs__detail,
+.app-Runs__error {
+  margin: 0;
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Runs__detail {
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Runs__error {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-Runs__download {
+  text-decoration: none;
+}
+
+/* ---- Skeletons ------------------------------------------------------------ */
+
+.app-InsightsSkeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+}
+
+.app-InsightsSkeleton__tabs {
+  display: flex;
+  gap: var(--itsm-space-lg);
+}

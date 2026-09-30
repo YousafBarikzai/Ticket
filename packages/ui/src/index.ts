@@ -236,6 +236,8 @@ export { RelativeTime, type RelativeTimeProps } from './format/RelativeTime.js';
 export {
   ActivityFeed,
   AvatarStack,
+  // A ticket channel as a glyph and a word ("email" → Email, mail), for charts and lists that name channels.
+  channelInfo,
   DescriptionList,
   Disclosure,
   FileChip,
@@ -249,6 +251,7 @@ export {
   type ActivityItem,
   type AvatarStackPerson,
   type AvatarStackProps,
+  type ChannelInfo,
   type DescriptionItem,
   type DescriptionListProps,
   type DisclosureProps,

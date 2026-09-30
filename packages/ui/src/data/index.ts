@@ -31,7 +31,7 @@ export {
   type DataTableViewState,
   type SortDirection,
 } from './model.js';
-export { BulkActionBar, type ActionDetails, type BulkAction, type BulkActionBarProps } from './BulkActionBar.js';
+export { BulkActionBar, type ActionDetails, type BulkActionBarProps } from './BulkActionBar.js';
 export { FilterBar, type FilterBarProps, type FilterBarSearch } from './FilterBar.js';
 export { FilterChip, type FilterChipProps } from './FilterChip.js';
 export { LoadMore, type LoadMoreProps } from './LoadMore.js';

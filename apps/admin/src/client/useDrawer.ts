@@ -68,6 +68,14 @@ export function useDrawer(kind: string): Drawer {
   const open = useCallback(
     (next: string) => {
       const href = drawerHref(pathname, search, kind, next);
+      // A `DataTable` with `activate: { kind: 'drawer' }` has already pushed
+      // this address before calling `onActivate`; pushing it again would
+      // leave two identical entries, and closing (which goes Back) would land
+      // on the second and leave the drawer open.
+      if (`${window.location.pathname}${window.location.search}` === href) {
+        openedHere.add(href);
+        return;
+      }
       if (anyOpen) {
         // One drawer at a time: move from one to the next without piling up history.
         window.history.replaceState(null, '', href);

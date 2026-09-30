@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { describeProblem } from '../feedback/problem.js';
+import { formatDuration } from '../format/duration.js';
 import { formatNumber } from '../format/format.js';
 import { Icon } from '../icons/Icon.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
@@ -27,8 +28,12 @@ export interface StatCardProps {
   readonly label: string;
   /** `null` reads "—", spoken as "Not available". */
   readonly value: number | null;
-  /** `compact` writes 12,900 as "12.9k". */
-  readonly format?: Intl.NumberFormatOptions & { readonly compact?: boolean };
+  /**
+   * `compact` writes 12,900 as "12.9k". `duration: 'minutes'` reads the value
+   * as minutes and writes it as a duration — "1 h 12 min", heard as "1 hour
+   * 12 minutes" — for times to respond or resolve.
+   */
+  readonly format?: Intl.NumberFormatOptions & { readonly compact?: boolean; readonly duration?: 'minutes' };
   /** The value is a lower bound ("100+"), because the list it counts had more. */
   readonly approx?: 'atLeast';
   /** After the value, smaller: "ms", "h". */
@@ -123,16 +128,19 @@ export function StatCard({
   const itsm = useOptionalItsm();
   const locale = localeProp ?? itsm?.locale ?? DEFAULT_LOCALE;
   const notAvailable = itsm?.messages.notAvailable ?? defaultMessages.notAvailable;
-  const { compact, ...numberOptions } = format ?? {};
+  const { compact, duration, ...numberOptions } = format ?? {};
   const options: Intl.NumberFormatOptions = compact ? { notation: 'compact', maximumFractionDigits: 1, ...numberOptions } : numberOptions;
-  const write = (n: number): string => formatNumber(n, { ...options, locale });
+  const write = (n: number): string =>
+    duration === 'minutes' ? formatDuration(n, { locale, maxParts: 2 }) : formatNumber(n, { ...options, locale });
 
   let display: ReactNode = '—';
   let spoken: string | undefined = notAvailable;
   if (value !== null && Number.isFinite(value)) {
     const written = write(value);
     display = approx === 'atLeast' ? `${written}+` : written;
-    spoken = approx === 'atLeast' ? `at least ${written}` : undefined;
+    // A duration's short units ("h", "min") are spelled out for listeners.
+    const heard = duration === 'minutes' ? formatDuration(value, { locale, maxParts: 2, style: 'long' }) : written;
+    spoken = approx === 'atLeast' ? `at least ${heard}` : duration === 'minutes' ? heard : undefined;
   }
 
   return (

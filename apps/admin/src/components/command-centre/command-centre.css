@@ -1,0 +1,512 @@
+/*
+ * The Command centre: a briefing, not a board (SPEC §6.1, X-30).
+ *
+ * Arrangement only, like the app's globals.css: colour, type, spacing and
+ * radii are the design system's custom properties, and logical properties
+ * throughout. Imported by the page (and its skeleton), so no other route
+ * pays for it; every class is `app-` and belongs to this page.
+ *
+ * Layout: a main column (what needs you, then the volume chart) and a side
+ * column (desk health, on call, recent changes), 2 : 1 once the page is wide
+ * enough for both to breathe (a container query on the page, not the
+ * viewport, because the sidebar and rail change what "wide" means). Below
+ * that the columns dissolve (`display: contents`) and the cards interleave in
+ * the order a phone reads them: needs attention, desk health, volume, on
+ * call, recent changes. When nothing needs attention, desk health leads.
+ */
+
+.app-Briefing {
+  container: briefing / inline-size;
+  gap: var(--itsm-space-lg);
+}
+
+/* ---- Header -------------------------------------------------------------- */
+
+.app-Briefing__greeting {
+  margin: calc(-1 * var(--itsm-space-sm)) 0 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-title3-size);
+  line-height: var(--itsm-text-title3-line);
+  letter-spacing: var(--itsm-text-title3-tracking);
+  text-wrap: pretty;
+}
+
+.app-Briefing__status {
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-Updated {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.app-Briefing__incidents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+/* ---- The two columns ----------------------------------------------------- */
+
+.app-Briefing__grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-Briefing__main,
+.app-Briefing__side,
+.app-Briefing__lead {
+  display: contents;
+}
+
+.app-Briefing__lead {
+  order: 1;
+}
+
+.app-Briefing__health {
+  order: 2;
+}
+
+.app-Briefing__volume {
+  order: 3;
+}
+
+.app-Briefing__oncall {
+  order: 4;
+}
+
+.app-Briefing__changes {
+  order: 5;
+}
+
+/* Nothing needs attention: the health card leads on a phone. */
+.app-Briefing__grid:has(.app-Attention[data-state='clear']) .app-Briefing__health {
+  order: 0;
+}
+
+@container briefing (min-width: 60rem) {
+  .app-Briefing__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .app-Briefing__grid[data-side='none'],
+  .app-Briefing__grid[data-main='none'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-Briefing__main,
+  .app-Briefing__side,
+  .app-Briefing__lead {
+    display: flex;
+    flex-direction: column;
+    gap: var(--itsm-space-lg);
+    min-inline-size: 0;
+  }
+}
+
+.app-Briefing__more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs) var(--itsm-space-lg);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Briefing__more a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-link);
+  text-decoration: none;
+}
+
+.app-Briefing__more a:hover {
+  text-decoration: underline;
+}
+
+/* ---- Needs attention ---------------------------------------------------- */
+
+.app-Attention__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Attention__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+  padding-block: var(--itsm-space-md);
+}
+
+.app-Attention__item + .app-Attention__item {
+  border-block-start: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-Attention__item:first-child {
+  padding-block-start: 0;
+}
+
+.app-Attention__item:last-child {
+  padding-block-end: 0;
+}
+
+.app-Attention__tone {
+  margin-block-start: 1px;
+}
+
+.app-Attention__item[data-tone='danger'] .app-Attention__tone {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-Attention__item[data-tone='warning'] .app-Attention__tone {
+  color: var(--itsm-colour-warning-subtleText);
+}
+
+.app-Attention__item[data-tone='info'] .app-Attention__tone {
+  color: var(--itsm-colour-info-subtleText);
+}
+
+.app-Attention__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Attention__title {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-wrap: pretty;
+}
+
+.app-Attention__meta {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Attention__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  margin: var(--itsm-space-2xs) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+.app-Attention__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--itsm-space-xs);
+  min-inline-size: 0;
+}
+
+.app-Attention__rowLabel {
+  overflow: hidden;
+  max-inline-size: 100%;
+  color: var(--itsm-colour-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.app-Attention__rowLabel {
+  color: var(--itsm-colour-text-link);
+  text-decoration: none;
+}
+
+a.app-Attention__rowLabel:hover {
+  text-decoration: underline;
+}
+
+.app-Attention__rowMeta {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-Attention__action {
+  align-self: center;
+}
+
+.app-Attention__failures {
+  margin-block-start: var(--itsm-space-md);
+}
+
+/* A phone: the action drops under the sentence rather than squeezing it. */
+@container briefing (max-width: 30rem) {
+  .app-Attention__item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .app-Attention__action {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* ---- Set up your desk -------------------------------------------------- */
+
+.app-Setup__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  margin-block-end: var(--itsm-space-md);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Setup__progress .itsm-ProgressBar {
+  flex: 1;
+}
+
+.app-Setup__steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Setup__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--itsm-space-2xs) var(--itsm-space-md);
+  padding-block: var(--itsm-space-sm);
+}
+
+.app-Setup__step + .app-Setup__step {
+  border-block-start: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-Setup__mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  margin-block-start: 1px;
+  border: 1.5px solid var(--itsm-colour-border-strong);
+  border-radius: var(--itsm-radius-pill);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Setup__step[data-state='done'] .app-Setup__mark {
+  border-color: var(--itsm-colour-success-solid);
+  background: var(--itsm-colour-success-solid);
+  color: var(--itsm-colour-success-solidText);
+}
+
+.app-Setup__step[data-state='unknown'] .app-Setup__mark {
+  border-style: dashed;
+}
+
+.app-Setup__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-Setup__title {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Setup__step[data-state='done'] .app-Setup__title {
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+.app-Setup__description {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Setup__action {
+  align-self: center;
+}
+
+.app-Setup__done {
+  margin-block-start: var(--itsm-space-sm);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+}
+
+.app-Setup__doneList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: var(--itsm-space-xs) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Setup__doneList li {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Setup__doneMark {
+  color: var(--itsm-colour-success-subtleText);
+}
+
+@container briefing (max-width: 30rem) {
+  .app-Setup__step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .app-Setup__action {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* ---- Desk health, volume -------------------------------------------------- */
+
+.app-Health__empty,
+.app-Volume__empty {
+  padding-block: var(--itsm-space-md);
+}
+
+.app-Volume__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+  margin-block-end: var(--itsm-space-md);
+}
+
+.app-Volume__range {
+  margin: 0 0 var(--itsm-space-sm);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- On call now --------------------------------------------------------- */
+
+.app-OnCall__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-OnCall__rota {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--itsm-space-3xs) var(--itsm-space-sm);
+  padding-block: var(--itsm-space-sm);
+}
+
+.app-OnCall__rota:first-child {
+  padding-block-start: 0;
+}
+
+.app-OnCall__rota + .app-OnCall__rota {
+  border-block-start: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-OnCall__who {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-OnCall__name {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-OnCall__rotaName,
+.app-OnCall__next {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-OnCall__foot,
+.app-Changes__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-md);
+  font-size: var(--itsm-text-subheadline-size);
+}
+
+/* ---- Not available to you ------------------------------------------------ */
+
+.app-Withheld__list {
+  display: flex;
+  flex-direction: column;
+  margin: var(--itsm-space-sm) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Withheld__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--itsm-space-2xs) var(--itsm-space-md);
+  padding-block: var(--itsm-space-sm);
+}
+
+.app-Withheld__item + .app-Withheld__item {
+  border-block-start: 1px solid var(--itsm-colour-border-subtle);
+}
+
+.app-Withheld__label {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Withheld__description,
+.app-Withheld__needs {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Withheld__needs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+}

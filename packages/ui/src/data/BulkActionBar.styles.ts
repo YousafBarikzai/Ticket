@@ -67,10 +67,6 @@ export const bulkActionBarStyles = layer(
   gap: var(--itsm-space-3xs);
   min-inline-size: 0;
 }
-/* A control keeps its words: squeezed, a label would run under its own chevron. */
-.itsm-BulkActionBar__actions > * {
-  flex: none;
-}
 .itsm-BulkActionBar__progress {
   flex: 1 1 10rem;
   min-inline-size: 8rem;

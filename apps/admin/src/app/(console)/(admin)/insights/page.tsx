@@ -1,159 +1,112 @@
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { Badge, EmptyState, Table } from '@itsm/ui';
-import { pageAccess } from '../../../../server/session.js';
+import { redirect } from 'next/navigation';
+import { Card, EmptyState } from '@itsm/ui';
+import { HierNav, PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../components/Forbidden.js';
+import { DashboardActions, DashboardPicker } from '../../../../components/insights/DashboardControls.js';
+import {
+  DashboardBody,
+  dashboardHref,
+  dashboardLink,
+  orderDashboards,
+  pickDashboard,
+  WidgetGridSkeleton,
+} from '../../../../components/insights/Dashboards.js';
+import { tabsFor } from '../../../../navigation.js';
 import { read } from '../../../../server/read.js';
-import { holds } from '../../../../permissions.js';
-import { Panel } from '../../../../components/Panel.js';
+import { pageAccess } from '../../../../server/session.js';
+import '../../../../components/command-centre/shared.css';
+import '../../../../components/insights/insights.css';
 
 export const metadata: Metadata = { title: 'Insights' };
 export const dynamic = 'force-dynamic';
 
 /**
- * What this desk measures (MOD-12).
+ * Insights › Dashboards (SPEC §6.1, MOD-12): the desk's numbers as charts.
  *
- * The metrics, dashboards and scheduled reports the analytics module has held
- * since MOD-12-E1b, none of which had a screen. A metric nobody can list is a
- * metric nobody knows exists, which is how two metrics end up measuring the
- * same thing under different names.
- *
- * It does not render a dashboard. `/analytics/dashboards/:id/render` returns
- * real numbers and a chart drawn badly is worse than no chart — that is a
- * screen of its own, with a date range and a comparison, and it should not be
- * smuggled in under a list.
- *
- * Built-in metrics are marked as such: they ship with the platform, cannot be
- * edited or deleted, and an administrator wondering why the delete button is
- * missing deserves to be told rather than to guess.
+ * The list of dashboards beside the one being read (a select on a phone);
+ * the selected one — `?dashboard=<key>` — rendered by the API in one call,
+ * widget by widget on a twelve-column grid, each widget failing on its own.
+ * The seeded desk opens on "Service desk overview" at `/insights`. Editing a
+ * dashboard is a later addition (SPEC [Plus]); nothing here offers it.
  */
-export default async function InsightsPage(): Promise<ReactNode> {
+export default async function InsightsPage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
   const access = await pageAccess('/insights');
   if (!access.allowed) return <Forbidden route="/insights" />;
   const { me, api } = access;
+  const wanted = single((await searchParams).dashboard);
+  const tabs = tabsFor(me, 'insights');
 
-  if (!holds(me, 'analytics.read') && !holds(me, 'analytics.manage')) {
+  const list = await read(() => api.observe.insights.dashboards());
+  if (!list.ok) {
     return (
-      <EmptyState
-        tone="error"
-        title="Your account cannot see this desk's numbers"
-        description="It needs analytics.read. Ask an administrator."
-      />
+      <div className="app-Page app-Insights">
+        <PageHeader title="Insights" tabs={tabs} />
+        <Card title="Dashboards" problem={list.problem} />
+      </div>
     );
   }
 
-  const [metrics, dashboards, reports] = await Promise.all([
-    read(() => api.observe.insights.metrics()),
-    read(() => api.observe.insights.dashboards()),
-    read(() => api.observe.insights.reports()),
-  ]);
+  const dashboards = orderDashboards(list.value);
+  const selected = pickDashboard(dashboards, wanted);
+  if (!selected) {
+    return (
+      <div className="app-Page app-Insights">
+        <PageHeader title="Insights" tabs={tabs} />
+        <EmptyState
+          size="lg"
+          illustration="empty-chart"
+          title="No dashboards yet"
+          description="Dashboards show this desk’s numbers as charts, and none are set up here. Every number a dashboard can show is under Metrics."
+          action={{ id: 'metrics', label: 'Open Metrics', href: '/insights/metrics', variant: 'secondary' }}
+        />
+      </div>
+    );
+  }
 
-  const metricRows = metrics.ok
-    ? ({ ok: true as const, value: metrics.value.data })
-    : ({ ok: false as const, message: metrics.message, problem: metrics.problem });
+  // The first dashboard's own address is the tab's page, so the list shows
+  // it as current; a link that names it explicitly lands there too.
+  const first = dashboards[0]!;
+  if (wanted && selected.id === first.id) redirect('/insights');
+
+  const items = dashboards.map((dashboard, index) => ({
+    id: dashboard.id,
+    label: dashboard.personal ? `${dashboard.name} · only you` : dashboard.name,
+    href: dashboardHref(dashboard, index === 0),
+  }));
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Insights</h1>
-        <p className="itsm-Admin__lede">
-          Everything this desk counts, and where those counts are shown. The numbers come from the analytics projection,
-          which is rebuilt from the event log — so a metric added today can be asked about yesterday.
-        </p>
-      </header>
-
-      <Panel
-        title="Metrics"
-        description="A metric is one aggregate over one fact. What is here is what a dashboard or a report may ask for."
-        result={metricRows}
-        empty="No metrics."
-      >
-        {(rows) => (
-          <Table
-            caption="Metrics"
-            columns={[
-              { key: 'name', header: 'Metric', cell: (row) => row.name },
-              { key: 'key', header: 'Key', cell: (row) => <code>{row.key}</code> },
-              {
-                key: 'calc',
-                header: 'Counts',
-                cell: (row) => `${row.aggregate}${row.field ? ` of ${row.field}` : ''} over ${row.fact}`,
-              },
-              { key: 'unit', header: 'Unit', cell: (row) => row.unit },
-              {
-                key: 'origin',
-                header: 'Origin',
-                cell: (row) =>
-                  row.builtin ? (
-                    <Badge srPrefix="Origin">Built in</Badge>
-                  ) : (
-                    <Badge intent="info" srPrefix="Origin">
-                      This desk
-                    </Badge>
-                  ),
-              },
-            ]}
-            rows={rows}
-            rowKey={(row) => row.key}
-          />
-        )}
-      </Panel>
-
-      <Panel
-        title="Dashboards"
-        description="A personal dashboard belongs to one person and is invisible to everybody else, including here."
-        result={dashboards}
-        empty="No dashboards."
-      >
-        {(rows) => (
-          <Table
-            caption="Dashboards"
-            columns={[
-              { key: 'name', header: 'Dashboard', cell: (row) => row.name },
-              { key: 'widgets', header: 'Widgets', cell: (row) => row.widgetCount },
-              { key: 'scope', header: 'Who sees it', cell: (row) => (row.personal ? 'One person' : 'The desk') },
-              { key: 'seeded', header: 'Origin', cell: (row) => (row.seeded ? 'Shipped' : 'Built here') },
-              { key: 'updated', header: 'Updated', cell: (row) => new Date(row.updatedAt).toLocaleDateString() },
-            ]}
-            rows={rows}
-            rowKey={(row) => row.id}
-          />
-        )}
-      </Panel>
-
-      <Panel
-        title="Reports"
-        description="A report is a set of sections that can be run on demand or on a schedule and sent out as CSV."
-        result={reports}
-        empty="No reports. Nothing is being sent out on a schedule."
-      >
-        {(rows) => (
-          <Table
-            caption="Reports"
-            columns={[
-              { key: 'name', header: 'Report', cell: (row) => row.name },
-              { key: 'key', header: 'Key', cell: (row) => <code>{row.key}</code> },
-              {
-                key: 'schedules',
-                header: 'Scheduled',
-                cell: (row) => (row.schedules === 0 ? 'On demand only' : `${row.schedules}`),
-              },
-              { key: 'runs', header: 'Runs', cell: (row) => row.runs },
-            ]}
-            rows={rows}
-            rowKey={(row) => row.id}
-          />
-        )}
-      </Panel>
-
-      <section className="itsm-Admin__note" aria-label="What this screen cannot do yet">
-        <h2>Not built yet</h2>
-        <p>
-          Rendering a dashboard, running a report and downloading its CSV are all served by the API and have no screen.
-          So is the forecast endpoint. They need a date range and a chart to be worth anything, and both are a screen of
-          their own rather than a row in a table.
-        </p>
-      </section>
+    <div className="app-Page app-Insights">
+      <PageHeader title="Insights" tabs={tabs} />
+      <div className="app-Dashboards">
+        <div className="app-Dashboards__nav">
+          <HierNav label="Dashboards" items={items} />
+        </div>
+        <div className="app-Dashboards__picker">
+          <DashboardPicker options={items.map((item) => ({ value: item.id, label: item.label, href: item.href }))} value={selected.id} />
+        </div>
+        <section className="app-Dashboard" aria-labelledby="app-dashboard-title">
+          <header className="app-Dashboard__head">
+            <div className="app-Dashboard__title">
+              <h2 id="app-dashboard-title">{selected.name}</h2>
+              {selected.description ? <p className="app-Dashboard__description">{selected.description}</p> : null}
+            </div>
+            <DashboardActions href={dashboardLink(selected)} name={selected.name} />
+          </header>
+          <Suspense key={selected.id} fallback={<WidgetGridSkeleton count={selected.widgetCount} />}>
+            <DashboardBody me={me} api={api} id={selected.id} />
+          </Suspense>
+        </section>
+      </div>
     </div>
   );
+}
+
+function single(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

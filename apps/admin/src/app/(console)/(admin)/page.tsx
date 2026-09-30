@@ -1,268 +1,192 @@
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { Badge, Card, EmptyState, Metric, MetricGrid } from '@itsm/ui';
-import { pageAccess } from '../../../server/session.js';
+import { EmptyState, Icon } from '@itsm/ui';
+import { PageHeader } from '@itsm/ui/shell';
+import { AppLink } from '../../AppLink.js';
 import { Forbidden } from '../../../components/Forbidden.js';
-import { read } from '../../../server/read.js';
-import { holds } from '../../../permissions.js';
-import { mayOpen, routeFor } from '../../../navigation.js';
+import {
+  DeskHealthCard,
+  HealthSkeleton,
+  IncidentBanners,
+  LeadCards,
+  LeadSkeleton,
+  ListSkeleton,
+  OnCallCard,
+  RecentChangesCard,
+  StatusClause,
+  VolumeCard,
+  VolumeSkeleton,
+} from '../../../components/command-centre/Cards.js';
+import { SETUP_WRITES, volumeRange } from '../../../components/command-centre/data.js';
+import { greeting } from '../../../components/command-centre/presentation.js';
+import { SignOutButton } from '../../../components/command-centre/SignOutButton.js';
+import { UpdatedAt } from '../../../components/command-centre/UpdatedAt.js';
+import { WithheldSections } from '../../../components/command-centre/WithheldSections.js';
+import { visibleNav, withheldNav } from '../../../navigation.js';
+import { holdsAny } from '../../../permissions.js';
+import { reachable, sourcesFor } from '../../../server/needs-attention.js';
+import { pageAccess } from '../../../server/session.js';
+import '../../../components/command-centre/shared.css';
+import '../../../components/command-centre/command-centre.css';
 
 export const metadata: Metadata = { title: 'Command centre' };
 export const dynamic = 'force-dynamic';
 
 /**
- * What this desk is, and what an administrator can reach.
+ * The Command centre: "Is the desk healthy, and what needs me?" in five
+ * seconds (SPEC §6.1, X-30). A briefing, not a board.
  *
- * Four numbers, and then the way in to everything else. The four are chosen
- * against the brief's warning about decorative dashboard cards: each one is a
- * thing that is *wrong right now* and that somebody can act on, each opens the
- * screen where it is acted on, and a desk in good order shows four zeros.
- * Cycle time and ticket volume are not here — they are reporting, they belong
- * under Insights, and a number nobody can act on this morning is decoration
- * however real it is.
+ * A greeting and one status line; then what needs you (or, on a new desk,
+ * the setup checklist) beside desk health; then one volume chart beside who
+ * is on call and the last few configuration changes. There is no primary
+ * button — creating things lives in ⌘K and on each list — and the old
+ * sitemap of section cards is gone: the sidebar is the map, and what this
+ * person cannot open is listed, once, at the foot with the permission to ask
+ * for.
  *
- * Everything else on the page is the way in: which tenant is being configured
- * — because the console for the wrong tenant looks exactly like the console
- * for the right one — and what this account may change, so a missing section
- * is explained rather than merely absent.
- *
- * Every count fails softly and on its own. A desk whose workflow module is
- * unavailable must still be able to reach the eleven sections below it.
- *
- * Every section in the navigation appears here, plus the two that do not have
- * their own navigation entry: the people on the desk and the shape of a
- * ticket. A screen reachable only by typing its URL is a screen nobody uses.
+ * The page's own render awaits nothing but the gate (the frame already
+ * loaded `/me`); each card streams in its own `<Suspense>` with a skeleton of
+ * its shape, and fails on its own. Which cards exist is decided here from
+ * permissions, so the two columns never hold a hole.
  */
-
-interface Section {
-  readonly href: string;
-  readonly title: string;
-  readonly description: string;
-  /** Any one of these opens it. The first is what the "not available" note names. */
-  readonly permissions: readonly string[];
-}
-
-const SECTIONS: readonly Section[] = [
-  {
-    href: '/workforce',
-    title: 'Workforce',
-    description: 'Who is available, the shifts they work, who is on call, and what routing can ask for.',
-    permissions: ['workload.read', 'workload.manage'],
-  },
-  {
-    href: '/tickets',
-    title: 'Tickets',
-    description: 'Everything raised on this desk, across every team — the shape of the workload, not a queue to work.',
-    permissions: ['ticket.read'],
-  },
-  {
-    href: '/cmdb',
-    title: 'Services and CMDB',
-    description: 'The configuration items and assets a ticket can point at, and the classes they belong to.',
-    permissions: ['cmdb.read', 'cmdb.manage', 'asset.read', 'asset.manage'],
-  },
-  {
-    href: '/automation',
-    title: 'Automation',
-    description: 'Rules that react to one thing, and workflows that run several steps and can wait.',
-    permissions: ['rules.rule.manage', 'rules.rule.read', 'workflow.manage', 'workflow.read'],
-  },
-  {
-    href: '/sla',
-    title: 'SLA management',
-    description: 'Service level targets, business calendars, and the grid that decides a priority.',
-    permissions: ['sla.policy.manage', 'sla.policy.read'],
-  },
-  {
-    href: '/insights',
-    title: 'Insights',
-    description: 'What this desk measures, where those numbers are shown, and what goes out on a schedule.',
-    permissions: ['analytics.read', 'analytics.manage'],
-  },
-  {
-    href: '/integrations',
-    title: 'Integrations',
-    description: 'Outbound actions, the credentials behind them, and the queue of calls that failed.',
-    permissions: ['integration.action.read', 'integration.action.manage', 'integration.credential.read'],
-  },
-  {
-    href: '/catalogue',
-    title: 'What people can ask for',
-    description: 'Services and request types, and whether each is on the portal yet.',
-    permissions: ['catalogue.manage'],
-  },
-  {
-    href: '/fields',
-    title: 'The shape of a ticket',
-    description: 'The custom fields a ticket carries, who may see each one, and when it is required.',
-    permissions: ['ticket.config.manage'],
-  },
-  {
-    href: '/settings',
-    title: 'Configuration',
-    description: 'Feature flags, the AI budget, and what this desk is allowed to use.',
-    permissions: ['admin.setting.manage', 'admin.setting.read'],
-  },
-  {
-    href: '/people',
-    title: 'People',
-    description: 'Who is on this desk, and what the platform holds for each of them.',
-    permissions: ['identity.user.read', 'identity.user.manage'],
-  },
-  {
-    href: '/security',
-    title: 'Security',
-    description: 'What the audit pipeline has flagged, and the full vocabulary a role can be built from.',
-    permissions: ['security.alert.read', 'identity.role.manage', 'identity.user.read'],
-  },
-  {
-    href: '/audit',
-    title: 'Audit',
-    description: 'Every change recorded on this desk, in the order it happened.',
-    permissions: ['audit.read'],
-  },
-];
-
-export default async function CommandCentrePage(): Promise<ReactNode> {
+export default async function CommandCentrePage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
   const access = await pageAccess('/');
   if (!access.allowed) return <Forbidden route="/" />;
   const { me, api } = access;
 
-  // Counted, not estimated: the list routes answer with rows rather than a
-  // total, so the ceiling is the page size and anything at it is shown as
-  // "200+" rather than as a number that is quietly wrong.
-  const [open, unassigned, failedRuns, failedCalls] = await Promise.all([
-    holds(me, 'ticket.read') ? read(() => api.observe.tickets({ statusCategory: 'open', limit: 200 })) : null,
-    holds(me, 'ticket.read')
-      ? read(() => api.observe.tickets({ statusCategory: 'open', assignee: 'none', limit: 200 }))
-      : null,
-    holds(me, 'workflow.manage') || holds(me, 'workflow.read')
-      ? read(() => api.configure.workflows.runs({ status: 'failed', limit: 200 }))
-      : null,
-    holds(me, 'integration.action.read') || holds(me, 'integration.action.manage')
-      ? read(() => api.observe.integrations.errorQueue('open'))
-      : null,
-  ]);
+  const params = await searchParams;
+  const range = volumeRange(single(params.range));
+  const forceSetup = single(params.setup) === '1';
+  const workbench = originOf(process.env.WORKBENCH_ORIGIN);
+  const now = new Date();
+  const hello = greeting(me.actor.displayName, now, me.timeZone);
+  const withheld = withheldNav(me);
+  const sections = visibleNav(me).filter((item) => item.id !== 'command-centre');
 
-  type Counted = { readonly value: string; readonly count: number | null };
+  if (sections.length === 0) {
+    // Nothing on the console opens for this account: say so, say what to ask
+    // for, and offer the one thing left to do.
+    return (
+      <div className="app-Page app-Briefing">
+        <PageHeader title="Command centre" largeTitle />
+        <EmptyState
+          size="lg"
+          tone="forbidden"
+          title="Your account can’t configure anything here"
+          description="Ask an administrator for a role that includes what you need. Each section below names the permission it needs."
+          action={<SignOutButton />}
+        />
+        <WithheldSections withheld={withheld} open />
+      </div>
+    );
+  }
 
-  const countOf = (result: { ok: true; value: { data: unknown[]; nextCursor: string | null } } | { ok: false } | null): Counted =>
-    result === null || !result.ok
-      ? { value: '—', count: null }
-      : { value: `${result.value.data.length}${result.value.nextCursor ? '+' : ''}`, count: result.value.data.length };
-  const lengthOf = (result: { ok: true; value: unknown[] } | { ok: false } | null): Counted =>
-    result === null || !result.ok ? { value: '—', count: null } : { value: String(result.value.length), count: result.value.length };
-
-  /*
-   * A count that could not be loaded is neutral and says so. Colouring an
-   * unknown green is the worst of the three outcomes: it is the one that reads
-   * as "all clear" to somebody scanning the row, which is the only way this
-   * page is ever read.
-   */
-  const say = (counted: Counted, wrong: string, right: string): { note: string; tone: 'neutral' | 'good' | 'bad' } =>
-    counted.count === null
-      ? { note: 'This could not be loaded just now.', tone: 'neutral' }
-      : counted.count > 0
-        ? { note: wrong, tone: 'bad' }
-        : { note: right, tone: 'good' };
-
-  const openTickets = countOf(open);
-  const unassignedTickets = countOf(unassigned);
-  const runs = lengthOf(failedRuns);
-  const calls = lengthOf(failedCalls);
-
-  const shown = [open, unassigned, failedRuns, failedCalls].some((result) => result !== null);
-
-  // The same gate the sidebar and each page use (navigation.ts), so a card
-  // never links to a page that would refuse.
-  const may = (section: Section): boolean => {
-    const route = routeFor(section.href);
-    return route !== null && mayOpen(me, route);
+  const has = {
+    attention: sourcesFor(me).length > 0,
+    setup: holdsAny(me, Object.values(SETUP_WRITES)),
+    volume: holdsAny(me, ['analytics.read']),
+    health: holdsAny(me, ['analytics.read', 'ticket.read']),
+    onCall: holdsAny(me, ['workload.read', 'workload.manage']),
+    changes: holdsAny(me, ['audit.read', 'admin.activity.read']),
   };
-  const reachable = SECTIONS.filter(may);
-  const withheld = SECTIONS.filter((section) => !may(section));
+  const mainEmpty = !has.attention && !has.setup && !has.volume;
+  const sideEmpty = !has.health && !has.onCall && !has.changes;
+  const insights = reachable(me, '/insights');
+  const audit = has.changes ? undefined : reachable(me, '/audit');
 
   return (
-    <div className="itsm-Admin">
-      <header className="itsm-Admin__head">
-        <h1>Command centre</h1>
-        <p className="itsm-Admin__lede">
-          You are configuring <strong>{me.tenant?.name ?? 'this desk'}</strong>
-          {me.tenant ? <> ({me.tenant.slug})</> : null}
-          {me.tenant ? <> in {me.tenant.region}</> : null}. Changes here take effect for everybody on it.
-        </p>
-      </header>
+    <div className="app-Page app-Briefing">
+      <PageHeader title="Command centre" largeTitle status={<UpdatedAt at={now.toISOString()} />} />
+      <p className="app-Briefing__greeting">
+        {hello}.
+        <Suspense fallback={null}>
+          <StatusClause me={me} api={api} workbench={workbench} />
+        </Suspense>
+      </p>
 
-      {shown ? (
-        <MetricGrid>
-          <Metric
-            label="Open tickets"
-            value={openTickets.value}
-            note={
-              openTickets.count === null
-                ? 'This could not be loaded just now.'
-                : 'Everything still being worked, across every team.'
-            }
-            href="/tickets?status=open"
-          />
-          <Metric
-            label="Nobody assigned"
-            value={unassignedTickets.value}
-            {...say(unassignedTickets, 'Open, and waiting on nobody in particular.', 'Every open ticket has somebody on it.')}
-            href="/tickets?status=open&assignee=none"
-          />
-          <Metric
-            label="Failed workflow runs"
-            value={runs.value}
-            {...say(runs, 'Something stopped part way and did not finish.', 'Nothing has stopped part way.')}
-            href="/workflows"
-          />
-          <Metric
-            label="Failed outbound calls"
-            value={calls.value}
-            {...say(calls, 'Each of these is something that did not happen elsewhere.', 'Every call this desk made has landed.')}
-            href="/integrations"
-          />
-        </MetricGrid>
+      <Suspense fallback={null}>
+        <IncidentBanners me={me} api={api} workbench={workbench} />
+      </Suspense>
+
+      <div className="app-Briefing__grid" data-main={mainEmpty ? 'none' : undefined} data-side={sideEmpty ? 'none' : undefined}>
+        {mainEmpty ? null : (
+          <div className="app-Briefing__main">
+            <div className="app-Briefing__lead">
+              <Suspense fallback={<LeadSkeleton />}>
+                <LeadCards me={me} api={api} workbench={workbench} force={forceSetup} />
+              </Suspense>
+            </div>
+            {has.volume ? (
+              <div className="app-Briefing__volume">
+                {/* No key on the range: a new period arrives in a transition, and the chart stays until it does. */}
+                <Suspense fallback={<VolumeSkeleton />}>
+                  <VolumeCard me={me} api={api} range={range} />
+                </Suspense>
+              </div>
+            ) : null}
+          </div>
+        )}
+        {sideEmpty ? null : (
+          <div className="app-Briefing__side">
+            {has.health ? (
+              <div className="app-Briefing__health">
+                <Suspense fallback={<HealthSkeleton />}>
+                  <DeskHealthCard me={me} api={api} />
+                </Suspense>
+              </div>
+            ) : null}
+            {has.onCall ? (
+              <div className="app-Briefing__oncall">
+                <Suspense fallback={<ListSkeleton title="On call now" rows={2} />}>
+                  <OnCallCard me={me} api={api} />
+                </Suspense>
+              </div>
+            ) : null}
+            {has.changes ? (
+              <div className="app-Briefing__changes">
+                <Suspense fallback={<ListSkeleton title="Recent changes" rows={3} />}>
+                  <RecentChangesCard me={me} api={api} />
+                </Suspense>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {insights || audit ? (
+        <nav className="app-Briefing__more" aria-label="More">
+          {insights ? (
+            <AppLink href={insights}>
+              More in Insights <Icon name="chevron-right" size="xs" directional />
+            </AppLink>
+          ) : null}
+          {audit ? (
+            <AppLink href={audit}>
+              Recent changes <Icon name="chevron-right" size="xs" directional />
+            </AppLink>
+          ) : null}
+        </nav>
       ) : null}
 
-      {reachable.length === 0 ? (
-        <EmptyState
-          tone="error"
-          title="Your account cannot configure anything here"
-          description="Ask an administrator for a role that grants it. Nothing on this console is readable without one."
-        />
-      ) : (
-        <div className="itsm-Admin__sections">
-          {reachable.map((section) => (
-            <Card key={section.href}>
-              <h2>
-                <Link href={section.href}>{section.title}</Link>
-              </h2>
-              <p>{section.description}</p>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {withheld.length > 0 ? (
-        <section className="itsm-Admin__withheld" aria-label="Not available to you">
-          <h2>Not available to you</h2>
-          {/*
-            Named rather than hidden. An administrator who cannot find a screen
-            asks a colleague, who tells them it is missing; an administrator
-            told which permission it needs asks for the permission.
-          */}
-          <ul>
-            {withheld.map((section) => (
-              <li key={section.href}>
-                {section.title} <Badge emphasis="subtle">needs {section.permissions[0]}</Badge>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <WithheldSections withheld={withheld} />
     </div>
   );
+}
+
+function single(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** An origin from the environment, without a trailing slash; nothing when unset or not a URL (C1). */
+function originOf(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
 }
