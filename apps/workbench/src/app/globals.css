@@ -179,52 +179,12 @@
   background: var(--itsm-colour-surface-hover);
 }
 
-/* ---- The transitional inbox list (→ WP23) -------------------------------- */
-
-.app-Inbox__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--itsm-space-xs);
-  margin: 0 0 var(--itsm-space-md);
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-callout-size);
-  line-height: var(--itsm-text-callout-line);
-}
-
-.app-Inbox__list:focus {
-  outline: none;
-}
-
-.app-Inbox__more {
-  display: flex;
-  justify-content: center;
-  margin-block: var(--itsm-space-lg) 0;
-}
-
 /* ---- The new-ticket sheet (→ WP25) --------------------------------------- */
 
 .app-NewTicket {
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-lg);
-}
-
-/* ---- Legacy: the queue table (→ WP23) ------------------------------------ */
-
-.itsm-Queue__number {
-  font-variant-numeric: tabular-nums slashed-zero;
-  font-size: var(--itsm-text-callout-size);
-}
-
-.itsm-Queue__title {
-  display: block;
-}
-
-.itsm-Queue__type {
-  color: var(--itsm-colour-text-muted);
-  display: block;
-  font-size: var(--itsm-text-footnote-size);
 }
 
 /* ---- Legacy: the ticket workspace (→ WP24, WP25) ------------------------- */

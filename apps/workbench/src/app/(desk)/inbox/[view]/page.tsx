@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { inboxViewFrom, isViewId, viewById, type SearchParams } from '../../../../inbox/views.js';
-import { TransitionalInbox } from '../TransitionalInbox.js';
+import { isViewId, viewById, type SearchParams } from '../../../../inbox/views.js';
+import { InboxRoute } from './InboxRoute.js';
 
 /**
  * `/inbox/[view]` — My work, Unassigned, Due soon, Waiting on others, All
  * open, Recently resolved (SPEC §5.3, §6.2).
  *
- * Stub → WP23: renders the transitional list until the three-pane inbox
- * (`InboxPage`, `TicketList`, the detail pane) replaces it. The contract WP23
- * keeps: the view registry in `inbox/views.ts`, `?t=` for the selection, and
- * the filter parameters it parses.
+ * The list and the ticket beside it (`?t=INC-000123`), with every filter in
+ * the query string (`inbox/views.ts` reads it). After this first render the
+ * browser does the rest: filters, paging, selection and live updates change
+ * the URL without asking the server to render the page again (D12).
  */
 
 /** Rendered per request: an inbox is the one screen where a cached page is a wrong page. */
@@ -31,5 +31,5 @@ export default async function InboxViewPage({
 }): Promise<ReactNode> {
   const { view: id } = await params;
   if (!isViewId(id)) notFound();
-  return <TransitionalInbox view={inboxViewFrom({ kind: 'view', id }, await searchParams)} />;
+  return <InboxRoute viewRef={{ kind: 'view', id }} params={await searchParams} />;
 }
