@@ -169,6 +169,8 @@ export function TicketsView(props: TicketsViewProps): ReactNode {
 
   return (
     <>
+      {/* The page's h1 is the header's; the table's empty and error states are h3s, so the list gets its h2. */}
+      <h2 className="itsm-visually-hidden">Tickets on this desk</h2>
       <DataTable<TicketRowView>
         caption="Tickets"
         captionHidden

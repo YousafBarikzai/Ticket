@@ -253,9 +253,9 @@ function RotaForm({
           ]}
           onValueChange={(value) => touch(() => setCadence(value as 'weekly' | 'daily'))}
         />
-        <FormField label="Time zone" required {...(errors.timeZone ? { error: errors.timeZone } : {})}>
+        <FormField label="Time zone" required id={fieldIds.timeZone!} {...(errors.timeZone ? { error: errors.timeZone } : {})}>
           {(control) => (
-            <Combobox {...control} id={fieldIds.timeZone!} options={zones} value={zone} clearable={false} placeholder="Search time zones" emptyMessage="No time zone matches" onChange={(option) => touch(() => setZone(option))} />
+            <Combobox {...control} options={zones} value={zone} clearable={false} placeholder="Search time zones" emptyMessage="No time zone matches" onChange={(option) => touch(() => setZone(option))} />
           )}
         </FormField>
         <div className="app-RotaForm__pair">
@@ -267,9 +267,10 @@ function RotaForm({
               label="First turn starts"
               required
               hint={cadence === 'weekly' ? 'Its weekday is the handover day.' : undefined}
+              id={fieldIds.startsAt!}
               {...(errors.startsAt ? { error: errors.startsAt } : {})}
             >
-              {(control) => <DatePicker {...control} id={fieldIds.startsAt!} value={startsOn} onChange={(value) => touch(() => setStartsOn(value))} />}
+              {(control) => <DatePicker {...control} value={startsOn} onChange={(value) => touch(() => setStartsOn(value))} />}
             </FormField>
           )}
         </div>

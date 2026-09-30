@@ -145,6 +145,7 @@ export function NowView({
         ) : null}
       </Surface>
 
+      <h2 className="itsm-visually-hidden">Availability</h2>
       <DataTable<AvailabilityView>
         caption="Availability"
         captionHidden

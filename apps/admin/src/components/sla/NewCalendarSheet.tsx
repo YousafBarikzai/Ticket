@@ -224,11 +224,10 @@ function NewCalendarForm({
           <KeyField source={name} rule="slug" value={key} onChange={setKey} onStateChange={setKeyState} taken={calendars.map((calendar) => calendar.key)} noun="calendar" />
           {errors.key ? <p className="app-SlaFieldError">{errors.key}</p> : null}
         </div>
-        <FormField label="Time zone" required hint="The hours below are in this zone." {...(errors.timeZone ? { error: errors.timeZone } : {})}>
+        <FormField label="Time zone" required hint="The hours below are in this zone." id={fieldIds.timeZone!} {...(errors.timeZone ? { error: errors.timeZone } : {})}>
           {(control) => (
             <Combobox
               {...control}
-              id={fieldIds.timeZone!}
               options={zones}
               value={zone}
               clearable={false}

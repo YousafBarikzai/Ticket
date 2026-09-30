@@ -34,6 +34,7 @@ export function ShiftsView({ header, rows, teams }: { readonly header: Workforce
   return (
     <div className="app-Page app-Workforce">
       <PageHeader title="Workforce" tabs={header.tabs} {...(header.viewOnly ? { viewOnly: header.viewOnly } : {})} />
+      <h2 className="itsm-visually-hidden">Shifts</h2>
       <DataTable<ShiftView>
         caption="Shifts"
         captionHidden
@@ -107,6 +108,7 @@ export function SkillsView({ header, rows, peopleHref }: { readonly header: Work
   return (
     <div className="app-Page app-Workforce">
       <PageHeader title="Workforce" tabs={header.tabs} {...(header.viewOnly ? { viewOnly: header.viewOnly } : {})} />
+      <h2 className="itsm-visually-hidden">Skills</h2>
       <DataTable<SkillView>
         caption="Skills"
         captionHidden
