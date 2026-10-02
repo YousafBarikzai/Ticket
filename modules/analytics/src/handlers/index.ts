@@ -85,7 +85,9 @@ defineHandler({
   },
 });
 
-for (const eventType of ['approval.requested', 'approval.decided']) {
+// `cancelled` settles an approval as withdrawn when its ticket ends
+// (ADR-0059); the fact must say so, or it reads as pending for ever.
+for (const eventType of ['approval.requested', 'approval.decided', 'approval.cancelled']) {
   defineHandler({
     consumer,
     moduleId,
