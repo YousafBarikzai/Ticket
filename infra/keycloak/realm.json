@@ -6,20 +6,42 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "resetPasswordAllowed": true,
+  "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "permanentLockout": false,
   "maxFailureWaitSeconds": 900,
   "failureFactor": 10,
   "accessTokenLifespan": 300,
+  "accessCodeLifespanLogin": 1800,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
   "offlineSessionIdleTimeout": 2592000,
   "attributes": {
     "frontendUrl": "",
-    "comment.frontendUrl": "Set per environment by the deploy workflow to https://auth.<environment-label>.<domain>. Left empty here because a realm file with one environment's hostname baked in is a realm file that is wrong in the other two."
+    "comment.frontendUrl": "Set per environment by the deploy workflow to https://auth.<environment-label>.<domain>. Left empty here because a realm file with one environment's hostname baked in is a realm file that is wrong in the other two.",
+    "itsm.homeUrl": "",
+    "itsm.demoUrl": "",
+    "comment.itsm": "Set by keycloak-realm.ts: the public site's home and its demo chooser. Read only by the itsm login theme's footer, and only on signed-out pages (D18). Empty means the link is not drawn."
   },
+
+  "comment.signIn": [
+    "resetPasswordAllowed is false because Keycloak has no SMTP server. With it on,",
+    "'Forgot Password?' takes an address and answers 'You should receive an email",
+    "shortly' whether or not anything was sent (Keycloak 26.7 hides the failure so",
+    "the form cannot be used to find accounts), so a person waits for an email that",
+    "never comes. It goes back to true in the same change that configures SMTP.",
+    "accessCodeLifespanLogin is Keycloak's default, written down because the BFF's",
+    "pending sign-in (PENDING_TTL_SECONDS in packages/bff/src/bff.ts) is set to match",
+    "it: a login page Keycloak still accepts must not return to a BFF that has",
+    "forgotten the sign-in, or the person signs in and is told it did not finish.",
+    "The session timeouts are deliberately unchanged; raising them is a security",
+    "trade-off no decision covers.",
+    "The theme keys (loginTheme, accountTheme, emailTheme) are deliberately absent.",
+    "Every deploy PUTs these settings, so a theme named here would be set even when",
+    "the image that carries it was never deployed. keycloak-realm.ts adds them only",
+    "when it is told the theme is running (--theme)."
+  ],
 
   "comment.userProfile": [
     "tenant_id is a declared user attribute, not an ad-hoc one.",
@@ -28,7 +50,13 @@
     "it into the access token, and SCIM writing it at provisioning time are three",
     "halves of one mechanism — break any and every sign-in fails closed, which is",
     "the right direction but an expensive way to learn the claim was missing.",
-    "itsm_user_id is optional: verify.ts falls back to `sub` when it is absent."
+    "itsm_user_id is optional: verify.ts falls back to `sub` when it is absent.",
+    "Both are for administrators only. They are internal identifiers, so a person",
+    "reading their own account page should not be shown a tenant UUID. And a field a",
+    "person cannot see must not be required of them: Keycloak's VERIFY_PROFILE would",
+    "stop their sign-in on a form asking for a value they are not allowed to enter.",
+    "The mapper reads the attribute whatever its profile permissions say, so hiding",
+    "it changes what a person sees and not what the token carries."
   ],
   "userProfile": {
     "attributes": [
@@ -39,14 +67,14 @@
       {
         "name": "tenant_id",
         "displayName": "Tenant",
-        "required": { "roles": ["user"] },
-        "permissions": { "view": ["admin", "user"], "edit": ["admin"] },
+        "required": { "roles": ["admin"] },
+        "permissions": { "view": ["admin"], "edit": ["admin"] },
         "validations": { "length": { "min": 1, "max": 64 } }
       },
       {
         "name": "itsm_user_id",
         "displayName": "ITSM user id",
-        "permissions": { "view": ["admin", "user"], "edit": ["admin"] },
+        "permissions": { "view": ["admin"], "edit": ["admin"] },
         "validations": { "length": { "min": 0, "max": 64 } }
       }
     ]
@@ -321,7 +349,17 @@
     "",
     "redirectUris and webOrigins are placeholders resolved per environment by",
     "the deploy workflow from DEPLOY_DOMAIN. The + in webOrigins means 'the",
-    "origins of the redirect URIs', so it needs no substitution."
+    "origins of the redirect URIs', so it needs no substitution.",
+    "",
+    "baseUrl is resolved from the same host as the redirect URI. It is the way",
+    "back from Keycloak's error, information and logout pages, which draw 'Back to",
+    "Application' only when the client has one, and the link the account page's",
+    "Applications list gives each application.",
+    "",
+    "name is what people see: the account page lists applications by it. It is",
+    "set from the area names by keycloak-realm.ts, so the names here are only what",
+    "that gives today. The console has a client of its own, separate from the",
+    "workbench, so that an agent session is not also a console session."
   ],
   "clients": [
     {
@@ -338,7 +376,8 @@
     },
     {
       "clientId": "itsm-portal",
-      "name": "Requester portal",
+      "name": "Help Portal",
+      "baseUrl": "https://help.__DOMAIN__/",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -353,7 +392,8 @@
     },
     {
       "clientId": "itsm-workbench",
-      "name": "Agent workbench",
+      "name": "Service Desk",
+      "baseUrl": "https://desk.__DOMAIN__/",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -368,8 +408,8 @@
     },
     {
       "clientId": "itsm-admin",
-      "name": "Administration console",
-      "description": "Separate from the workbench so an agent session is not also a console session.",
+      "name": "Administration",
+      "baseUrl": "https://admin.__DOMAIN__/",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,

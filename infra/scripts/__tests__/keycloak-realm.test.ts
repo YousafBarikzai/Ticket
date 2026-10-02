@@ -1,10 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hostsFor, readCatalogue } from '../railway-deploy.js';
+import { hostsFor, readCatalogue, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
 import {
   BUILT_IN_CLIENT_SCOPES,
+  CLIENT_NAMES,
   PLACEHOLDER,
+  THEME_KEYS,
   authHost,
   confidentialClients,
+  demoModeOf,
   missingScopes,
   partialImportBody,
   permissionHint,
@@ -13,9 +18,11 @@ import {
   realmSettings,
   resolveRealm,
   scopesToAttach,
+  themeFlag,
   unresolvedPlaceholders,
   userProfileOf,
   type Realm,
+  type RealmClient,
 } from '../keycloak-realm.js';
 
 /**
@@ -325,5 +332,311 @@ describe('userProfileOf', () => {
   it('is null when there is no profile to apply', () => {
     expect(userProfileOf({ realm: 'x', clients: [] } as unknown as Realm)).toBeNull();
     expect(userProfileOf({ realm: 'x', clients: [], userProfile: {} } as unknown as Realm)).toBeNull();
+  });
+});
+
+/*
+ * Keycloak Step A (SPEC v3 §6.4, A5 §8): the realm half of the sign-in journey
+ * fixes. Each of these is a dead end a real person met — a "Forgot password?"
+ * that sends nothing, an error page with no way back, an account page showing
+ * a tenant UUID — so each is pinned here, where the file that causes it lives.
+ */
+
+/** The three applications' clients, which are the ones a person ever sees. */
+const APPLICATION_CLIENTS = ['itsm-portal', 'itsm-workbench', 'itsm-admin'] as const;
+
+/** The application each client signs people in to, by the host its redirect URI names. */
+const APPLICATION_OF: Readonly<Record<(typeof APPLICATION_CLIENTS)[number], keyof typeof CLIENT_NAMES>> = {
+  'itsm-portal': 'portal',
+  'itsm-workbench': 'workbench',
+  'itsm-admin': 'admin',
+};
+
+interface ProfileAttribute {
+  name: string;
+  required?: { roles?: string[] };
+  permissions?: { view?: string[]; edit?: string[] };
+}
+
+const clientOf = (one: Realm, clientId: string): RealmClient => {
+  const client = one.clients.find((candidate) => candidate.clientId === clientId);
+  if (!client) throw new Error(`no client ${clientId}`);
+  return client;
+};
+
+const profileAttribute = (name: string): ProfileAttribute => {
+  const found = (userProfileOf(readRealm())?.attributes as ProfileAttribute[]).find((attribute) => attribute.name === name);
+  if (!found) throw new Error(`the profile declares no ${name}`);
+  return found;
+};
+
+/** Every host but the site's, as a deployment without the public site would have. */
+const withoutSite = (hosts: ReadonlyMap<string, string>): Map<string, string> => new Map([...hosts].filter(([name]) => name !== 'site'));
+
+/** The hosts of a staging deploy, with the site at a known address whatever the catalogue holds today. */
+const stagingHosts = (): Map<string, string> => new Map([...withoutSite(hostsFor(catalogue, 'example.com', 'staging')), ['site', 'www.staging.example.com']]);
+
+describe('Step A: the realm as committed', () => {
+  it('hides "Forgot password?", which with no SMTP server promises an email that never comes', () => {
+    // Keycloak 26.7 answers "You should receive an email shortly" whether or
+    // not anything was sent, so the link is a polite dead end until there is
+    // a mail server behind it.
+    expect(realm.resetPasswordAllowed).toBe(false);
+    expect(realmSettings(realm).resetPasswordAllowed).toBe(false);
+  });
+
+  it('keeps a login page valid for exactly as long as the sign-in it belongs to', () => {
+    // Longer on Keycloak's side and a person who left the page open signs in
+    // and is told the sign-in did not finish, because the BFF forgot it first.
+    expect(realm.accessCodeLifespanLogin).toBe(1800);
+    expect(realmSettings(realm).accessCodeLifespanLogin).toBe(1800);
+    const bff = readFileSync(resolve(import.meta.dirname, '..', '..', '..', 'packages', 'bff', 'src', 'bff.ts'), 'utf8');
+    const pending = /PENDING_TTL_SECONDS\s*=\s*([\d_]+)/.exec(bff)?.[1];
+    expect(pending, 'PENDING_TTL_SECONDS in packages/bff/src/bff.ts').toBeDefined();
+    expect(Number(pending!.replaceAll('_', '')), 'realm.json accessCodeLifespanLogin against the BFF pending TTL').toBe(realm.accessCodeLifespanLogin);
+  });
+
+  it('leaves the session timeouts as they were', () => {
+    // Raising them trades security for convenience, and no decision covers it.
+    expect(realm.ssoSessionIdleTimeout).toBe(1800);
+    expect(realm.ssoSessionMaxLifespan).toBe(36000);
+  });
+
+  it('names no theme, so a deploy cannot switch to a theme whose image never arrived', () => {
+    for (const key of THEME_KEYS) expect(Object.keys(realm), key).not.toContain(key);
+    expect(THEME_KEYS).toEqual(['loginTheme', 'accountTheme', 'emailTheme']);
+  });
+
+  it('declares the two attributes the login theme reads, empty until resolved', () => {
+    expect(realm.attributes?.['itsm.homeUrl']).toBe('');
+    expect(realm.attributes?.['itsm.demoUrl']).toBe('');
+  });
+
+  it('shows the tenant and user ids to administrators only', () => {
+    for (const name of ['tenant_id', 'itsm_user_id']) {
+      const { permissions } = profileAttribute(name);
+      expect(permissions?.view, `${name} view`).toEqual(['admin']);
+      expect(permissions?.edit, `${name} edit`).toEqual(['admin']);
+    }
+  });
+
+  it('requires the tenant of administrators, never of the person signing in', () => {
+    // A person cannot see tenant_id, so requiring it of them would stop their
+    // sign-in on Keycloak's profile form asking for a value they cannot enter.
+    const roles = profileAttribute('tenant_id').required?.roles ?? [];
+    expect(roles).not.toContain('user');
+    expect(roles).toEqual(['admin']);
+  });
+
+  it('requires of a person only what that person can see and change', () => {
+    for (const attribute of userProfileOf(readRealm())?.attributes as ProfileAttribute[]) {
+      if (!attribute.required?.roles?.includes('user')) continue;
+      expect(attribute.permissions?.view, `${attribute.name} view`).toContain('user');
+      expect(attribute.permissions?.edit, `${attribute.name} edit`).toContain('user');
+    }
+  });
+
+  it('still lets people see and correct their own name and address', () => {
+    for (const name of ['email', 'firstName', 'lastName']) {
+      expect(profileAttribute(name).permissions?.view, name).toContain('user');
+      expect(profileAttribute(name).permissions?.edit, name).toContain('user');
+    }
+  });
+
+  it('shows the names the script sets, so the file and the account page agree', () => {
+    for (const clientId of APPLICATION_CLIENTS) expect(clientOf(realm, clientId).name, clientId).toBe(CLIENT_NAMES[APPLICATION_OF[clientId]]);
+  });
+
+  it('gives every application a way back, still a placeholder in the file', () => {
+    for (const clientId of APPLICATION_CLIENTS) {
+      expect(clientOf(realm, clientId).baseUrl, clientId).toMatch(new RegExp(`^https://[a-z]+\\.${PLACEHOLDER}/$`));
+    }
+  });
+});
+
+describe('Step A: resolving the clients', () => {
+  const staging = resolveRealm(realm, stagingHosts(), 'https://auth.staging.example.com');
+  const production = resolveRealm(realm, hostsFor(catalogue, 'example.com', 'production'), 'https://auth.example.com');
+
+  it('names each application by its area, which is what people call it', () => {
+    // Literal until @itsm/contracts/areas exists; then AREAS[app].name.
+    expect(CLIENT_NAMES).toEqual({ portal: 'Help Portal', workbench: 'Service Desk', admin: 'Administration' });
+    expect(clientOf(staging, 'itsm-portal').name).toBe('Help Portal');
+    expect(clientOf(staging, 'itsm-workbench').name).toBe('Service Desk');
+    expect(clientOf(staging, 'itsm-admin').name).toBe('Administration');
+  });
+
+  it('sets the name whatever the file says, so a rename is one constant', () => {
+    const stale: Realm = { ...realm, clients: realm.clients.map((client) => ({ ...client, name: 'Agent workbench' })) };
+    const resolved = resolveRealm(stale, stagingHosts(), 'https://auth.staging.example.com');
+    expect(clientOf(resolved, 'itsm-workbench').name).toBe('Service Desk');
+    // The resource server is nobody's application and keeps what it has.
+    expect(clientOf(resolved, 'itsm-api').name).toBe('Agent workbench');
+  });
+
+  it('points each way back at the host the application is served on', () => {
+    for (const resolved of [staging, production]) {
+      for (const clientId of APPLICATION_CLIENTS) {
+        const client = clientOf(resolved, clientId);
+        expect(client.baseUrl, clientId).toBe(`${new URL(client.redirectUris![0]!).origin}/`);
+      }
+    }
+    expect(clientOf(staging, 'itsm-portal').baseUrl).toBe('https://help.staging.example.com/');
+    expect(clientOf(production, 'itsm-admin').baseUrl).toBe('https://admin.example.com/');
+  });
+
+  it('leaves no placeholder in a way back', () => {
+    expect(unresolvedPlaceholders(staging).filter((path) => path.endsWith('baseUrl'))).toEqual([]);
+    expect(unresolvedPlaceholders(staging)).toEqual([]);
+  });
+
+  it('gives the API, which nobody visits, neither a way back nor a new name', () => {
+    const api = clientOf(staging, 'itsm-api');
+    expect(api.baseUrl).toBeUndefined();
+    expect(api.name).toBe(clientOf(realm, 'itsm-api').name);
+  });
+
+  it('sends the names and the ways back with the clients, the only path a client reaches Keycloak by', () => {
+    const body = partialImportBody(staging) as { clients: { clientId: string; name?: string; baseUrl?: string }[] };
+    const workbench = body.clients.find((client) => client.clientId === 'itsm-workbench');
+    expect(workbench?.name).toBe('Service Desk');
+    expect(workbench?.baseUrl).toBe('https://desk.staging.example.com/');
+  });
+});
+
+describe('Step A: the links the login theme draws (D18)', () => {
+  const resolvedWith = (hosts: ReadonlyMap<string, string>, demo?: boolean): Record<string, string> =>
+    resolveRealm(realm, hosts, 'https://auth.staging.example.com', demo === undefined ? {} : { demo }).attributes ?? {};
+
+  it('links home and to the demo when the site is deployed and the demo is on', () => {
+    const attributes = resolvedWith(stagingHosts(), true);
+    expect(attributes['itsm.homeUrl']).toBe('https://www.staging.example.com/');
+    expect(attributes['itsm.demoUrl']).toBe('https://www.staging.example.com/sign-in?start=demo');
+  });
+
+  it('links home but not to a demo that is off', () => {
+    for (const attributes of [resolvedWith(stagingHosts(), false), resolvedWith(stagingHosts())]) {
+      expect(attributes['itsm.homeUrl']).toBe('https://www.staging.example.com/');
+      expect(attributes['itsm.demoUrl']).toBe('');
+    }
+  });
+
+  it('links nowhere when there is no site to link to, demo or not', () => {
+    for (const demo of [true, false]) {
+      const attributes = resolvedWith(withoutSite(stagingHosts()), demo);
+      expect(attributes['itsm.homeUrl'], `demo ${demo}`).toBe('');
+      expect(attributes['itsm.demoUrl'], `demo ${demo}`).toBe('');
+    }
+  });
+
+  it('signs people in without the site: it has no client, so its absence is not an error', () => {
+    expect(() => resolvedWith(withoutSite(stagingHosts()), true)).not.toThrow();
+  });
+
+  it('sends an empty value rather than none, so turning the demo off clears a link the realm already has', () => {
+    const attributes = realmSettings(resolveRealm(realm, stagingHosts(), 'https://auth.staging.example.com', { demo: false })).attributes as Record<string, string>;
+    expect(Object.keys(attributes)).toEqual(expect.arrayContaining(['itsm.homeUrl', 'itsm.demoUrl']));
+    expect(attributes['itsm.demoUrl']).toBe('');
+  });
+
+  it('follows the site to the bare domain in production', () => {
+    const hosts = new Map([...withoutSite(hostsFor(catalogue, 'example.com', 'production')), ['site', 'example.com']]);
+    const attributes = resolveRealm(realm, hosts, 'https://auth.example.com', { demo: true }).attributes ?? {};
+    expect(attributes['itsm.homeUrl']).toBe('https://example.com/');
+    expect(attributes['itsm.demoUrl']).toBe('https://example.com/sign-in?start=demo');
+  });
+
+  it('keeps the frontend URL and the commentary beside them', () => {
+    const attributes = resolvedWith(stagingHosts(), true);
+    expect(attributes.frontendUrl).toBe('https://auth.staging.example.com');
+    expect(Object.keys(attributes)).toContain('comment.itsm');
+  });
+});
+
+describe('Step A: the theme, only when the deploy says so', () => {
+  const hosts = stagingHosts();
+  const authUrl = 'https://auth.staging.example.com';
+  const themeOf = (one: Realm): Record<string, unknown> =>
+    Object.fromEntries(THEME_KEYS.filter((key) => key in one).map((key) => [key, (one as Record<string, unknown>)[key]]));
+
+  it('sends no theme key at all when not told, so Keycloak keeps what it has', () => {
+    expect(themeOf(resolveRealm(realm, hosts, authUrl))).toEqual({});
+    expect(themeOf(realmSettings(resolveRealm(realm, hosts, authUrl)) as Realm)).toEqual({});
+  });
+
+  it('drops a theme that reached the realm some other way', () => {
+    const themed = { ...realm, loginTheme: 'itsm', accountTheme: 'itsm', emailTheme: 'itsm' } as Realm;
+    expect(themeOf(resolveRealm(themed, hosts, authUrl))).toEqual({});
+  });
+
+  it('switches the sign-in and account pages to the product theme once it is running', () => {
+    const resolved = resolveRealm(realm, hosts, authUrl, { theme: 'itsm' });
+    expect(themeOf(resolved)).toEqual({ loginTheme: 'itsm', accountTheme: 'itsm' });
+    expect(themeOf(realmSettings(resolved) as Realm)).toEqual({ loginTheme: 'itsm', accountTheme: 'itsm' });
+  });
+
+  it('puts Keycloak’s own themes back when the owner opts out', () => {
+    expect(themeOf(resolveRealm(realm, hosts, authUrl, { theme: 'default' }))).toEqual({ loginTheme: 'keycloak.v2', accountTheme: 'keycloak.v3' });
+  });
+
+  it('leaves the realm it was given alone', () => {
+    const before = JSON.stringify(realm);
+    resolveRealm({ ...realm, loginTheme: 'x' } as Realm, hosts, authUrl, { theme: 'itsm', demo: true });
+    resolveRealm(realm, hosts, authUrl, { theme: 'itsm', demo: true });
+    expect(JSON.stringify(realm)).toBe(before);
+  });
+});
+
+describe('themeFlag', () => {
+  it('is absent unless asked for', () => {
+    expect(themeFlag(['--environment', 'production', '--apply'])).toBeUndefined();
+  });
+
+  it('reads the two themes it knows', () => {
+    expect(themeFlag(['--apply', '--theme', 'itsm'])).toBe('itsm');
+    expect(themeFlag(['--theme', 'default', '--apply'])).toBe('default');
+  });
+
+  /**
+   * Ignoring a value it does not know would apply the realm unthemed and
+   * report success, so a typo would look like a theme that did not take.
+   */
+  it('refuses anything else rather than applying the realm unthemed', () => {
+    expect(() => themeFlag(['--theme', 'itms'])).toThrow(/itsm or default, not "itms"/);
+    expect(() => themeFlag(['--theme', 'ITSM'])).toThrow(/"ITSM"/);
+    expect(() => themeFlag(['--apply', '--theme'])).toThrow(/not nothing/);
+  });
+});
+
+describe('demoModeOf', () => {
+  const service = (name: string, variables?: Record<string, string>): ServiceDefinition => ({
+    name,
+    target: name,
+    phase: 4,
+    kind: 'service',
+    public: true,
+    replicas: 1,
+    ...(variables ? { variables } : {}),
+  });
+  const catalogueWith = (...services: ServiceDefinition[]): Catalogue => ({ image: { registry: 'ghcr.io', repository: 'x/y' }, services });
+
+  it('is on when the site says DEMO_MODE=on', () => {
+    expect(demoModeOf(catalogueWith(service('api', { DEMO_MODE: 'on' }), service('site', { DEMO_MODE: 'on' })))).toBe(true);
+  });
+
+  it('is off when the site says anything else, or nothing', () => {
+    expect(demoModeOf(catalogueWith(service('site', { DEMO_MODE: 'off' })))).toBe(false);
+    expect(demoModeOf(catalogueWith(service('site', { DEMO_MODE: 'ON' })))).toBe(false);
+    expect(demoModeOf(catalogueWith(service('site', { OTEL_SERVICE_NAME: 'itsm-site' })))).toBe(false);
+    expect(demoModeOf(catalogueWith(service('site')))).toBe(false);
+  });
+
+  it('reads the site and nothing else: there is no demo link without a site to land on', () => {
+    expect(demoModeOf(catalogueWith(service('api', { DEMO_MODE: 'on' }), service('portal', { DEMO_MODE: 'on' })))).toBe(false);
+    expect(demoModeOf(catalogueWith(service('api', { DEMO_MODE: 'on' }), service('site', { DEMO_MODE: 'off' })))).toBe(false);
+  });
+
+  it('reads the committed catalogue', () => {
+    expect(typeof demoModeOf(readCatalogue())).toBe('boolean');
   });
 });
