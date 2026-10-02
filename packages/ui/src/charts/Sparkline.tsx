@@ -34,6 +34,9 @@ export interface SparklineProps {
 /** Room above and below for the end dot and its ring, so neither is cut at the edge. */
 const INSET = 5;
 
+/** Two decimals: enough for any screen, and no float noise in the markup. */
+const round = (value: number): number => Math.round(value * 100) / 100;
+
 /** What a sparkline with nothing to show says it is: the words a KPI tile shows for the same state. */
 const NO_TREND = 'No trend yet';
 
@@ -106,7 +109,7 @@ export function Sparkline({
   const path = curve === 'monotone' ? monotonePath : linePath;
   const line = path(points, toX);
   const wash = area ? washPath(points, h, (run) => path(run, toX), toX) : '';
-  const referenceY = hasReference ? Math.round(toY(reference) * 100) / 100 : null;
+  const referenceY = hasReference ? round(toY(reference)) : null;
   const drawn = points.filter((point): point is { x: number; y: number } => point.y !== null);
   const last = highlightLast ? drawn[drawn.length - 1] : undefined;
 
@@ -124,7 +127,7 @@ export function Sparkline({
     return (
       <svg role="img" aria-label={label} className={cx('itsm-Sparkline', className)} data-tone={tone} width={w} height={h} viewBox={`0 0 ${w} ${h}`} focusable="false">
         {marks}
-        {last ? <circle className="itsm-Sparkline__dot" cx={toX(last.x)} cy={last.y} r="3" /> : null}
+        {last ? <circle className="itsm-Sparkline__dot" cx={round(toX(last.x))} cy={round(last.y)} r="3" /> : null}
       </svg>
     );
   }
@@ -138,7 +141,7 @@ export function Sparkline({
         {last ? (
           <span
             className="itsm-Sparkline__dot"
-            style={{ left: `${Math.round(last.x * 10000) / 100}%`, top: `${Math.round(last.y * 100) / 100}px` }}
+            style={{ left: `${round(last.x * 100)}%`, top: `${round(last.y)}px` }}
           />
         ) : null}
       </span>
@@ -152,9 +155,8 @@ export function Sparkline({
  * is a gap in the wash; a point alone between gaps has no area to fill.
  */
 function washPath(points: readonly PlotPoint[], bottom: number, draw: (run: readonly PlotPoint[]) => string, toX: (x: number) => number): string {
-  const fixed = (value: number): string => (Math.round(value * 100) / 100).toString();
   return runs(points)
     .filter((run) => run.length > 1)
-    .map((run) => `${draw(run)}L${fixed(toX(run[run.length - 1]!.x))} ${fixed(bottom)}L${fixed(toX(run[0]!.x))} ${fixed(bottom)}Z`)
+    .map((run) => `${draw(run)}L${round(toX(run[run.length - 1]!.x))} ${round(bottom)}L${round(toX(run[0]!.x))} ${round(bottom)}Z`)
     .join('');
 }

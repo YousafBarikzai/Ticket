@@ -323,7 +323,7 @@ ${styles}
   align-items: center;
   justify-content: center;
   gap: var(--itsm-space-xs);
-  padding: var(--itsm-space-lg);
+  padding: var(--itsm-space-md);
   border-radius: var(--itsm-radius-lg);
   background: var(--itsm-colour-surface-sunken);
   color: var(--itsm-colour-text-muted);
@@ -660,7 +660,9 @@ ${scope} .itsm-ChartFigure__scroll { border-color: var(--itsm-colour-border-stro
 ${scope} .itsm-Markers__line[data-kind="milestone"], ${scope} .itsm-Markers__line[data-kind="event"] { stroke-opacity: 0.7; }
 ${scope} .itsm-Markers__band { fill-opacity: 1; }
 ${textureRules(scope, '.itsm-ChartLegend__key[data-mark="box"]', 'var(--_itsm-chart-surface)')}
-${textureRules(scope, '.itsm-ChartLegend__key[data-mark="chip"]', 'var(--_itsm-chart-surface)')}`,
+${textureRules(scope, '.itsm-ChartLegend__key[data-mark="chip"]', 'var(--_itsm-chart-surface)')}
+${scope} .itsm-ChartLegend__key[data-mark="chip"][data-style="baseline"],
+${scope} .itsm-ChartLegend__key[data-mark="chip"][data-style="forecast"] { background: transparent; }`,
 )}
 
 ${mq.reducedMotion} {
@@ -707,14 +709,15 @@ ${mq.forcedColors} {
   .itsm-ChartLegend__key[data-mark="chip"][data-slot="other"] {
     background: CanvasText;
   }
-  .itsm-ChartLegend__key[data-style="baseline"],
-  .itsm-ChartLegend__key[data-style="forecast"] {
+${textureRules('  ', '.itsm-ChartLegend__key[data-mark="box"]', 'CanvasText', 'Canvas')}
+${textureRules('  ', '.itsm-ChartLegend__key[data-mark="chip"]', 'CanvasText', 'Canvas')}
+  /* After the textures, and as specific: a dashed key stays hollow. */
+  .itsm-ChartLegend__key[data-mark="chip"][data-style="baseline"],
+  .itsm-ChartLegend__key[data-mark="chip"][data-style="forecast"] {
     background: Canvas;
     border-color: CanvasText;
     box-shadow: none;
   }
-${textureRules('  ', '.itsm-ChartLegend__key[data-mark="box"]', 'CanvasText', 'Canvas')}
-${textureRules('  ', '.itsm-ChartLegend__key[data-mark="chip"]', 'CanvasText', 'Canvas')}
   .itsm-Markers__lines,
   .itsm-Markers__diamond,
   .itsm-Markers__label {

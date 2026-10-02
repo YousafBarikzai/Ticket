@@ -203,11 +203,11 @@ function describe(marker: ResolvedMarker): string {
     case 'today':
       return marker.label ?? 'Today';
     case 'deadline':
-      return `Deadline: ${marker.label ?? ''}`.trim();
+      return marker.label ? `Deadline: ${marker.label}` : 'Deadline';
     case 'milestone':
       return `${marker.label ? `Milestone: ${marker.label}` : 'Milestone'}${marker.reached ? ', reached' : ''}`;
     case 'event':
-      return `Event: ${marker.label ?? ''}`.trim();
+      return marker.label ? `Event: ${marker.label}` : 'Event';
   }
 }
 
