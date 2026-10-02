@@ -4,16 +4,35 @@ import { css, layer, mq } from '../styles/css.js';
  * `Button`, and the anchored bubble it shares with `IconButton` (the reason
  * a button is unavailable, the icon button's tooltip).
  *
+ * v3 (§2.14, A1 §7.17) is the PMO's button:
+ * - `primary` is the brand gradient (`--itsm-gradient-brand`, darker on
+ *   hover) with the `xs` shadow and a one-pixel inner highlight along its top
+ *   edge; the solid brand colour sits under the gradient so the label keeps
+ *   its audited pair wherever gradients are not painted (forced colours,
+ *   print). The high-contrast themes flatten the gradient in the tokens.
+ * - `secondary` is a raised white button with a `border.soft` edge and the
+ *   `xs` shadow, turning `surface.raisedAlt` with an `border.interactive`
+ *   edge under the pointer.
+ * - `tinted` is `brand.subtle` with `brand.subtleText`; `ghost` takes
+ *   `surface.hover` under the pointer.
+ * - Labels are 600 13/20 (12/16 small, 14/20 large); corners are the control
+ *   radius (8) at 28 and 36 px and the `item` radius (10) at 44 px.
+ *
  * Every size is a control height from the tokens, so density and coarse
- * pointers resize buttons without a rule here. Hover and pressed states for
- * the tinted and secondary variants lay a translucent fill over the base
- * colour with a gradient, rather than swapping to a different solid: the same
- * two fills (`fill.hover`, `fill.pressed`) then work on every base colour and
- * in every theme, and the text colour never changes under the pointer.
+ * pointers resize buttons without a rule here. Pressed states for the tinted
+ * and secondary variants lay the translucent `fill.pressed` over the base
+ * colour with a gradient rather than swapping to another solid, so the text
+ * colour never changes under the pointer.
+ *
+ * Unavailable is the disabled text on the opaque sunken surface, never
+ * opacity (which would drop the label below AA); a demo-locked action
+ * (`disabledIcon="lock"`) adds a 14 px lock after its label.
  *
  * The focus ring comes from the base layer. A variant that draws its own
  * `box-shadow` re-states the ring's inner gap here, because a component rule
- * beats the base layer whatever its specificity.
+ * beats the base layer whatever its specificity. On navy
+ * (`[data-surface="hero"]`) the hero card's module re-themes the ghost and
+ * secondary buttons (A1 §7.3).
  *
  * A busy button draws the product's one activity indicator (`Spinner`),
  * which turns on its own literal period rather than a duration token — the
@@ -44,7 +63,7 @@ export const buttonStyles = layer(
   font-size: var(--itsm-text-callout-size);
   line-height: var(--itsm-text-callout-line);
   letter-spacing: var(--itsm-text-callout-tracking);
-  font-weight: var(--itsm-font-weight-medium);
+  font-weight: var(--itsm-font-weight-semibold);
   text-align: center;
   text-decoration: none;
   white-space: nowrap;
@@ -55,6 +74,7 @@ export const buttonStyles = layer(
   touch-action: manipulation;
   transition:
     background-color var(--itsm-duration-fast) var(--itsm-easing-standard),
+    border-color var(--itsm-duration-fast) var(--itsm-easing-standard),
     color var(--itsm-duration-fast) var(--itsm-easing-standard),
     box-shadow var(--itsm-duration-fast) var(--itsm-easing-standard),
     transform var(--itsm-duration-fast) var(--itsm-easing-standard);
@@ -74,6 +94,13 @@ export const buttonStyles = layer(
   block-size: var(--_icon);
 }
 
+/* The demo-locked action's lock: 14 px, after the label, in the label's (disabled) colour. */
+.itsm-Button__lock {
+  flex: none;
+  inline-size: var(--itsm-icon-xs);
+  block-size: var(--itsm-icon-xs);
+}
+
 /* Sizes */
 
 .itsm-Button--sm {
@@ -83,9 +110,9 @@ export const buttonStyles = layer(
   min-inline-size: var(--itsm-control-height-sm);
   padding-inline: calc(var(--itsm-space-xs) + var(--itsm-space-3xs));
   border-radius: var(--itsm-radius-md);
-  font-size: var(--itsm-text-subheadline-size);
-  line-height: var(--itsm-text-subheadline-line);
-  letter-spacing: var(--itsm-text-subheadline-tracking);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
 }
 
 .itsm-Button--lg {
@@ -94,10 +121,10 @@ export const buttonStyles = layer(
   min-block-size: var(--itsm-control-height-lg);
   min-inline-size: var(--itsm-control-height-lg);
   padding-inline: var(--itsm-space-ml);
+  border-radius: var(--itsm-radius-item);
   font-size: var(--itsm-text-body-size);
-  line-height: var(--itsm-text-body-line);
+  line-height: var(--itsm-text-callout-line);
   letter-spacing: var(--itsm-text-body-tracking);
-  font-weight: var(--itsm-font-weight-semibold);
 }
 
 .itsm-Button--capsule {
@@ -113,26 +140,41 @@ export const buttonStyles = layer(
 
 .itsm-Button--primary {
   background-color: var(--itsm-colour-brand-solid);
+  background-image: var(--itsm-gradient-brand);
   color: var(--itsm-colour-brand-solidText);
+  box-shadow: var(--itsm-elevation-xs), var(--itsm-highlight-inset);
 }
 .itsm-Button--primary:hover,
 .itsm-Button--primary:active {
   background-color: var(--itsm-colour-brand-solidHover);
+  background-image: var(--itsm-gradient-brand-hover);
+}
+.itsm-Button--primary:focus-visible {
+  box-shadow: 0 0 0 var(--itsm-focus-offset) var(--itsm-colour-focusGap), var(--itsm-elevation-xs), var(--itsm-highlight-inset);
 }
 
 .itsm-Button--danger {
   background-color: var(--itsm-colour-danger-solid);
   color: var(--itsm-colour-danger-solidText);
+  box-shadow: var(--itsm-elevation-xs);
 }
 .itsm-Button--danger:hover,
 .itsm-Button--danger:active {
   background-color: var(--itsm-colour-danger-solidHover);
 }
+.itsm-Button--danger:focus-visible {
+  box-shadow: 0 0 0 var(--itsm-focus-offset) var(--itsm-colour-focusGap), var(--itsm-elevation-xs);
+}
 
 .itsm-Button--secondary {
-  background-color: var(--itsm-colour-fill-secondary);
+  border-color: var(--itsm-colour-border-soft);
+  background-color: var(--itsm-colour-surface-raised);
   color: var(--itsm-colour-text-primary);
   box-shadow: var(--itsm-elevation-xs);
+}
+.itsm-Button--secondary:hover {
+  border-color: var(--itsm-colour-border-interactive);
+  background-color: var(--itsm-colour-surface-raisedAlt);
 }
 .itsm-Button--secondary:focus-visible {
   box-shadow: 0 0 0 var(--itsm-focus-offset) var(--itsm-colour-focusGap), var(--itsm-elevation-xs);
@@ -149,7 +191,6 @@ export const buttonStyles = layer(
   color: var(--itsm-colour-danger-subtleText);
 }
 
-.itsm-Button--secondary:hover,
 .itsm-Button--tinted:hover,
 .itsm-Button--subtle:hover,
 .itsm-Button--dangerTinted:hover {
@@ -167,7 +208,7 @@ export const buttonStyles = layer(
   color: var(--itsm-colour-text-primary);
 }
 .itsm-Button--ghost:hover {
-  background-color: var(--itsm-colour-fill-hover);
+  background-color: var(--itsm-colour-surface-hover);
 }
 .itsm-Button--ghost:active {
   background-color: var(--itsm-colour-fill-pressed);
@@ -183,11 +224,12 @@ export const buttonStyles = layer(
   transform: scale(var(--itsm-press-scale));
 }
 
-/* Unavailable: disabled text on the secondary fill, never opacity. A busy button keeps its colours. */
+/* Unavailable: the disabled text on the opaque sunken surface, never opacity. A busy button keeps its colours. */
 
 .itsm-Button:disabled,
 .itsm-Button[aria-disabled="true"]:not([aria-busy="true"]) {
-  background-color: var(--itsm-colour-fill-secondary);
+  border-color: transparent;
+  background-color: var(--itsm-colour-surface-sunken);
   background-image: none;
   color: var(--itsm-colour-text-disabled);
   box-shadow: none;
@@ -234,6 +276,7 @@ export const buttonStyles = layer(
 ${mq.forcedColors} {
   .itsm-Button {
     border-color: ButtonText;
+    background-image: none;
   }
   .itsm-Button:disabled,
   .itsm-Button[aria-disabled="true"]:not([aria-busy="true"]) {

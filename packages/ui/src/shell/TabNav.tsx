@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Count } from '../display/Count.js';
+import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import { cx } from '../web/cx.js';
 import { usePathnameSafe, WithSearch } from './location.js';
 import { currentItemId, needsSearch, type SearchLike } from './match.js';
@@ -12,6 +14,13 @@ export interface TabNavItem {
   readonly id: string;
   readonly label: string;
   readonly href: string;
+  /**
+   * How many things the section holds ("Register 24"), drawn as a small
+   * `Count` after the label — accent on the current tab — and spoken with it:
+   * "Register, 24". `null` (not known yet) draws nothing, never a 0.
+   */
+  readonly count?: number | null;
+  /** An alert badge ("4 failed"); a plain count is `count`. */
   readonly badge?: NavItem['badge'];
   readonly match?: NavItem['match'];
 }
@@ -26,6 +35,7 @@ export interface TabNavProps {
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 function Links({ items, currentId }: { readonly items: readonly TabNavItem[]; readonly currentId: string | null }): ReactNode {
+  const locale = useOptionalItsm()?.locale;
   const track = useRef<HTMLDivElement | null>(null);
   const [placed, setPlaced] = useState(false);
   const [animate, setAnimate] = useState(false);
@@ -67,16 +77,22 @@ function Links({ items, currentId }: { readonly items: readonly TabNavItem[]; re
   return (
     <div ref={track} className="itsm-TabNav__track" data-placed={placed || undefined} data-animate={(placed && animate) || undefined}>
       <ul className="itsm-TabNav__list">
-        {items.map((item) => (
-          <li key={item.id} className="itsm-TabNav__entry">
-            <ShellLink href={item.href} className="itsm-TabNav__link" aria-current={item.id === currentId ? 'page' : undefined}>
-              <span className="itsm-TabNav__label" data-text={item.label}>
-                {item.label}
-              </span>
-              <NavBadgeView badge={item.badge} className="itsm-TabNav__badge" />
-            </ShellLink>
-          </li>
-        ))}
+        {items.map((item) => {
+          const current = item.id === currentId;
+          return (
+            <li key={item.id} className="itsm-TabNav__entry">
+              <ShellLink href={item.href} className="itsm-TabNav__link" aria-current={current ? 'page' : undefined}>
+                <span className="itsm-TabNav__label" data-text={item.label}>
+                  {item.label}
+                </span>
+                {item.count === undefined || item.count === null ? null : (
+                  <Count value={item.count} size="sm" tone={current ? 'accent' : 'neutral'} locale={locale} className="itsm-TabNav__count" />
+                )}
+                <NavBadgeView badge={item.badge} className="itsm-TabNav__badge" />
+              </ShellLink>
+            </li>
+          );
+        })}
       </ul>
       <span className="itsm-TabNav__indicator" aria-hidden="true" />
     </div>
@@ -92,8 +108,9 @@ function Links({ items, currentId }: { readonly items: readonly TabNavItem[]; re
  * The current tab is `text.primary` at 600 (the label reserves its bold
  * width, so neighbours do not shift) over a 2 px accent underline that
  * slides between tabs on the spring and simply appears under reduced motion.
- * The row scrolls sideways on narrow screens, keeping the current tab in
- * view.
+ * A section's count is the shared `Count`, so the link is named "Register,
+ * 24". The row scrolls sideways on narrow screens, keeping the current tab
+ * in view, with edge fades where more tabs wait.
  */
 export function TabNav({ label, items, className }: TabNavProps): ReactNode {
   const pathname = usePathnameSafe();

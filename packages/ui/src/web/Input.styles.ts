@@ -1,3 +1,4 @@
+import { moreContrast } from '../feedback/tone.js';
 import { css, layer, mq } from '../styles/css.js';
 
 /**
@@ -9,17 +10,24 @@ import { css, layer, mq } from '../styles/css.js';
  * states. What only one of them needs is in its own module, which the
  * registry orders after this one.
  *
- * - The border is `border.interactive` (3:1 on every surface), firming to
- *   `border.strong` under the pointer; a hairline `sm` shadow lifts the box
- *   off the page (in the high-contrast themes that shadow is a second
- *   outline, which is what those themes ask of an input).
- * - Focus turns the border accent and draws the two-tone ring 1 px off the
- *   box (SPEC §1.10: inputs use offset 1, not 2).
- * - Invalid is a thicker danger edge — the icon and message come from the
- *   field — and disabled is the disabled text on the secondary fill, never
- *   opacity. Read-only stays focusable and selectable, on the sunken surface.
- * - On touch screens the text is 17 px, iOS's body size: anything under 16 px
- *   makes Safari zoom the page when the field is focused.
+ * v3 (§2.9, §2.14, A1 §5.5 and §7.17):
+ * - 36 px with the control radius (8), a `border.interactive` edge (3:1 on
+ *   every surface) firming to `border.strong` under the pointer, on the
+ *   raised surface with the `xs` shadow. `size="lg"` is 44 px with the
+ *   `item` radius (10) and 15 px text, for the sign-in pages.
+ * - The text is `--itsm-input-font-size`: 14 px, and 16 px under a coarse
+ *   pointer, because anything under 16 px makes iOS Safari zoom the page
+ *   when the field is focused. The small and large sizes never go under it.
+ * - Focus is the PMO's halo, not the ring every other control draws: no
+ *   outline, the border turns accent, and a one-pixel accent ring plus a
+ *   4 px `focusHalo` wash sit round it — a 2 px accent edge (4:1 on white)
+ *   with a soft glow. The high-contrast themes make the halo transparent, so
+ *   there the v2 outline comes back at their wider focus width; forced
+ *   colours draw a 2 px `Highlight` outline, because they drop box-shadows.
+ * - Invalid is a thicker danger edge (the icon and message come from the
+ *   field) and, when focused, the same halo in danger at 18 %.
+ * - Disabled is the disabled text on the sunken surface, never opacity.
+ *   Read-only stays focusable and selectable, on the sunken surface too.
  */
 export const inputStyles = layer(
   'components',
@@ -39,9 +47,9 @@ export const inputStyles = layer(
   border-radius: var(--itsm-radius-lg);
   background-color: var(--itsm-colour-surface-raised);
   color: var(--itsm-colour-text-primary);
-  box-shadow: var(--itsm-elevation-sm);
+  box-shadow: var(--itsm-elevation-xs);
   font-family: inherit;
-  font-size: var(--itsm-text-body-size);
+  font-size: var(--itsm-input-font-size);
   line-height: var(--itsm-text-body-line);
   letter-spacing: var(--itsm-text-body-tracking);
   font-weight: var(--itsm-font-weight-regular);
@@ -67,9 +75,10 @@ export const inputStyles = layer(
 .itsm-Select--lg {
   min-block-size: var(--itsm-control-height-lg);
   padding-inline: var(--itsm-space-md);
-  font-size: var(--itsm-text-headline-size);
+  border-radius: var(--itsm-radius-item);
+  font-size: max(var(--itsm-font-size-md), var(--itsm-input-font-size));
   line-height: var(--itsm-text-headline-line);
-  letter-spacing: var(--itsm-text-headline-tracking);
+  letter-spacing: 0;
 }
 
 .itsm-Input::placeholder,
@@ -91,9 +100,10 @@ export const inputStyles = layer(
 .itsm-Select:focus-visible,
 .itsm-InputGroup:has(.itsm-InputGroup__input:focus-visible) {
   border-color: var(--itsm-colour-accent);
-  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
-  outline-offset: var(--itsm-border-hair);
-  box-shadow: 0 0 0 var(--itsm-border-hair) var(--itsm-colour-focusGap), var(--itsm-elevation-sm);
+  outline: none;
+  box-shadow:
+    0 0 0 var(--itsm-border-hair) var(--itsm-colour-accent),
+    0 0 0 var(--itsm-space-2xs) var(--itsm-colour-focusHalo);
 }
 
 .itsm-Input[aria-invalid="true"],
@@ -101,7 +111,7 @@ export const inputStyles = layer(
 .itsm-Select[aria-invalid="true"],
 .itsm-InputGroup[data-invalid] {
   border-color: var(--itsm-colour-danger-border);
-  box-shadow: inset 0 0 0 var(--itsm-border-hair) var(--itsm-colour-danger-border), var(--itsm-elevation-sm);
+  box-shadow: inset 0 0 0 var(--itsm-border-hair) var(--itsm-colour-danger-border), var(--itsm-elevation-xs);
 }
 .itsm-Input[aria-invalid="true"]:focus-visible,
 .itsm-Textarea[aria-invalid="true"]:focus-visible,
@@ -109,8 +119,8 @@ export const inputStyles = layer(
 .itsm-InputGroup[data-invalid]:has(.itsm-InputGroup__input:focus-visible) {
   border-color: var(--itsm-colour-danger-border);
   box-shadow:
-    inset 0 0 0 var(--itsm-border-hair) var(--itsm-colour-danger-border),
-    0 0 0 var(--itsm-border-hair) var(--itsm-colour-focusGap);
+    0 0 0 var(--itsm-border-hair) var(--itsm-colour-danger-border),
+    0 0 0 var(--itsm-space-2xs) color-mix(in srgb, var(--itsm-colour-danger-border) 18%, transparent);
 }
 
 .itsm-Input[readonly],
@@ -126,7 +136,7 @@ export const inputStyles = layer(
 .itsm-Select:disabled,
 .itsm-InputGroup[data-disabled] {
   border-color: var(--itsm-colour-border-subtle);
-  background-color: var(--itsm-colour-fill-secondary);
+  background-color: var(--itsm-colour-surface-sunken);
   box-shadow: none;
   color: var(--itsm-colour-text-disabled);
   -webkit-text-fill-color: var(--itsm-colour-text-disabled);
@@ -230,15 +240,26 @@ export const inputStyles = layer(
   background-color: var(--itsm-colour-fill-pressed);
 }
 
+/* A small field still takes the coarse pointer's 16 px, or iOS zooms the page on focus. */
 ${mq.coarse} {
-  .itsm-Input,
-  .itsm-Textarea,
-  .itsm-Select,
-  .itsm-InputGroup {
-    font-size: var(--itsm-font-size-lg);
-    line-height: var(--itsm-text-headline-line);
+  .itsm-Input--sm,
+  .itsm-InputGroup--sm,
+  .itsm-Select--sm {
+    font-size: var(--itsm-input-font-size);
   }
 }
+
+/*
+ * The high-contrast themes make the halo transparent: their v2 outline comes
+ * back, at their wider focus width, one pixel off the box.
+ */
+${moreContrast(
+  (scope) => `${scope} :is(.itsm-Input, .itsm-Textarea, .itsm-Select):focus-visible,
+${scope} .itsm-InputGroup:has(.itsm-InputGroup__input:focus-visible) {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-border-hair);
+}`,
+)}
 
 ${mq.forcedColors} {
   .itsm-Input,
@@ -247,8 +268,12 @@ ${mq.forcedColors} {
   .itsm-InputGroup {
     border-color: FieldText;
   }
+  .itsm-Input:focus-visible,
+  .itsm-Textarea:focus-visible,
+  .itsm-Select:focus-visible,
   .itsm-InputGroup:has(.itsm-InputGroup__input:focus-visible) {
-    outline-color: Highlight;
+    outline: var(--itsm-border-thick) solid Highlight;
+    outline-offset: var(--itsm-border-hair);
   }
   .itsm-Input:disabled,
   .itsm-Textarea:disabled,

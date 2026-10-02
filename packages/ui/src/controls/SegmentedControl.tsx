@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { useRovingTabIndex } from '../a11y/roving-tabindex.js';
-import { formatBadgeCount } from '../format/format.js';
+import { Count } from '../display/Count.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import type { IconName } from '../types.js';
 import { cx } from '../web/cx.js';
@@ -15,7 +15,8 @@ export interface SegmentedOption {
   readonly disabled?: boolean;
   /** Required in `nav` mode: each segment is a link. */
   readonly href?: string;
-  readonly count?: number;
+  /** Drawn as a small `Count` after the label and spoken with it ("Open, 4"); `null` draws nothing. */
+  readonly count?: number | null;
 }
 
 export interface SegmentedControlProps {
@@ -93,26 +94,29 @@ function useThumb(
   return { ready, animate };
 }
 
-function SegmentBody({ option }: { readonly option: SegmentedOption }): ReactNode {
+/**
+ * A segment's icon, label and count. The count is the shared `Count` (v3
+ * §2.14), accent on the selected segment, so a count reads the same in a
+ * segment, a tab and a filter pill — and is spoken the same: the digits are
+ * hidden and the segment is named "Needs you, 1", "Forward, more than 99".
+ */
+function SegmentBody({ option, selected, locale }: { readonly option: SegmentedOption; readonly selected: boolean; readonly locale?: string }): ReactNode {
   return (
     <>
       {option.icon ? <IconSlot icon={option.icon} size="sm" className="itsm-SegmentedControl__icon" /> : null}
       <span className="itsm-SegmentedControl__label" data-text={option.label}>
         {option.label}
       </span>
-      {option.count !== undefined ? (
-        <>
-          <span className="itsm-visually-hidden">, </span>
-          <span className="itsm-SegmentedControl__count">{formatBadgeCount(option.count)}</span>
-        </>
-      ) : null}
+      {option.count === undefined || option.count === null ? null : (
+        <Count value={option.count} size="sm" tone={selected ? 'accent' : 'neutral'} locale={locale} className="itsm-SegmentedControl__count" />
+      )}
     </>
   );
 }
 
 /**
- * A row of mutually exclusive segments on a sliding thumb (`fill.secondary`
- * track, raised thumb on the `spring` curve).
+ * A row of mutually exclusive segments on a sliding thumb (an opaque
+ * `surface.sunken` track, a raised thumb on the `spring` curve; v3 §2.14).
  *
  * The three modes are three different promises (X-61). A radio group moves
  * its selection with the arrow keys, which is right when a selection is
@@ -149,7 +153,9 @@ export function SegmentedControl({
   const setRoot = useCallback((node: HTMLElement | null) => {
     root.current = node;
   }, []);
-  const Link = useOptionalItsm()?.Link;
+  const itsm = useOptionalItsm();
+  const Link = itsm?.Link;
+  const locale = itsm?.locale;
 
   const choose = (index: number): void => {
     const option = options[index];
@@ -201,7 +207,7 @@ export function SegmentedControl({
               return (
                 <li key={option.value}>
                   <span role="link" aria-disabled="true" className="itsm-SegmentedControl__segment" data-selected={current ? '' : undefined}>
-                    <SegmentBody option={option} />
+                    <SegmentBody option={option} selected={current} locale={locale} />
                   </span>
                 </li>
               );
@@ -216,11 +222,11 @@ export function SegmentedControl({
               <li key={option.value}>
                 {Link ? (
                   <Link {...linkProps}>
-                    <SegmentBody option={option} />
+                    <SegmentBody option={option} selected={current} locale={locale} />
                   </Link>
                 ) : (
                   <a {...linkProps}>
-                    <SegmentBody option={option} />
+                    <SegmentBody option={option} selected={current} locale={locale} />
                   </a>
                 )}
               </li>
@@ -263,7 +269,7 @@ export function SegmentedControl({
                 roving.setActiveIndex(index);
               }}
             >
-              <SegmentBody option={option} />
+              <SegmentBody option={option} selected={selected} locale={locale} />
             </button>
           );
         })}

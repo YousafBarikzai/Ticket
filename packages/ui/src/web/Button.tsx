@@ -63,6 +63,14 @@ export interface ButtonProps extends Omit<ComponentPropsWithRef<'button'>, 'type
    * four seconds and says it aloud (X-80). Pointing at it shows it too.
    */
   readonly disabledReason?: string;
+  /**
+   * `lock` marks an action that is locked rather than merely unavailable —
+   * the demo's disabled features (A3) — with a 14 px lock after the label,
+   * drawn only while the button is unavailable (`disabledReason`, `disabled`
+   * or `aria-disabled`) and in place of `iconEnd`. Decorative: the reason
+   * says why.
+   */
+  readonly disabledIcon?: 'lock';
   /** Defaults to `button`: a button inside a form that submits by accident is a classic data-loss bug. */
   readonly type?: 'button' | 'submit' | 'reset';
 }
@@ -191,6 +199,7 @@ export function Button({
   loadingLabel,
   fullWidth = false,
   disabledReason,
+  disabledIcon,
   type = 'button',
   className,
   children,
@@ -219,7 +228,9 @@ export function Button({
   const iconSize = ICON_SIZE[size];
   const hasLabel = children !== null && children !== undefined && children !== false && children !== '';
   const spinner = loading ? (iconStart ? 'start' : 'overlay') : null;
-  const endIcon = iconEnd ?? (external && href ? 'external' : undefined);
+  // Locked only while it is unavailable; a busy button is not locked, just busy.
+  const locked = disabledIcon === 'lock' && !loading && (reason !== undefined || disabled === true || callerInert);
+  const endIcon = locked ? undefined : (iconEnd ?? (external && href ? 'external' : undefined));
 
   const classes = cx(
     'itsm-Button',
@@ -229,6 +240,7 @@ export function Button({
     fullWidth && 'itsm-Button--fullWidth',
     className,
   );
+  const lockState = locked ? { 'data-locked': '' } : {};
 
   const content = (
     <>
@@ -239,6 +251,7 @@ export function Button({
       )}
       {hasLabel ? <span className="itsm-Button__label">{children}</span> : null}
       <IconSlot icon={endIcon} size={iconSize} className="itsm-Button__icon" />
+      {locked ? <IconSlot icon="lock" size="xs" className="itsm-Button__lock" /> : null}
       {spinner === 'overlay' ? <Spinner size="sm" className="itsm-Button__spinner" data-overlay="" /> : null}
       {loading ? <VisuallyHidden>{loadingLabel ?? messages.loading}</VisuallyHidden> : null}
     </>
@@ -294,6 +307,7 @@ export function Button({
         aria-busy={loading || undefined}
         aria-describedby={reason === undefined ? describedBy : cx(describedBy, reasonId)}
         className={classes}
+        {...lockState}
         data-loading={spinner ?? undefined}
         onClick={(event: MouseEvent<HTMLButtonElement>) => {
           if (reason !== undefined) {
