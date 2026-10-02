@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { sessionRecordKey } from './demo/store.js';
 import { decodeSession, encodeSession, type PendingLogin, type Session, type SessionStore } from './session.js';
 
 /**
@@ -14,7 +15,13 @@ import { decodeSession, encodeSession, type PendingLogin, type Session, type Ses
 
 const clients = new Map<string, Redis>();
 
-function connection(url: string): Redis {
+/**
+ * The process's one connection to a Redis URL, shared by the session store
+ * and the demo token store (`demo/redis-store.ts`): both are per-app stores
+ * in the same process, and the demo's re-mint swaps session records in the
+ * same keyspace.
+ */
+export function redisConnection(url: string): Redis {
   // One connection per URL, reused across requests: route handlers run in the
   // same process, and a client per request exhausts the connection limit long
   // before it exhausts anything else.
@@ -26,12 +33,21 @@ function connection(url: string): Redis {
   return client;
 }
 
+/** Closes the shared connection to `url`; the next `redisConnection(url)` opens a new one. */
+export async function closeRedisConnection(url: string): Promise<void> {
+  const client = clients.get(url);
+  if (!client) return;
+  clients.delete(url);
+  await client.quit();
+}
+
 export function redisSessionStore(url: string, appName: string): SessionStore {
-  const redis = connection(url);
+  const redis = redisConnection(url);
   // Namespaced by application as well as away from the platform's own `sess:`:
   // the workbench and the portal may share a Redis, and a session identifier
-  // minted for one must not resolve in the other.
-  const SESSION_PREFIX = `bff:${appName}:sess:`;
+  // minted for one must not resolve in the other. The format is the demo
+  // store's too (`sessionRecordKey`), because its re-mint swaps these records.
+  const SESSION_PREFIX = sessionRecordKey(appName, '');
   const PENDING_PREFIX = `bff:${appName}:login:`;
 
   return {
@@ -61,8 +77,7 @@ export function redisSessionStore(url: string, appName: string): SessionStore {
       }
     },
     async close() {
-      await redis.quit();
-      clients.delete(url);
+      await closeRedisConnection(url);
     },
   };
 }

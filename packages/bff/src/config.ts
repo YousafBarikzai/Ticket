@@ -14,6 +14,8 @@
  * wrong.
  */
 
+import { DemoSettingsError, readClientIpHeader, readDemoSettings, type ClientIpHeader, type DemoSettings } from './demo/settings.js';
+
 export interface OidcSettings {
   readonly issuer: string;
   readonly clientId: string;
@@ -45,6 +47,17 @@ export interface BffConfig extends AppIdentity {
   /** Null when no issuer is configured, which is the only case that enables the development sign-in. */
   readonly oidc: OidcSettings | null;
   readonly production: boolean;
+  /**
+   * The demo's limits and token lives, or `null` when `DEMO_MODE` is not `on`
+   * (SPEC §4.9). Null is the whole switch: every demo route answers 404
+   * without it.
+   */
+  readonly demo: DemoSettings | null;
+  /**
+   * Which header names the client's address. Outside `demo` because the
+   * sign-in limiter buckets callers by address in every mode (RV3).
+   */
+  readonly clientIpHeader: ClientIpHeader;
 }
 
 export class ConfigurationError extends Error {}
@@ -75,6 +88,18 @@ export function readConfig(app: AppIdentity, env: Environment = process.env): Bf
     );
   }
 
+  let demo: DemoSettings | null;
+  let clientIpHeader: ClientIpHeader;
+  try {
+    demo = readDemoSettings(env);
+    clientIpHeader = readClientIpHeader(env);
+  } catch (error) {
+    // One error class for every refusal here, so a caller that reports a
+    // misconfigured deployment does not need to know which file noticed.
+    if (error instanceof DemoSettingsError) throw new ConfigurationError(error.message);
+    throw error;
+  }
+
   return {
     ...app,
     apiBaseUrl: trimSlash(env.API_BASE_URL ?? 'http://127.0.0.1:3000'),
@@ -89,6 +114,8 @@ export function readConfig(app: AppIdentity, env: Environment = process.env): Bf
         }
       : null,
     production,
+    demo,
+    clientIpHeader,
   };
 }
 
