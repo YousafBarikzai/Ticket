@@ -3,24 +3,32 @@ import { cx } from '../web/cx.js';
 
 export interface StatGridProps {
   readonly children: ReactNode;
-  /** Minimum card width in px before another column is added, default 180. */
+  /** Minimum card width in px before another column is added, default 180. Applies when `columns` is unset. */
   readonly min?: number;
   /**
-   * `4`: two columns, then four once all four fit (a KPI row). `2`: always
-   * two. Unset: as many as fit at `min`, never fewer than two.
+   * How many tiles a row holds once the grid is wide enough; every count
+   * folds to two on a phone (v3 §2.13):
+   *
+   * - `6`: the dashboard's KPI row — six from 60 rem, three from 35 rem, two below.
+   * - `4`: two, then four from 48 rem.
+   * - `3`: three, two below 35 rem.
+   * - `2`: always two.
+   *
+   * Unset: as many as fit at `min`, never fewer than two.
    */
-  readonly columns?: 2 | 4;
+  readonly columns?: 2 | 3 | 4 | 6;
   readonly className?: string;
 }
 
 /**
  * A responsive grid of stat cards: two by two on a phone, never a sideways
- * carousel (X-94) — a carousel hides three of four numbers behind a gesture
+ * carousel (X-94) — a carousel hides four of six numbers behind a gesture
  * nobody knows to make. Server-safe.
  *
- * It adapts to its container, not the viewport (SPEC §3.3 rule 5), so four
- * stats in a narrow dashboard card fold two by two as they would on a phone.
- * Every column has the same width, so the values line up.
+ * It adapts to its container, not the viewport, so six tiles in a narrow
+ * pane fold three and then two across as they would on a smaller screen.
+ * Every column has the same width, so the values line up, and every tile in
+ * a row stretches to the row's height, so their captions line up too.
  */
 export function StatGrid({ children, min, columns, className }: StatGridProps): ReactNode {
   const floor = typeof min === 'number' && Number.isFinite(min) && min > 0 ? min : undefined;
