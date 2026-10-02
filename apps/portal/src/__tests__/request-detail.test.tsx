@@ -431,7 +431,14 @@ describe('My requests', () => {
     await clickAsync(control('New request'));
     expect(helpFlow.open).toHaveBeenCalled();
     const links = [...document.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Show requests"] a')];
-    expect(links.map((link) => [link.textContent?.replace(/\s+/g, ' ').trim(), link.getAttribute('href'), link.getAttribute('aria-current')])).toEqual([
+    // What a screen reader says: `Count` draws its digits `aria-hidden` and
+    // speaks ", 2" in hidden text, so the digits are left out of the words.
+    const spoken = (link: HTMLAnchorElement) => {
+      const copy = link.cloneNode(true) as HTMLElement;
+      for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+      return copy.textContent?.replace(/\s+/g, ' ').trim();
+    };
+    expect(links.map((link) => [spoken(link), link.getAttribute('href'), link.getAttribute('aria-current')])).toEqual([
       ['Open', '/tickets', 'page'],
       ['Needs you, 2', '/tickets?show=needs', null],
       ['Resolved', '/tickets?show=resolved', null],
