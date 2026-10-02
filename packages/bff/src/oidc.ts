@@ -53,12 +53,14 @@ const discoveryCache = new Map<string, Discovery>();
 export async function discover(
   settings: OidcSettings,
   doFetch: typeof fetch = fetch,
-  signal: AbortSignal = AbortSignal.timeout(5000),
+  signal?: AbortSignal,
 ): Promise<Discovery> {
   const cached = discoveryCache.get(settings.issuer);
   if (cached) return cached;
 
-  const response = await doFetch(`${settings.issuer}/.well-known/openid-configuration`, { signal });
+  const response = await doFetch(`${settings.issuer}/.well-known/openid-configuration`, {
+    signal: signal ?? AbortSignal.timeout(5000),
+  });
   if (!response.ok) throw new SignInFailed('the identity provider is not reachable');
   const document = (await response.json()) as Discovery;
   if (!document.authorization_endpoint || !document.token_endpoint) {
@@ -238,9 +240,11 @@ export async function endProviderSession(
     // The body is the provider's prose about our client (an `invalid_grant`
     // for a refresh token that had already expired, say): nothing to show
     // anyone. Released rather than read, so the connection goes back to the
-    // pool instead of waiting for a body nobody will consume.
-    await response.body?.cancel();
-    return response.ok;
+    // pool instead of waiting for a body nobody will consume — and a failure
+    // to release it does not change what the provider answered.
+    const acknowledged = response.ok;
+    await response.body?.cancel().catch(() => undefined);
+    return acknowledged;
   } catch {
     return false;
   }
