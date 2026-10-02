@@ -178,7 +178,7 @@ describe('a row', () => {
     expect(document.querySelector('.app-TicketRow__team')).toBeNull();
     cleanupDocument();
     mountList({ view: 'all', rows: [row({ number: 'INC-2', assigneeId: JO, groupId: 'team-a' })], props: { teamNames: { 'team-a': 'Network' } } });
-    expect(document.querySelector('.app-TicketRow__avatar')?.textContent).toBe('J');
+    expect(document.querySelector('.app-TicketRow__avatar')?.textContent).toBe('JB');
     expect(document.querySelector('.app-TicketRow__team')?.textContent).toBe('Network');
   });
 });
