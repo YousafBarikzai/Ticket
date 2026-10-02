@@ -7,6 +7,7 @@ import {
   logger,
   queuesForFamilies,
   registeredJobs,
+  reportConfigWarnings,
   startWorker,
   closeQueues,
 } from '@itsm/platform';
@@ -46,8 +47,17 @@ logger.info('worker started', {
   family: config.WORKER_QUEUES,
 });
 
+// D24: every worker signs links too (survey invitations, status-page mail), so
+// each says so when it holds the public development secret — under its own
+// service name, which is how the operator's banner can say which ones still
+// do. The name is the environment's, not the parsed configuration's: that
+// defaults to the API's name, and a worker reporting itself clean under it
+// would clear the API's warning.
+const configReport = await reportConfigWarnings(process.env.OTEL_SERVICE_NAME || 'itsm-worker');
+
 const shutdown = async (signal: string): Promise<void> => {
   logger.info('worker shutting down', { signal });
+  configReport.stop();
   if (ticker) clearInterval(ticker);
   // Let in-flight jobs finish: a killed job is retried, but a clean stop is
   // cheaper than a retry storm on every deploy.

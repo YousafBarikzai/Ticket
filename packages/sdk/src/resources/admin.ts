@@ -261,6 +261,25 @@ export interface PlatformTenantUsage {
   }[];
 }
 
+/**
+ * One service's deployment warnings (D24, Y-M7; `GET /api/platform/v1/deployment-warnings`).
+ *
+ * Codes, never values: `dev_token_secret_default` (signing with the public
+ * development secret), `dev_token_secret_short`, and `demo_build_failing`
+ * (the nightly demo build has failed three times running; reported under
+ * `itsm-worker-data`). A code this release does not know may appear from a
+ * newer API; a reader shows what it knows and leaves the rest.
+ */
+export interface DeploymentWarning {
+  /** The service's `OTEL_SERVICE_NAME`: `itsm-api`, `itsm-worker-comms`, … */
+  service: string;
+  codes: string[];
+  /** When the service last reported it; for `demo_build_failing`, when the failures began. ISO 8601. */
+  at: string;
+  /** `demo_build_failing` only: where the last build stopped. Absent from an API that predates it. */
+  failure?: { step: string | null; check: string | null; failures: number | null };
+}
+
 export interface PlanRow {
   key: string;
   name: string;
@@ -381,6 +400,8 @@ export interface Admin {
     resumeTenant(tenantId: string): Promise<{ id: string; status: 'active' }>;
     /** Refused (409) for a retired plan the tenant is not already on. */
     assignPlan(tenantId: string, planKey: string): Promise<{ id: string; planKey: string | null }>;
+    /** What is wrong with this deployment that only an operator can fix; empty when all is well (D24). */
+    deploymentWarnings(): Promise<DeploymentWarning[]>;
   };
 }
 
@@ -512,6 +533,7 @@ export function admin(client: Client): Admin {
           method: 'PUT',
           body: { planKey },
         }),
+      deploymentWarnings: () => client.request<{ data: DeploymentWarning[] }>('/api/platform/v1/deployment-warnings').then(unwrap),
     },
   };
 }

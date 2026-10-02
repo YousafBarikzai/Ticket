@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ForbiddenError, NotFoundError, metrics, modules, systemContext, withContext } from '@itsm/platform';
+import { ForbiddenError, NotFoundError, cache, metrics, modules, readDeploymentWarnings, systemContext, withContext } from '@itsm/platform';
 import { describeMeter, planService, tenantService, usageService } from '@itsm/module-tenancy';
 import { evalService, formatMicros, promptService } from '@itsm/module-ai';
 import { contextOf } from '../plugins/context.js';
@@ -241,4 +241,17 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
   app.get('/ai/datasets', async () => ({ data: await evalService.listDatasets() }));
 
   app.get('/metrics-snapshot', async () => metrics.snapshot());
+
+  /**
+   * What is wrong with this deployment that nobody would otherwise see (D24,
+   * Y-M7; SPEC v3 §6.5): every service still signing with the public
+   * development secret, or with a short one, from `ops:config-warnings`, and
+   * the nightly demo build failing three times running, from `ops:demo`.
+   * `{ data: [{ service, codes, at, failure? }] }`, sorted by service; empty
+   * when all is well. The console's platform layout shows it as banners.
+   *
+   * Behind the same hook as everything here: the list names services and
+   * failures, which is operator business, never a tenant's.
+   */
+  app.get('/deployment-warnings', async () => ({ data: await readDeploymentWarnings(cache()) }));
 }

@@ -257,4 +257,19 @@ describe('the platform surface', () => {
     await api.platform.assignPlan(id, 'growth');
     expect(calls[0]).toMatchObject({ method: 'PUT', url: `http://api.test/api/platform/v1/tenants/${id}/plan`, body: { planKey: 'growth' } });
   });
+
+  it('reads the deployment warnings under the platform prefix and hands back the list (D24)', async () => {
+    const rows = [
+      { service: 'itsm-api', codes: ['dev_token_secret_default'], at: '2026-10-02T09:00:00.000Z' },
+      {
+        service: 'itsm-worker-data',
+        codes: ['demo_build_failing'],
+        at: '2026-10-01T00:05:00.000Z',
+        failure: { step: 'checks', check: 'V3 attainment bands', failures: 3 },
+      },
+    ];
+    const { calls, api } = recording({ data: rows });
+    expect(await api.platform.deploymentWarnings()).toEqual(rows);
+    expect(calls).toEqual([{ method: 'GET', url: 'http://api.test/api/platform/v1/deployment-warnings', body: undefined }]);
+  });
 });

@@ -1,5 +1,15 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { disconnectDb, disconnectRedis, loadConfig, logger, metrics, modules, platformDb } from '@itsm/platform';
+import {
+  configWarnings,
+  disconnectDb,
+  disconnectRedis,
+  loadConfig,
+  logger,
+  metrics,
+  modules,
+  platformDb,
+  reportConfigWarnings,
+} from '@itsm/platform';
 import { bootstrapModules } from '@itsm/runtime';
 import { outboxPublisher } from '@itsm/module-integrations';
 import { contextPlugin } from './plugins/context.js';
@@ -37,6 +47,72 @@ export function failureDetail(error: unknown): string {
   const line = safe.split('\n')[0]?.trim() ?? '';
   if (line === '') return 'failed';
   return `failed: ${line.length > 200 ? `${line.slice(0, 197)}...` : line}`;
+}
+
+/** What `/health/ready` asks, injectable so the answer's shape is testable without a database. */
+export interface ReadinessProbes {
+  database(): Promise<unknown>;
+  redis(): Promise<unknown>;
+  moduleCount(): number;
+  /** Configuration warning codes (D24): codes only, never a configured value. */
+  warnings(): readonly string[];
+}
+
+export interface ReadinessBody {
+  status: 'ready' | 'not-ready';
+  checks: Record<string, string>;
+  warnings?: string[];
+}
+
+/**
+ * The readiness answer.
+ *
+ * `warnings` sits **beside** `checks`, never inside it, and never decides the
+ * status (D24, SPEC v3 §6.5). Railway's health check and the post-deploy smoke
+ * test both read the status code, and a deployment signing links with the
+ * public development secret is still a deployment that is up: refusing it
+ * would turn a forgotten variable into an outage. The deploy reads `warnings`
+ * separately and prints them as annotations (`post-deploy-check.ts`
+ * `readinessWarnings`). The key is absent when there is nothing to say, so a
+ * clean deployment's body is exactly what it was before.
+ *
+ * The endpoint is public, so it says which warning and never what the value
+ * is; anyone who learns from it that the default is in use could have learned
+ * the same by forging one token, and the fix is the operator's banner.
+ */
+export async function readiness(probes: ReadinessProbes): Promise<{ statusCode: 200 | 503; body: ReadinessBody }> {
+  const checks: Record<string, string> = {};
+  try {
+    await probes.database();
+    checks.database = 'ok';
+  } catch (error) {
+    checks.database = failureDetail(error);
+  }
+  try {
+    await probes.redis();
+    checks.redis = 'ok';
+  } catch (error) {
+    checks.redis = failureDetail(error);
+  }
+  checks.modules = probes.moduleCount() > 0 ? 'ok' : 'failed: no module registered';
+
+  const ready = Object.values(checks).every((value) => value === 'ok');
+  const warnings = [...probes.warnings()];
+  return {
+    statusCode: ready ? 200 : 503,
+    body: { status: ready ? 'ready' : 'not-ready', checks, ...(warnings.length > 0 ? { warnings } : {}) },
+  };
+}
+
+/** `/health/live` and `/health/ready`, unauthenticated (`plugins/context.ts`), for Railway and the deploy. */
+export function healthRoutes(app: FastifyInstance, probes: ReadinessProbes): void {
+  app.get('/health/live', async () => ({ status: 'ok', uptimeSeconds: Math.round(process.uptime()) }));
+
+  app.get('/health/ready', async (_request, reply) => {
+    const { statusCode, body } = await readiness(probes);
+    reply.status(statusCode);
+    return body;
+  });
 }
 
 /**
@@ -79,28 +155,14 @@ export async function buildApp(): Promise<FastifyInstance> {
     });
   });
 
-  app.get('/health/live', async () => ({ status: 'ok', uptimeSeconds: Math.round(process.uptime()) }));
-
-  app.get('/health/ready', async (_request, reply) => {
-    const checks: Record<string, string> = {};
-    try {
-      await platformDb().$queryRaw`SELECT 1`;
-      checks.database = 'ok';
-    } catch (error) {
-      checks.database = failureDetail(error);
-    }
-    try {
+  healthRoutes(app, {
+    database: () => platformDb().$queryRaw`SELECT 1`,
+    redis: async () => {
       const { cache } = await import('@itsm/platform');
-      await cache().ping();
-      checks.redis = 'ok';
-    } catch (error) {
-      checks.redis = failureDetail(error);
-    }
-    checks.modules = modules().length > 0 ? 'ok' : 'failed: no module registered';
-
-    const ready = Object.values(checks).every((value) => value === 'ok');
-    reply.status(ready ? 200 : 503);
-    return { status: ready ? 'ready' : 'not-ready', checks };
+      return cache().ping();
+    },
+    moduleCount: () => modules().length,
+    warnings: () => configWarnings(loadConfig()).map((warning) => warning.code),
   });
 
   app.get('/metrics', async (_request, reply) => {
@@ -133,8 +195,13 @@ export async function startApp(): Promise<FastifyInstance> {
   await app.listen({ port: config.API_PORT, host: '::' });
   logger.info('api listening', { port: config.API_PORT });
 
+  // D24: warn, never refuse. After `listen`, so a slow or absent Redis delays
+  // nothing a health check waits for; the report never throws.
+  const configReport = await reportConfigWarnings(config.OTEL_SERVICE_NAME);
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('shutting down', { signal });
+    configReport.stop();
     await app.close();
     await disconnectDb();
     await disconnectRedis();
