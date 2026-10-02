@@ -155,6 +155,9 @@ model FactTicket {
   @@index([tenantId, teamId, createdDate])
   @@index([tenantId, serviceId, createdDate])
   @@index([tenantId, status, createdDate])
+  // Instant-bounded windows (drift checks, arrivals) read `created_at`, which
+  // the `created_date` indexes above cannot serve.
+  @@index([tenantId, createdAt])
   @@map("fact_ticket")
 }
 

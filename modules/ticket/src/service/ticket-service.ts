@@ -26,9 +26,13 @@ import {
   enqueue,
 } from '@itsm/platform';
 import {
+  canonicalStateSchema,
   channelSchema,
   events,
   numberPrefix,
+  prioritySchema,
+  statusCategorySchema,
+  ticketTypeSchema,
   type CanonicalState,
   type TicketType,
   inverseLinkType,
@@ -322,11 +326,12 @@ export async function listTickets(
 ): Promise<ListResult> {
   authz.require(ctx, 'ticket.read');
   const scope = scopeFilterFor(ctx);
+  const query = prepareFilter(filter);
 
   return transaction(ctx, async (tx) => {
     const sort = options.sort ?? '-createdAt';
     const cursor = decodeCursor(options.cursor);
-    const rows = await repo.listTickets(tx, filter, {
+    const rows = await repo.listTickets(tx, query, {
       limit: options.limit + 1,
       sort,
       ...(cursor ? { cursor } : {}),
@@ -357,7 +362,8 @@ export async function listTickets(
 export async function countTickets(ctx: TenantContext, filter: repo.ListFilter = {}): Promise<number> {
   authz.require(ctx, 'ticket.read');
   const scope = scopeFilterFor(ctx);
-  return transaction(ctx, async (tx) => repo.countTickets(tx, filter, scope));
+  const query = prepareFilter(filter);
+  return transaction(ctx, async (tx) => repo.countTickets(tx, query, scope));
 }
 
 /** Where a counted view stops counting. */
@@ -384,8 +390,162 @@ export interface CappedCount {
 export async function countTicketsUpTo(ctx: TenantContext, filter: repo.ListFilter = {}, cap = COUNT_CAP): Promise<CappedCount> {
   authz.require(ctx, 'ticket.read');
   const scope = scopeFilterFor(ctx);
-  const counted = await transaction(ctx, async (tx) => repo.countTickets(tx, filter, scope, cap + 1));
+  const query = prepareFilter(filter);
+  const counted = await transaction(ctx, async (tx) => repo.countTickets(tx, query, scope, cap + 1));
   return counted > cap ? { count: cap, capped: true } : { count: counted, capped: false };
+}
+
+/**
+ * Checks a filter's date windows and fixes the instant its `sla` predicate is
+ * judged against, once for the whole call.
+ *
+ * A window that ends before it starts is refused rather than answered with
+ * nothing: an empty list for a reversed range reads as "no tickets", and the
+ * caller's mistake would never surface. Equal bounds are allowed — `[t, t)` is
+ * a legitimately empty window.
+ */
+function prepareFilter(filter: repo.ListFilter, now: Date = new Date()): repo.ListFilter {
+  const windows = [
+    ['createdAfter', 'createdBefore'],
+    ['dueAfter', 'dueBefore'],
+    ['resolvedAfter', 'resolvedBefore'],
+  ] as const;
+  for (const [after, before] of windows) {
+    const from = filter[after];
+    const to = filter[before];
+    if (from && to && from.getTime() > to.getTime()) {
+      throw new ValidationError('the window ends before it starts', [
+        { field: `filter[${before}]`, code: 'window_reversed', message: `filter[${before}] is earlier than filter[${after}]` },
+      ]);
+    }
+  }
+  return filter.now ? filter : { ...filter, now };
+}
+
+/** The dimensions `GET /tickets/counts?groupBy=` splits by (R2g). */
+export const COUNT_DIMENSIONS = ['priority', 'status', 'statusCategory', 'type', 'group', 'assignee', 'service', 'age', 'sla'] as const;
+export type CountDimension = (typeof COUNT_DIMENSIONS)[number];
+
+export interface TicketCountsBy {
+  groupBy: CountDimension;
+  /** One entry per key; `null` is "no value" (unassigned, no team, no service). */
+  groups: { key: string | null; count: number }[];
+  /** The filtered set's size, which the groups always sum to. */
+  total: number;
+}
+
+/** The widest created or resolved window a grouped count accepts without open work. */
+export const GROUPED_COUNT_MAX_WINDOW_DAYS = 400;
+
+const COLUMN_OF: Record<Exclude<CountDimension, 'age' | 'sla'>, repo.GroupColumn> = {
+  priority: 'priority',
+  status: 'status',
+  statusCategory: 'statusCategory',
+  type: 'type',
+  group: 'groupId',
+  assignee: 'assigneeId',
+  service: 'serviceId',
+};
+
+/**
+ * The display order of the dimensions whose values are a fixed vocabulary.
+ * People read P1 before P4 and "new" before "closed", whatever the counts.
+ */
+const CANONICAL_ORDER: Partial<Record<CountDimension, readonly string[]>> = {
+  priority: prioritySchema.options,
+  status: canonicalStateSchema.options,
+  statusCategory: statusCategorySchema.options,
+  type: ticketTypeSchema.options,
+};
+
+/** Open and paused: the work an age or SLA breakdown is about. */
+const LIVE_CATEGORIES = ['open', 'paused'];
+
+/**
+ * How many tickets fall in each value of one dimension (R2g), for the
+ * distributions on the Service Desk Overview and Administration's breakdowns.
+ *
+ * The same permission check and scope predicate as `listTickets`, so each
+ * group counts only rows that reader's list would show, and the groups sum to
+ * exactly what `countTickets` returns for the same filter.
+ *
+ * Exact, not capped like a badge, which is affordable only because the set is
+ * bounded first: the call must ask about open or paused work (or `sla`, which
+ * selects open work), or name a created or resolved window of at most 400
+ * days. Anything else would be a whole-history scan on every page view, and is
+ * refused with 422. `age` and `sla` are breakdowns of live work, so they read
+ * open and paused tickets unless the caller names categories; `sla` refuses
+ * categories outside those two, because a resolved ticket is in none of its
+ * buckets and the groups would no longer sum to the total.
+ */
+export async function countTicketsBy(
+  ctx: TenantContext,
+  filter: repo.ListFilter,
+  dimension: CountDimension,
+  now: Date = new Date(),
+): Promise<TicketCountsBy> {
+  authz.require(ctx, 'ticket.read');
+  const scope = scopeFilterFor(ctx);
+
+  // One instant for the guard, the `sla` filter and every bucket edge.
+  const at = filter.now ?? now;
+  const live = dimension === 'age' || dimension === 'sla';
+  const query = prepareFilter(live && !filter.statusCategory?.length ? { ...filter, statusCategory: LIVE_CATEGORIES } : filter, at);
+  if (dimension === 'sla' && query.statusCategory?.some((category) => !LIVE_CATEGORIES.includes(category))) {
+    throw new ValidationError('an SLA breakdown counts open and paused work only', [
+      { field: 'filter[statusCategory]', code: 'not_live', message: 'filter[statusCategory] may name only open and paused with groupBy=sla' },
+    ]);
+  }
+  assertBounded(query, at);
+
+  const groups = await transaction(ctx, async (tx) => {
+    if (dimension === 'age') return repo.countByBuckets(tx, query, repo.ageBuckets(at), scope);
+    if (dimension === 'sla') return repo.countByBuckets(tx, query, repo.slaBuckets(at), scope);
+    return repo.countByColumn(tx, query, COLUMN_OF[dimension], scope);
+  });
+
+  return {
+    groupBy: dimension,
+    groups: ordered(dimension, groups),
+    total: groups.reduce((sum, group) => sum + group.count, 0),
+  };
+}
+
+/** Refuses a grouped count that would read a tenant's whole history (R2g guard). */
+function assertBounded(filter: repo.ListFilter, now: Date): void {
+  const categories = filter.statusCategory ?? [];
+  if (categories.length > 0 && categories.every((category) => LIVE_CATEGORIES.includes(category))) return;
+  if (filter.sla) return;
+  const limitMs = GROUPED_COUNT_MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  // An open-ended window ends now: nothing is created or resolved in the
+  // future, so "since 1 September" is bounded by today.
+  const within = (after?: Date, before?: Date) => Boolean(after) && (before ?? now).getTime() - after!.getTime() <= limitMs;
+  if (within(filter.createdAfter, filter.createdBefore) || within(filter.resolvedAfter, filter.resolvedBefore)) return;
+  throw new ValidationError('a grouped count needs open work or a date window', [
+    {
+      field: 'filter',
+      code: 'unbounded',
+      message: `name filter[statusCategory] within open,paused, or a created or resolved window of at most ${GROUPED_COUNT_MAX_WINDOW_DAYS} days`,
+    },
+  ]);
+}
+
+/**
+ * Canonical order for fixed vocabularies (values outside it follow, largest
+ * first); bucket order for `age` and `sla`, which arrive in it; largest first
+ * for teams, people and services, with ties broken by key and "none" last so
+ * the order is stable between refreshes.
+ */
+function ordered(dimension: CountDimension, groups: { key: string | null; count: number }[]): { key: string | null; count: number }[] {
+  if (dimension === 'age' || dimension === 'sla') return groups;
+  const canonical = CANONICAL_ORDER[dimension] ?? [];
+  const rank = (key: string | null) => (key !== null && canonical.includes(key) ? canonical.indexOf(key) : canonical.length);
+  return [...groups].sort(
+    (a, b) =>
+      rank(a.key) - rank(b.key) ||
+      b.count - a.count ||
+      (a.key === null ? 1 : b.key === null ? -1 : a.key.localeCompare(b.key)),
+  );
 }
 
 /**

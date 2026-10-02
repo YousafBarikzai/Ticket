@@ -65,6 +65,13 @@ describe('the count matches the list', () => {
     'filter[assignee]=none&filter[statusCategory]=open',
     'filter[status]=pending_requester,pending_third_party,pending_approval',
     'q=sticky',
+    // The R2 keys (A8 §10.4) keep the property; `ticket-filters.test.ts`
+    // pins their bounds.
+    'filter[createdAfter]=2000-01-01T00:00:00.000Z&filter[createdBefore]=2100-01-01T00:00:00.000Z',
+    'filter[resolvedAfter]=2000-01-01T00:00:00.000Z',
+    'filter[dueBefore]=2100-01-01T00:00:00.000Z',
+    'filter[sla]=breached',
+    'filter[sla]=due_soon&filter[statusCategory]=open',
   ];
 
   it.each(personas)('for %s, on every view', async (persona) => {
@@ -103,7 +110,31 @@ describe('the route', () => {
   it('is not mistaken for a ticket called "count"', async () => {
     const response = await request<{ count?: number; capped?: boolean }>('/api/v1/tickets/count', { token: tenant.people.agent!.token });
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(['capped', 'count']);
+    expect(Object.keys(response.body).sort()).toEqual(['applied', 'capped', 'count']);
+  });
+
+  it('echoes the filters it honoured, as the list does', async () => {
+    // A client sending a key an older API would drop checks it is listed
+    // before trusting the figure (A8-S12).
+    const token = tenant.people.admin!.token;
+    const query = 'filter[statusCategory]=open,paused&filter[createdAfter]=2000-01-01T00:00:00.000Z&filter[unknown]=1&q=sticky';
+    const counted = await request<{ applied: string[] }>(`/api/v1/tickets/count?${query}`, { token });
+    const listed = await request<{ applied: string[] }>(`/api/v1/tickets?${query}`, { token });
+    expect(counted.body.applied).toEqual(['createdAfter', 'statusCategory']);
+    expect(listed.body.applied).toEqual(counted.body.applied);
+    expect((await request<{ applied: string[] }>('/api/v1/tickets/count', { token })).body.applied).toEqual([]);
+  });
+
+  it('counts the list with the R2 keys, every reader', async () => {
+    const window = 'filter[createdAfter]=2000-01-01T00:00:00.000Z&filter[createdBefore]=2100-01-01T00:00:00.000Z';
+    for (const persona of ['requester', 'agent', 'otherAgent', 'admin'] as const) {
+      const all = await both(persona, '');
+      // Every ticket here was raised during the run, so a window around it
+      // keeps them all, and its count still matches its own list.
+      const windowed = await both(persona, window);
+      expect(windowed.count).toBe(windowed.listed);
+      expect(windowed.count).toBe(all.count);
+    }
   });
 
   it('checks the filters as the list does', async () => {
