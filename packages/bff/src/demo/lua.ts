@@ -266,22 +266,28 @@ export interface DemoScriptCommands {
   itsmDemoRevoke(...keysAndArgs: ScriptArgument[]): Promise<unknown>;
 }
 
-const defined = new WeakSet<Redis>();
+/** Each command, its script and how many of its leading arguments are keys. */
+export const DEMO_SCRIPTS: Readonly<Record<keyof DemoScriptCommands, { readonly numberOfKeys: number; readonly lua: string }>> =
+  Object.freeze({
+    itsmDemoMint: { numberOfKeys: 11, lua: MINT_LUA },
+    itsmDemoRemint: { numberOfKeys: 7, lua: REMINT_LUA },
+    itsmDemoTouch: { numberOfKeys: 2, lua: TOUCH_LUA },
+    itsmDemoRevoke: { numberOfKeys: 2, lua: REVOKE_LUA },
+  });
+
+const defined = new WeakSet<object>();
 
 /**
  * Registers the four scripts on a client, once. ioredis sends `EVALSHA` and
  * falls back to `EVAL` when the server has not seen a script (a restart, a
  * `SCRIPT FLUSH`), so nothing here has to manage the script cache.
  */
-export function defineDemoScripts(redis: Redis): Redis & DemoScriptCommands {
+export function defineDemoScripts<T extends Pick<Redis, 'defineCommand'>>(redis: T): T & DemoScriptCommands {
   if (!defined.has(redis)) {
-    redis.defineCommand('itsmDemoMint', { numberOfKeys: 11, lua: MINT_LUA });
-    redis.defineCommand('itsmDemoRemint', { numberOfKeys: 7, lua: REMINT_LUA });
-    redis.defineCommand('itsmDemoTouch', { numberOfKeys: 2, lua: TOUCH_LUA });
-    redis.defineCommand('itsmDemoRevoke', { numberOfKeys: 2, lua: REVOKE_LUA });
+    for (const [name, script] of Object.entries(DEMO_SCRIPTS)) redis.defineCommand(name, script);
     defined.add(redis);
   }
-  return redis as Redis & DemoScriptCommands;
+  return redis as T & DemoScriptCommands;
 }
 
 /* ------------------------------------------------------------------ Replies */
