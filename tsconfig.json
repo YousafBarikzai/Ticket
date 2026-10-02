@@ -12,12 +12,13 @@
     }
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "modules/**/*.ts", "infra/**/*.ts", "tests/**/*.ts"],
-  // The Next applications are excluded and typechecked by their own projects
-  // instead (`turbo run typecheck`, which CI runs). Two reasons, and both bite:
+  // The four Next applications (the public site is one) are excluded and
+  // typechecked by their own projects instead (`turbo run typecheck`, which CI
+  // runs). Two reasons, and both bite:
   // their files need the DOM library and Next's `jsx: preserve`, and adding
   // either here would relax the server-side program everything else is checked
   // in — a worker that reached for `document` would start compiling. Next also
   // augments `ProcessEnv` to make `NODE_ENV` read-only, which is correct for an
   // application and wrong for the test harness that sets it.
-  "exclude": ["node_modules", "**/dist/**", "**/.next/**", "apps/workbench", "apps/portal", "apps/admin"]
+  "exclude": ["node_modules", "**/dist/**", "**/.next/**", "apps/workbench", "apps/portal", "apps/admin", "apps/site"]
 }

@@ -1,0 +1,223 @@
+/*
+ * The public site's own layout (SPEC v3 §6.1; A5 §3.10).
+ *
+ * Arrangement only, as in the applications: every colour, space, radius and
+ * type size is a design-system custom property, so a token change — or the
+ * dark scheme, or Increase contrast, which the token sheet applies from the
+ * OS preference — reaches this file without an edit. `guards.test.ts` holds
+ * it to that: no hex and no `rgb(` colour here.
+ *
+ * Unlayered and loaded after the design system's sheet, so it wins over
+ * `@layer itsm.*` without `!important`. Classes use the `app-` prefix;
+ * `itsm-` belongs to the design system. Logical properties throughout.
+ *
+ * This wave's page is the holding page (WP-10). The landing page (WP-50)
+ * replaces this file's page rules with its own.
+ */
+
+/* ---- The document ------------------------------------------------------ */
+
+.app-Site {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100dvh;
+  margin: 0;
+  background: var(--itsm-colour-surface-canvas);
+  color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-font-family-sans);
+}
+
+/* ---- The holding page -------------------------------------------------- */
+
+.app-Holding {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  /* 16 px side gutters on a phone, wider where there is room (A5 §3.13). */
+  padding-block: var(--itsm-space-2xl);
+  padding-inline: var(--itsm-page-gutter);
+}
+
+.app-Holding:focus {
+  outline: none;
+}
+
+.app-Holding__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  inline-size: 100%;
+  max-inline-size: 35rem;
+  padding: var(--itsm-space-2xl);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-sm);
+}
+
+.app-Holding__lockup {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Holding__title {
+  margin: 0;
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+  text-wrap: balance;
+}
+
+.app-Holding__lead {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  text-wrap: pretty;
+}
+
+.app-Holding__signIn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Holding__heading {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+}
+
+.app-Holding__help {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Holding__footer {
+  padding-block: var(--itsm-space-lg);
+  padding-inline: var(--itsm-page-gutter);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  text-align: center;
+}
+
+.app-Holding__footer p {
+  margin: 0;
+}
+
+/* ---- One row per area -------------------------------------------------- */
+
+.app-AreaList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-AreaList__row {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  min-block-size: var(--itsm-control-height-lg);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-lg);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background-color var(--itsm-duration-fast) var(--itsm-easing-standard),
+    border-color var(--itsm-duration-fast) var(--itsm-easing-standard);
+}
+
+a.app-AreaList__row:hover {
+  border-color: var(--itsm-colour-border-interactive);
+  background: var(--itsm-colour-surface-hover);
+}
+
+.app-AreaList__row[data-unavailable] {
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-AreaList__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--itsm-control-height-md);
+  block-size: var(--itsm-control-height-md);
+  border-radius: var(--itsm-radius-md);
+  background: var(--itsm-colour-brand-subtle);
+  color: var(--itsm-colour-brand-subtleText);
+}
+
+.app-AreaList__row[data-unavailable] .app-AreaList__icon {
+  background: var(--itsm-colour-neutral-subtle);
+  color: var(--itsm-colour-neutral-subtleText);
+}
+
+.app-AreaList__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-AreaList__name {
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-AreaList__description {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-AreaList__chevron {
+  flex: none;
+  color: var(--itsm-colour-text-muted);
+}
+
+/* 44 × 44 targets for a finger (A5 §3.13). */
+@media (pointer: coarse) {
+  .app-AreaList__row {
+    min-block-size: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-AreaList__row {
+    transition: none;
+  }
+}
+
+/* A phone: the card gives up its frame and the content sits on the canvas,
+   as the design system's StatusScreen does. */
+@media (max-width: 47.99rem) {
+  .app-Holding {
+    place-items: start stretch;
+    padding-block: var(--itsm-space-xl);
+  }
+
+  .app-Holding__card {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+  }
+}
+
+/* Forced colours: the system draws every border; keep the rows outlined. */
+@media (forced-colors: active) {
+  .app-AreaList__row {
+    border-color: CanvasText;
+  }
+}
