@@ -40,6 +40,7 @@ export const analyticsManifest: ModuleManifest = registerModule({
       'sla.timer.breached',
       'approval.requested',
       'approval.decided',
+      'approval.cancelled',
       'notification.queued',
       'notification.sent',
       'notification.failed',
