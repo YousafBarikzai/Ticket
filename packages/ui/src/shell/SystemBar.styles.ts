@@ -282,6 +282,11 @@ ${mq.md} {
     padding-inline: var(--itsm-space-md) calc(var(--itsm-space-xs) + var(--itsm-space-3xs));
   }
 
+  /* The badge and the countdown never give up width: the sentences after them truncate instead. */
+  .itsm-SystemBar__lead {
+    flex: none;
+  }
+
   .itsm-SystemBar__text {
     flex: 1 1 auto;
     font-size: var(--itsm-text-callout-size);

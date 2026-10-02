@@ -1,7 +1,6 @@
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
 import { BrandMark } from '../icons/BrandMark.js';
 import { Icon } from '../icons/Icon.js';
-import { SystemBarBadge } from '../shell/SystemBar.js';
 import type { AppName } from '../theme/prefs.js';
 import type { ActionSpec, Illustration } from '../types.js';
 import { cx } from '../web/cx.js';
@@ -144,7 +143,14 @@ export function StatusScreen({
         ) : null}
         {hop && session ? (
           <div className="itsm-StatusScreen__session" data-surface="hero">
-            {session.badge ? <SystemBarBadge label={session.badge} /> : null}
+            {session.badge ? (
+              // The demo bar's badge, by its classes: this module rides in every app's error boundary,
+              // so it stays clear of the shell (and of `.itsm-SystemBar`, which would publish a frame offset).
+              <span className="itsm-SystemBar__badge">
+                <span className="itsm-SystemBar__dot" aria-hidden="true" />
+                {session.badge}
+              </span>
+            ) : null}
             <span className="itsm-StatusScreen__persona">{session.persona}</span>
           </div>
         ) : null}

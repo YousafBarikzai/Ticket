@@ -128,8 +128,10 @@ export interface SystemBarBadgeProps {
 
 /**
  * The "● Demo" pill on its own, for a surface drawn in the bar's look that is
- * not the bar: the `hop` status screen's persona strip. Not a `SystemBar`, so
- * it never sets the frame offset.
+ * not the bar (the demo details popover, say). Not a `SystemBar`, so it never
+ * sets the frame offset. `StatusScreen`'s `hop` strip writes the same two
+ * classes itself rather than importing this, to keep the shell out of every
+ * app's error boundary.
  */
 export function SystemBarBadge({ label, live = false }: SystemBarBadgeProps): ReactNode {
   return (
