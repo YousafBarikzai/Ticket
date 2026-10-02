@@ -21,6 +21,10 @@ import { cleanupDocument, click, render, type } from './support/render.js';
 vi.mock('server-only', () => ({}));
 
 const router = { push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn(), refresh: vi.fn() };
+/** Throws, as Next's does, so nothing after it runs; counted so a test can tell it from any other throw. */
+const notFound = vi.fn((): never => {
+  throw new Error('not found');
+});
 vi.mock('next/navigation', () => ({
   usePathname: () => '/knowledge',
   useRouter: () => router,
@@ -28,9 +32,7 @@ vi.mock('next/navigation', () => ({
   redirect: (to: string) => {
     throw new Error(`redirect ${to}`);
   },
-  notFound: () => {
-    throw new Error('not found');
-  },
+  notFound: () => notFound(),
 }));
 
 vi.mock('../app/AppLink.js', () => ({
@@ -71,7 +73,7 @@ vi.mock('../server/session.js', () => ({
   loginHref: async () => '/api/session/login',
 }));
 
-const knowledgePage = await import('../app/(portal)/knowledge/page.js');
+const knowledgePage = await import('../app/(portal)/knowledge/(list)/page.js');
 const articlePage = await import('../app/(portal)/knowledge/[key]/page.js');
 const rules = await import('../app/(portal)/knowledge/categories.js');
 const { SearchBox } = await import('../app/(portal)/knowledge/SearchBox.js');
@@ -163,6 +165,18 @@ async function resolveServer(node: ReactNode): Promise<ReactNode> {
   return cloneElement(element, undefined, await resolveServer(children));
 }
 
+/** What the first flush of a server page shows: each `<Suspense>` as its fallback. */
+function firstPaint(node: ReactNode): ReactNode {
+  if (Array.isArray(node)) return node.map((child) => firstPaint(child as ReactNode));
+  if (!isValidElement(node)) return node;
+  const element = node as ReactElement<{ fallback?: ReactNode; children?: ReactNode }>;
+  if (element.type === Suspense) return element.props.fallback;
+  const { children } = element.props;
+  if (children === undefined) return element;
+  if (Array.isArray(children)) return cloneElement(element, undefined, ...(firstPaint(children) as ReactNode[]));
+  return cloneElement(element, undefined, firstPaint(children));
+}
+
 function Link({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }): ReactNode {
   return h('a', { href, ...rest }, children);
 }
@@ -213,6 +227,7 @@ beforeEach(() => {
   serverApi.article.mockResolvedValue(article());
   browserApi.rateArticle.mockResolvedValue({ ok: true });
   helpFlow.open.mockClear();
+  notFound.mockClear();
   helpFlow.available = true;
   router.push.mockClear();
   router.replace.mockClear();
@@ -444,6 +459,29 @@ describe('an article', () => {
     ]);
   });
 
+  it('draws the article while its category shelves are still read, then streams in the breadcrumb’s category and “More in”', async () => {
+    let release: (rows: ArticleSummary[]) => void = () => undefined;
+    serverApi.knowledge.mockImplementation((filter) =>
+      filter?.category === 'how-to' ? new Promise<ArticleSummary[]>((resolve) => (release = resolve)) : Promise.resolve([]),
+    );
+    // The page resolves while a shelf is still outstanding: only the article is waited for.
+    const tree = await articlePage.default({ params: Promise.resolve({ key: 'vpn-setup' }) });
+    render(provided(firstPaint(tree)));
+    expect(document.querySelector('h1')?.textContent).toBe('Set up the VPN');
+    expect(linksIn('.app-Article__crumbs')).toEqual([['Knowledge', '/knowledge']]);
+    expect(document.querySelector('.app-Article__more')).toBeNull();
+    expect(text()).toContain('Did this solve it?');
+    cleanupDocument();
+
+    release([summary('vpn-setup', 'Set up the VPN', 40), summary('printer', 'Add a printer', 5)]);
+    await show(Promise.resolve(tree));
+    expect(linksIn('.app-Article__crumbs')).toEqual([
+      ['Knowledge', '/knowledge'],
+      ['How-to', '/knowledge?category=how-to'],
+    ]);
+    expect(linksIn('.app-Article__more')).toEqual([['Add a printer', '/knowledge/printer']]);
+  });
+
   it('is titled after itself, and without a category shelf simply has no breadcrumb category or “More in”', async () => {
     await expect(articlePage.generateMetadata({ params: Promise.resolve({ key: 'vpn-setup' }) })).resolves.toEqual({ title: 'Set up the VPN' });
     serverApi.knowledge.mockRejectedValue(new ApiError(503, null, 'down'));
@@ -453,13 +491,14 @@ describe('an article', () => {
     expect(document.querySelector('.app-Article__meta')?.textContent).toMatch(/^Published 1 Aug(?: 2026)? · 2 min read$/);
   });
 
-  it('is a 404 for an article that does not exist or is not theirs, and keeps a heading when the read fails', async () => {
+  it('calls notFound() for an article that does not exist or is not theirs, before drawing anything, and keeps a heading when the read fails', async () => {
     serverApi.article.mockRejectedValue(new ApiError(404, null, 'no'));
-    // Returned, not thrown (the page streams behind its skeleton; see NotFoundScreen).
-    await show(articlePage.default({ params: Promise.resolve({ key: 'secret' }) }));
-    expect(document.querySelector('h1')?.textContent).toBe('We couldn’t find that');
+    // Thrown from the page itself, so no element — and no Suspense boundary — exists yet: Next
+    // can still answer 404, with the frame's not-found screen.
+    await expect(articlePage.default({ params: Promise.resolve({ key: 'secret' }) })).rejects.toThrow('not found');
+    expect(notFound).toHaveBeenCalledTimes(1);
     await expect(articlePage.generateMetadata({ params: Promise.resolve({ key: 'secret' }) })).resolves.toEqual({ title: 'Not found', robots: { index: false } });
-    cleanupDocument();
+
     serverApi.article.mockRejectedValue(new ApiError(500, null, 'boom'));
     await show(articlePage.default({ params: Promise.resolve({ key: 'vpn-setup' }) }));
     expect(document.querySelector('h1')?.textContent).toBe('Knowledge');

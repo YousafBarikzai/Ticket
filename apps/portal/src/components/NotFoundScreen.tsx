@@ -13,16 +13,17 @@ import { StatusScreen } from '@itsm/ui';
  * costs no JavaScript at all — the not-found boundary is part of every
  * portal route's first load, whether or not it is ever shown (SPEC §3.7).
  *
- * The pages for one request, one service and one article **return** this
- * rather than calling `notFound()`. Their segments stream behind a
- * `loading.tsx` skeleton, so by the time the read says 404 the response has
- * begun: `notFound()` there cannot change the status any more, and in a
- * production build it also surfaced as an uncaught React error #419 in the
- * browser ("could not finish this Suspense boundary") on every missing link.
- * Returning the same screen, with `NOT_FOUND_METADATA`, shows exactly what
- * the boundary showed without the error. (The status stays 200 either way;
- * a real 404 would need those routes to drop their skeletons — see the
- * portal integration report.)
+ * The pages for one request, one service and one article reach it by calling
+ * `notFound()`, and they call it **before streaming** (SPEC §5.5, A4 §5.4):
+ * the existence read is the first thing each page waits for, and no
+ * `loading.tsx` or `<Suspense>` boundary sits above it — the list and Home
+ * skeletons live in the `(list)` and `(home)` route groups, beside the pages
+ * they stand in for, and the detail pages' own skeletons are explicit
+ * boundaries *below* the read. Nothing has been sent when the read says 404,
+ * so the response is a real 404 with this screen in the frame. (Inside an
+ * already-streaming boundary the status would stay 200, and in a production
+ * build the throw surfaced as React error #419 in the browser; that is why
+ * the order matters, and why a new detail route must keep it.)
  */
 export function NotFoundScreen(): ReactNode {
   return (
@@ -38,5 +39,9 @@ export function NotFoundScreen(): ReactNode {
   );
 }
 
-/** The `<title>` and robots rule of a page that is showing `NotFoundScreen`. */
+/**
+ * The `<title>` and robots rule for a page that turns out not to exist:
+ * `generateMetadata` answers with this rather than calling `notFound()`, so
+ * it never throws (metadata may stream separately from the page).
+ */
 export const NOT_FOUND_METADATA: Metadata = { title: 'Not found', robots: { index: false } };

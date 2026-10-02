@@ -1,10 +1,10 @@
 import { Suspense, type ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { KnownIssuesSource } from '../../help/known-issues.js';
-import { knownIssuesFrom } from '../../help/model.js';
-import { followUrlFor, readStatus } from '../../help/status.js';
-import { HomeHero } from '../../home/HomeHero.js';
-import { greetingFor, parseChannels, todayLabel, updatedLabel } from '../../home/model.js';
+import { KnownIssuesSource } from '../../../help/known-issues.js';
+import { knownIssuesFrom } from '../../../help/model.js';
+import { followUrlFor, readStatus } from '../../../help/status.js';
+import { HomeHero } from '../../../home/HomeHero.js';
+import { greetingFor, parseChannels, todayLabel, updatedLabel } from '../../../home/model.js';
 import {
   GoodToKnowSection,
   GoodToKnowSkeleton,
@@ -13,11 +13,11 @@ import {
   TopicsSkeleton,
   YourRequests,
   YourRequestsSkeleton,
-} from '../../home/sections.js';
-import { settle } from '../../home/settle.js';
-import { portalCan } from '../../navigation.js';
-import { apiFor, currentApprovals, currentMe, heldPermissions, requireSession } from '../../server/session.js';
-import '../../home/home.css';
+} from '../../../home/sections.js';
+import { settle } from '../../../home/settle.js';
+import { portalCan } from '../../../navigation.js';
+import { apiFor, currentApprovals, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
+import '../../../home/home.css';
 
 export const dynamic = 'force-dynamic';
 

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, cloneElement, forwardRef, isValidElement, Suspense, type AnchorHTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OutboxItem, QueueInput, SubmitResult } from '@itsm/pwa';
-import type { ApprovalRequest, Me, NotificationInbox, Page, SlaTimer, Ticket, Timeline, TimelineEntry } from '@itsm/sdk';
+import type { ApprovalRequest, CatalogueItem, CatalogueItemDetail, Me, NotificationInbox, Page, SlaTimer, Ticket, Timeline, TimelineEntry } from '@itsm/sdk';
 import { ApiError } from '@itsm/sdk';
 import { ItsmProvider } from '@itsm/ui';
 import { structuralVariables, themeVariables } from '@itsm/ui/tokens';
@@ -18,13 +18,19 @@ import { cleanupDocument, click, clickAsync, render, submit, type } from './supp
  * a conversation built from public comments only (never events, internal
  * notes or task titles), with the description first; the composer with one
  * key per intent, "Sending…", queued offline and accurate refusals; the
- * details folded away; never a priority.
+ * details folded away; never a priority. And a real 404 (SPEC §5.5): a
+ * missing request, service or article calls `notFound()` before anything is
+ * drawn, with no skeleton above it.
  */
 
 vi.mock('server-only', () => ({}));
 
 let pathname = '/tickets';
 const router = { push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn(), refresh: vi.fn() };
+/** Throws, as Next's does, so nothing after it runs; counted so a test can tell it from any other throw. */
+const notFound = vi.fn((): never => {
+  throw new Error('not found');
+});
 vi.mock('next/navigation', () => ({
   usePathname: () => pathname,
   useRouter: () => router,
@@ -32,9 +38,7 @@ vi.mock('next/navigation', () => ({
   redirect: (to: string) => {
     throw new Error(`redirect ${to}`);
   },
-  notFound: () => {
-    throw new Error('not found');
-  },
+  notFound: () => notFound(),
 }));
 
 vi.mock('../app/AppLink.js', () => ({
@@ -86,6 +90,10 @@ const serverApi = {
   timeline: vi.fn(async (_id: string): Promise<Timeline> => ({ ticket: ticket('INC-000123', 'in_progress'), includesInternal: false, includesEvents: false, entries: [], attachments: [] })),
   slaTimers: vi.fn(async (_id: string) => ({ ticketId: 'id-INC-000123', timers: [] as SlaTimer[] })),
   approvals: vi.fn(async (_o?: unknown) => ({ data: [] as ApprovalRequest[] })),
+  catalogue: vi.fn(async () => ({ data: [] as CatalogueItem[] })),
+  catalogueItem: vi.fn(async (_key: string): Promise<CatalogueItemDetail> => {
+    throw new ApiError(404, null, 'no such item');
+  }),
 };
 
 const me = (): Me => ({
@@ -116,7 +124,7 @@ vi.mock('../requests/server.js', () => ({
   },
 }));
 
-const listPage = await import('../app/(portal)/tickets/page.js');
+const listPage = await import('../app/(portal)/tickets/(list)/page.js');
 const detailPage = await import('../app/(portal)/tickets/[id]/page.js');
 const model = await import('../requests/model.js');
 const { Conversation } = await import('../requests/Conversation.js');
@@ -195,13 +203,15 @@ beforeEach(() => {
   serverApi.timeline.mockResolvedValue({ ticket: ticket('INC-000123', 'in_progress'), includesInternal: false, includesEvents: false, entries, attachments: [] });
   serverApi.slaTimers.mockResolvedValue({ ticketId: 'id-INC-000123', timers: [] });
   serverApi.approvals.mockResolvedValue({ data: [] });
+  serverApi.catalogue.mockResolvedValue({ data: [] });
+  serverApi.catalogueItem.mockRejectedValue(new ApiError(404, null, 'no such item'));
   browserApi.myTickets.mockResolvedValue({ data: [], nextCursor: null });
   browserApi.transition.mockResolvedValue({});
   browserApi.notifications.mockResolvedValue({ unread: 0, data: [] });
   browserApi.markNotificationRead.mockResolvedValue({ marked: 1 });
   submitOrQueue.mockReset();
   submitOrQueue.mockImplementation(async (input) => ({ ok: true, queued: false, idempotencyKey: input.idempotencyKey ?? 'k' }));
-  for (const mock of [router.push, router.replace, router.refresh, helpFlow.open, notify, announce, outbox.refresh]) mock.mockClear();
+  for (const mock of [router.push, router.replace, router.refresh, helpFlow.open, notify, announce, outbox.refresh, notFound]) mock.mockClear();
   helpFlow.available = true;
   outbox.items = [];
   localStorage.clear();
@@ -229,6 +239,27 @@ async function resolveServer(node: ReactNode): Promise<ReactNode> {
   if (children === undefined) return element;
   if (Array.isArray(children)) return cloneElement(element, undefined, ...((await resolveServer(children)) as ReactNode[]));
   return cloneElement(element, undefined, await resolveServer(children));
+}
+
+/** Every `<Suspense>` in a server page's own tree (not inside the components it renders). */
+function suspenseIn(node: ReactNode): ReactElement<{ fallback: ReactNode; children?: ReactNode }>[] {
+  if (Array.isArray(node)) return node.flatMap((child) => suspenseIn(child as ReactNode));
+  if (!isValidElement(node)) return [];
+  const element = node as ReactElement<{ fallback: ReactNode; children?: ReactNode }>;
+  if (element.type === Suspense) return [element, ...suspenseIn(element.props.children)];
+  return suspenseIn(element.props.children);
+}
+
+/** What the first flush of a server page shows: each `<Suspense>` as its fallback. */
+function firstPaint(node: ReactNode): ReactNode {
+  if (Array.isArray(node)) return node.map((child) => firstPaint(child as ReactNode));
+  if (!isValidElement(node)) return node;
+  const element = node as ReactElement<{ fallback?: ReactNode; children?: ReactNode }>;
+  if (element.type === Suspense) return element.props.fallback;
+  const { children } = element.props;
+  if (children === undefined) return element;
+  if (Array.isArray(children)) return cloneElement(element, undefined, ...(firstPaint(children) as ReactNode[]));
+  return cloneElement(element, undefined, firstPaint(children));
 }
 
 function Link({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }): ReactNode {
@@ -581,18 +612,47 @@ describe('a request', () => {
     expect([...details!.querySelectorAll('dt')].map((term) => term.textContent)).toEqual(['Reference', 'Type', 'Raised', 'Last update']);
   });
 
-  it('is not found when the API says so, and moves an id to its number', async () => {
+  it('calls notFound() when the API says so, before drawing anything, and moves an id to its number', async () => {
     serverApi.ticket.mockRejectedValue(new ApiError(404, null, 'not found'));
-    // The not-found screen is returned, not thrown: the page streams behind its skeleton, and a
-    // notFound() there surfaced as React error #419 in production browsers.
-    await openRequest('INC-000404');
-    expect(document.querySelector('h1')?.textContent).toBe('We couldn’t find that');
-    expect(text()).not.toContain('INC-000404');
+    // Thrown from the page itself, so no element — and no Suspense boundary — exists yet: Next
+    // can still answer 404, with the frame's not-found screen.
+    await expect(detailPage.default({ params: Promise.resolve({ id: 'INC-000404' }), searchParams: Promise.resolve({}) })).rejects.toThrow('not found');
+    expect(notFound).toHaveBeenCalledTimes(1);
+    // The reads that need the request never start; the conversation's, begun beside it, is settled quietly.
+    expect(serverApi.slaTimers).not.toHaveBeenCalled();
+    expect(serverApi.approvals).not.toHaveBeenCalled();
     await expect(detailPage.generateMetadata({ params: Promise.resolve({ id: 'INC-000404' }) })).resolves.toEqual({ title: 'Not found', robots: { index: false } });
-    cleanupDocument();
 
     serverApi.ticket.mockResolvedValue(ticket('INC-000123', 'resolved'));
     await expect(openRequest('0b0c4d1e-5c6a-4f6b-9d7e-2a1b3c4d5e6f', { fixed: 'no' })).rejects.toThrow('redirect /tickets/INC-000123?fixed=no');
+    expect(notFound).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws the heading as soon as the request is read, and streams the card and the conversation behind a skeleton of their shape', async () => {
+    let release: () => void = () => undefined;
+    serverApi.timeline.mockImplementation(
+      () =>
+        new Promise<Timeline>((resolve) => {
+          release = () => resolve({ ticket: ticket('INC-000123', 'in_progress'), includesInternal: false, includesEvents: false, entries, attachments: [] });
+        }),
+    );
+    // The page resolves while the timeline is still outstanding: only the request is waited for.
+    const tree = await detailPage.default({ params: Promise.resolve({ id: 'INC-000123' }), searchParams: Promise.resolve({}) });
+    const boundaries = suspenseIn(tree);
+    expect(boundaries).toHaveLength(1);
+
+    render(<Provider>{firstPaint(tree)}</Provider>);
+    expect(document.querySelector('h1')?.textContent).toBe('Title of INC-000123');
+    expect(control('My requests').getAttribute('href')).toBe('/tickets');
+    expect(document.querySelector('.app-RequestDetails')).not.toBeNull();
+    const skeleton = document.querySelector('.app-RequestHero--loading');
+    expect(skeleton?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.querySelector('.app-RequestHero h2')).toBeNull();
+    expect(document.querySelector('.app-Conversation')).toBeNull();
+    // One status speaks for the whole skeleton (the other is the announcer's live region, silent).
+    const said = [...document.querySelectorAll('[role="status"]')].map((node) => node.textContent?.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    expect(said).toEqual([expect.stringContaining('Loading the request…')]);
+    release();
   });
 
   it('keeps the heading and offers Retry when the request cannot be read', async () => {
@@ -790,6 +850,47 @@ describe('the composer', () => {
     render(conversation({ attachments: [{ id: 'f1', name: 'vpn.log', size: 2048, mime: 'text/plain' }] }));
     expect(text()).toContain('vpn.log');
     expect(document.querySelector('.app-Conversation__files a')).toBeNull();
+  });
+});
+
+/* ---- Real 404s (SPEC §5.5, A4 §5.4) ---------------------------------------- */
+
+describe('a missing request, service or article is a real 404', () => {
+  const portalDir = resolve(dirname(fileURLToPath(import.meta.url)), '../app/(portal)');
+  const detailRoutes = ['tickets/[id]', 'catalogue/[key]', 'knowledge/[key]'];
+
+  it('has no loading.tsx in any segment above a detail page, so nothing streams before its existence read', () => {
+    for (const route of detailRoutes) {
+      const [list] = route.split('/');
+      // A loading.tsx is a Suspense boundary around every page below it.
+      for (const segment of ['', list!, route]) expect(existsSync(join(portalDir, segment, 'loading.tsx')), `${route}: ${segment || '(portal)'}/loading.tsx`).toBe(false);
+      expect(existsSync(join(portalDir, route, 'page.tsx'))).toBe(true);
+    }
+  });
+
+  it('keeps every skeleton it moved, beside the page it stands in for, at the same URL', () => {
+    for (const group of ['(home)', 'tickets/(list)', 'catalogue/(list)', 'knowledge/(list)']) {
+      expect(existsSync(join(portalDir, group, 'page.tsx')), group).toBe(true);
+      expect(existsSync(join(portalDir, group, 'loading.tsx')), group).toBe(true);
+    }
+    expect(existsSync(join(portalDir, 'page.tsx'))).toBe(false);
+  });
+
+  it('calls notFound() from each detail page and never returns a not-found screen of its own', () => {
+    for (const route of detailRoutes) {
+      const source = readFileSync(join(portalDir, route, 'page.tsx'), 'utf8');
+      expect(source, route).toMatch(/\bnotFound\(\)/);
+      expect(source, route).not.toMatch(/<NotFoundScreen/);
+    }
+  });
+
+  it('calls notFound() for a service item that does not exist or is not theirs, before drawing anything', async () => {
+    permissions = ['catalogue.read', 'ticket.create'];
+    const itemPage = await import('../app/(portal)/catalogue/[key]/page.js');
+    await expect(itemPage.default({ params: Promise.resolve({ key: 'no-such-item' }) })).rejects.toThrow('not found');
+    expect(notFound).toHaveBeenCalledTimes(1);
+    expect(serverApi.catalogueItem).toHaveBeenCalledWith('no-such-item');
+    await expect(itemPage.generateMetadata({ params: Promise.resolve({ key: 'no-such-item' }) })).resolves.toEqual({ title: 'Not found', robots: { index: false } });
   });
 });
 

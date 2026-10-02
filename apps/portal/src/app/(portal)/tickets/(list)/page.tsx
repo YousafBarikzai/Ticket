@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { settle } from '../../../home/settle.js';
-import { NewRequestButton } from '../../../requests/NewRequestButton.js';
-import { itemOf, filterFor, PAGE_SIZE, queryOf, scopeOf } from '../../../requests/model.js';
-import { RequestsBrowser } from '../../../requests/RequestsBrowser.js';
-import { apiFor, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
-import '../../../requests/requests.css';
+import { settle } from '../../../../home/settle.js';
+import { NewRequestButton } from '../../../../requests/NewRequestButton.js';
+import { itemOf, filterFor, PAGE_SIZE, queryOf, scopeOf } from '../../../../requests/model.js';
+import { RequestsBrowser } from '../../../../requests/RequestsBrowser.js';
+import { apiFor, currentMe, heldPermissions, requireSession } from '../../../../server/session.js';
+import '../../../../requests/requests.css';
 
 export const metadata: Metadata = { title: 'My requests' };
 export const dynamic = 'force-dynamic';

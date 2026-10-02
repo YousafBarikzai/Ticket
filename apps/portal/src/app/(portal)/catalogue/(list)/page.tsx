@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import { EmptyState } from '@itsm/ui';
-import { ServiceBrowser } from '../../../catalogue/ServiceBrowser.js';
-import { SectionProblem } from '../../../home/SectionProblem.js';
-import { settle } from '../../../home/settle.js';
-import { mayOpen } from '../../../navigation.js';
-import { apiFor, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
-import './catalogue.css';
+import { ServiceBrowser } from '../../../../catalogue/ServiceBrowser.js';
+import { SectionProblem } from '../../../../home/SectionProblem.js';
+import { settle } from '../../../../home/settle.js';
+import { mayOpen } from '../../../../navigation.js';
+import { apiFor, currentMe, heldPermissions, requireSession } from '../../../../server/session.js';
+import '../catalogue.css';
 
 export const metadata: Metadata = { title: 'Services' };
 export const dynamic = 'force-dynamic';

@@ -1,16 +1,16 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import { EmptyState } from '@itsm/ui';
-import { settle } from '../../../home/settle.js';
-import { Browse } from '../../../knowledge/Browse.js';
-import { Results, RESULT_LIMIT } from '../../../knowledge/Results.js';
-import { mayOpen, portalCan } from '../../../navigation.js';
-import { apiFor, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
-import { categoryFor, queryOf } from './categories.js';
-import { ReportButton } from './ReportButton.js';
-import { SearchBox } from './SearchBox.js';
-import { readArticles } from './server.js';
-import './knowledge.css';
+import { settle } from '../../../../home/settle.js';
+import { Browse } from '../../../../knowledge/Browse.js';
+import { Results, RESULT_LIMIT } from '../../../../knowledge/Results.js';
+import { mayOpen, portalCan } from '../../../../navigation.js';
+import { apiFor, currentMe, heldPermissions, requireSession } from '../../../../server/session.js';
+import { categoryFor, queryOf } from '../categories.js';
+import { ReportButton } from '../ReportButton.js';
+import { SearchBox } from '../SearchBox.js';
+import { readArticles } from '../server.js';
+import '../knowledge.css';
 
 export const dynamic = 'force-dynamic';
 

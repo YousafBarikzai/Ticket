@@ -1,12 +1,17 @@
 import type { ReactNode } from 'react';
 import { Skeleton, SkeletonCard } from '@itsm/ui';
-import './catalogue.css';
+import '../catalogue.css';
 
 /**
  * Services while the catalogue is read (SPEC §4.10): the page's own shape —
  * the heading and its line, the search, the chips, then a service's cards —
  * so nothing moves when it arrives. Revealed after 200 ms; "Loading
  * services…" for a screen reader after a second.
+ *
+ * In the `(list)` group so that it wraps the list and nothing else: as a
+ * sibling of `[key]` it would also be the Suspense boundary above an item's
+ * page, and an item that does not exist could no longer answer 404
+ * (SPEC §5.5, A4 §5.4).
  */
 export default function CatalogueLoading(): ReactNode {
   return (
