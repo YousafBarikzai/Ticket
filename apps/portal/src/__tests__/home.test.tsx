@@ -97,7 +97,7 @@ vi.mock('../server/session.js', () => ({
   apiFor: () => serverApi,
 }));
 
-const home = await import('../app/(portal)/page.js');
+const home = await import('../app/(portal)/(home)/page.js');
 const search = await import('../app/(portal)/search/page.js');
 const model = await import('../home/model.js');
 const { HomeSearch } = await import('../home/HomeSearch.js');
