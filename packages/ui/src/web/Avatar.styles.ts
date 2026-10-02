@@ -1,13 +1,6 @@
 import { AVATAR_HUES, moreContrast } from '../display/tone.js';
 import { css, layer, mq } from '../styles/css.js';
 
-/**
- * @deprecated v2's tint share, read only by `display/__tests__/avatar-tints.test.ts`,
- * which v3 deletes (§2.16) in favour of `avatar-palette.test.ts`. v3 draws no
- * tint: remove this with that file.
- */
-export const AVATAR_TINT_PERCENT = 22;
-
 const fills = Array.from(
   { length: AVATAR_HUES },
   (_, index) => `.itsm-Avatar[data-hue="${index + 1}"] { --_itsm-avatar-fill: var(--itsm-colour-avatar-${index + 1}); }`,

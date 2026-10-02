@@ -14,7 +14,7 @@ import type { IconName, Tone } from '../types.js';
 
 export { moreContrast, toneIntent, tones } from '../feedback/tone.js';
 
-/** The categorical hues an avatar can take: the eight chart slots (SPEC §1.11), as tints. */
+/** The categorical hues an avatar can take: the eight deep `avatar-N` discs (v3 §2.6). */
 export const AVATAR_HUES = 8;
 
 /**
