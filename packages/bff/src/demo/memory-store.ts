@@ -247,12 +247,21 @@ function decode(raw: string | null): Record<string, unknown> | null {
   }
 }
 
+/** Lua's `tonumber`, for the values a session record can hold: a number, or a string of one. */
+function luaNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function readLive(
   ks: MemoryKeyspace,
   persona: string,
 ): { live: Record<string, unknown> & { tenantId: string; generation: number }; userId: string } | null {
   const live = decode(ks.get(DEMO_KEYS.live));
   if (!live || typeof live.tenantId !== 'string' || typeof live.generation !== 'number') return null;
+  if (live.generation < 1 || !Number.isInteger(live.generation)) return null;
   const personas = live.personas;
   if (!personas || typeof personas !== 'object') return null;
   const person = (personas as Record<string, unknown>)[persona];
@@ -360,8 +369,7 @@ function mintScript(ks: MemoryKeyspace, a: MintArgs): MintReply {
     status: 'ok',
     tenantId: found.live.tenantId,
     userId: found.userId,
-    // Lua hands numbers back to Redis as integers.
-    generation: Math.trunc(found.live.generation),
+    generation: found.live.generation,
     exp: Math.trunc(exp),
     evictedOwn,
     evictedIdle,
@@ -450,7 +458,7 @@ function touchScript(
   const session = decode(rawSession);
   if (!session || session.kind !== 'demo') return 'gone';
   if (session.accessToken !== a.token) return 'skipped';
-  const last = typeof session.lastTouchAt === 'number' ? session.lastTouchAt : null;
+  const last = luaNumber(session.lastTouchAt);
   if (last !== null && a.now - last < a.intervalMs) return 'skipped';
   ks.zadd(DEMO_KEYS.active, a.now, a.hash, { xx: true, gt: true });
   session.lastTouchAt = a.now;

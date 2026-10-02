@@ -210,7 +210,14 @@ export function demoTokenStoreContract(label: string, makeHarness: () => Promise
       });
       await h.setPaused(false);
 
-      for (const live of [null, 'not json', '{"v":1}', JSON.stringify({ ...liveRecord(1), personas: {} })]) {
+      for (const live of [
+        null,
+        'not json',
+        '{"v":1}',
+        JSON.stringify({ ...liveRecord(1), personas: {} }),
+        JSON.stringify({ ...liveRecord(1), generation: 1.5 }),
+        JSON.stringify({ ...liveRecord(1), generation: 0 }),
+      ]) {
         await h.setLive(live);
         expect(await h.store.mint({ ...agent, ipb: b(1), settings: settingsWith(), now: t0 })).toEqual({
           ok: false,
@@ -559,6 +566,10 @@ export function demoTokenStoreContract(label: string, makeHarness: () => Promise
       expect(await touch(t0 + 359_999)).toBe('skipped');
       expect(await touch(t0 + 360_000)).toBe('touched');
       expect(await h.score(DEMO_KEYS.active, minted.tokenHash)).toBe(t0 + 360_000);
+
+      // A `lastTouchAt` written as a string still throttles, as Lua's `tonumber` reads it.
+      await h.putSession('touch-1', demoSession('touch-1', minted, { lastTouchAt: String(t0 + 360_000) }), 900_000);
+      expect(await touch(t0 + 400_000)).toBe('skipped');
 
       // A replica with a slow clock never moves the score back.
       await h.putSession('touch-1', demoSession('touch-1', minted), 900_000);

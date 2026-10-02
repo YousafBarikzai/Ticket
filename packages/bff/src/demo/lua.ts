@@ -49,8 +49,11 @@ local function read_live(key, persona)
   local raw = redis.call('GET', key)
   if not raw then return nil end
   local ok, live = pcall(cjson.decode, raw)
+  -- A whole generation from 1: Lua hands numbers back truncated, so a
+  -- fractional one would reach the caller as a different number.
   if not ok or type(live) ~= 'table' or type(live.tenantId) ~= 'string'
-    or type(live.generation) ~= 'number' or type(live.personas) ~= 'table' then
+    or type(live.generation) ~= 'number' or live.generation < 1 or live.generation % 1 ~= 0
+    or type(live.personas) ~= 'table' then
     return nil
   end
   local person = live.personas[persona]
