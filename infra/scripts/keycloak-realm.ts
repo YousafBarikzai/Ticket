@@ -157,6 +157,27 @@ export function missingScopes(realm: Realm, existing: readonly string[]): Record
   return declared.filter((scope) => !have.has(scope.name));
 }
 
+/**
+ * Keycloak's own clients, and the default scopes each has to have.
+ *
+ * Keycloak creates these with every realm, linked to whichever scopes exist at
+ * that moment — and a realm created from a file that names any scope starts
+ * with only those. This one began with `itsm-claims` alone, so its account page
+ * (`/realms/<realm>/account`) signed people in with a token naming nobody and
+ * holding no roles, and its API refused every request: "Something went wrong".
+ * They are not in `realm.json` because the partial import would delete and
+ * recreate them, losing what Keycloak set up on them; this is attached instead.
+ */
+export const BUILT_IN_CLIENT_SCOPES: Readonly<Record<string, readonly string[]>> = {
+  'account-console': ['basic', 'roles', 'profile', 'email', 'web-origins', 'acr'],
+};
+
+/** The scopes a client should have and does not, in the order they are wanted. */
+export function scopesToAttach(wanted: readonly string[], attached: readonly string[]): string[] {
+  const have = new Set(attached);
+  return wanted.filter((scope) => !have.has(scope));
+}
+
 /** The clients that sign people in with a secret: not public, and not a resource server. */
 export function confidentialClients(realm: Realm): string[] {
   return realm.clients.filter((client) => client.publicClient === false && client.bearerOnly !== true).map((client) => client.clientId);
@@ -312,6 +333,35 @@ async function createMissingScopes(realm: Realm, baseUrl: string, headers: Recor
   }
 }
 
+/** Gives Keycloak's own clients the default scopes `BUILT_IN_CLIENT_SCOPES` names. */
+async function attachBuiltInClientScopes(realm: Realm, baseUrl: string, headers: Record<string, string>): Promise<void> {
+  const admin = `${baseUrl}/admin/realms/${realm.realm}`;
+  const listed = await fetch(`${admin}/client-scopes`, { headers });
+  if (!listed.ok) throw new Error(`could not read the client scopes: ${listed.status}${permissionHint(listed.status)}`);
+  const scopeIds = new Map(((await listed.json()) as { id: string; name: string }[]).map((scope) => [scope.name, scope.id]));
+
+  for (const [clientId, wanted] of Object.entries(BUILT_IN_CLIENT_SCOPES)) {
+    const found = await fetch(`${admin}/clients?clientId=${encodeURIComponent(clientId)}`, { headers });
+    if (!found.ok) throw new Error(`could not read the client ${clientId}: ${found.status}${permissionHint(found.status)}`);
+    const [client] = (await found.json()) as { id: string }[];
+    if (!client) throw new Error(`the realm has no ${clientId} client, which Keycloak creates with every realm`);
+
+    const current = await fetch(`${admin}/clients/${client.id}/default-client-scopes`, { headers });
+    if (!current.ok) throw new Error(`could not read the scopes of ${clientId}: ${current.status}${permissionHint(current.status)}`);
+    const attached = ((await current.json()) as { name: string }[]).map((scope) => scope.name);
+
+    for (const name of scopesToAttach(wanted, attached)) {
+      const scopeId = scopeIds.get(name);
+      if (!scopeId) throw new Error(`${clientId} needs the client scope ${name}, which the realm does not have`);
+      const linked = await fetch(`${admin}/clients/${client.id}/default-client-scopes/${scopeId}`, { method: 'PUT', headers });
+      if (!linked.ok) {
+        throw new Error(`could not give ${clientId} the ${name} scope: ${linked.status}${permissionHint(linked.status)} ${await linked.text()}`);
+      }
+      console.log(`gave ${clientId} the ${name} scope`);
+    }
+  }
+}
+
 async function apply(realm: Realm, baseUrl: string, token: string): Promise<void> {
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const exists = await fetch(`${baseUrl}/admin/realms/${realm.realm}`, { headers });
@@ -320,6 +370,7 @@ async function apply(realm: Realm, baseUrl: string, token: string): Promise<void
     const created = await fetch(`${baseUrl}/admin/realms`, { method: 'POST', headers, body: JSON.stringify(realmBody(realm)) });
     if (!created.ok) throw new Error(`could not create the realm: ${created.status}${permissionHint(created.status)} ${await created.text()}`);
     console.log(`created realm ${realm.realm}`);
+    await attachBuiltInClientScopes(realm, baseUrl, headers);
     await applyUserProfile(realm, baseUrl, headers);
     return;
   }
@@ -341,6 +392,7 @@ async function apply(realm: Realm, baseUrl: string, token: string): Promise<void
   });
   if (!imported.ok) throw new Error(`could not import the clients: ${imported.status}${permissionHint(imported.status)} ${await imported.text()}`);
 
+  await attachBuiltInClientScopes(realm, baseUrl, headers);
   await applyUserProfile(realm, baseUrl, headers);
   console.log(`updated realm ${realm.realm}`);
 }
