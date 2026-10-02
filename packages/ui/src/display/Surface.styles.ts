@@ -2,24 +2,30 @@ import { css, layer, mq } from '../styles/css.js';
 import { moreContrast } from './tone.js';
 
 /**
- * `Surface`: the fill, corner, padding and depth every card-like thing shares.
- * `Card` renders with this class too, so a card and a plain surface of the
- * same settings are the same object.
+ * `Surface`: the fill, edge, corner, padding and depth every card-like thing
+ * shares. `Card` renders with this class too, so a card and a plain surface
+ * of the same settings are the same object.
+ *
+ * **Depth is border-first** (v3 §2.9, superseding v2's "depth from
+ * elevation"): the light canvas and a raised surface differ by only 1.07:1,
+ * so a raised surface draws a 1 px `border.subtle` edge and rests with no
+ * shadow; elevation is for what is lifted — a hovered card, a popover. The
+ * edge is a real border on every tone (transparent where the tone has none),
+ * so switching tone never moves the content by a pixel, and forced colours
+ * draw it as a system-colour line with no special case.
  *
  * The shadow is assembled from two component-local layers — the elevation and
- * the edge — so the settings compose instead of overwriting each other: a
- * raised surface always keeps the dark theme's one-pixel top highlight (SPEC
- * §1.2 `edgeHighlight`, transparent in the other themes) whatever its
- * elevation, and an outline surface keeps its hairline. `none` is not a value
- * that can sit in a shadow list, so "no elevation" is a transparent layer.
+ * the edge highlight — so the settings compose instead of overwriting each
+ * other: a raised surface keeps the dark theme's one-pixel top highlight
+ * (`edgeHighlight`, transparent in the other themes) whatever its elevation.
+ * `none` is not a value that can sit in a shadow list, so "no elevation" is
+ * a transparent layer.
  *
  * `lg` padding is 24 px on a wide screen and eases to 16 on a phone, where
  * 24 either side of a card is a sixth of the width.
  *
- * In the high-contrast themes the elevation tokens are already an outline in
- * `border.strong`; a raised surface with no elevation gets the same hairline
- * so white-on-white never hides where it starts. In forced colours shadows
- * are dropped by the browser, so the surface draws a system-colour outline.
+ * In the high-contrast themes a raised surface's edge darkens to
+ * `border.strong`, so white-on-white never hides where it starts.
  */
 export const surfaceStyles = layer(
   'components',
@@ -29,12 +35,14 @@ export const surfaceStyles = layer(
   --_itsm-surface-edge: 0 0 0 0 transparent;
   box-sizing: border-box;
   min-inline-size: 0;
+  border: var(--itsm-border-hair) solid transparent;
   color: var(--itsm-colour-text-primary);
   box-shadow: var(--_itsm-surface-elevation), var(--_itsm-surface-edge);
 }
 
 .itsm-Surface[data-tone="raised"] {
   --_itsm-surface-edge: var(--itsm-edge-highlight);
+  border-color: var(--itsm-colour-border-subtle);
   background: var(--itsm-colour-surface-raised);
 }
 
@@ -43,7 +51,7 @@ export const surfaceStyles = layer(
 }
 
 .itsm-Surface[data-tone="outline"] {
-  --_itsm-surface-edge: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-subtle);
+  border-color: var(--itsm-colour-border-subtle);
   background: transparent;
 }
 
@@ -62,15 +70,14 @@ export const surfaceStyles = layer(
 .itsm-Surface[data-padding="lg"] { padding: clamp(var(--itsm-space-md), 5vw, var(--itsm-space-lg)); }
 
 ${moreContrast(
-  (scope) => `${scope} .itsm-Surface[data-tone="raised"][data-elevation="none"] {
-  --_itsm-surface-edge: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-strong);
+  (scope) => `${scope} .itsm-Surface:is([data-tone="raised"], [data-tone="outline"]) {
+  border-color: var(--itsm-colour-border-strong);
 }`,
 )}
 
 ${mq.forcedColors} {
-  .itsm-Surface:not([data-tone="sunken"]) {
-    outline: var(--itsm-hairline) solid CanvasText;
-    outline-offset: calc(-1 * var(--itsm-hairline));
+  .itsm-Surface:is([data-tone="raised"], [data-tone="outline"]) {
+    border-color: CanvasText;
   }
 }
 `,

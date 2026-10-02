@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { cx } from '../web/cx.js';
 import { Skeleton, SkeletonText } from '../web/Skeleton.js';
 import { Spinner } from './Spinner.js';
@@ -62,18 +62,24 @@ function SkeletonRoot({
   className,
   label,
   stillLabel,
+  style,
   children,
   ...data
-}: Announced & { readonly className: string; readonly children: ReactNode; readonly [data: `data-${string}`]: string | number | undefined }): ReactNode {
+}: Announced & {
+  readonly className: string;
+  readonly style?: CSSProperties;
+  readonly children: ReactNode;
+  readonly [data: `data-${string}`]: string | number | undefined;
+}): ReactNode {
   if (!label) {
     return (
-      <div {...data} aria-hidden="true" className={className}>
+      <div {...data} aria-hidden="true" className={className} style={style}>
         {children}
       </div>
     );
   }
   return (
-    <div {...data} className={className} data-announced="">
+    <div {...data} className={className} style={style} data-announced="">
       <SkeletonStatus label={label} stillLabel={stillLabel} />
       <div className="itsm-SkeletonShapes" aria-busy="true">
         {children}
@@ -100,13 +106,29 @@ export interface SkeletonStatProps {
   readonly className?: string;
 }
 
-/** Stands in for a `StatCard`: the label, the value, the change under it. */
+/**
+ * Stands in for a `StatCard` v3 tile at its final height (124): the label,
+ * the value with its delta pill, and the context line at the foot.
+ */
 export function SkeletonStat({ className }: SkeletonStatProps): ReactNode {
   return (
     <div aria-hidden="true" className={cx('itsm-SkeletonStat', className)}>
-      <Skeleton width="45%" height={12} />
-      <Skeleton width="55%" height="var(--itsm-text-statValue-size)" radius="md" />
-      <Skeleton width="35%" height={10} />
+      <Skeleton className="itsm-SkeletonStat__label" width="45%" height={12} />
+      <div className="itsm-SkeletonStat__value">
+        <Skeleton width="40%" height="var(--itsm-text-statValue-size)" radius="md" />
+        <Skeleton width="2.75rem" height={20} radius="pill" />
+      </div>
+      <Skeleton className="itsm-SkeletonStat__context" width="64%" height={12} />
+    </div>
+  );
+}
+
+/** A card's head: the title bar (38 %) and, for chart cards, the headline bar (64 %) — 12 px bars, as the v3 kit draws text. */
+function CardHead({ headline }: { readonly headline: boolean }): ReactNode {
+  return (
+    <div className="itsm-SkeletonCard__head">
+      <Skeleton className="itsm-SkeletonCard__title" width="38%" height={12} />
+      {headline ? <Skeleton className="itsm-SkeletonCard__headline" width="64%" height={12} /> : null}
     </div>
   );
 }
@@ -117,12 +139,52 @@ export interface SkeletonCardProps extends Announced {
   readonly className?: string;
 }
 
-/** Stands in for a `Card`: a title and a few lines of text, in the card's frame. */
+/** Stands in for a `Card`: a title and a few lines of text — long lines at 92 %, the last at 64 % — in the card's frame. */
 export function SkeletonCard({ lines = 3, className, label, stillLabel }: SkeletonCardProps): ReactNode {
+  const count = Math.max(1, Math.floor(lines));
   return (
-    <SkeletonRoot className={cx('itsm-SkeletonCard', className)} label={label} stillLabel={stillLabel} data-lines={lines}>
-      <Skeleton className="itsm-SkeletonCard__title" width="40%" height={18} />
-      <SkeletonText lines={lines} size="callout" />
+    <SkeletonRoot className={cx('itsm-SkeletonCard', className)} label={label} stillLabel={stillLabel} data-lines={count}>
+      <CardHead headline={false} />
+      <div className="itsm-SkeletonCard__lines">
+        {Array.from({ length: count }, (_, index) => (
+          <Skeleton key={index} width={index === count - 1 && count > 1 ? '64%' : '92%'} height={12} />
+        ))}
+      </div>
+    </SkeletonRoot>
+  );
+}
+
+export interface SkeletonChartCardProps extends Announced {
+  /**
+   * The ready card's whole height in pixels — the kind's plot height plus the
+   * card's chrome — so nothing below moves when the chart arrives. 320 (the
+   * dashboard's chart cards) by default.
+   */
+  readonly height?: number;
+  /** Draws the headline bar under the title; on by default, because every chart card has a headline (v3 §7.0.1 G6). */
+  readonly headline?: boolean;
+  readonly className?: string;
+}
+
+/**
+ * Stands in for a `ChartCard` (v3 §2.13, A8 §3): the title bar, the headline
+ * bar, then a plot block that takes the rest of the card's final height. The
+ * fallback each dashboard card streams behind (`<Suspense fallback={…}>`).
+ */
+export function SkeletonChartCard({ height = 320, headline = true, className, label, stillLabel }: SkeletonChartCardProps): ReactNode {
+  const final = Number.isFinite(height) && height > 0 ? height : 320;
+  return (
+    <SkeletonRoot
+      className={cx('itsm-SkeletonCard itsm-SkeletonChartCard', className)}
+      label={label}
+      stillLabel={stillLabel}
+      data-height={final}
+      data-headline={headline ? '' : undefined}
+      // Dynamic geometry, which is what inline style is for (SPEC §3.3 rule 6).
+      style={{ minBlockSize: `${final}px` }}
+    >
+      <CardHead headline={headline} />
+      <Skeleton className="itsm-SkeletonChartCard__plot" height="auto" radius="md" />
     </SkeletonRoot>
   );
 }
@@ -212,7 +274,7 @@ export function SkeletonConversation({ messages = 3, className, label, stillLabe
 
 /* ------------------------------------------------------------------- Pages */
 
-export type SkeletonPageVariant = 'list' | 'detail' | 'dashboard' | 'form' | 'workspace' | 'inbox' | 'settings';
+export type SkeletonPageVariant = 'list' | 'detail' | 'dashboard' | 'board' | 'form' | 'workspace' | 'inbox' | 'settings';
 
 export interface SkeletonPageProps {
   readonly variant: SkeletonPageVariant;
@@ -295,6 +357,83 @@ function DetailAside(): ReactNode {
   );
 }
 
+/** A dashboard's toolbar: the scope and range controls at the start, the "As at" and an action at the end. */
+function DashboardToolbar(): ReactNode {
+  return (
+    <div className="itsm-SkeletonPage__toolbar itsm-SkeletonPage__dashboardToolbar">
+      <Skeleton width="10rem" height={CONTROL_SM} radius="lg" />
+      <Skeleton width="12rem" height={CONTROL_SM} radius="lg" />
+      <Skeleton className="itsm-SkeletonPage__toolbarEnd" width="7rem" height={12} />
+      <Skeleton width="6.5rem" height={CONTROL} radius="lg" />
+    </div>
+  );
+}
+
+/** The verdict band at 168 px: kicker, verdict, a line under it, and the aside's figure. */
+function Hero(): ReactNode {
+  return (
+    <div className="itsm-SkeletonPage__panel itsm-SkeletonPage__hero">
+      <div className="itsm-SkeletonPage__stack">
+        <Skeleton width="7rem" height={12} />
+        <Skeleton width="min(16rem, 70%)" height="var(--itsm-text-verdict-line)" radius="md" />
+        <Skeleton width="min(22rem, 90%)" height={12} />
+        <div className="itsm-SkeletonPage__pills">
+          <Skeleton width="5.5rem" height={22} radius="pill" />
+          <Skeleton width="7rem" height={22} radius="pill" />
+          <Skeleton width="6rem" height={22} radius="pill" />
+        </div>
+      </div>
+      <div className="itsm-SkeletonPage__heroAside">
+        <Skeleton width="6rem" height={12} />
+        <Skeleton width="5rem" height="var(--itsm-text-verdict-line)" radius="md" />
+        <Skeleton height={10} radius="pill" />
+      </div>
+    </div>
+  );
+}
+
+/** One kanban column: its header (title and count) and `cards` ghost cards. */
+function BoardColumn({ cards }: { readonly cards: number }): ReactNode {
+  return (
+    <div className="itsm-SkeletonPage__column">
+      <div className="itsm-SkeletonPage__columnHead">
+        <Skeleton width="45%" height={12} />
+        <Skeleton width="1.5rem" height={20} radius="pill" />
+      </div>
+      {Array.from({ length: cards }, (_, index) => (
+        <div key={index} className="itsm-SkeletonPage__ghostCard">
+          <Skeleton width="38%" height={10} />
+          <Skeleton width="92%" height={12} />
+          <Skeleton width="64%" height={12} />
+          <div className="itsm-SkeletonPage__ghostFoot">
+            <Skeleton width={24} height={24} radius="full" />
+            <Skeleton width="4rem" height={20} radius="pill" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The board: four columns of three ghost cards, then two folded strips (Resolved, Closed). */
+function Board(): ReactNode {
+  return (
+    <div className="itsm-SkeletonPage__board">
+      {Array.from({ length: 4 }, (_, index) => (
+        <BoardColumn key={index} cards={3} />
+      ))}
+      <div className="itsm-SkeletonPage__strip">
+        <Skeleton width={20} height={20} radius="pill" />
+        <Skeleton width={12} height="6rem" />
+      </div>
+      <div className="itsm-SkeletonPage__strip">
+        <Skeleton width={20} height={20} radius="pill" />
+        <Skeleton width={12} height="6rem" />
+      </div>
+    </div>
+  );
+}
+
 function Workspace(): ReactNode {
   return (
     <div className="itsm-SkeletonPage__workspace">
@@ -341,21 +480,24 @@ function pageShapes(variant: SkeletonPageVariant): ReactNode {
     case 'dashboard':
       return (
         <>
-          <Header actions={false} />
-          <div className="itsm-SkeletonPage__stats">
-            <SkeletonStat />
-            <SkeletonStat />
-            <SkeletonStat />
-            <SkeletonStat />
+          <DashboardToolbar />
+          <Hero />
+          <div className="itsm-SkeletonPage__stats" data-count={6}>
+            {Array.from({ length: 6 }, (_, index) => (
+              <SkeletonStat key={index} />
+            ))}
           </div>
           <div className="itsm-SkeletonPage__columns">
-            <SkeletonCard lines={5} />
-            <SkeletonCard lines={5} />
+            <SkeletonChartCard height={320} />
+            <SkeletonChartCard height={320} />
           </div>
-          <div className="itsm-SkeletonPage__panel itsm-SkeletonPage__stack">
-            <Skeleton width="30%" height={18} />
-            <Skeleton height="12rem" radius="md" />
-          </div>
+        </>
+      );
+    case 'board':
+      return (
+        <>
+          <Toolbar />
+          <Board />
         </>
       );
     case 'form':
@@ -403,10 +545,15 @@ function pageShapes(variant: SkeletonPageVariant): ReactNode {
 
 /**
  * A whole route's placeholder, for `loading.tsx`, shaped like the page it
- * stands in for — list, detail, dashboard, form, the workbench workspace and
- * inbox, settings — and rendered inside the persistent shell. It carries the
- * delayed status: "Loading…" for screen readers after a second, "Still
- * loading…" for everybody after ten.
+ * stands in for — list, detail, dashboard, board, form, the Service Desk
+ * workspace and inbox, settings — and rendered inside the persistent shell.
+ * It carries the delayed status: "Loading…" for screen readers after a
+ * second, "Still loading…" for everybody after ten.
+ *
+ * The v3 dashboard is the PMO page at its final heights (v3 §2.13): the
+ * toolbar, the hero at 168, six KPI tiles at 124 and two chart cards at 320,
+ * so nothing jumps when the page streams in. The board is four columns of
+ * three ghost cards and the two folded strips.
  */
 export function SkeletonPage({ variant, label = 'Loading…', stillLabel, className }: SkeletonPageProps): ReactNode {
   return (
