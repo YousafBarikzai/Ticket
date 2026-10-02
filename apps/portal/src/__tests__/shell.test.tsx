@@ -297,10 +297,19 @@ describe('the frame’s states', () => {
   });
 
   it('says a page shown offline is a copy, and from when', async () => {
-    mount();
-    await settle();
-    setOnline(false);
-    await until(() => document.body.textContent!.includes('You’re offline'));
-    expect(document.body.textContent).toContain('This is the copy from 10:42');
+    // A copy from today is named by its time alone, an older one by weekday as
+    // well; pin "now" to the day the fixture was rendered so the sentence does
+    // not change with the calendar. Only Date is faked: the waits stay real.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-30T12:00:00Z'));
+    try {
+      mount();
+      await settle();
+      setOnline(false);
+      await until(() => document.body.textContent!.includes('You’re offline'));
+      expect(document.body.textContent).toContain('This is the copy from 10:42');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
