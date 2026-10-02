@@ -419,6 +419,11 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         warningsFired: timer.warningsFired,
         metAt: timer.metAt?.toISOString() ?? null,
         breachedAt: timer.breachedAt?.toISOString() ?? null,
+        // An update target's cycle (F1): "Update 3 · next due 14:30".
+        // `cycleStartedAt` is null for the first cycle, which began at
+        // `startedAt`.
+        cycle: timer.cycle,
+        cycleStartedAt: timer.cycleStartedAt?.toISOString() ?? null,
       })),
     };
   });

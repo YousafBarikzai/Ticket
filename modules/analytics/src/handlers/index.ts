@@ -48,7 +48,17 @@ for (const eventType of ['ticket.task.created', 'ticket.task.completed']) {
   });
 }
 
-for (const eventType of ['sla.timer.started', 'sla.timer.paused', 'sla.timer.resumed', 'sla.timer.met']) {
+// `restarted` moves an update timer's due time on to its next cycle, and
+// `cancelled` takes a timer out of attainment altogether (F1, ADR-0057); both
+// change the fact, so both refresh it.
+for (const eventType of [
+  'sla.timer.started',
+  'sla.timer.paused',
+  'sla.timer.resumed',
+  'sla.timer.met',
+  'sla.timer.restarted',
+  'sla.timer.cancelled',
+]) {
   defineHandler({
     consumer,
     moduleId,

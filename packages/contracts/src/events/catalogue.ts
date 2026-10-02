@@ -320,6 +320,48 @@ export const slaTimerMet = defineEvent({
   payload: z.object({ ...timerRef, metAt: z.string() }),
 });
 
+/**
+ * An `update` target met its current cycle and started the next (F1,
+ * ADR-0057). An agent's public reply keeps the promise to keep the requester
+ * informed, and the next promise starts there, on the same timer row: the
+ * cycle is a counter, never a new timer. `previous` is how the cycle just
+ * closed: `breached` when the reply came after it was due. `dueAt` is null
+ * while the ticket waits on someone, until the clock resumes.
+ *
+ * Internal (no webhook): the outcome other systems need is the timer's final
+ * verdict, which `sla.timer.met` and `sla.timer.breached` already carry.
+ */
+export const slaTimerRestarted = defineEvent({
+  type: 'sla.timer.restarted',
+  version: 1,
+  aggregateType: 'sla_timer',
+  webhook: false,
+  description: 'An update target met its current cycle and started the next one.',
+  payload: z.object({
+    timerId: id,
+    ticketId: id,
+    targetType: z.literal('update'),
+    cycle: z.number().int().min(2),
+    dueAt: z.string().nullable(),
+    previous: z.enum(['met', 'breached']),
+  }),
+});
+
+/**
+ * A timer stopped without a verdict: its ticket was cancelled, or the policy
+ * the ticket now matches does not define its target (F1 U7, U8). A cancelled
+ * timer counts towards nothing, so reporting needs to hear about it; before
+ * this event the fact kept saying `running` for ever.
+ */
+export const slaTimerCancelled = defineEvent({
+  type: 'sla.timer.cancelled',
+  version: 1,
+  aggregateType: 'sla_timer',
+  webhook: false,
+  description: 'An SLA timer stopped without a verdict and counts towards nothing.',
+  payload: z.object(timerRef),
+});
+
 // ---- MOD-11 Notifications -------------------------------------------------
 export const notificationQueued = defineEvent({
   type: 'notification.queued',
@@ -460,6 +502,28 @@ export const approvalDecided = defineEvent({
     subjectId: id,
     ticketId: id.nullable(),
     outcome: z.enum(['approved', 'rejected']),
+  }),
+});
+
+/**
+ * A pending approval was withdrawn because the ticket it waited on was
+ * cancelled or closed (ADR-0059). Its approvers stop seeing it, and a late
+ * decision is refused with the reason. `reason` is `ticket-cancelled` or
+ * `ticket-closed` today; it is a string rather than an enum so that a later
+ * reason for withdrawing does not break subscribers that only log it.
+ */
+export const approvalCancelled = defineEvent({
+  type: 'approval.cancelled',
+  version: 1,
+  aggregateType: 'approval_request',
+  webhook: true,
+  description: 'A pending approval was withdrawn because its ticket was cancelled or closed.',
+  payload: z.object({
+    requestId: id,
+    subjectType: z.string(),
+    subjectId: id,
+    ticketId: id.nullable(),
+    reason: z.string().min(1),
   }),
 });
 
@@ -1313,11 +1377,12 @@ export const eventCatalogue = [
   ticketAttachmentAdded, ticketAttachmentScanned, ticketTaskCreated, ticketTaskCompleted,
   ticketLinked, ticketMerged,
   slaTimerStarted, slaTimerWarning, slaTimerBreached, slaTimerPaused, slaTimerResumed, slaTimerMet,
+  slaTimerRestarted, slaTimerCancelled,
   notificationQueued, notificationSent, notificationFailed,
   configPublished, configRolledBack, moduleEnabled, moduleDisabled,
   securityAlertRaised, webhookDeliveryFailed, searchDocumentIndexed,
   ruleApplied,
-  approvalRequested, approvalDecided,
+  approvalRequested, approvalDecided, approvalCancelled,
   channelMessageReceived, channelHealthDegraded,
   catalogueItemPublished, requestSubmitted,
   knowledgeArticleSubmitted, knowledgeArticlePublished, knowledgeArticleRetired, knowledgeArticleFeedback,

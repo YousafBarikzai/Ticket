@@ -4,6 +4,7 @@ import {
   meetTimer,
   pauseTimers,
   rematchTimersForTicket,
+  restartUpdateCycle,
   resumeTimers,
   startTimersForTicket,
   stopTimers,
@@ -82,10 +83,15 @@ defineHandler({
   async handle(ctx, event, tx) {
     const payload = event.payload as { ticketId: string; visibility: string; authorId: string | null };
     // The first public reply from someone other than the requester is what the
-    // response target measures, so only that stops the clock.
+    // response target measures, so only that stops the clock. Internal notes
+    // keep nobody informed, so they count for neither target.
     if (payload.visibility !== 'public') return;
     const ticket = await tx.ticket.findFirst({ where: { id: payload.ticketId } });
     if (!ticket || ticket.requesterId === payload.authorId) return;
     await meetTimer(ctx, tx, payload.ticketId, 'response');
+    // Every such reply by a person also keeps the update promise, and starts
+    // the next cycle of it (F1, ADR-0057). An automated comment (no author) is
+    // not an update: an acknowledgement e-mail tells the requester nothing new.
+    if (payload.authorId !== null) await restartUpdateCycle(ctx, tx, payload.ticketId);
   },
 });

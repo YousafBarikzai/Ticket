@@ -37,8 +37,15 @@ export const provisionTenantSchema = z.object({
   region: z.string().default('eu-west'),
   adminEmail: z.string().email().optional(),
   parentTenantId: z.string().uuid().optional(),
+  /**
+   * A real customer, or the shared demo (D25). Written once, here: the
+   * database refuses any later change, because flipping a kind either
+   * silences a real tenant's e-mail or opens the demo's egress.
+   */
+  kind: z.enum(['standard', 'demo']).default('standard'),
 });
-export type ProvisionTenantInput = z.infer<typeof provisionTenantSchema>;
+/** What a caller passes: fields with a default (`region`, `kind`) may be left out. */
+export type ProvisionTenantInput = z.input<typeof provisionTenantSchema>;
 
 export interface ProvisionStep {
   key: string;
@@ -78,6 +85,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<{ te
       name: parsed.name,
       slug: parsed.slug,
       region: parsed.region,
+      kind: parsed.kind,
       status: 'provisioning',
       parentTenantId: parsed.parentTenantId ?? null,
     },

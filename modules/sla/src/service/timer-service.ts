@@ -183,6 +183,8 @@ export interface RematchResult {
   retargeted: number;
   /** Targets the ticket had no timer for, started from when it was raised. */
   started: number;
+  /** Running or paused timers for targets the new policy does not define. */
+  cancelled: number;
 }
 
 /**
@@ -197,13 +199,20 @@ export interface RematchResult {
  * already overdue has its due time set to now, and the next tick breaches it
  * as it would have been breached.
  *
- * Timers already met, breached or cancelled are history and are left alone;
- * so are timers for targets the new policy does not have. A ticket that
- * matches no policy keeps what it has: a classification is a reason to
- * re-check, not a reason to take a promise away.
+ * Timers already met, breached or cancelled are history and are left alone.
+ * **A running or paused timer whose target the new policy does not define is
+ * cancelled** (F1 U8, ADR-0057), publishing `sla.timer.cancelled`: only the
+ * targets the current policy defines are counted. Left running, a ticket
+ * re-matched to a policy without an `update` target kept an `update` timer
+ * that later breached and dragged attainment down for a promise nobody made.
+ * A ticket that matches no policy keeps what it has: a classification is a
+ * reason to re-check, not a reason to take a promise away.
+ *
+ * An `update` timer past its first cycle is measured from the start of its
+ * current cycle, because that is when the current promise was made.
  */
 export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketId: string): Promise<RematchResult> {
-  const result: RematchResult = { policyId: null, retargeted: 0, started: 0 };
+  const result: RematchResult = { policyId: null, retargeted: 0, started: 0, cancelled: 0 };
   const ticket = (await tx.ticket.findFirst({ where: { id: ticketId } })) as TicketForSla | null;
   if (!ticket) return result;
   const state = STATES[ticket.status as keyof typeof STATES];
@@ -267,12 +276,21 @@ export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketI
     // start: creation to now on the new calendar, less the time the ticket
     // spent paused. Counting it on the old calendar instead would let a
     // ticket raised out of hours and matched to a round-the-clock policy
-    // keep the evening it arrived in.
+    // keep the evening it arrived in. What is left of the target is measured
+    // the same way from the start of the current cycle, which for every
+    // timer but a restarted `update` one is the same instant.
     const running = timer.state === 'running';
     const pauses = await tx.slaPause.findMany({ where: { timerId: timer.id }, select: { from: true, to: true } });
-    const paused = pauses.reduce((sum, pause) => sum + elapsedBusinessMs(pause.from, pause.to ?? now, calendar), 0);
-    const used = Math.max(0, elapsedBusinessMs(timer.startedAt, now, calendar) - paused);
-    const remainingMs = Math.max(0, targetMs - used);
+    const usedSince = (from: Date): number => {
+      const paused = pauses.reduce((sum, pause) => {
+        const start = pause.from > from ? pause.from : from;
+        const end = pause.to ?? now;
+        return end > start ? sum + elapsedBusinessMs(start, end, calendar) : sum;
+      }, 0);
+      return Math.max(0, elapsedBusinessMs(from, now, calendar) - paused);
+    };
+    const used = usedSince(timer.startedAt);
+    const remainingMs = Math.max(0, targetMs - (timer.cycleStartedAt ? usedSince(timer.cycleStartedAt) : used));
 
     await tx.slaTimer.update({
       where: { id: timer.id },
@@ -298,7 +316,15 @@ export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketI
     result.retargeted += 1;
   }
 
-  if (result.retargeted + result.started > 0) {
+  const defined = new Set(targets.map((target) => target.targetType));
+  for (const timer of timers) {
+    if (defined.has(timer.targetType)) continue;
+    if (timer.state !== 'running' && timer.state !== 'paused') continue;
+    await cancelTimer(ctx, tx, timer);
+    result.cancelled += 1;
+  }
+
+  if (result.retargeted + result.started + result.cancelled > 0) {
     await tx.ticket.updateMany({ where: { id: ticketId }, data: { slaPolicyId: policy.id } });
     const resolution = await tx.slaTimer.findFirst({ where: { ticketId, targetType: 'resolution' } });
     if (resolution?.dueAt) {
@@ -309,10 +335,16 @@ export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketI
       targetType: 'ticket',
       targetId: ticketId,
       before,
-      after: { policyId: policy.id, dueAt: resolution?.dueAt ?? null, retargeted: result.retargeted, started: result.started },
+      after: {
+        policyId: policy.id,
+        dueAt: resolution?.dueAt ?? null,
+        retargeted: result.retargeted,
+        started: result.started,
+        cancelled: result.cancelled,
+      },
       reason: 'the ticket was classified after it was raised; the clock kept running from creation',
     });
-    metrics.increment('sla_timers_rematched_total', {}, result.retargeted + result.started);
+    metrics.increment('sla_timers_rematched_total', {}, result.retargeted + result.started + result.cancelled);
   }
   return result;
 }
@@ -372,6 +404,14 @@ export async function pauseTimers(
     });
     paused += 1;
   }
+
+  // The ticket's own due time is the resolution timer's, copied so lists can
+  // sort and filter on it. While that timer is paused it has no due time, and
+  // neither has the ticket: a stale value would put a ticket that is waiting
+  // on its requester at the top of "due soon" (R2a).
+  if (timers.some((timer) => timer.targetType === 'resolution')) {
+    await tx.ticket.updateMany({ where: { id: ticketId }, data: { dueAt: null } });
+  }
   return paused;
 }
 
@@ -402,6 +442,11 @@ export async function resumeTimers(ctx: TenantContext, tx: Tx, ticketId: string)
       aggregateId: timer.id,
       payload: { timerId: timer.id, ticketId, targetType: timer.targetType, dueAt: dueAt.toISOString() },
     });
+    // The other half of R2a: the ticket's due time comes back with the
+    // resolution timer's new one.
+    if (timer.targetType === 'resolution') {
+      await tx.ticket.updateMany({ where: { id: ticketId }, data: { dueAt } });
+    }
     resumed += 1;
   }
   return resumed;
@@ -426,30 +471,228 @@ export async function meetTimer(ctx: TenantContext, tx: Tx, ticketId: string, ta
   return true;
 }
 
+/**
+ * Stops every running or paused timer when the ticket resolves (`met`) or is
+ * cancelled.
+ *
+ * Two rules from F1 (ADR-0057). **A verdict, once given, is final** (U6): an
+ * `update` timer that missed a cycle keeps running for the cadence (U5), but
+ * at resolution it ends `breached`, with `metAt` recording when it stopped and
+ * no `sla.timer.met`, so it counts once and as missed. **A cancelled timer is
+ * no verdict at all** (U7): it publishes `sla.timer.cancelled` so reporting
+ * stops counting it as running, and attainment leaves it out.
+ */
+/** The timer fields the next `update` cycle is computed from. */
+export interface CycleTimer {
+  state: string;
+  targetMs: number;
+  elapsedMs: number;
+  startedAt: Date;
+  lastResumedAt: Date | null;
+  pausedAt: Date | null;
+  cycle: number;
+}
+
+/** The row an `update` timer becomes when its next cycle starts. */
+export interface UpdateCycleRestart {
+  state: 'running' | 'paused';
+  elapsedMs: number;
+  remainingMs: number;
+  lastResumedAt: Date | null;
+  pausedAt: Date | null;
+  dueAt: Date | null;
+  warningsFired: number[];
+  nextWarningAt: Date | null;
+  cycle: number;
+  cycleStartedAt: Date;
+  /** How the cycle that just closed ended. */
+  previous: 'met' | 'breached';
+  /**
+   * The timer was breached, so it was never paused with the ticket; it now
+   * pauses, and needs the pause row a paused timer always has.
+   */
+  opensPause: boolean;
+}
+
+/**
+ * Computes the next cycle of an `update` timer (F1 U3, U5).
+ *
+ * Pure, so the business-time edge cases — a reply a minute before the
+ * weekend, a day an hour longer than the others — are tested without a
+ * database. The business time the closing cycle consumed is banked into
+ * `elapsedMs`; the new cycle gets the whole target again, from `at`.
+ *
+ * - From `running`: the new cycle runs from `at`.
+ * - From `paused` (the agent replied while the ticket waits on someone): the
+ *   new cycle has no due time until `resumeTimers` gives it one, with the
+ *   whole target.
+ * - From `breached` (a cycle was missed, U5): the cadence carries on, running
+ *   again, or paused when the ticket is waiting on someone. `breachedAt` is
+ *   not touched, so the verdict stays breached.
+ */
+export function nextUpdateCycle(
+  timer: CycleTimer,
+  options: { at: Date; calendar: BusinessCalendar; thresholds: number[]; ticketPaused: boolean },
+): UpdateCycleRestart {
+  const { at, calendar, thresholds, ticketPaused } = options;
+  const wasPaused = timer.state === 'paused';
+  const consumed = wasPaused ? 0 : Math.max(0, elapsedBusinessMs(timer.lastResumedAt ?? timer.startedAt, at, calendar));
+  const resumes = wasPaused ? false : timer.state === 'breached' ? !ticketPaused : true;
+  const base = {
+    elapsedMs: timer.elapsedMs + consumed,
+    remainingMs: timer.targetMs,
+    warningsFired: [] as number[],
+    cycle: timer.cycle + 1,
+    cycleStartedAt: at,
+    previous: timer.state === 'breached' ? ('breached' as const) : ('met' as const),
+  };
+
+  if (resumes) {
+    return {
+      ...base,
+      state: 'running',
+      lastResumedAt: at,
+      pausedAt: null,
+      dueAt: addBusinessMs(at, timer.targetMs, calendar),
+      nextWarningAt: nextWarningInstant(at, timer.targetMs, thresholds, [], calendar),
+      opensPause: false,
+    };
+  }
+  return {
+    ...base,
+    state: 'paused',
+    lastResumedAt: timer.lastResumedAt,
+    pausedAt: wasPaused ? timer.pausedAt ?? at : at,
+    dueAt: null,
+    nextWarningAt: null,
+    opensPause: !wasPaused,
+  };
+}
+
+/**
+ * An agent's public reply meets the current `update` cycle and starts the
+ * next, on the same row (F1 U1–U5, ADR-0057).
+ *
+ * Before this, nothing ever met or restarted an `update` timer: it stopped
+ * only at resolution, so it behaved as a second, shorter resolution clock and
+ * every P3 open longer than a working day breached it. The promise an update
+ * target makes is "you will hear from us at least this often", and it is kept
+ * by replying.
+ *
+ * Nothing restarts on a ticket that has its verdicts (resolved, closed or
+ * cancelled), or on a timer that has stopped: a reply after resolution does
+ * not reopen a promise that was already judged. Returns whether a cycle
+ * restarted.
+ */
+export async function restartUpdateCycle(ctx: TenantContext, tx: Tx, ticketId: string, at: Date = new Date()): Promise<boolean> {
+  const timer = await tx.slaTimer.findFirst({
+    where: { ticketId, targetType: 'update', state: { in: ['running', 'paused', 'breached'] }, metAt: null },
+  });
+  if (!timer) return false;
+
+  const ticket = await tx.ticket.findFirst({ where: { id: ticketId }, select: { status: true } });
+  const definition = ticket ? STATES[ticket.status as keyof typeof STATES] : undefined;
+  if (!definition) return false;
+  const clock = definition.sla.resolutionTimer;
+  if (clock === 'stopped' || clock === 'cancelled') return false;
+
+  const calendar = await loadCalendar(tx, timer.calendarId);
+  const target = await tx.slaTarget.findFirst({ where: { policyId: timer.policyId, targetType: 'update' } });
+  const next = nextUpdateCycle(timer, {
+    at,
+    calendar,
+    thresholds: target?.warningThresholds ?? [],
+    ticketPaused: clock === 'paused',
+  });
+
+  await tx.slaTimer.update({
+    where: { id: timer.id },
+    data: {
+      state: next.state,
+      elapsedMs: next.elapsedMs,
+      remainingMs: next.remainingMs,
+      lastResumedAt: next.lastResumedAt,
+      pausedAt: next.pausedAt,
+      dueAt: next.dueAt,
+      warningsFired: next.warningsFired,
+      nextWarningAt: next.nextWarningAt,
+      cycle: next.cycle,
+      cycleStartedAt: next.cycleStartedAt,
+      version: { increment: 1 },
+    },
+  });
+  if (next.opensPause) {
+    await tx.slaPause.create({
+      data: {
+        id: newId(),
+        tenantId: ctx.tenantId,
+        timerId: timer.id,
+        reason: definition.sla.pauseReason ?? 'pending_requester',
+        from: at,
+      },
+    });
+  }
+  await publish(tx, ctx, {
+    definition: events.slaTimerRestarted,
+    aggregateId: timer.id,
+    payload: {
+      timerId: timer.id,
+      ticketId,
+      targetType: 'update',
+      cycle: next.cycle,
+      dueAt: next.dueAt?.toISOString() ?? null,
+      previous: next.previous,
+    },
+  });
+  metrics.increment('sla_update_cycles_restarted_total', { previous: next.previous });
+  return true;
+}
+
 export async function stopTimers(ctx: TenantContext, tx: Tx, ticketId: string, outcome: 'met' | 'cancelled'): Promise<number> {
   const timers = await tx.slaTimer.findMany({ where: { ticketId, state: { in: ['running', 'paused'] } } });
   const now = new Date();
 
   for (const timer of timers) {
+    if (outcome === 'met' && timer.breachedAt) {
+      await tx.slaTimer.update({
+        where: { id: timer.id },
+        data: { state: 'breached', metAt: now, dueAt: null, nextWarningAt: null, version: { increment: 1 } },
+      });
+      continue;
+    }
+    if (outcome === 'cancelled') {
+      await cancelTimer(ctx, tx, timer);
+      continue;
+    }
     await tx.slaTimer.update({
       where: { id: timer.id },
-      data: {
-        state: outcome,
-        ...(outcome === 'met' ? { metAt: now } : {}),
-        dueAt: null,
-        nextWarningAt: null,
-        version: { increment: 1 },
-      },
+      data: { state: 'met', metAt: now, dueAt: null, nextWarningAt: null, version: { increment: 1 } },
     });
-    if (outcome === 'met') {
-      await publish(tx, ctx, {
-        definition: events.slaTimerMet,
-        aggregateId: timer.id,
-        payload: { timerId: timer.id, ticketId, targetType: timer.targetType, metAt: now.toISOString() },
-      });
-    }
+    await publish(tx, ctx, {
+      definition: events.slaTimerMet,
+      aggregateId: timer.id,
+      payload: { timerId: timer.id, ticketId, targetType: timer.targetType, metAt: now.toISOString() },
+    });
   }
   return timers.length;
+}
+
+/** Stops one timer without a verdict and says so (F1 U7, U8). */
+async function cancelTimer(
+  ctx: TenantContext,
+  tx: Tx,
+  timer: { id: string; ticketId: string; targetType: string },
+): Promise<void> {
+  await tx.slaTimer.update({
+    where: { id: timer.id },
+    data: { state: 'cancelled', dueAt: null, nextWarningAt: null, version: { increment: 1 } },
+  });
+  await publish(tx, ctx, {
+    definition: events.slaTimerCancelled,
+    aggregateId: timer.id,
+    payload: { timerId: timer.id, ticketId: timer.ticketId, targetType: timer.targetType },
+  });
+  metrics.increment('sla_timers_cancelled_total', { target: timer.targetType });
 }
 
 export interface TickResult {
@@ -485,6 +728,20 @@ export async function tickPartition(ctx: TenantContext, partition: number, limit
       if (timer.dueAt && timer.dueAt <= now) {
         const lateness = now.getTime() - timer.dueAt.getTime();
         result.maxLatenessMs = Math.max(result.maxLatenessMs, lateness);
+        if (timer.targetType === 'update') metrics.increment('sla_update_cycles_missed_total');
+
+        // A later cycle of an `update` timer that has already breached (F1
+        // U4): the target is breached once. The row shows the miss, but there
+        // is no second breach record, no second event and no second
+        // escalation — the requester was let down once, and the team was told
+        // once. The next agent reply starts the cadence again (U5).
+        if (timer.breachedAt) {
+          await tx.slaTimer.update({
+            where: { id: timer.id },
+            data: { state: 'breached', nextWarningAt: null, version: { increment: 1 } },
+          });
+          continue;
+        }
 
         await tx.slaTimer.update({
           where: { id: timer.id },
