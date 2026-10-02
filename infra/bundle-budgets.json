@@ -104,7 +104,11 @@
     "site": {
       "budget": 150000,
       "enforceGrowth": true,
-      "baselines": {}
+      "baselines": {
+        "/": 131513,
+        "/_global-error": 131513,
+        "/_not-found": 131513
+      }
     }
   }
 }
