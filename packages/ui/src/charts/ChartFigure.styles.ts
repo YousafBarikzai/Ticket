@@ -1,11 +1,32 @@
 import { moreContrast } from '../feedback/tone.js';
 import { css, layer, mq, prefers } from '../styles/css.js';
 import { textureRules } from './texture-css.js';
+import { chartToneOutline, chartToneVar } from './tone.js';
+import type { ChartTone } from './types.js';
+
+/** Inside a chart, and in a legend wherever it is drawn. */
+const scoped = (attribute: string): string => `.itsm-Chart ${attribute}, .itsm-ChartLegend ${attribute}`;
 
 /** The categorical slots (SPEC §1.11), each a component-local `--_itsm-series`. */
 const slots = [1, 2, 3, 4, 5, 6, 7, 8]
-  .map((slot) => `.itsm-Chart [data-slot="${slot}"] { --_itsm-series: var(--itsm-colour-chart-${slot}); }`)
+  .map((slot) => `${scoped(`[data-slot="${slot}"]`)} { --_itsm-series: var(--itsm-colour-chart-${slot}); }`)
   .join('\n');
+
+/**
+ * The state tones (D5, `chartToneVar`), after the slots so a mark carrying
+ * both is painted by its state. A tone whose fill is under 3:1 also sets the
+ * outline its marks must draw (`--_itsm-series-edge`).
+ */
+const tones = (Object.keys(chartToneVar) as ChartTone[])
+  .map((tone) => {
+    const edge = chartToneOutline[tone];
+    return `${scoped(`[data-tone="${tone}"]`)} { --_itsm-series: ${chartToneVar[tone]};${edge ? ` --_itsm-series-edge: ${edge};` : ''} }`;
+  })
+  .join('\n');
+
+/** Comparison and baseline series are read against, not read: one grey whatever their slot (A8 §4.3.2). */
+const styles = `${scoped('[data-style="comparison"]')},
+${scoped('[data-style="baseline"]')} { --_itsm-series: var(--itsm-colour-chart-comparison); }`;
 
 /**
  * The frame every chart shares: the figure and its caption, the "View as
@@ -24,6 +45,14 @@ const slots = [1, 2, 3, 4, 5, 6, 7, 8]
  *   name after it in secondary, keyed by a short line in the series colour.
  * - `--_itsm-chart-surface` is the colour the chart sits on, used for the
  *   2 px rings around markers; a chart on a sunken well sets it.
+ * - **State tones** (`data-tone`) come after the slots and win over them, and
+ *   comparison and baseline styles after both: a P1 segment is the P1 colour
+ *   whatever slot it would have had, and a plan line is grey whatever it is.
+ * - **Markers** (`charts/markers.tsx`) live here too: they belong to no one
+ *   chart. Lines and diamonds in the marker navy, the "today" line in the
+ *   secondary ink at 60 %, pills navy with white text (inverted in the dark
+ *   themes by the tokens), gate labels muted; container queries hide gate
+ *   labels on narrow cards, never pills or diamonds.
  */
 export const chartFigureStyles = layer(
   'components',
@@ -173,6 +202,15 @@ export const chartFigureStyles = layer(
   font-weight: var(--itsm-font-weight-regular);
 }
 
+/* A matrix's column groups ("Monday" over its hours): a second sticky header row, centred over its span. */
+.itsm-ChartFigure__groups > th {
+  text-align: center;
+}
+
+.itsm-ChartFigure__table thead tr + tr th {
+  inset-block-start: calc(var(--itsm-text-subheadline-line) + 2 * var(--itsm-space-xs) + var(--itsm-hairline));
+}
+
 .itsm-ChartFigure__table [data-numeric] {
   text-align: end;
 }
@@ -196,7 +234,9 @@ export const chartFigureStyles = layer(
 }
 
 ${slots}
-.itsm-Chart [data-slot="other"] { --_itsm-series: var(--itsm-colour-text-disabled); }
+${scoped('[data-slot="other"]')} { --_itsm-series: var(--itsm-colour-text-disabled); }
+${tones}
+${styles}
 
 /* Legend ------------------------------------------------------------- */
 
@@ -236,6 +276,23 @@ ${slots}
   border-radius: var(--itsm-radius-xs);
 }
 
+/* The v3 key: a 10 × 10 chip, radius 2.5 (A8-S2). */
+.itsm-ChartLegend__key[data-mark="chip"] {
+  inline-size: 0.625rem;
+  block-size: 0.625rem;
+  border-radius: 0.15625rem;
+  box-shadow: inset 0 0 0 1px var(--_itsm-series-edge, transparent);
+}
+
+/* Dashed lines get dashed keys: a hollow chip with a dashed edge in the line's colour. */
+.itsm-ChartLegend__key[data-style="baseline"],
+.itsm-ChartLegend__key[data-style="forecast"] {
+  background: transparent;
+  border: 1.5px dashed var(--_itsm-series);
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
 .itsm-ChartLegend__label {
   min-inline-size: 0;
   overflow-wrap: anywhere;
@@ -273,12 +330,41 @@ ${slots}
   text-align: center;
 }
 
+.itsm-Chart__emptyDisc {
+  display: grid;
+  place-items: center;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: 50%;
+  background: var(--itsm-colour-brand-subtle);
+  color: var(--itsm-colour-brand-subtleText);
+}
+
+.itsm-Chart__empty[data-reason="insufficient"] .itsm-Chart__emptyDisc {
+  background: var(--itsm-colour-neutral-subtle);
+  color: var(--itsm-colour-neutral-subtleText);
+}
+
+.itsm-Chart__empty[data-reason="error"] .itsm-Chart__emptyDisc {
+  background: var(--itsm-colour-danger-subtle);
+  color: var(--itsm-colour-danger-subtleText);
+}
+
 .itsm-Chart__emptyText {
   max-inline-size: 36ch;
   margin: 0;
   font-size: var(--itsm-text-callout-size);
   line-height: var(--itsm-text-callout-line);
   letter-spacing: var(--itsm-text-callout-tracking);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.itsm-Chart__emptyDetail {
+  max-inline-size: 40ch;
+  margin: 0;
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  color: var(--itsm-colour-text-muted);
 }
 
 .itsm-Chart__loading {
@@ -313,6 +399,153 @@ ${slots}
   flex: 0 1 var(--itsm-space-lg);
   border-end-start-radius: 0;
   border-end-end-radius: 0;
+}
+
+/* Markers (charts/markers.tsx) ------------------------------------------ */
+
+/* The layer lies over the chart's plot box, which is positioned; nothing in it takes the pointer. */
+.itsm-Markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.itsm-Markers__lines {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+}
+
+.itsm-Markers__line {
+  stroke: var(--itsm-colour-chart-marker);
+  stroke-width: 1.5;
+  shape-rendering: crispEdges;
+}
+
+/* "Today": the page's "now", in the secondary ink, so the navy pill above it is what draws the eye. */
+.itsm-Markers__line[data-kind="today"] {
+  stroke: var(--itsm-colour-text-secondary);
+  stroke-opacity: 0.6;
+  stroke-dasharray: 4 3;
+}
+
+.itsm-Markers__line[data-kind="deadline"] {
+  stroke-dasharray: 5 4;
+}
+
+.itsm-Markers__line[data-kind="milestone"],
+.itsm-Markers__line[data-kind="event"] {
+  stroke-width: 1;
+  stroke-opacity: 0.3;
+  stroke-dasharray: 2 3;
+}
+
+.itsm-Markers__band {
+  fill: var(--itsm-colour-fill-secondary);
+  fill-opacity: 0.5;
+}
+
+.itsm-Markers__target {
+  stroke: var(--itsm-colour-text-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  shape-rendering: crispEdges;
+}
+
+.itsm-Markers__diamond {
+  position: absolute;
+  overflow: visible;
+  transform: translate(-50%, -50%);
+}
+
+.itsm-Markers__diamond path {
+  fill: var(--_itsm-chart-surface, var(--itsm-colour-surface-raised));
+  stroke: var(--itsm-colour-chart-marker);
+  stroke-width: 1.5;
+}
+
+/* A reached milestone and every deadline are solid; a milestone still ahead is hollow. */
+.itsm-Markers__diamond[data-reached] path {
+  fill: var(--itsm-colour-chart-marker);
+}
+
+/* Pills and gate labels: 600 10/14 (A8 §3.1), on tiers of 18 px above the data. */
+.itsm-Markers__label {
+  position: absolute;
+  inset-block-start: 0;
+  max-inline-size: 12rem;
+  overflow: hidden;
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+  font-weight: var(--itsm-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.itsm-Markers__label[data-tier="2"] {
+  inset-block-start: 1.125rem;
+}
+
+.itsm-Markers__label[data-pill] {
+  padding: 0.125rem 0.4375rem;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-chart-marker);
+  color: var(--itsm-colour-chart-markerText);
+}
+
+.itsm-Markers__label[data-gate] {
+  padding-block: 0.125rem;
+  color: var(--itsm-colour-text-muted);
+}
+
+/* Near an edge a label aligns inwards rather than being cut off (as the x ticks do). */
+.itsm-Markers__label[data-edge="start"] {
+  transform: none;
+}
+
+.itsm-Markers__label[data-edge="end"] {
+  transform: translateX(-100%);
+}
+
+.itsm-Markers__targetLabel,
+.itsm-Markers__bandLabel {
+  position: absolute;
+  overflow: hidden;
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+  font-weight: var(--itsm-text-caption-weight);
+  letter-spacing: var(--itsm-text-caption-tracking);
+  color: var(--itsm-colour-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itsm-Markers__targetLabel {
+  inset-inline-start: var(--itsm-space-2xs);
+  max-inline-size: 60%;
+  transform: translateY(calc(-100% - 2px));
+}
+
+.itsm-Markers__bandLabel {
+  padding-inline: var(--itsm-space-2xs);
+  text-align: center;
+}
+
+/* Narrow cards: the second tier of gate labels goes first, then every gate label; pills and diamonds stay. */
+@container itsm-chart (max-width: 40rem) {
+  .itsm-Markers__label[data-gate][data-tier="2"] {
+    display: none;
+  }
+}
+
+@container itsm-chart (max-width: 32rem) {
+  .itsm-Markers__label[data-gate] {
+    display: none;
+  }
 }
 
 /* The reading layer (interactive charts) -------------------------------- */
@@ -424,7 +657,10 @@ ${slots}
 ${moreContrast(
   (scope) => `${scope} .itsm-ChartReader__tip { border-color: var(--itsm-colour-border-strong); }
 ${scope} .itsm-ChartFigure__scroll { border-color: var(--itsm-colour-border-strong); }
-${textureRules(scope, '.itsm-ChartLegend__key[data-mark="box"]', 'var(--_itsm-chart-surface)')}`,
+${scope} .itsm-Markers__line[data-kind="milestone"], ${scope} .itsm-Markers__line[data-kind="event"] { stroke-opacity: 0.7; }
+${scope} .itsm-Markers__band { fill-opacity: 1; }
+${textureRules(scope, '.itsm-ChartLegend__key[data-mark="box"]', 'var(--_itsm-chart-surface)')}
+${textureRules(scope, '.itsm-ChartLegend__key[data-mark="chip"]', 'var(--_itsm-chart-surface)')}`,
 )}
 
 ${mq.reducedMotion} {
@@ -460,15 +696,55 @@ ${mq.forcedColors} {
     background: transparent;
     box-shadow: none;
   }
-  .itsm-ChartLegend__key[data-mark="box"] {
+  .itsm-ChartLegend__key[data-mark="box"],
+  .itsm-ChartLegend__key[data-mark="chip"] {
     background: Canvas;
     box-shadow: inset 0 0 0 1px CanvasText;
   }
   .itsm-ChartLegend__key[data-mark="box"][data-slot="1"],
-  .itsm-ChartLegend__key[data-mark="box"][data-slot="other"] {
+  .itsm-ChartLegend__key[data-mark="box"][data-slot="other"],
+  .itsm-ChartLegend__key[data-mark="chip"][data-slot="1"],
+  .itsm-ChartLegend__key[data-mark="chip"][data-slot="other"] {
     background: CanvasText;
   }
+  .itsm-ChartLegend__key[data-style="baseline"],
+  .itsm-ChartLegend__key[data-style="forecast"] {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
 ${textureRules('  ', '.itsm-ChartLegend__key[data-mark="box"]', 'CanvasText', 'Canvas')}
+${textureRules('  ', '.itsm-ChartLegend__key[data-mark="chip"]', 'CanvasText', 'Canvas')}
+  .itsm-Markers__lines,
+  .itsm-Markers__diamond,
+  .itsm-Markers__label {
+    forced-color-adjust: none;
+  }
+  .itsm-Markers__line,
+  .itsm-Markers__target {
+    stroke: Highlight;
+    stroke-opacity: 1;
+  }
+  .itsm-Markers__diamond path {
+    fill: Canvas;
+    stroke: Highlight;
+  }
+  .itsm-Markers__diamond[data-reached] path {
+    fill: Highlight;
+  }
+  .itsm-Markers__label[data-pill] {
+    background: Highlight;
+    color: HighlightText;
+  }
+  .itsm-Markers__label[data-gate] {
+    color: CanvasText;
+  }
+  .itsm-Chart__emptyDisc {
+    forced-color-adjust: none;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: inset 0 0 0 1px CanvasText;
+  }
   .itsm-ChartReader__crosshair {
     forced-color-adjust: none;
     background: Highlight;

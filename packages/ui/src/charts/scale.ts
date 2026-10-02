@@ -8,6 +8,7 @@
  * random number, and every output is a plain string or number.
  */
 import { formatDateTime, formatNumber } from '../format/format.js';
+import type { ChartMarkerKind } from './common.js';
 import type { ChartSlot } from './types.js';
 
 /** The locale a chart formats in when the caller names none: the product's (`lang="en-GB"`). */
@@ -335,6 +336,244 @@ export function arcPath(start: number, end: number, outer: number, inner: number
   );
 }
 
+/**
+ * The `d` of a smooth line through the points that never overshoots them
+ * (Fritsch–Carlson monotone cubic interpolation). A plain spline bulges past
+ * a peak, inventing a value higher than any measured and, at a step from
+ * zero, a dip below zero; on a chart that is a lie about the data. Here each
+ * segment stays between its two points: the tangents are limited so that
+ * both Bézier control points lie within the segment's own range.
+ *
+ * Same coordinates and gaps as `linePath`. Used for the landing's decorative
+ * trends (`curve: 'monotone'`); product charts default to straight segments,
+ * which claim nothing between the points.
+ */
+export function monotonePath(points: readonly PlotPoint[], toX: (x: number) => number = (x) => x * PATH_WIDTH): string {
+  return runs(points)
+    .filter((run) => run.length > 1)
+    .map((run) => {
+      const xs = run.map((point) => toX(point.x));
+      const ys = run.map((point) => point.y);
+      const n = run.length;
+      // Secant slopes; a repeated x has no slope to follow, so it is flat.
+      const secants: number[] = [];
+      for (let index = 0; index < n - 1; index++) {
+        const width = xs[index + 1]! - xs[index]!;
+        secants.push(width === 0 ? 0 : (ys[index + 1]! - ys[index]!) / width);
+      }
+      const tangents: number[] = [secants[0]!];
+      for (let index = 1; index < n - 1; index++) {
+        const before = secants[index - 1]!;
+        const after = secants[index]!;
+        // A local peak or trough is flat at the point, so the curve turns there and not beyond it.
+        tangents.push(before * after <= 0 ? 0 : (before + after) / 2);
+      }
+      tangents.push(secants[n - 2]!);
+      for (let index = 0; index < n - 1; index++) {
+        const secant = secants[index]!;
+        if (secant === 0) {
+          tangents[index] = 0;
+          tangents[index + 1] = 0;
+          continue;
+        }
+        const alpha = tangents[index]! / secant;
+        const beta = tangents[index + 1]! / secant;
+        const length = Math.hypot(alpha, beta);
+        if (length > 3) {
+          const tau = 3 / length;
+          tangents[index] = tau * alpha * secant;
+          tangents[index + 1] = tau * beta * secant;
+        }
+      }
+      let d = `M${fixed(xs[0]!)} ${fixed(ys[0]!)}`;
+      for (let index = 0; index < n - 1; index++) {
+        const third = (xs[index + 1]! - xs[index]!) / 3;
+        d +=
+          `C${fixed(xs[index]! + third)} ${fixed(ys[index]! + tangents[index]! * third)} ` +
+          `${fixed(xs[index + 1]! - third)} ${fixed(ys[index + 1]! - tangents[index + 1]! * third)} ` +
+          `${fixed(xs[index + 1]!)} ${fixed(ys[index + 1]!)}`;
+      }
+      return d;
+    })
+    .join('');
+}
+
+/**
+ * The `d` of a diamond (a square turned 45°) centred on a point, `radius`
+ * from the centre to each corner. Drawn in its own small SVG so the marker
+ * diamonds stay square however wide the plot is stretched.
+ */
+export function diamondAt(cx: number, cy: number, radius: number): string {
+  return `M${fixed(cx)} ${fixed(cy - radius)}L${fixed(cx + radius)} ${fixed(cy)}L${fixed(cx)} ${fixed(cy + radius)}L${fixed(cx - radius)} ${fixed(cy)}Z`;
+}
+
+/* -------------------------------------------------------------------------
+ * Steps
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Which of `steps` equal bands of a range a value falls in, 1 to `steps`, for
+ * a sequential colour ramp: the lowest value is step 1, the highest is the
+ * top step, a value on a boundary belongs to the band above it, and anything
+ * outside the range takes the end it is past. 0 for a missing value, which a
+ * heat map draws as "no data" rather than as the lightest step. A range with
+ * no width (every value equal) is step 1 throughout.
+ */
+export function quantise(value: number | null, min: number, max: number, steps = 8): number {
+  if (value === null || !Number.isFinite(value)) return 0;
+  const count = Math.max(1, Math.floor(steps));
+  if (!(max > min)) return 1;
+  if (value <= min) return 1;
+  if (value >= max) return count;
+  return Math.min(count, 1 + Math.floor(((value - min) / (max - min)) * count));
+}
+
+/* -------------------------------------------------------------------------
+ * Labels
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Moves labels apart along one axis until each is at least `gap` from the
+ * next, keeping their order and staying between `min` and `max` where they
+ * fit (A8 §4.3.3). Used for end-of-line labels: two lines that finish close
+ * together keep a readable label each, nudged the least distance apart,
+ * rather than one overprinting the other.
+ *
+ * Deterministic: equal positions keep their input order. Positions come back
+ * in the order they were given. When the labels cannot all fit, they start
+ * at `min` and run past `max`; the chart decides what gives way.
+ */
+export function relaxLabels(ys: readonly number[], gap = 14, min = 0, max = Number.POSITIVE_INFINITY): number[] {
+  const order = ys.map((y, index) => ({ y, index })).sort((a, b) => a.y - b.y || a.index - b.index);
+  const placed = order.map((entry) => entry.y);
+  const last = placed.length - 1;
+  if (last < 0) return [];
+  const downwards = (): void => {
+    placed[0] = Math.max(placed[0]!, min);
+    for (let index = 1; index <= last; index++) placed[index] = Math.max(placed[index]!, placed[index - 1]! + gap);
+  };
+  downwards();
+  if (placed[last]! > max) {
+    placed[last] = max;
+    for (let index = last - 1; index >= 0; index--) placed[index] = Math.min(placed[index]!, placed[index + 1]! - gap);
+    if (placed[0]! < min) downwards();
+  }
+  const out = new Array<number>(ys.length);
+  order.forEach((entry, position) => {
+    out[entry.index] = placed[position]!;
+  });
+  return out;
+}
+
+/** The plot width, in px, that marker labels are fitted against for a full-width (12-column) card. */
+export const MARKER_REFERENCE_WIDTH = 1040;
+
+/** A marker label's width estimated from its length (A8 §4.3.4): nothing is measured on the server. */
+export function markerLabelWidth(text: string, pill: boolean): number {
+  return text.length * 5.6 + (pill ? 16 : 4);
+}
+
+/** One label above the plot, to be placed: `x` is a fraction of the plot width. */
+export interface MarkerLabelInput {
+  readonly id: string;
+  readonly kind: ChartMarkerKind;
+  readonly x: number;
+  readonly label?: string;
+}
+
+/** Where a label went: its tier (1 nearest the top), or `null` when it gave way; and its alignment at an edge. */
+export interface MarkerLabelPlacement {
+  readonly id: string;
+  readonly tier: 1 | 2 | null;
+  readonly edge?: 'start' | 'end';
+}
+
+/** Pills by priority: a deadline is a commitment, "today" only orientation. */
+const PILL_RANK: Readonly<Partial<Record<ChartMarkerKind, number>>> = { deadline: 0, today: 1 };
+
+/** Space kept clear between two labels on one tier, in px. */
+const LABEL_GAP = 4;
+
+/** Labels within this fraction of an edge align inwards instead of centring, so they are not cut off. */
+const EDGE = 0.08;
+
+/**
+ * Puts marker labels on at most two tiers above the plot without measuring
+ * anything (A8 §4.3.4). The server does not know how wide the plot will be,
+ * so collisions are decided in fractions of a reference width — the plot of
+ * a card `span` columns wide out of 12 — from each label's estimated width.
+ *
+ * Gate labels (milestones, events) go first, each on the first tier where it
+ * fits. Then the pills, deadlines before "today": tier 1 if free, else tier
+ * 2; failing both, the pill takes the tier whose only obstacles are gate
+ * labels and those labels give way (their diamonds and lines stay, and the
+ * table twin still names them). A label within 8 % of an edge aligns inwards.
+ *
+ * The CSS completes it by container size: tier-2 gate labels hide below
+ * 40rem and every gate label below 32rem; pills always show.
+ *
+ * Returns a placement per input, in input order, and how many tiers are used
+ * (the height the chart reserves above the plot).
+ */
+export function placeMarkers(
+  items: readonly MarkerLabelInput[],
+  { span = 12 }: { readonly span?: number } = {},
+): { readonly placements: readonly MarkerLabelPlacement[]; readonly tiers: 0 | 1 | 2 } {
+  const width = (Math.min(12, Math.max(1, span)) / 12) * MARKER_REFERENCE_WIDTH;
+  const gap = LABEL_GAP / width;
+  interface Box {
+    readonly id: string;
+    readonly pill: boolean;
+    readonly from: number;
+    readonly to: number;
+    readonly edge?: 'start' | 'end';
+    tier: 1 | 2 | null;
+  }
+  const boxes = new Map<string, Box>();
+  for (const item of items) {
+    if (!item.label) continue;
+    const pill = item.kind in PILL_RANK;
+    const size = markerLabelWidth(item.label, pill) / width;
+    const edge = item.x <= EDGE ? 'start' : item.x >= 1 - EDGE ? 'end' : undefined;
+    const from = edge === 'start' ? item.x : edge === 'end' ? item.x - size : item.x - size / 2;
+    boxes.set(item.id, { id: item.id, pill, from, to: from + size, ...(edge ? { edge } : {}), tier: null });
+  }
+  const clash = (a: Box, b: Box): boolean => a.from < b.to + gap && b.from < a.to + gap;
+  const onTier = (tier: 1 | 2, box: Box): Box[] => [...boxes.values()].filter((other) => other !== box && other.tier === tier && clash(box, other));
+
+  const byX = (a: MarkerLabelInput, b: MarkerLabelInput): number => a.x - b.x || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const gates = items.filter((item) => boxes.has(item.id) && !(item.kind in PILL_RANK)).sort(byX);
+  const pills = items
+    .filter((item) => boxes.has(item.id) && item.kind in PILL_RANK)
+    .sort((a, b) => PILL_RANK[a.kind]! - PILL_RANK[b.kind]! || byX(a, b));
+
+  for (const item of gates) {
+    const box = boxes.get(item.id)!;
+    box.tier = onTier(1, box).length === 0 ? 1 : onTier(2, box).length === 0 ? 2 : null;
+  }
+  for (const item of pills) {
+    const box = boxes.get(item.id)!;
+    const first = onTier(1, box);
+    const second = onTier(2, box);
+    if (first.length === 0) box.tier = 1;
+    else if (second.length === 0) box.tier = 2;
+    else {
+      // Only gate labels in the way on a tier: they give way. Pills on both
+      // (three pills within one label's width): share tier 2 rather than drop one.
+      const tier: 1 | 2 = first.every((other) => !other.pill) ? 1 : 2;
+      for (const other of tier === 1 ? first : second) if (!other.pill) other.tier = null;
+      box.tier = tier;
+    }
+  }
+
+  const placements = items.map((item): MarkerLabelPlacement => {
+    const box = boxes.get(item.id);
+    return { id: item.id, tier: box?.tier ?? null, ...(box?.edge ? { edge: box.edge } : {}) };
+  });
+  const tiers = placements.reduce<0 | 1 | 2>((most, placement) => (placement.tier !== null && placement.tier > most ? placement.tier : most), 0);
+  return { placements, tiers };
+}
+
 /* -------------------------------------------------------------------------
  * Words
  * ---------------------------------------------------------------------- */
@@ -343,8 +582,11 @@ export function arcPath(start: number, end: number, outer: number, inner: number
  * The direction of a trend as a word and its ends, for a sparkline's name:
  * "Rising, 12 → 18". A change within 2 % of the larger end is "Steady".
  */
-export function describeTrend(values: readonly number[], format: (value: number) => string = (value) => formatNumber(value, { locale: DEFAULT_LOCALE })): string {
-  const finite = values.filter((value) => Number.isFinite(value));
+export function describeTrend(
+  values: readonly (number | null)[],
+  format: (value: number) => string = (value) => formatNumber(value, { locale: DEFAULT_LOCALE }),
+): string {
+  const finite = values.filter((value): value is number => value !== null && Number.isFinite(value));
   if (finite.length === 0) return 'No data';
   const first = finite[0]!;
   const last = finite[finite.length - 1]!;
