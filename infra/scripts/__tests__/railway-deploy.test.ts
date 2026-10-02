@@ -1,5 +1,29 @@
 import { describe, expect, it, vi } from 'vitest';
-import { callApi, credentialsFrom, explainRefusal, faultIn, hostFor, hostsFor, imageFor, inTwoPasses, phasesOf, portalChannels, readCatalogue, operationName, variablesFor, WEB_ORIGINS, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
+import {
+  assertPullable,
+  callApi,
+  checkPullable,
+  credentialsFrom,
+  explainRefusal,
+  faultIn,
+  hostFor,
+  hostOutputs,
+  hostsFor,
+  imageFor,
+  inTwoPasses,
+  manifestUrl,
+  MANIFEST_ACCEPT,
+  phasesOf,
+  portalChannels,
+  pullTargets,
+  pullTokenUrl,
+  readCatalogue,
+  operationName,
+  variablesFor,
+  WEB_ORIGINS,
+  type Catalogue,
+  type ServiceDefinition,
+} from '../railway-deploy.js';
 import { isPreview } from '../railway-teardown.js';
 
 /**
@@ -36,9 +60,15 @@ describe('what gets deployed, and when', () => {
     for (const worker of ['worker-events', 'worker-engine', 'worker-comms', 'worker-data']) {
       expect(phaseOf(worker)).toBeLessThan(phaseOf('api'));
     }
-    for (const app of ['portal', 'workbench', 'admin']) {
+    for (const app of ['portal', 'workbench', 'admin', 'site']) {
       expect(phaseOf('api')).toBeLessThan(phaseOf(app));
     }
+  });
+
+  it('deploys the public site with the applications, so all four learn each other\'s origins in one two-pass phase', () => {
+    const phases = phasesOf(catalogue);
+    const web = phases.find((phase) => phase.some((service) => service.name === 'site'));
+    expect(web?.map((service) => service.name).sort()).toEqual(['admin', 'portal', 'site', 'workbench']);
   });
 
   it('puts the four workers in one phase, so they are never half-upgraded for longer than they must be', () => {
@@ -95,6 +125,20 @@ describe('where each service answers', () => {
     expect(hostFor(named('portal'), 'example.com', 'production')).toBe('help.example.com');
     expect(hostFor(named('portal'), 'example.com', 'staging')).toBe('help.staging.example.com');
     expect(hostFor(named('workbench'), 'example.com', 'pr-42')).toBe('desk.pr-42.example.com');
+  });
+
+  it('puts the public site at www., in production and under each environment\'s label', () => {
+    expect(hostFor(named('site'), 'example.com', 'production')).toBe('www.example.com');
+    expect(hostFor(named('site'), 'example.com', 'pr-42')).toBe('www.pr-42.example.com');
+    expect(hostsFor(catalogue, 'example.com', 'production').get('site')).toBe('www.example.com');
+  });
+
+  it('reads @ as the bare domain, which a preview never claims', () => {
+    // The owner's later choice for the site (A5 §16); nothing uses it yet.
+    const apex: ServiceDefinition = { ...named('site'), subdomain: '@' };
+    expect(hostFor(apex, 'example.com', 'production')).toBe('example.com');
+    expect(hostFor(apex, 'example.com', 'pr-42')).toBe('pr-42.example.com');
+    expect(hostFor(apex, 'example.com', 'staging')).toBe('staging.example.com');
   });
 
   it('gives a private service no hostname at all', () => {
@@ -185,6 +229,7 @@ describe('what each service is actually given', () => {
       ['portal', 'PORTAL_ORIGIN'],
       ['workbench', 'WORKBENCH_ORIGIN'],
       ['admin', 'ADMIN_ORIGIN'],
+      ['site', 'SITE_ORIGIN'],
     ] as const) {
       const variables = variablesFor(named(name), hostsFor(catalogue, domain, 'production'));
       // The BFF checks a request's origin against this and builds the OIDC
@@ -194,20 +239,52 @@ describe('what each service is actually given', () => {
     }
   });
 
-  it('tells every web application where the other two are', () => {
-    // C1: the app switcher, "Open in Workbench", "View as requester" and the
-    // portal links in an agent's reply are all built from these. Each BFF
-    // reads only its own by name, so the other two cannot move sign-in.
+  it('tells every web service where the others are', () => {
+    // C1: the area switcher, "Open in Service Desk" and the portal links in an
+    // agent's reply are built from these, and so is every link on the public
+    // site. Each BFF reads only its own by name, so the others cannot move
+    // sign-in.
     const hosts = hostsFor(catalogue, domain, 'production');
-    for (const app of ['portal', 'workbench', 'admin']) {
+    for (const app of ['portal', 'workbench', 'admin', 'site']) {
       const variables = variablesFor(named(app), hosts);
       expect(variables.PORTAL_ORIGIN, app).toBe(`https://help.${domain}`);
       expect(variables.WORKBENCH_ORIGIN, app).toBe(`https://desk.${domain}`);
       expect(variables.ADMIN_ORIGIN, app).toBe(`https://admin.${domain}`);
+      expect(variables.SITE_ORIGIN, app).toBe(`https://www.${domain}`);
+      expect(variables.API_BASE_URL, app).toBe(`https://api.${domain}`);
     }
-    // One list, and it names exactly the web applications the catalogue has.
+    // One list, and it names exactly the web services the catalogue has.
     const web = catalogue.services.filter((service) => Object.hasOwn(WEB_ORIGINS, service.name)).map((service) => service.name);
-    expect(web.sort()).toEqual(['admin', 'portal', 'workbench']);
+    expect(web.sort()).toEqual(['admin', 'portal', 'site', 'workbench']);
+  });
+
+  it('gives the public site no credential and nothing a person must set by hand', () => {
+    // A5 §3.6: the site has no session, no database and no secret, so the
+    // deploy's variables are everything it reads.
+    const variables = variablesFor(named('site'), hostsFor(catalogue, domain, 'production'));
+    expect(Object.keys(variables).sort()).toEqual([
+      'ADMIN_ORIGIN',
+      'API_BASE_URL',
+      'DEMO_MODE',
+      'OTEL_SERVICE_NAME',
+      'PORT',
+      'PORTAL_ORIGIN',
+      'SITE_ORIGIN',
+      'WORKBENCH_ORIGIN',
+    ]);
+    expect(variables.OTEL_SERVICE_NAME).toBe('itsm-site');
+  });
+
+  it('turns the demo on for exactly the six services that read DEMO_MODE', () => {
+    // SPEC v3 §4.9: the API (verification and policy), worker-data (the
+    // nightly build), the three applications (minting) and the site (the
+    // role buttons). Anywhere else it would be a variable nothing reads, and
+    // a kill switch with one more place to forget.
+    const on = catalogue.services.filter((service) => service.variables?.DEMO_MODE === 'on').map((service) => service.name);
+    expect(on.sort()).toEqual(['admin', 'api', 'portal', 'site', 'workbench', 'worker-data']);
+    // And `off` nowhere else: the six are the only services that mention it.
+    const mentioned = catalogue.services.filter((service) => service.variables && 'DEMO_MODE' in service.variables).map((service) => service.name);
+    expect(mentioned.sort()).toEqual(on);
   });
 
   it('gives the API its own public base URL and no origin it does not own', () => {
@@ -216,6 +293,7 @@ describe('what each service is actually given', () => {
     expect(variables.PORTAL_ORIGIN).toBeUndefined();
     expect(variables.WORKBENCH_ORIGIN).toBeUndefined();
     expect(variables.ADMIN_ORIGIN).toBeUndefined();
+    expect(variables.SITE_ORIGIN).toBeUndefined();
   });
 
   it('tells the portal which channels to mention, and only the portal', () => {
@@ -534,6 +612,7 @@ describe('telling Railway which port to knock on', () => {
     expect(variablesFor(named('portal'), hosts).PORT).toBe('3200');
     expect(variablesFor(named('workbench'), hosts).PORT).toBe('3100');
     expect(variablesFor(named('admin'), hosts).PORT).toBe('3300');
+    expect(variablesFor(named('site'), hosts).PORT).toBe('3400');
   });
 
   it('agrees with the port the domain forwards to, which is the same number', () => {
@@ -550,5 +629,176 @@ describe('telling Railway which port to knock on', () => {
     // check, and it has no HTTP surface to answer with.
     expect(variablesFor(named('worker-events'), new Map()).PORT).toBeUndefined();
     expect(variablesFor(named('migrate'), new Map()).PORT).toBeUndefined();
+  });
+});
+
+describe('what the deploy hands the workflow', () => {
+  it('publishes every host, and a URL per web service a GitHub environment can link to', () => {
+    const lines = hostOutputs({
+      api: 'https://api.example.com',
+      portal: 'https://help.example.com',
+      workbench: 'https://desk.example.com',
+      admin: 'https://admin.example.com',
+      site: 'https://www.example.com',
+    });
+    expect(lines[0]).toBe(
+      'hosts={"api":"https://api.example.com","portal":"https://help.example.com","workbench":"https://desk.example.com","admin":"https://admin.example.com","site":"https://www.example.com"}',
+    );
+    expect(lines.slice(1)).toEqual([
+      'api-url=https://api.example.com',
+      'portal-url=https://help.example.com',
+      'workbench-url=https://desk.example.com',
+      'admin-url=https://admin.example.com',
+      // The address to share: the deploy and production environments link here.
+      'site-url=https://www.example.com',
+    ]);
+  });
+
+  it('leaves out the URL of a service that got no host, rather than writing an empty one', () => {
+    expect(hostOutputs({ api: 'https://api.example.com' })).toEqual(['hosts={"api":"https://api.example.com"}', 'api-url=https://api.example.com']);
+  });
+});
+
+describe('the pull pre-flight (Y-M6)', () => {
+  /*
+   * GHCR makes every new package private, and Railway pulls anonymously
+   * unless a service holds a registry credential. The first deploy after the
+   * site's image appears would otherwise set an image Railway cannot fetch —
+   * after the workers and the API had already moved. These pin when that
+   * stops the deploy (a service it would create) and when it only warns (one
+   * that exists, which may pull with a credential), with the registry mocked.
+   */
+  const everyone = new Set(catalogue.services.map((service) => service.name));
+  const withoutSite = new Set([...everyone].filter((name) => name !== 'site'));
+
+  type Answer = { status: number; body?: unknown } | Error;
+
+  /** A registry that answers per path, and records every request it was sent. */
+  function registry(answer: (path: string, kind: 'token' | 'manifest') => Answer) {
+    const requests: { url: string; method: string; headers: Record<string, string> }[] = [];
+    const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, method: init?.method ?? 'GET', headers: Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>)) });
+      const isToken = url.includes('/token?');
+      const path = isToken
+        ? decodeURIComponent(/scope=([^&]+)/.exec(url)![1]!).replace(/^repository:/, '').replace(/:pull$/, '')
+        : /\/v2\/(.+)\/manifests\//.exec(url)![1]!;
+      const result = answer(path, isToken ? 'token' : 'manifest');
+      if (result instanceof Error) throw result;
+      return {
+        ok: result.status >= 200 && result.status < 300,
+        status: result.status,
+        json: async () => result.body ?? (isToken ? { token: 'anonymous' } : {}),
+      } as Response;
+    }) as unknown as typeof fetch;
+    return { fetcher, requests };
+  }
+
+  const publicRegistry = () => registry(() => ({ status: 200 }));
+  /** Every package public except the site's, which GHCR created private. */
+  const privateSite = () => registry((path) => (path.endsWith('/site') ? { status: 401 } : { status: 200 }));
+
+  it('checks each image once, however many services run it', () => {
+    const targets = pullTargets(catalogue, 'production', 'sha-1', everyone);
+    const images = targets.map((target) => target.image);
+    expect(new Set(images).size).toBe(images.length);
+    expect(images).toContain('ghcr.io/yousafbarikzai/ticket/site:sha-1');
+    expect([...(targets.find((target) => target.path.endsWith('/worker'))?.services ?? [])].sort()).toEqual([
+      'worker-comms',
+      'worker-data',
+      'worker-engine',
+      'worker-events',
+    ]);
+    // `seed` runs only in previews, so production never asks about it twice.
+    expect([...(targets.find((target) => target.path.endsWith('/migrate'))?.services ?? [])].sort()).toEqual(['bootstrap', 'migrate']);
+  });
+
+  it('asks as an anonymous puller would: GHCR\'s pull token, then the manifest with it', async () => {
+    const { fetcher, requests } = publicRegistry();
+    await expect(checkPullable('ghcr.io', 'yousafbarikzai/ticket/site', 'sha-abc1234', fetcher)).resolves.toEqual({ verdict: 'pullable', detail: '200' });
+    expect(requests[0]).toMatchObject({
+      url: 'https://ghcr.io/token?service=ghcr.io&scope=repository%3Ayousafbarikzai%2Fticket%2Fsite%3Apull',
+      method: 'GET',
+    });
+    expect(requests[1]).toMatchObject({
+      url: 'https://ghcr.io/v2/yousafbarikzai/ticket/site/manifests/sha-abc1234',
+      method: 'HEAD',
+      headers: { accept: MANIFEST_ACCEPT, authorization: 'Bearer anonymous' },
+    });
+    expect(pullTokenUrl('ghcr.io', 'o/r/site')).toBe(requests[0]!.url.replace('yousafbarikzai%2Fticket', 'o%2Fr'));
+    expect(manifestUrl('ghcr.io', 'o/r/site', 'v1.2.3')).toBe('https://ghcr.io/v2/o/r/site/manifests/v1.2.3');
+    // An index first: a multi-platform image answers with one.
+    expect(MANIFEST_ACCEPT.split(', ')[0]).toBe('application/vnd.oci.image.index.v1+json');
+  });
+
+  it('reads 401, 403 and 404 as refused, and anything else as unknown', async () => {
+    for (const status of [401, 403, 404]) {
+      const { fetcher } = registry((_path, kind) => (kind === 'manifest' ? { status } : { status: 200 }));
+      expect((await checkPullable('ghcr.io', 'o/r/site', 't', fetcher)).verdict, `manifest ${status}`).toBe('refused');
+      const denied = registry((_path, kind) => (kind === 'token' ? { status } : { status: 200 }));
+      expect((await checkPullable('ghcr.io', 'o/r/site', 't', denied.fetcher)).verdict, `token ${status}`).toBe('refused');
+    }
+    for (const answer of [{ status: 500 }, { status: 429 }, new TypeError('fetch failed')] as Answer[]) {
+      const { fetcher } = registry(() => answer);
+      expect((await checkPullable('ghcr.io', 'o/r/site', 't', fetcher)).verdict).toBe('unknown');
+    }
+    const tokenless = registry((_path, kind) => (kind === 'token' ? { status: 200, body: {} } : { status: 200 }));
+    expect((await checkPullable('ghcr.io', 'o/r/site', 't', tokenless.fetcher)).verdict).toBe('unknown');
+  });
+
+  it('stops the deploy, naming the package and the fix, when a service it would create cannot pull its image', async () => {
+    const { fetcher } = privateSite();
+    const log = vi.fn();
+    const failure = assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: {}, log });
+    await expect(failure).rejects.toThrow(/stopped before changing anything in Railway/);
+    await expect(assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: {}, log })).rejects.toThrow(
+      'ghcr.io/yousafbarikzai/ticket/site is not publicly pullable, so Railway cannot pull it. Make it public: GitHub → your profile → Packages → ticket/site → Package settings → Change visibility → Public, then re-run this deploy.',
+    );
+    await expect(assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: {}, log })).rejects.toThrow(
+      /DEPLOY_SKIP_PULL_CHECK=1[\s\S]*needed by site, which this deploy would create/,
+    );
+  });
+
+  it('only warns for a service that already exists, which may pull with a registry credential', async () => {
+    // The owner who chose the runbook's second option gets a green deploy and
+    // a warning, never a red one (Y-M6: an existing service with a 401 → exit 0).
+    const { fetcher } = privateSite();
+    const log = vi.fn();
+    const checks = await assertPullable(catalogue, 'production', 'sha-1', everyone, { fetch: fetcher, env: {}, log });
+    expect(checks.find((check) => check.path.endsWith('/site'))?.verdict).toBe('refused');
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0]![0]).toMatch(/^::warning title=Image pull::ghcr\.io\/yousafbarikzai\/ticket\/site is not publicly pullable/);
+    expect(log.mock.calls[0]![0]).toMatch(/site already exist/);
+  });
+
+  it('never stops a deploy because the registry did not answer', async () => {
+    const { fetcher } = registry(() => new TypeError('fetch failed'));
+    const log = vi.fn();
+    await expect(assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: {}, log })).resolves.toHaveLength(
+      pullTargets(catalogue, 'production', 'sha-1', withoutSite).length,
+    );
+    expect(log.mock.calls.every(([line]) => String(line).startsWith('::warning title=Image pull::Could not check'))).toBe(true);
+  });
+
+  it('passes quietly when every image is public', async () => {
+    const { fetcher } = publicRegistry();
+    const log = vi.fn();
+    const checks = await assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: {}, log });
+    expect(checks.every((check) => check.verdict === 'pullable')).toBe(true);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('is skipped entirely by DEPLOY_SKIP_PULL_CHECK=1, and says so', async () => {
+    const { fetcher } = privateSite();
+    const log = vi.fn();
+    await expect(
+      assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: { DEPLOY_SKIP_PULL_CHECK: '1' }, log }),
+    ).resolves.toEqual([]);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(log.mock.calls[0]![0]).toMatch(/^::notice title=Image pull::DEPLOY_SKIP_PULL_CHECK=1/);
+    // Only the exact value: a typo checks rather than silently skipping.
+    await expect(
+      assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: { DEPLOY_SKIP_PULL_CHECK: 'true' }, log }),
+    ).rejects.toThrow(/not publicly pullable/);
   });
 });

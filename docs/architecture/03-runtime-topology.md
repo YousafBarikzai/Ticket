@@ -9,6 +9,7 @@
 | `portal` | `apps/portal` | Next.js (App Router) · container | Yes (`help.<domain>`, tenant subdomains, custom domains) | Horizontal | Requester portal and user PWA. Thin BFF route handlers exchange the session for a bearer token and proxy API calls unchanged (see 08 §9). |
 | `workbench` | `apps/workbench` | Next.js · container | Yes (`desk.<domain>`) | Horizontal | Agent workbench, major-incident room, knowledge authoring, PWA. |
 | `admin` | `apps/admin` | Next.js · container | Yes (`admin.<domain>`) | Horizontal | Admin console, platform console (operator role), admin PWA. |
+| `site` | `apps/site` | Next.js · container | Yes (`www.<domain>`, or the bare domain) | 1 replica | The public site (ADR-0062): landing page, sign-in chooser, shareable role pages that open the demo, legal pages. **No session, no BFF, no Redis, no cookie, no credential**; every link into the product is a plain link to an app's origin. Reads the demo's public status from the API server-side; the browser talks to nothing else. |
 | `status` | `apps/status` | Next.js · container + static export | Yes (`status.<domain>`, custom domains) | Edge-served (public) · horizontal (authenticated) | Public pages are exported by a worker job on status events and deployed to Cloudflare static hosting so they survive API outage; authenticated pages are served by the same app running on Railway (MOD-23). |
 | `mobile` | `apps/mobile` | Expo (React Native) · EAS | App stores | n/a | iOS first (PH-2), Android (PH-5). Calls `api` directly with PKCE tokens. |
 | `keycloak` | `infra/keycloak` | Keycloak 26 · container | Yes (`auth.<domain>`) | 2 replicas (PH-2+) | Identity broker. Own PostgreSQL database. See [09](09-identity-and-security.md). |
@@ -35,6 +36,7 @@ flowchart TB
       PORTAL[portal ×N]
       WB[workbench ×N]
       ADMIN[admin ×N]
+      SITE[site ×1]
       KC[keycloak ×2]
     end
     subgraph PrivateSvcs["Private services"]
@@ -51,8 +53,9 @@ flowchart TB
   end
   OBJ[(Object storage · EU/UK)]
   GRAF[Grafana Cloud EU · Sentry EU]
-  DNS --> WAF --> API & PORTAL & WB & ADMIN & KC
-  CACHE --> PORTAL & WB & ADMIN
+  DNS --> WAF --> API & PORTAL & WB & ADMIN & SITE & KC
+  CACHE --> PORTAL & WB & ADMIN & SITE
+  SITE -. demo status, server-side .-> API
   API & W1 & W2 & W3 & W4 --> PG & REDIS
   KC --> PGKC
   API & W4 --> OBJ
@@ -61,7 +64,7 @@ flowchart TB
   W4 --> STATIC
 ```
 
-**In words.** One Railway project holds three environments (`preview-*`, `staging`, `production`), each with the same service graph. In production, the public services are the API, the three Next.js apps and Keycloak; everything else is reachable only on Railway's private network. The worker is one image deployed as four services, each pinned to a queue family so that a burst of AI or indexing work cannot starve outbox publishing or SLA timers. PostgreSQL and Redis are Railway-managed. Object storage and the observability stack are external, EU-jurisdiction services. Cloudflare provides DNS (including the wildcard used for tenant subdomains), WAF, edge rate limiting, caching of static assets and hosting for the static status pages.
+**In words.** One Railway project holds three environments (`preview-*`, `staging`, `production`), each with the same service graph. In production, the public services are the API, the three Next.js apps, the public site and Keycloak; everything else is reachable only on Railway's private network. The public site is the one public service with no session: it holds no state, and an outage of it leaves the three applications reachable at their own addresses. The worker is one image deployed as four services, each pinned to a queue family so that a burst of AI or indexing work cannot starve outbox publishing or SLA timers. PostgreSQL and Redis are Railway-managed. Object storage and the observability stack are external, EU-jurisdiction services. Cloudflare provides DNS (including the wildcard used for tenant subdomains), WAF, edge rate limiting, caching of static assets and hosting for the static status pages.
 
 ### 2.1 Region and residency stance
 
@@ -163,7 +166,7 @@ All four run the same image with `WORKER_QUEUES` set per service. A single-servi
 
 ## 6. Environment parity
 
-Every environment runs the same service graph from the same images; only sizes, replica counts and secrets differ. Preview environments (one per pull request) run `api`, one `worker` (all queues), the three web apps, Keycloak in dev mode with a seeded realm, PostgreSQL, Redis and a MinIO-compatible bucket, seeded by the shared seed script. Staging is production-like with test identity providers and sandbox channel accounts. Local development uses `docker-compose` with the same components plus Mailpit for email. See [16](16-deployment-and-delivery.md).
+Every environment runs the same service graph from the same images; only sizes, replica counts and secrets differ. Preview environments (one per pull request) run `api`, one `worker` (all queues), the three web apps and the public site, Keycloak in dev mode with a seeded realm, PostgreSQL, Redis and a MinIO-compatible bucket, seeded by the shared seed script. Staging is production-like with test identity providers and sandbox channel accounts. Local development uses `docker-compose` with the same components plus Mailpit for email. See [16](16-deployment-and-delivery.md).
 
 ## 7. Failure modes and degradation
 

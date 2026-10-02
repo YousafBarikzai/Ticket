@@ -6,8 +6,8 @@
  * shell, a provider and icons to it; the workbench adds a query cache, a
  * virtual list and overlays. Neither is noticed growing until somebody opens
  * it on a slow connection, and by then the growth is twenty small additions
- * nobody can attribute. So every build is measured, and CI fails when a portal
- * or workbench route goes over its budget, or grows by more than the tolerance
+ * nobody can attribute. So every build is measured, and CI fails when a portal,
+ * workbench or public-site route goes over its budget, or grows by more than the tolerance
  * over the baseline recorded in the budgets file — unless the same change
  * records a new baseline, which makes the growth a decision a reviewer sees
  * rather than a drift nobody did.
@@ -27,7 +27,7 @@
  * --webpack`: the manifests it reads are webpack's.
  *
  * Usage:
- *   pnpm tsx infra/scripts/check-bundles.ts             measure all three apps and check
+ *   pnpm tsx infra/scripts/check-bundles.ts             measure all four apps and check
  *   pnpm tsx infra/scripts/check-bundles.ts --app portal
  *   pnpm tsx infra/scripts/check-bundles.ts --update    record the current sizes as baselines
  */
@@ -36,7 +36,12 @@ import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { gzipSync } from 'node:zlib';
 
-export const APPS = ['portal', 'workbench', 'admin'] as const;
+/**
+ * The four Next applications, the public site among them (SPEC v3 §10.1). The
+ * site is budgeted like the portal — enforced, growth held to the tolerance —
+ * because a marketing page that ships more than the framework is a defect.
+ */
+export const APPS = ['portal', 'workbench', 'admin', 'site'] as const;
 export type App = (typeof APPS)[number];
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -181,7 +186,14 @@ export function evaluate(measurements: readonly AppMeasurement[], budgets: Budge
   const notes: string[] = [];
 
   for (const { app, routes } of measurements) {
-    const config = budgets.apps[app];
+    const config = budgets.apps[app] as AppBudget | undefined;
+    if (!config) {
+      // An app the script measures and the budgets file does not name. Failed
+      // by name rather than left to throw on `config.baselines`: the fix is a
+      // line in the file, and the message should say which.
+      failures.push(`${app} has no entry in infra/bundle-budgets.json; add "${app}": { "budget": …, "enforceGrowth": …, "baselines": {} } to "apps"`);
+      continue;
+    }
     for (const { route, bytes } of routes) {
       const baseline = config.baselines[route] ?? null;
       let verdict: Verdict = 'ok';
@@ -217,7 +229,11 @@ export function evaluate(measurements: readonly AppMeasurement[], budgets: Budge
 export function withBaselines(budgets: Budgets, measurements: readonly AppMeasurement[]): Budgets {
   const apps = { ...budgets.apps };
   for (const { app, routes } of measurements) {
-    apps[app] = { ...apps[app], baselines: Object.fromEntries(routes.map(({ route, bytes }) => [route, bytes])) };
+    const existing = apps[app] as AppBudget | undefined;
+    // Recording baselines never invents a budget: an app the file does not
+    // name still fails `evaluate` until someone decides what it may weigh.
+    if (!existing) continue;
+    apps[app] = { ...existing, baselines: Object.fromEntries(routes.map(({ route, bytes }) => [route, bytes])) };
   }
   return { ...budgets, apps };
 }

@@ -17,6 +17,14 @@ name: Deploy
 # discovers those names — which is why the URLs below come from its outputs
 # rather than from an expression in this file.
 #
+# `vars.DEPLOY_SKIP_PULL_CHECK` is optional: `1` skips the deploy's pre-flight,
+# which otherwise asks the registry whether each image can be pulled
+# anonymously before Railway is touched. A refusal stops the deploy only for a
+# service the deploy would create (the public site's first deploy, while GHCR
+# still has its package private); for a service that exists it is a warning,
+# because Railway may pull it with a registry credential. Set it if Railway
+# pulls every image with a credential and the warnings are noise.
+#
 # `vars.PORTAL_CHANNELS` is optional too: a comma list such as
 # `email,teams,slack`, set on the portal alone (it names the channels the
 # portal offers). Unset or empty leaves whatever the portal service already has,
@@ -62,11 +70,13 @@ jobs:
       tag: ${{ steps.tag.outputs.value }}
       image-base: ${{ steps.image.outputs.base }}
     strategy:
-      # One job per target rather than one job building six: they share every
+      # One job per target rather than one job building seven: they share every
       # early layer through the registry cache, and a failure names the image.
+      # `site` is the public site (ADR-0062); GHCR creates its package private,
+      # and the deploy's pre-flight says so before it changes anything.
       fail-fast: false
       matrix:
-        target: [api, worker, migrate, portal, workbench, admin]
+        target: [api, worker, migrate, portal, workbench, admin, site]
     steps:
       - uses: actions/checkout@v4
 
@@ -157,7 +167,8 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: preview-${{ github.event.number }}
-      url: ${{ steps.deploy.outputs.portal-url }}
+      # The public site: the address to share, and the way into every area.
+      url: ${{ steps.deploy.outputs.site-url }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -189,6 +200,7 @@ jobs:
             --environment pr-${{ github.event.number }} --tag ${{ needs.images.outputs.tag }} --dry-run
         env:
           PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
+          DEPLOY_SKIP_PULL_CHECK: ${{ vars.DEPLOY_SKIP_PULL_CHECK }}
 
       - name: Deploy
         id: deploy
@@ -197,6 +209,7 @@ jobs:
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
+          DEPLOY_SKIP_PULL_CHECK: ${{ vars.DEPLOY_SKIP_PULL_CHECK }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
@@ -297,7 +310,8 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.workbench-url }}
+      # The public site: the address to share, and the way into every area.
+      url: ${{ steps.deploy.outputs.site-url }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -324,6 +338,7 @@ jobs:
             --environment production --tag ${{ needs.images.outputs.tag }} --dry-run
         env:
           PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
+          DEPLOY_SKIP_PULL_CHECK: ${{ vars.DEPLOY_SKIP_PULL_CHECK }}
 
       - name: Deploy
         id: deploy
@@ -332,6 +347,7 @@ jobs:
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
+          DEPLOY_SKIP_PULL_CHECK: ${{ vars.DEPLOY_SKIP_PULL_CHECK }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 
@@ -373,7 +389,8 @@ jobs:
     # workflow in the pull request that wants to deploy.
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.workbench-url }}
+      # The public site: the address to share, and the way into every area.
+      url: ${{ steps.deploy.outputs.site-url }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -400,6 +417,7 @@ jobs:
             --environment production --tag ${{ github.event.release.tag_name }} --dry-run
         env:
           PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
+          DEPLOY_SKIP_PULL_CHECK: ${{ vars.DEPLOY_SKIP_PULL_CHECK }}
 
       - name: Deploy
         id: deploy
@@ -408,6 +426,7 @@ jobs:
         env:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           PORTAL_CHANNELS: ${{ vars.PORTAL_CHANNELS }}
+          DEPLOY_SKIP_PULL_CHECK: ${{ vars.DEPLOY_SKIP_PULL_CHECK }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
 

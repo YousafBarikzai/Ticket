@@ -115,6 +115,10 @@ export function phasesOf(catalogue: Catalogue, environment = 'production'): Serv
  */
 export function hostFor(service: ServiceDefinition, domain: string, environment: string): string | null {
   if (!service.public || !service.subdomain) return null;
+  // `@` is the bare domain, for the public site should the owner want it
+  // there rather than at `www.` (A5 §16). Outside production it still gets the
+  // environment's label, so a preview never claims the production apex.
+  if (service.subdomain === '@') return environment === 'production' ? domain : `${environment}.${domain}`;
   return environment === 'production'
     ? `${service.subdomain}.${domain}`
     : `${service.subdomain}.${environment}.${domain}`;
@@ -139,14 +143,21 @@ export function hostsFor(catalogue: Catalogue, domain: string, environment: stri
 }
 
 /**
- * The three web applications, and the variable each reads its own public
- * origin from. The BFF in each app names its own (`originEnvVar`), so this is
- * the one place the three spellings are listed together.
+ * The four web services — the three applications and the public site — and
+ * the variable each reads its own public origin from. The BFF in each app
+ * names its own (`originEnvVar`), so this is the one place the four spellings
+ * are listed together.
+ *
+ * The site is here so every web service learns `SITE_ORIGIN` (the apps' "IT
+ * Service Management home" link and the Referer rule of their `/demo` page)
+ * and the site learns the three app origins its links are made of. A BFF
+ * reads only its own origin, so the site's is inert to every origin check.
  */
 export const WEB_ORIGINS: Readonly<Record<string, string>> = {
   portal: 'PORTAL_ORIGIN',
   workbench: 'WORKBENCH_ORIGIN',
   admin: 'ADMIN_ORIGIN',
+  site: 'SITE_ORIGIN',
 };
 
 /** Deploy-wide settings that are configuration, not credentials. */
@@ -232,13 +243,14 @@ export function variablesFor(
   const web = Object.hasOwn(WEB_ORIGINS, service.name);
 
   /*
-   * Every web application's origin, to every web application — not only its
-   * own. Each BFF reads its own origin by name (`originEnvVar`), so the other
-   * two are inert to the origin check and the OIDC redirect; they are what the
-   * app switcher, "Open in Workbench", "View as requester" and the portal
-   * links in an agent's reply are built from. A host that is not known yet
-   * sets nothing, and the link it would have made degrades to a copyable
-   * number rather than pointing at `https://undefined`.
+   * Every web service's origin, to every web service — not only its own. Each
+   * BFF reads its own origin by name (`originEnvVar`), so the others are inert
+   * to the origin check and the OIDC redirect; they are what the area
+   * switcher, "Open in Service Desk", the portal links in an agent's reply and
+   * every link on the public site are built from. A host that is not known
+   * yet sets nothing, and the link it would have made degrades to a copyable
+   * number (or, on the site, a sentence saying that part is unavailable)
+   * rather than pointing at `https://undefined`.
    */
   if (web) {
     for (const [app, variable] of Object.entries(WEB_ORIGINS)) {
@@ -248,11 +260,12 @@ export function variablesFor(
   }
   if (service.name === 'api' && mine) variables.PUBLIC_BASE_URL = `https://${mine}`;
 
-  // Where the three web applications find the API. Server components call it
-  // directly and the proxy forwards to it, so it is the same value for all
-  // three and it is the public hostname rather than an internal one: the
-  // browser never talks to it, but the OIDC redirect and the origin check are
-  // both expressed in public terms.
+  // Where the web services find the API. The applications' server components
+  // call it directly and their proxies forward to it; the site's server reads
+  // the demo's public status from it. The same value for all four, and the
+  // public hostname rather than an internal one: the browser never talks to
+  // it, but the OIDC redirect and the origin check are both expressed in
+  // public terms.
   if (web && apiHost) variables.API_BASE_URL = `https://${apiHost}`;
 
   // The channels the portal's "Good to know" card names. Only when the deploy
@@ -280,6 +293,194 @@ export function variablesFor(
   if (service.port) variables.PORT = String(service.port);
 
   return variables;
+}
+
+/**
+ * The pre-flight: can Railway pull every image this deploy is about to set?
+ *
+ * GHCR creates every new package **private**, and Railway pulls anonymously
+ * unless a service was given a registry credential. So the first deploy after
+ * a new image target lands — the public site's, and later Keycloak's — would
+ * set an image Railway cannot fetch, after the earlier phases had already
+ * moved, and the smoke test would be the first thing to say so. Asked here,
+ * before Railway is touched, the deploy stops with the fix instead.
+ *
+ * The answer only decides the deploy for a service that **does not exist yet**
+ * in the project (Y-M6). An existing service may have been given a registry
+ * credential rather than a public package — the runbook offers both — so an
+ * image anonymous pulls cannot reach is a warning there, never a refusal: the
+ * check must not block every deploy of an owner who chose the other option.
+ * A new service has no credential until somebody adds one, so for it a
+ * refusal is certain to fail and the deploy stops before any change.
+ *
+ * `DEPLOY_SKIP_PULL_CHECK=1` turns the whole check off, for the owner who
+ * gave Railway a credential and does not want the warnings.
+ */
+export type PullVerdict = 'pullable' | 'refused' | 'unknown';
+
+export interface PullTarget {
+  /** `ghcr.io/<repository>/<target>:<tag>`, as `imageFor` names it. */
+  readonly image: string;
+  /** The registry path, `<repository>/<target>`. */
+  readonly path: string;
+  /** The catalogue services that run this image in this environment. */
+  readonly services: readonly string[];
+  /** Those of them the project does not have yet, which this deploy would create. */
+  readonly newServices: readonly string[];
+}
+
+export interface PullCheck extends PullTarget {
+  readonly verdict: PullVerdict;
+  /** The answer that decided it: a status code, or why there was none. */
+  readonly detail: string;
+}
+
+/** Every distinct image this environment runs, with the services behind it. */
+export function pullTargets(
+  catalogue: Catalogue,
+  environment: string,
+  tag: string,
+  existing: ReadonlySet<string>,
+): PullTarget[] {
+  const byImage = new Map<string, { path: string; services: string[] }>();
+  for (const service of servicesFor(catalogue, environment)) {
+    const image = imageFor(catalogue, service, tag);
+    const entry = byImage.get(image) ?? { path: `${catalogue.image.repository}/${service.target}`, services: [] };
+    entry.services.push(service.name);
+    byImage.set(image, entry);
+  }
+  return [...byImage].map(([image, { path, services }]) => ({
+    image,
+    path,
+    services,
+    newServices: services.filter((name) => !existing.has(name)),
+  }));
+}
+
+/** What a registry may answer a manifest request with: a multi-platform index or a single manifest, OCI or Docker. */
+export const MANIFEST_ACCEPT = [
+  'application/vnd.oci.image.index.v1+json',
+  'application/vnd.docker.distribution.manifest.list.v2+json',
+  'application/vnd.oci.image.manifest.v1+json',
+  'application/vnd.docker.distribution.manifest.v2+json',
+].join(', ');
+
+/** GHCR's anonymous token for pulling one package: what Railway itself would be given. */
+export function pullTokenUrl(registry: string, path: string): string {
+  return `https://${registry}/token?service=${encodeURIComponent(registry)}&scope=${encodeURIComponent(`repository:${path}:pull`)}`;
+}
+
+export function manifestUrl(registry: string, path: string, tag: string): string {
+  return `https://${registry}/v2/${path}/manifests/${encodeURIComponent(tag)}`;
+}
+
+/**
+ * A status that settles the question. 401, 403 and 404 are the three ways a
+ * registry says "not to you": private, denied, or (for a private package
+ * asked anonymously) indistinguishable from absent. Anything else — a 5xx, a
+ * 429, a connection that failed — says nothing about the package, so it is
+ * `unknown` and never stops a deploy.
+ */
+function refusal(status: number): boolean {
+  return status === 401 || status === 403 || status === 404;
+}
+
+/** Anonymously: a pull token, then the manifest with it, exactly as a pull starts. */
+export async function checkPullable(
+  registry: string,
+  path: string,
+  tag: string,
+  fetcher: typeof fetch = fetch,
+): Promise<{ readonly verdict: PullVerdict; readonly detail: string }> {
+  try {
+    const tokenResponse = await fetcher(pullTokenUrl(registry, path), { signal: AbortSignal.timeout(15_000) });
+    if (!tokenResponse.ok) {
+      return { verdict: refusal(tokenResponse.status) ? 'refused' : 'unknown', detail: `token ${tokenResponse.status}` };
+    }
+    const { token } = (await tokenResponse.json().catch(() => ({}))) as { token?: unknown };
+    if (typeof token !== 'string' || token === '') return { verdict: 'unknown', detail: 'token answer had no token' };
+
+    const manifest = await fetcher(manifestUrl(registry, path, tag), {
+      method: 'HEAD',
+      headers: { accept: MANIFEST_ACCEPT, authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (manifest.ok) return { verdict: 'pullable', detail: `${manifest.status}` };
+    return { verdict: refusal(manifest.status) ? 'refused' : 'unknown', detail: `manifest ${manifest.status}` };
+  } catch (error: unknown) {
+    return { verdict: 'unknown', detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** The GitHub package name of a registry path: `yousafbarikzai/ticket/site` → `ticket/site`. */
+function packageName(path: string): string {
+  return path.split('/').slice(1).join('/');
+}
+
+/** What the owner does about an image anonymous pulls cannot reach. */
+export function pullFix(registry: string, path: string): string {
+  return `${registry}/${path} is not publicly pullable, so Railway cannot pull it. Make it public: GitHub → your profile → Packages → ${packageName(path)} → Package settings → Change visibility → Public, then re-run this deploy. If Railway pulls with a registry credential instead, set the repository variable DEPLOY_SKIP_PULL_CHECK=1.`;
+}
+
+export interface PullOptions {
+  readonly fetch?: typeof fetch;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Where the notices and warnings go; GitHub reads `::warning` lines as annotations. */
+  readonly log?: (line: string) => void;
+}
+
+/**
+ * Runs the pre-flight for one deploy and throws, naming every package and its
+ * fix, when an image a new service needs is refused. Returns the checks it
+ * made (none when skipped), for the log and for tests.
+ */
+export async function assertPullable(
+  catalogue: Catalogue,
+  environment: string,
+  tag: string,
+  existing: ReadonlySet<string>,
+  options: PullOptions = {},
+): Promise<PullCheck[]> {
+  const log = options.log ?? ((line: string) => console.log(line));
+  const env = options.env ?? process.env;
+  if (env.DEPLOY_SKIP_PULL_CHECK === '1') {
+    log('::notice title=Image pull::DEPLOY_SKIP_PULL_CHECK=1, so the images were not checked for anonymous pulls before deploying.');
+    return [];
+  }
+
+  const { registry } = catalogue.image;
+  const checks = await Promise.all(
+    pullTargets(catalogue, environment, tag, existing).map(async (target): Promise<PullCheck> => ({
+      ...target,
+      ...(await checkPullable(registry, target.path, tag, options.fetch)),
+    })),
+  );
+
+  const blocking: PullCheck[] = [];
+  for (const check of checks) {
+    if (check.verdict === 'pullable') continue;
+    if (check.verdict === 'refused' && check.newServices.length > 0) {
+      blocking.push(check);
+      continue;
+    }
+    // An existing service (it may hold a registry credential), or a registry
+    // that did not answer: worth a line in the run, not a stopped deploy.
+    const why =
+      check.verdict === 'refused'
+        ? `${pullFix(registry, check.path)} (${check.services.join(', ')} already exist, so this deploy goes ahead in case they pull with a credential.)`
+        : `Could not check whether ${registry}/${check.path}:${tag} is pullable (${check.detail}); deploying anyway.`;
+    log(`::warning title=Image pull::${why}`);
+  }
+
+  if (blocking.length > 0) {
+    throw new Error(
+      [
+        'The deploy stopped before changing anything in Railway:',
+        ...blocking.map((check) => `  - ${pullFix(registry, check.path)} (needed by ${check.newServices.join(', ')}, which this deploy would create.)`),
+      ].join('\n'),
+    );
+  }
+  return checks;
 }
 
 interface GraphQlError {
@@ -628,6 +829,11 @@ async function main(): Promise<void> {
     }
     console.log('  set once per environment by a person, never by this script:');
     console.log('    DATABASE_URL, DATABASE_URL_APP, DATABASE_URL_PLATFORM, REDIS_URL, OIDC_ISSUER, SMTP_URL, MEILISEARCH_*');
+    console.log(
+      process.env.DEPLOY_SKIP_PULL_CHECK === '1'
+        ? '  pre-flight: skipped (DEPLOY_SKIP_PULL_CHECK=1)'
+        : '  pre-flight: every image above checked for an anonymous pull before anything changes; a refusal stops the deploy only for a service it would create',
+    );
     return;
   }
 
@@ -651,6 +857,18 @@ async function main(): Promise<void> {
 Create one named exactly ${options.environment} in Railway, or deploy to one of the above.`,
     );
   }
+
+  // Every service the catalogue names here, checked before the first change:
+  // without --ensure-services a missing one stops the deploy, and stopping
+  // now is better than after the phases before it have already moved.
+  const wanted = phases.flat().map((service) => service.name);
+  const missing = wanted.filter((name) => !services.has(name));
+  if (missing.length > 0 && !options.ensureServices) {
+    throw new Error(`no Railway service named ${missing.join(', ')} in this project; create it, or deploy with --ensure-services`);
+  }
+
+  // The pull pre-flight (Y-M6), before Railway is touched.
+  await assertPullable(catalogue, options.environment, options.tag, new Set(services.keys()));
 
   /*
    * Filled as the deploy goes, phase by phase.
@@ -768,14 +986,21 @@ async function publishHosts(hosts: ReadonlyMap<string, string>): Promise<void> {
   const output = process.env.GITHUB_OUTPUT;
   if (!output) return;
   const { appendFile } = await import('node:fs/promises');
-  const lines = [
-    `hosts=${JSON.stringify(urls)}`,
-    ...(urls.api ? [`api-url=${urls.api}`] : []),
-    ...(urls.portal ? [`portal-url=${urls.portal}`] : []),
-    ...(urls.workbench ? [`workbench-url=${urls.workbench}`] : []),
-    ...(urls.admin ? [`admin-url=${urls.admin}`] : []),
-  ];
-  await appendFile(output, `${lines.join('\n')}\n`, 'utf8');
+  await appendFile(output, `${hostOutputs(urls).join('\n')}\n`, 'utf8');
+}
+
+/** The services whose URL a workflow can read by name: `<service>-url`. */
+const URL_OUTPUTS = ['api', 'portal', 'workbench', 'admin', 'site'] as const;
+
+/**
+ * The `GITHUB_OUTPUT` lines for a deploy's hosts: the whole map as `hosts`
+ * (the smoke test and the realm read it), and one `<service>-url` per web
+ * service, which is what an environment's link in GitHub can name.
+ * `site-url` is the address to share, so it is what the deploy and
+ * production environments link to.
+ */
+export function hostOutputs(urls: Readonly<Record<string, string>>): string[] {
+  return [`hosts=${JSON.stringify(urls)}`, ...URL_OUTPUTS.flatMap((name) => (urls[name] ? [`${name}-url=${urls[name]}`] : []))];
 }
 
 // Only when run, so the pure functions above can be imported by a test without

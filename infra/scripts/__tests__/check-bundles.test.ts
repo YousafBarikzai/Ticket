@@ -116,6 +116,7 @@ function budgets(overrides: Partial<Budgets['apps']['portal']> = {}): Budgets {
       portal: { budget: 250_000, enforceGrowth: true, baselines: {}, ...overrides },
       workbench: { budget: 500_000, enforceGrowth: true, baselines: {} },
       admin: { budget: null, enforceGrowth: false, baselines: {} },
+      site: { budget: 150_000, enforceGrowth: true, baselines: {} },
     },
   };
 }
@@ -222,6 +223,26 @@ describe('judging the sizes', () => {
     expect(evaluate([measurement({ '/': 170_000, '/tickets': 171_000 })], after).notes).toEqual([]);
   });
 
+  it('holds the public site to its own budget, enforced like the portal', () => {
+    const report = evaluate([measurement({ '/': 151_000, '/sign-in': 134_700 }, 'site')], budgets());
+    expect(report.rows.map((row) => row.verdict)).toEqual(['over-budget', 'new']);
+    expect(report.failures).toEqual(['site / loads 151.0 kB of JavaScript first, over the 150.0 kB budget']);
+  });
+
+  it('fails an app the budgets file does not name, by name, rather than throwing', () => {
+    // The site's entry is a line someone has to add; until they do, the check
+    // says which line instead of dying on `undefined.baselines`.
+    const { site: _site, ...apps } = budgets().apps;
+    const partial = { ...budgets(), apps } as unknown as Budgets;
+    const report = evaluate([measurement({ '/': 131_500 }, 'site')], partial);
+    expect(report.rows).toEqual([]);
+    expect(report.failures).toEqual([
+      'site has no entry in infra/bundle-budgets.json; add "site": { "budget": …, "enforceGrowth": …, "baselines": {} } to "apps"',
+    ]);
+    // Recording baselines does not invent the missing budget either.
+    expect(withBaselines(partial, [measurement({ '/': 131_500 }, 'site')]).apps).toEqual(apps);
+  });
+
   it('prints a table and a summary that name every route', () => {
     const measured = [measureApp('portal', appDir)];
     const report = evaluate(measured, budgets());
@@ -234,15 +255,21 @@ describe('judging the sizes', () => {
 describe('the budgets file', () => {
   const file = readBudgets();
 
+  it('measures the four Next applications, the public site among them', () => {
+    expect([...APPS]).toEqual(['portal', 'workbench', 'admin', 'site']);
+  });
+
   it('holds every app to the budgets the SPEC sets', () => {
-    // SPEC §3.7: the portal under 250 kB, the workbench under 500 kB, the
-    // admin console reported but not budgeted.
+    // SPEC v3 §10.1: the portal under 250 kB, the workbench under 500 kB, the
+    // admin console reported but not budgeted, the public site under 150 kB.
     expect(Object.keys(file.apps).sort()).toEqual([...APPS].sort());
     expect(file.apps.portal.budget).toBe(250_000);
     expect(file.apps.workbench.budget).toBe(500_000);
     expect(file.apps.admin.budget).toBeNull();
+    expect(file.apps.site.budget).toBe(150_000);
     expect(file.apps.portal.enforceGrowth).toBe(true);
     expect(file.apps.workbench.enforceGrowth).toBe(true);
+    expect(file.apps.site.enforceGrowth).toBe(true);
     expect(file.growthTolerance).toBe(10_000);
   });
 
