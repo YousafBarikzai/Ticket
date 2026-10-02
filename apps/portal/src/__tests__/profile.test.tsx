@@ -124,7 +124,11 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true });
 });
 
-afterEach(() => cleanupDocument());
+afterEach(() => {
+  cleanupDocument();
+  // One test pins the clock; nothing after it may inherit that.
+  vi.useRealTimers();
+});
 
 /* ---- Rendering --------------------------------------------------------------- */
 
@@ -253,6 +257,11 @@ describe('the rules', () => {
 
 describe('the Profile page', () => {
   it('says who you are in words — no codes, no counts, no permission keys', async () => {
+    // The clock is pinned: the page writes the hour as en-GB does, so it reads
+    // "9:05 now" before ten, and a pattern checked against the wall clock
+    // failed every morning. 13:32 UTC on 2 October is 14:32 in London.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-02T13:32:00Z'));
     person = {
       teamIds: ['t1', 't2'],
       organisations: [
@@ -270,8 +279,8 @@ describe('the Profile page', () => {
     expect(account.textContent).toContain('Acme › Service desk');
     expect(account.textContent).toContain('Network, Service desk');
     expect(account.textContent).toContain('British English');
-    expect(account.textContent).toMatch(/London \(GMT(\+1)?\)/);
-    expect(account.textContent).toMatch(/\d{2}:\d{2} now/);
+    expect(account.textContent).toContain('London (GMT+1)');
+    expect(account.textContent).toContain('14:32 now');
     expect(account.textContent).toContain('organisation’s directory');
     for (const leak of ['en-GB', 'Europe/London', 'approval.read', 'ticket.create', 'Teams: 2', 't1']) expect(text()).not.toContain(leak);
   });
