@@ -471,17 +471,6 @@ export async function meetTimer(ctx: TenantContext, tx: Tx, ticketId: string, ta
   return true;
 }
 
-/**
- * Stops every running or paused timer when the ticket resolves (`met`) or is
- * cancelled.
- *
- * Two rules from F1 (ADR-0057). **A verdict, once given, is final** (U6): an
- * `update` timer that missed a cycle keeps running for the cadence (U5), but
- * at resolution it ends `breached`, with `metAt` recording when it stopped and
- * no `sla.timer.met`, so it counts once and as missed. **A cancelled timer is
- * no verdict at all** (U7): it publishes `sla.timer.cancelled` so reporting
- * stops counting it as running, and attainment leaves it out.
- */
 /** The timer fields the next `update` cycle is computed from. */
 export interface CycleTimer {
   state: string;
@@ -648,6 +637,17 @@ export async function restartUpdateCycle(ctx: TenantContext, tx: Tx, ticketId: s
   return true;
 }
 
+/**
+ * Stops every running or paused timer when the ticket resolves (`met`) or is
+ * cancelled.
+ *
+ * Two rules from F1 (ADR-0057). **A verdict, once given, is final** (U6): an
+ * `update` timer that missed a cycle keeps running for the cadence (U5), but
+ * at resolution it ends `breached`, with `metAt` recording when it stopped and
+ * no `sla.timer.met`, so it counts once and as missed. **A cancelled timer is
+ * no verdict at all** (U7): it publishes `sla.timer.cancelled` so reporting
+ * stops counting it as running, and attainment leaves it out.
+ */
 export async function stopTimers(ctx: TenantContext, tx: Tx, ticketId: string, outcome: 'met' | 'cancelled'): Promise<number> {
   const timers = await tx.slaTimer.findMany({ where: { ticketId, state: { in: ['running', 'paused'] } } });
   const now = new Date();

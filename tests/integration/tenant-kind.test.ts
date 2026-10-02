@@ -136,8 +136,15 @@ describe('the migrations', () => {
       .split('\n')
       .filter((line) => !line.trimStart().startsWith('--'))
       .join('\n');
-    expect(sql).not.toMatch(/DROP\s+(TABLE|COLUMN|INDEX|CONSTRAINT)/i);
+    expect(sql).not.toMatch(/DROP\s+(TABLE|COLUMN|INDEX)/i);
     expect(sql).not.toMatch(/RENAME/i);
     expect(sql).not.toMatch(/ALTER\s+COLUMN[^;]*\bTYPE\b/i);
+    // A check may be replaced only by one of the same name, added after it
+    // (a widened `fact_sla_timer` outcome check, for `cancelled`).
+    for (const [, constraint] of sql.matchAll(/DROP\s+CONSTRAINT\s+"?(\w+)"?/gi)) {
+      const dropped = sql.search(new RegExp(`DROP\\s+CONSTRAINT\\s+"?${constraint}"?`, 'i'));
+      const added = sql.search(new RegExp(`ADD\\s+CONSTRAINT\\s+"?${constraint}"?`, 'i'));
+      expect(added, `${constraint} is dropped and never added back`).toBeGreaterThan(dropped);
+    }
   });
 });

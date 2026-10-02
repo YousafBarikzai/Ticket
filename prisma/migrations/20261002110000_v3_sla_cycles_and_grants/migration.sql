@@ -21,6 +21,16 @@ ALTER TABLE "sla_timer"
   ADD COLUMN "cycle_started_at" TIMESTAMPTZ(6);
 ALTER TABLE "sla_timer" ADD CONSTRAINT "sla_timer_cycle_is_positive" CHECK ("cycle" >= 1);
 
+-- A cancelled timer is no verdict (U7): the fact says `cancelled`, and
+-- attainment, which counts only `met` and `breached`, leaves it out. Before
+-- F1 nothing told reporting about a cancellation, so the fact said `running`
+-- for ever. The check is widened, never narrowed: every existing value stays
+-- valid, and re-adding it validates every existing row.
+ALTER TABLE "fact_sla_timer" DROP CONSTRAINT "fact_sla_timer_outcome_is_known";
+ALTER TABLE "fact_sla_timer"
+  ADD CONSTRAINT "fact_sla_timer_outcome_is_known"
+  CHECK ("outcome" IN ('running', 'met', 'breached', 'cancelled'));
+
 -- -----------------------------------------------------------------------------
 -- 2. The role revokes, reasserted
 --
