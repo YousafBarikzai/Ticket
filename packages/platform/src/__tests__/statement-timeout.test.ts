@@ -143,14 +143,33 @@ describe('isStatementTimeout', () => {
   it('recognises PostgreSQL cancelling a statement for its timeout', () => {
     expect(isStatementTimeout(RAW_TIMEOUT)).toBe(true);
     expect(isStatementTimeout(MODEL_TIMEOUT)).toBe(true);
+    expect(
+      isStatementTimeout(
+        new Prisma.PrismaClientKnownRequestError('Raw query failed. Code: `57014`.', {
+          code: 'P2010',
+          clientVersion: '6.19.3',
+          meta: { code: '57014', message: 'ERROR: canceling statement due to statement timeout' },
+        }),
+      ),
+    ).toBe(true);
     // The node-postgres shape, should a driver adapter ever surface it as is.
     expect(isStatementTimeout({ code: '57014', message: 'canceling statement due to statement timeout' })).toBe(true);
   });
 
   it('ignores everything else', () => {
     expect(isStatementTimeout(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '6.19.3' }))).toBe(false);
-    // 57014 is also a user's cancel request: only the timeout is this request's fault.
+    // 57014 is also an operator's cancel: only the timeout is this request's fault.
     expect(isStatementTimeout(new Error('code "57014": canceling statement due to user request'))).toBe(false);
+    expect(
+      isStatementTimeout(
+        new Prisma.PrismaClientKnownRequestError('Raw query failed. Code: `57014`.', {
+          code: 'P2010',
+          clientVersion: '6.19.3',
+          meta: { code: '57014', message: 'ERROR: canceling statement due to user request' },
+        }),
+      ),
+    ).toBe(false);
+    expect(isStatementTimeout({ code: '57014', message: 'canceling statement due to user request' })).toBe(false);
     expect(isStatementTimeout(new Error('statement timeout'))).toBe(false);
     expect(isStatementTimeout(null)).toBe(false);
     expect(isStatementTimeout('57014 statement timeout')).toBe(false);

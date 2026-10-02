@@ -212,12 +212,17 @@ const DEMO_STATEMENT_TIMEOUT = '5s';
  * (SQLSTATE 57014). Prisma reports it two ways: a raw query fails with a known
  * request error carrying the code in `meta`, and a model query fails with an
  * unknown request error that only says so in its message.
+ *
+ * The same SQLSTATE also means an operator cancelled the statement by hand
+ * (`pg_cancel_backend`), which is not this request asking too much; so the
+ * reason must say "statement timeout" as well.
  */
 export function isStatementTimeout(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
-  const candidate = error as { code?: unknown; meta?: { code?: unknown } | null; message?: unknown };
-  if (candidate.meta?.code === '57014' || candidate.code === '57014') return true;
-  return typeof candidate.message === 'string' && /\b57014\b/.test(candidate.message) && /statement timeout/i.test(candidate.message);
+  const candidate = error as { code?: unknown; meta?: { code?: unknown; message?: unknown } | null; message?: unknown };
+  const text = [candidate.meta?.message, candidate.message].filter((part): part is string => typeof part === 'string').join('\n');
+  const coded = candidate.meta?.code === '57014' || candidate.code === '57014' || /\b57014\b/.test(text);
+  return coded && /statement timeout/i.test(text);
 }
 
 /**
