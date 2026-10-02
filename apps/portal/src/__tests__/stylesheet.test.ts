@@ -59,21 +59,28 @@ describe('the stylesheet route', () => {
 describe('the font files', () => {
   const source = readFileSync(fileURLToPath(new URL('../app/fonts.ts', import.meta.url)), 'utf8');
 
-  it('point at the self-hosted Inter files in packages/ui/fonts', () => {
+  it('point at the self-hosted Inter and Plus Jakarta Sans files in packages/ui/fonts', () => {
     const paths = [...source.matchAll(/src: '([^']+)'/g)].map((match) => match[1]!);
     expect(paths).toEqual([
       '../../../../packages/ui/fonts/InterVariable-latin-opsz.woff2',
       '../../../../packages/ui/fonts/InterVariable-latin-ext-opsz.woff2',
+      '../../../../packages/ui/fonts/PlusJakartaSans-latin-wght.woff2',
+      '../../../../packages/ui/fonts/PlusJakartaSans-latin-ext-wght.woff2',
     ]);
     const here = new URL('../app/fonts.ts', import.meta.url);
     for (const path of paths) expect(existsSync(fileURLToPath(new URL(path, here))), path).toBe(true);
   });
 
-  it('expose the two custom properties the token font stack reads', () => {
+  it('expose the custom properties the token font stacks read', () => {
     const sans = structuralVariables()['--itsm-font-family-sans']!;
     for (const variable of ['--font-inter', '--font-inter-ext']) {
       expect(source).toContain(`variable: '${variable}'`);
       expect(sans).toContain(`var(${variable}, "Inter")`);
+    }
+    const display = structuralVariables()['--itsm-font-family-display']!;
+    for (const variable of ['--font-jakarta', '--font-jakarta-ext']) {
+      expect(source).toContain(`variable: '${variable}'`);
+      expect(display).toContain(`var(${variable}, "Plus Jakarta Sans")`);
     }
   });
 });
