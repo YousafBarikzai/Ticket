@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { uiStylesheetVersion } from '@itsm/ui/styles';
 import { themeInitScript } from '@itsm/ui/theme';
-import { interExt, interLatin } from './fonts.js';
+import { interExt, interLatin, jakartaExt, jakartaLatin } from './fonts.js';
 import './globals.css';
 
 /**
@@ -51,7 +51,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }): ReactNode {
   return (
-    <html lang="en-GB" className={`${interLatin.variable} ${interExt.variable}`} suppressHydrationWarning>
+    <html lang="en-GB" className={`${interLatin.variable} ${interExt.variable} ${jakartaLatin.variable} ${jakartaExt.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript({ app: 'workbench' }) }} />
         <link rel="stylesheet" href={`/itsm-ui.css?v=${uiStylesheetVersion}`} precedence="itsm" />

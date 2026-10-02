@@ -80,10 +80,11 @@ export interface NativeTheme {
 function nativeTextStyle(token: TextStyleToken): NativeTextStyle {
   const style = textStyle[token];
   const size = fontSize[style.size];
-  const family = fontFamily[style.family][0];
+  // The first entry that names a face rather than a web font's custom
+  // property: the stacks now lead with `var(--font-inter…)`, which means
+  // nothing to React Native. The rest are web fallbacks.
+  const family = fontFamily[style.family].find((entry) => !entry.startsWith('var(')) ?? 'System';
   return {
-    // The first entry of the stack is the face Expo bundles; the rest are web
-    // fallbacks that mean nothing to React Native.
     fontFamily: family,
     fontSize: size,
     lineHeight: Math.round(size * lineHeight[style.lineHeight]),

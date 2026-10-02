@@ -52,6 +52,7 @@ import {
   type ElevationToken,
   type FontSizeToken,
   type FontWeightToken,
+  type HeroSlot,
   type IntentColours,
   type IntentName,
   type LineHeightToken,
@@ -59,6 +60,7 @@ import {
   type RadiusToken,
   type SpacingToken,
   type SurfaceToken,
+  type RampStyle,
   type TextToken,
   type ThemeName,
 } from './tokens.js';
@@ -113,11 +115,16 @@ export function boxShadow(level: ElevationToken, shadowColour: string, strength 
  * the same property — 1px for the resting levels, 2px for the floating ones —
  * so every component that lifts itself with an elevation token gets its edge
  * in high contrast without a rule of its own.
+ *
+ * The navy hero card is the exception. On the white high-contrast canvas the
+ * navy is its own edge (about 17:1), so it gets none; on the black one navy
+ * all but disappears (1.2:1), so it gets the 2px white outline.
  */
 function themeElevation(level: ElevationToken, theme: ThemeName): string {
   const palette = colour[theme];
   if (level === 'none') return 'none';
   if (palette.shadowStrength > 0) return boxShadow(level, palette.shadow, palette.shadowStrength);
+  if (level === 'hero') return palette.scheme === 'dark' ? `0 0 0 2px ${palette.border.strong}` : 'none';
   const width = level === 'lg' || level === 'xl' ? 2 : 1;
   return `0 0 0 ${width}px ${palette.border.strong}`;
 }
@@ -138,6 +145,7 @@ export const cssVar = {
   text: (token: TextToken): string => ref(`colour-text-${token}`),
   border: (token: BorderToken): string => ref(`colour-border-${token}`),
   intent: (intent: IntentName, slot: keyof IntentColours): string => ref(`colour-${intent}-${slot}`),
+  hero: (slot: HeroSlot): string => ref(`colour-hero-${slot}`),
   accent: (): string => ref('colour-accent'),
   scrim: (): string => ref('colour-scrim'),
   space: (token: SpacingToken): string => ref(`space-${token}`),
@@ -162,6 +170,7 @@ export const cssVar = {
 function densityVariables(sizes: {
   readonly controlHeight: Partial<Record<keyof typeof controlHeight, number>>;
   readonly rowHeight: number;
+  readonly rowHeight2line: number;
   readonly navItemHeight: number;
 }): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -169,9 +178,28 @@ function densityVariables(sizes: {
     vars[`${variablePrefix}-control-height-${token}`] = rem(value);
   }
   vars[`${variablePrefix}-row-height`] = rem(sizes.rowHeight);
+  vars[`${variablePrefix}-row-height-2line`] = rem(sizes.rowHeight2line);
   vars[`${variablePrefix}-nav-item-height`] = rem(sizes.navItemHeight);
   return vars;
 }
+
+/** An em length, or a bare `0`, without floating-point noise. */
+function em(value: number): string {
+  return value === 0 ? '0' : `${Number(value.toFixed(4))}em`;
+}
+
+/**
+ * The input text size: 14px, and 16px under a coarse pointer, because iOS
+ * zooms the page into any field set smaller than 16px and does not zoom back.
+ */
+const inputFontSize = { fine: 14, coarse: 16 } as const;
+
+/**
+ * Below this width the system bar is two lines (SPEC-v3 §2.8). Written as
+ * the spec gives it, a hair under 48rem, so the bar's own `min-width: 48rem`
+ * rules and this one never both apply.
+ */
+export const systemBarPhoneQuery = '@media (max-width: 47.999rem)';
 
 /** The variables that do not change between themes. */
 export function structuralVariables(): Record<string, string> {
@@ -198,12 +226,17 @@ export function structuralVariables(): Record<string, string> {
   for (const [token, value] of Object.entries(letterSpacing)) {
     vars[`${variablePrefix}-letter-spacing-${token}`] = value === 0 ? '0' : `${value}em`;
   }
-  for (const [style, ramp] of Object.entries(textRamp)) {
+  for (const [style, ramp] of Object.entries(textRamp) as [string, RampStyle][]) {
     vars[`${variablePrefix}-text-${style}-size`] = rem(ramp.size);
     vars[`${variablePrefix}-text-${style}-line`] = rem(ramp.line);
     vars[`${variablePrefix}-text-${style}-weight`] = String(ramp.weight);
-    vars[`${variablePrefix}-text-${style}-tracking`] = ramp.tracking === 0 ? '0' : `${ramp.tracking}em`;
+    vars[`${variablePrefix}-text-${style}-tracking`] = em(ramp.tracking);
+    // The stack by reference, so a style and the family it names cannot drift.
+    vars[`${variablePrefix}-text-${style}-family`] = `var(${variablePrefix}-font-family-${ramp.family})`;
+    vars[`${variablePrefix}-text-${style}-word-spacing`] = em(ramp.wordSpacing);
+    if (ramp.measure !== undefined) vars[`${variablePrefix}-text-${style}-measure`] = `${ramp.measure}ch`;
   }
+  vars[`${variablePrefix}-input-font-size`] = rem(inputFontSize.fine);
   for (const [token, value] of Object.entries(iconSize)) vars[`${variablePrefix}-icon-${token}`] = rem(value);
 
   vars[`${variablePrefix}-topbar-height`] = rem(layout.topbarHeight);
@@ -213,10 +246,20 @@ export function structuralVariables(): Record<string, string> {
   vars[`${variablePrefix}-listpane-width`] = rem(layout.listpaneWidth);
   vars[`${variablePrefix}-tabbar-height`] = `calc(${rem(layout.tabbarHeight)} + env(safe-area-inset-bottom, 0px))`;
   vars[`${variablePrefix}-panel-inset`] = rem(layout.panelInset);
-  vars[`${variablePrefix}-row-height-2line`] = rem(layout.rowHeight2line);
+  vars[`${variablePrefix}-card-padding`] = rem(layout.cardPadding);
+  // The system bar's own height, and the offset the frame makes for it. The
+  // offset is 0px here and is set to the height by one rule only, in
+  // `SystemBar.styles.ts`, when a bar is on the page at a desktop width
+  // (`:root:has(.itsm-SystemBar)`): a page without the bar, or a phone where
+  // the bar scrolls away in the flow, reserves nothing. `frame-top` is where
+  // sticky content sits: under the system bar and the top bar together.
+  vars[`${variablePrefix}-system-bar-height`] = rem(layout.systemBarHeight.desktop);
+  vars[`${variablePrefix}-system-bar-h`] = '0px';
+  vars[`${variablePrefix}-frame-top`] = `calc(var(${variablePrefix}-system-bar-h) + var(${variablePrefix}-topbar-height))`;
   for (const [token, value] of Object.entries(contentWidth)) vars[`${variablePrefix}-content-${token}`] = rem(value);
   for (const [token, value] of Object.entries(sheetWidth)) vars[`${variablePrefix}-sheet-${token}`] = rem(value);
-  vars[`${variablePrefix}-page-gutter`] = `clamp(${rem(pageGutter.min)}, ${pageGutter.fluidVw}vw, ${rem(pageGutter.max)})`;
+  vars[`${variablePrefix}-page-gutter`] =
+    `clamp(${rem(pageGutter.min)}, ${pageGutter.fluidVw}vw + ${rem(pageGutter.fluidPx)}, ${rem(pageGutter.max)})`;
   // Published at run time by the phone's bottom dock (tab bar, contextual
   // bar); zero until it does, so `scroll-padding-bottom` and anything else
   // that makes room for it reads a real length everywhere else.
@@ -262,6 +305,17 @@ export function themeVariables(theme: ThemeName): Record<string, string> {
   // its outline, filled with the colour of a card, so the ring reads on glass
   // and on a saturated fill as well as on a plain surface.
   vars[`${variablePrefix}-colour-focusGap`] = palette.surface.raised;
+  vars[`${variablePrefix}-colour-focusHalo`] = palette.focusHalo;
+  // A whole `box-shadow` layer, so a filled button lists it beside its
+  // elevation. A zero-size transparent layer where the theme has none, which
+  // keeps that list valid.
+  vars[`${variablePrefix}-highlight-inset`] =
+    palette.highlightInset === null ? 'inset 0 0 0 0 transparent' : `inset 0 1px 0 0 ${palette.highlightInset}`;
+  // Built here from the stored hex stops, so every stop is a value the
+  // contrast audit has checked against the button's text.
+  vars[`${variablePrefix}-gradient-brand`] = `linear-gradient(120deg, ${palette.gradient.brand[0]}, ${palette.gradient.brand[1]})`;
+  vars[`${variablePrefix}-gradient-brand-hover`] =
+    `linear-gradient(120deg, ${palette.gradient.brandHover[0]}, ${palette.gradient.brandHover[1]})`;
   for (const [token, value] of Object.entries(palette.fill)) vars[`${variablePrefix}-colour-fill-${token}`] = value;
   vars[`${variablePrefix}-track-ring`] = `inset 0 0 0 ${palette.trackBorder.width}px ${palette.trackBorder.colour}`;
   // Transparent rather than `none` where the theme has no lit edge, so it can
@@ -281,8 +335,24 @@ export function themeVariables(theme: ThemeName): Record<string, string> {
   palette.chart.sequential.forEach((value, index) => {
     vars[`${variablePrefix}-colour-chart-seq-${(index + 1) * 100}`] = value;
   });
+  // The label colour of each step, numbered 1–8 (the step itself is 100–800).
+  palette.chart.sequentialInk.forEach((value, index) => {
+    vars[`${variablePrefix}-colour-chart-seq-${index + 1}-ink`] = value;
+  });
   vars[`${variablePrefix}-colour-chart-grid`] = palette.chart.grid;
   vars[`${variablePrefix}-colour-chart-axis`] = palette.chart.axis;
+  vars[`${variablePrefix}-colour-chart-comparison`] = palette.chart.comparison;
+  vars[`${variablePrefix}-colour-chart-neutralSoft`] = palette.chart.neutralSoft;
+  vars[`${variablePrefix}-colour-chart-marker`] = palette.chart.marker;
+  vars[`${variablePrefix}-colour-chart-markerText`] = palette.chart.markerText;
+
+  palette.avatar.fills.forEach((value, index) => {
+    vars[`${variablePrefix}-colour-avatar-${index + 1}`] = value;
+  });
+  vars[`${variablePrefix}-colour-avatar-text`] = palette.avatar.text;
+
+  for (const [slot, value] of Object.entries(palette.hero)) vars[`${variablePrefix}-colour-hero-${slot}`] = value;
+  Object.assign(vars, heroBackgrounds);
 
   vars[`${variablePrefix}-colour-shadow`] = palette.shadow;
   // Shadows are baked per theme because their alpha is applied to that theme's
@@ -298,6 +368,23 @@ export function themeVariables(theme: ThemeName): Record<string, string> {
 
   return vars;
 }
+
+/**
+ * The navy surfaces' backgrounds, built only from the hero slots and two page
+ * surfaces (SPEC-v3 §2.5), so the demo bar, the sign-in panel and the landing
+ * page copy no colour of their own. Emitted with every theme rather than once
+ * at the root: a custom property that reads `var()` is resolved where it is
+ * declared, so a subtree pinned to another theme has to declare it again to
+ * get that theme's slots.
+ */
+const hero = (slot: HeroSlot): string => `var(${variablePrefix}-colour-hero-${slot})`;
+const heroBackgrounds: Readonly<Record<string, string>> = {
+  [`${variablePrefix}-hero-card-background`]: `radial-gradient(90% 160% at 0% 0%, ${hero('glow')} 0%, transparent 58%), linear-gradient(125deg, ${hero('surface')} 0%, ${hero('surface')} 45%, ${hero('surfaceRaised')} 100%)`,
+  [`${variablePrefix}-hero-bar-background`]: `radial-gradient(560px 120px at 0 0, ${hero('glowBar')}, transparent), radial-gradient(420px 90px at 100% 100%, color-mix(in srgb, ${hero('glowBar')} 44%, transparent), transparent), linear-gradient(90deg, ${hero('surfaceDeep')} 0%, ${hero('surface')} 55%, ${hero('surfaceRaised')} 100%)`,
+  [`${variablePrefix}-hero-panel-background`]: `radial-gradient(640px circle at 100% 100%, ${hero('glowPanel')}, transparent 68%), linear-gradient(160deg, ${hero('surface')} 0%, ${hero('surface')} 38%, ${hero('surfaceEnd')} 100%)`,
+  [`${variablePrefix}-hero-band-background`]: `radial-gradient(1200px 820px at 50% 0%, ${hero('glowBand')}, transparent 70%), ${hero('surfaceDeep')}`,
+  [`${variablePrefix}-hero-light-background`]: `linear-gradient(125deg, var(${variablePrefix}-colour-surface-accentHover) 0%, var(${variablePrefix}-colour-surface-raised) 72%)`,
+};
 
 function block(selector: string, vars: Record<string, string>, indent = ''): string {
   const body = Object.entries(vars)
@@ -365,6 +452,13 @@ export function renderTokenStylesheet(): string {
   const sections: string[] = [];
 
   sections.push(block(':root', structuralVariables()));
+  // The phone system bar is two lines in the flow.
+  sections.push(
+    media(
+      systemBarPhoneQuery,
+      block(':root', { [`${variablePrefix}-system-bar-height`]: rem(layout.systemBarHeight.phone) }, '  '),
+    ),
+  );
 
   // `apple` is the default so that a document with no attribute and no OS
   // preference still renders a complete theme.
@@ -397,7 +491,16 @@ export function renderTokenStylesheet(): string {
   // wins: a finger needs the larger target whatever density was chosen.
   sections.push(block(`[${densityAttribute}="comfortable"]`, densityVariables(density.comfortable)));
   sections.push(block(`[${densityAttribute}="compact"]`, densityVariables(density.compact)));
-  sections.push(media('@media (pointer: coarse)', block(`:root, [${densityAttribute}]`, densityVariables(density.coarse), '  ')));
+  sections.push(
+    media(
+      '@media (pointer: coarse)',
+      block(
+        `:root, [${densityAttribute}]`,
+        { ...densityVariables(density.coarse), [`${variablePrefix}-input-font-size`]: rem(inputFontSize.coarse) },
+        '  ',
+      ),
+    ),
+  );
 
   // Reduced transparency: from the OS, from the person's choice, and from a
   // browser that cannot blur, in which case a translucent bar would be

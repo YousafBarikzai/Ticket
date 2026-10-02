@@ -30,6 +30,14 @@ import { css, layer, mq, prefers } from './css.js';
  * loudest legacy signal on Windows, balanced headings, link colour for a bare
  * `<a>`, and room at the bottom of the page for the phone's bottom dock when
  * something scrolls into view.
+ *
+ * `[data-surface="hero"]` re-themes everything inside a navy surface (the
+ * hero card, the system bar, the sign-in panel, the landing bands) in one
+ * place, so each of them does not have to (SPEC-v3 §2.5). Its text is the
+ * navy's own, and its focus ring takes the navy's accent with a navy gap: the
+ * page accent is drawn for light surfaces, and in high contrast (`#0040dd`)
+ * it is 2.36:1 on navy, where the hero accent passes. Zero specificity, so a
+ * component inside can still set its own colour.
  */
 export const baseStyles = layer(
   'base',
@@ -75,6 +83,19 @@ body {
 
 :where(a:any-link) {
   color: var(--itsm-colour-text-link);
+}
+
+:where([data-surface="hero"]) {
+  --itsm-colour-border-focus: var(--itsm-colour-hero-accent);
+  --itsm-colour-focusGap: var(--itsm-colour-hero-surface);
+  color: var(--itsm-colour-hero-text);
+}
+
+@media (forced-colors: active) {
+  :where([data-surface="hero"]) {
+    --itsm-colour-border-focus: Highlight;
+    --itsm-colour-focusGap: Canvas;
+  }
 }
 
 :where([hidden]:not([hidden="until-found"])) {
