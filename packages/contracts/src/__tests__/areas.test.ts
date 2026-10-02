@@ -156,23 +156,22 @@ describe('gates (§3.2)', () => {
       'integration.action.read',
       'catalogue.manage',
       'ticket.config.manage',
-      'platform.tenant.read',
+      'platform.tenant.manage',
     ]);
   });
 
-  it('gates on permissions some module declares, with one known exception', async () => {
+  it('gates only on permissions some module declares', async () => {
     const runtime = '@itsm/runtime';
     const { ALL_MODULES } = (await import(/* @vite-ignore */ runtime)) as {
       ALL_MODULES: readonly { readonly permissions: readonly { readonly key: string }[] }[];
     };
     const declared = new Set(ALL_MODULES.flatMap((manifest) => manifest.permissions.map((p) => p.key)));
     expect(declared.size).toBeGreaterThan(50);
-    // `platform.tenant.read` is in the gate because the apps' copies of it had
-    // it (SPEC §3.2 keeps the list as it was), but no module declares it yet:
-    // operators hold `platform.tenant.manage`. Pinned, so whoever declares it
-    // — or drops it from the gate — sees this row and updates it.
+    // A key nobody declares can never be held, so its area would never be
+    // offered to the person it was meant for. The v2 copies named
+    // `platform.tenant.read`; operators hold `platform.tenant.manage`.
     const undeclared = [...SERVICE_DESK_GATE, ...ADMINISTRATION_GATE].filter((key) => !declared.has(key));
-    expect(undeclared).toEqual(['platform.tenant.read']);
+    expect(undeclared).toEqual([]);
   }, 60_000);
 
   it('lists the Help Portal for everyone, and the others by any one key', () => {
@@ -181,7 +180,7 @@ describe('gates (§3.2)', () => {
     expect(holdsArea('workbench', none)).toBe(false);
     expect(holdsArea('admin', none)).toBe(false);
     expect(holdsArea('workbench', new Set(['ticket.comment.internal']))).toBe(true);
-    expect(holdsArea('admin', new Set(['platform.tenant.read']))).toBe(true);
+    expect(holdsArea('admin', new Set(['platform.tenant.manage']))).toBe(true);
     // Reading tickets is not working them: a requester reads their own.
     expect(holdsArea('workbench', new Set(['ticket.read', 'ticket.create']))).toBe(false);
   });

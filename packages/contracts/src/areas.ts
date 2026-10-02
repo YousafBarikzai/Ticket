@@ -116,6 +116,12 @@ export const SERVICE_DESK_GATE: readonly string[] = Object.freeze(['ticket.updat
  * can open a few read-only Administration pages by URL, but holds none of
  * these, so the switcher does not offer it: it lists the areas a person works
  * in, not every page they could reach.
+ *
+ * The last key is `platform.tenant.manage`: platform operators hold it, and
+ * Administration's Tenants and Plans pages are gated on it, so every key here
+ * opens at least one page. The v2 copies this list replaces named
+ * `platform.tenant.read`, which no module declares and so nobody can hold: an
+ * operator with only the real key was never offered Administration.
  */
 export const ADMINISTRATION_GATE: readonly string[] = Object.freeze([
   'admin.setting.read',
@@ -130,7 +136,7 @@ export const ADMINISTRATION_GATE: readonly string[] = Object.freeze([
   'integration.action.read',
   'catalogue.manage',
   'ticket.config.manage',
-  'platform.tenant.read',
+  'platform.tenant.manage',
 ]);
 
 /** Whether a real (non-demo) session lists an area. The Help Portal is everyone's: anyone signed in can raise and follow a request. */
