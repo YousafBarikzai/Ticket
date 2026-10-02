@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Actor } from '@itsm/contracts';
+import type { DemoArea, DemoPersonaKey } from '@itsm/contracts/demo';
 import { MissingTenantContextError } from './errors.js';
 import { newCorrelationId } from './ids.js';
 import type { PermissionSet } from './authz.js';
@@ -42,6 +43,32 @@ export interface TenantContext {
   granteeTenantId?: string;
   ip?: string;
   userAgent?: string;
+  /**
+   * Set when the request carries a shared-demo session (SPEC v3 §4.4). Its
+   * presence is what turns on the demo's own rules downstream: the route
+   * policy and budgets, the five-second statement timeout, the persona
+   * guards. A demo context never carries `ip` or `userAgent` (D23).
+   */
+  demo?: DemoContext;
+}
+
+/**
+ * The facts of one demo visit, copied from the verified demo token and the
+ * live record. Nothing here identifies a person: the visit id is random, and
+ * the IP bucket stays in the token record and the rate-limit key names.
+ */
+export interface DemoContext {
+  /** The visit: `demo-` and a UUID, stable across re-mints. Budgets and caps count per visit. */
+  readonly sid: string;
+  readonly persona: DemoPersonaKey;
+  /** The area the token was minted in. */
+  readonly app: DemoArea;
+  /** The generation the token belongs to; equals the live record's when the request is verified. */
+  readonly generation: number;
+  /** The three personas' user ids in this generation, which the persona guards protect. */
+  readonly personaUserIds: Readonly<Record<DemoPersonaKey, string>>;
+  /** The agent persona's teams, so a cross-area link is offered only where the agent can open it (X-B2). */
+  readonly agentTeamIds: readonly string[];
 }
 
 /**
@@ -103,6 +130,7 @@ export interface CreateContextInput {
   granteeTenantId?: string;
   ip?: string;
   userAgent?: string;
+  demo?: DemoContext;
 }
 
 export function createContext(input: CreateContextInput): TenantContext {
@@ -122,8 +150,12 @@ export function createContext(input: CreateContextInput): TenantContext {
     requestedAt: new Date(),
     ...(input.impersonation ? { impersonation: input.impersonation } : {}),
     ...(input.granteeTenantId ? { granteeTenantId: input.granteeTenantId } : {}),
-    ...(input.ip ? { ip: input.ip } : {}),
-    ...(input.userAgent ? { userAgent: input.userAgent } : {}),
+    // A demo visitor's address is never kept, not even in the audit row their
+    // writes produce (D23). Dropped here rather than trusted to every caller,
+    // because the caller that forgets is the one that leaks.
+    ...(input.ip && !input.demo ? { ip: input.ip } : {}),
+    ...(input.userAgent && !input.demo ? { userAgent: input.userAgent } : {}),
+    ...(input.demo ? { demo: input.demo } : {}),
   };
 }
 

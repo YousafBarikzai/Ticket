@@ -17,7 +17,7 @@ export const QUEUE_FAMILIES = {
   events: ['outbox', 'events', 'webhooks', 'reconcile'],
   engine: ['workflow', 'sla', 'rules'],
   comms: ['notify', 'channels'],
-  data: ['search', 'scan', 'imports', 'exports', 'analytics', 'retention', 'ai'],
+  data: ['search', 'scan', 'imports', 'exports', 'analytics', 'retention', 'ai', 'demo'],
 } as const;
 
 export type QueueName =
