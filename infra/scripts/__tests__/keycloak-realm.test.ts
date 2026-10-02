@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AREAS } from '@itsm/contracts/areas';
 import { hostsFor, readCatalogue, type Catalogue, type ServiceDefinition } from '../railway-deploy.js';
 import {
   BUILT_IN_CLIENT_SCOPES,
@@ -459,17 +460,17 @@ describe('Step A: resolving the clients', () => {
   const production = resolveRealm(realm, hostsFor(catalogue, 'example.com', 'production'), 'https://auth.example.com');
 
   it('names each application by its area, which is what people call it', () => {
-    // Literal until @itsm/contracts/areas exists; then AREAS[app].name.
-    expect(CLIENT_NAMES).toEqual({ portal: 'Help Portal', workbench: 'Service Desk', admin: 'Administration' });
-    expect(clientOf(staging, 'itsm-portal').name).toBe('Help Portal');
-    expect(clientOf(staging, 'itsm-workbench').name).toBe('Service Desk');
-    expect(clientOf(staging, 'itsm-admin').name).toBe('Administration');
+    // From the area model, the one place each area's name is written.
+    expect(CLIENT_NAMES).toEqual({ portal: AREAS.portal.name, workbench: AREAS.workbench.name, admin: AREAS.admin.name });
+    for (const clientId of APPLICATION_CLIENTS) {
+      expect(clientOf(staging, clientId).name, clientId).toBe(AREAS[APPLICATION_OF[clientId]].name);
+    }
   });
 
   it('sets the name whatever the file says, so a rename is one constant', () => {
     const stale: Realm = { ...realm, clients: realm.clients.map((client) => ({ ...client, name: 'Agent workbench' })) };
     const resolved = resolveRealm(stale, stagingHosts(), 'https://auth.staging.example.com');
-    expect(clientOf(resolved, 'itsm-workbench').name).toBe('Service Desk');
+    expect(clientOf(resolved, 'itsm-workbench').name).toBe(AREAS.workbench.name);
     // The resource server is nobody's application and keeps what it has.
     expect(clientOf(resolved, 'itsm-api').name).toBe('Agent workbench');
   });
@@ -499,7 +500,7 @@ describe('Step A: resolving the clients', () => {
   it('sends the names and the ways back with the clients, the only path a client reaches Keycloak by', () => {
     const body = partialImportBody(staging) as { clients: { clientId: string; name?: string; baseUrl?: string }[] };
     const workbench = body.clients.find((client) => client.clientId === 'itsm-workbench');
-    expect(workbench?.name).toBe('Service Desk');
+    expect(workbench?.name).toBe(AREAS.workbench.name);
     expect(workbench?.baseUrl).toBe('https://desk.staging.example.com/');
   });
 });

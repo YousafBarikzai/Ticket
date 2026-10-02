@@ -26,12 +26,13 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { AREAS, type AreaId } from '@itsm/contracts/areas';
 import { hostsFor, readCatalogue, type Catalogue } from './railway-deploy.js';
 
 export const PLACEHOLDER = '__DOMAIN__';
 
-/** The three applications a person signs in to, by their service name (which is also the area's id). */
-export type ClientApplication = 'portal' | 'workbench' | 'admin';
+/** The three applications a person signs in to, by their service name, which is the area's id. */
+export type ClientApplication = AreaId;
 
 /** Which application each confidential client signs people in to. */
 const CLIENT_SERVICE: Readonly<Record<string, ClientApplication>> = {
@@ -47,14 +48,15 @@ const CLIENT_SERVICE: Readonly<Record<string, ClientApplication>> = {
  * applications a person has used by it, and the product's login theme says
  * "Signing in to Service Desk" with it. So it is the area's name, the one the
  * applications call themselves, rather than a description written for whoever
- * administers Keycloak. Set here, at resolve time, rather than only in
- * `realm.json`, so a rename is one constant. Literal until
- * `@itsm/contracts/areas` exists, when these become `AREAS[…].name`.
+ * administers Keycloak — read from `AREAS` (`@itsm/contracts/areas`), the one
+ * place every area's name is written, so the identity provider cannot drift
+ * from the switcher. Set here, at resolve time, rather than only in
+ * `realm.json`, so a rename is one constant.
  */
 export const CLIENT_NAMES: Readonly<Record<ClientApplication, string>> = {
-  portal: 'Help Portal',
-  workbench: 'Service Desk',
-  admin: 'Administration',
+  portal: AREAS.portal.name,
+  workbench: AREAS.workbench.name,
+  admin: AREAS.admin.name,
 };
 
 /**

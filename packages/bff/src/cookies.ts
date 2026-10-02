@@ -1,6 +1,7 @@
 /**
- * The cookies this BFF writes — the session, and the short-lived marker the
- * sign-in callback uses — and the rules the `__Host-` prefix imposes.
+ * The cookies this BFF writes — the session, the short-lived marker the
+ * sign-in callback uses and the last page for `/resume` — and the rules the
+ * `__Host-` prefix imposes.
  *
  * The prefix is not decoration. A browser refuses to store a `__Host-` cookie
  * unless it is `Secure`, has `Path=/` and carries no `Domain` — which is
@@ -19,6 +20,7 @@
  * package works in any handler that speaks `Request` and `Response` — and so
  * the rules are testable without one.
  */
+import { safeRedirectTarget } from './redirects.js';
 
 export const SESSION_COOKIE = '__Host-session';
 
@@ -160,4 +162,150 @@ export function violatesHostPrefix(
   if (attributes.path !== '/') return 'a __Host- cookie must have Path=/';
   if ('domain' in attributes && attributes.domain !== undefined) return 'a __Host- cookie must not set Domain';
   return null;
+}
+
+/* ------------------------------------------------------------------ The last page, for /resume */
+
+/**
+ * The page a person last had open in this app, bound to their session (SPEC
+ * §3.3; A2 §4.2).
+ *
+ * An area row in the switcher goes to the sibling's `/resume`, which answers
+ * with this page, so moving from the Service Desk to the Help Portal and back
+ * lands where the person left off instead of on the home page. The value is
+ * `1.<h16>.<p>`: a version, the first 16 hex characters of SHA-256 of the
+ * `__Host-session` value it was written under, and the encoded path.
+ *
+ * Why bind it to the session. A new session — a real sign-in after a demo, a
+ * demo after a real session, another person at a shared desk — never resumes
+ * the previous session's page; the hash simply stops matching, with no store
+ * lookup on the way. That closes "a real user lands on yesterday's demo
+ * ticket" (D22) without the proxy reading anything but cookies. The hash, not
+ * the identifier, because the identifier is the session's whole secret and a
+ * second cookie is a second place to leak it from.
+ *
+ * Same `__Host-` attributes as the session cookie; twelve hours, the session's
+ * own default life (`BFF_SESSION_TTL_SECONDS`), since a value that outlives
+ * its session can never match again. The digest is WebCrypto's, so the edge
+ * and Node proxies compute the same thing.
+ */
+export const LAST_PATH_COOKIE = '__Host-itsm-last';
+export const LAST_PATH_COOKIE_SECONDS = 43_200;
+
+/** A cookie is small and sent on every request: a path that does not fit is not remembered. */
+export const LAST_PATH_MAX_BYTES = 1_024;
+
+const LAST_PATH_VERSION = '1';
+
+/**
+ * Paths that are not a page to come back to: the API and BFF routes, the
+ * demo entry and `/resume` itself (which would loop), and the sign-in and
+ * offline pages (which would strand a signed-in person on a dead end).
+ */
+const NOT_A_PAGE = /^\/(?:api|demo|resume|sign-in|signed-out|offline)(?:[/?#]|$)/;
+
+async function sessionHash(sessionId: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sessionId));
+  return [...new Uint8Array(digest).slice(0, 8)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The path without Next's `_rsc` parameter, which is a cache key for the
+ * router's own requests and not part of the page; everything else in the
+ * query is kept exactly as it was written.
+ */
+function withoutRscParameter(path: string): string {
+  const query = path.indexOf('?');
+  if (query < 0) return path;
+  const kept = path
+    .slice(query + 1)
+    .split('&')
+    .filter((pair) => pair !== '' && pair.split('=', 1)[0] !== '_rsc');
+  return kept.length > 0 ? `${path.slice(0, query)}?${kept.join('&')}` : path.slice(0, query);
+}
+
+/** The cookie's value for `path` under `sessionId`. */
+export async function lastPathValue(sessionId: string, path: string): Promise<string> {
+  return `${LAST_PATH_VERSION}.${await sessionHash(sessionId)}.${encodeURIComponent(withoutRscParameter(path))}`;
+}
+
+/**
+ * The whole `Set-Cookie` header for `path`, or `null` when it is not worth
+ * writing: a path that is not a same-origin page, or one whose stored value
+ * would be over `LAST_PATH_MAX_BYTES` (measured as written, after the cookie's
+ * own encoding).
+ */
+export async function lastPathCookie(sessionId: string, path: string): Promise<string | null> {
+  const page = withoutRscParameter(path);
+  if (NOT_A_PAGE.test(page) || safeRedirectTarget(page, '') !== page) return null;
+  const value = await lastPathValue(sessionId, page);
+  if (encodeURIComponent(value).length > LAST_PATH_MAX_BYTES) return null;
+  return serialiseCookie(LAST_PATH_COOKIE, value, cookieAttributes(LAST_PATH_COOKIE_SECONDS));
+}
+
+/** What `shouldRecordLastPath` needs from a request: a `Request`, or Next's `NextRequest`. */
+export interface LastPathRequest {
+  readonly method: string;
+  readonly url: string;
+  readonly headers: Pick<Headers, 'get'>;
+}
+
+function isPrefetch(headers: Pick<Headers, 'get'>): boolean {
+  if (headers.get('next-router-prefetch') === '1') return true;
+  if (headers.get('next-router-segment-prefetch')) return true;
+  if (headers.get('purpose')?.toLowerCase() === 'prefetch') return true;
+  return (headers.get('sec-purpose') ?? '').toLowerCase().includes('prefetch');
+}
+
+/**
+ * A page the person is going to: a full load (`Sec-Fetch-Dest: document`) or
+ * a client navigation (`RSC: 1`). A stylesheet, an image or a script the
+ * proxy happens to see is not a place to come back to. Without fetch
+ * metadata (an old browser, a test client) an HTML `Accept` stands in.
+ */
+function isNavigation(headers: Pick<Headers, 'get'>): boolean {
+  if (headers.get('rsc') === '1') return true;
+  const destination = headers.get('sec-fetch-dest');
+  if (destination !== null) return destination === 'document';
+  return (headers.get('accept') ?? '').includes('text/html');
+}
+
+/**
+ * Whether a proxy should write the last-path cookie for this request: a GET
+ * navigation to a page, never a prefetch (which is a guess, not a visit),
+ * never the paths in `NOT_A_PAGE`, and only with a session cookie to bind it
+ * to. The path and size rules are `lastPathCookie`'s, which the caller
+ * then asks for the header.
+ */
+export function shouldRecordLastPath(request: LastPathRequest): boolean {
+  if (request.method.toUpperCase() !== 'GET') return false;
+  if (!readCookie(request.headers.get('cookie'), SESSION_COOKIE)) return false;
+  if (isPrefetch(request.headers) || !isNavigation(request.headers)) return false;
+  let pathname: string;
+  try {
+    pathname = new URL(request.url).pathname;
+  } catch {
+    return false;
+  }
+  return !NOT_A_PAGE.test(pathname);
+}
+
+/**
+ * Where `/resume` sends this session: the remembered page when the cookie was
+ * written under the same session and still names a same-origin page;
+ * otherwise `fallback`, the area's home. Never throws: the cookie is client
+ * input like any other.
+ */
+export async function resumeTarget(cookieValue: string | null | undefined, sessionId: string | null | undefined, fallback: string): Promise<string> {
+  if (!cookieValue || !sessionId) return fallback;
+  const match = /^([0-9]+)\.([0-9a-f]{16})\.(.+)$/.exec(cookieValue);
+  if (!match || match[1] !== LAST_PATH_VERSION) return fallback;
+  if (match[2] !== (await sessionHash(sessionId))) return fallback;
+  let path: string;
+  try {
+    path = decodeURIComponent(match[3]!);
+  } catch {
+    return fallback;
+  }
+  return NOT_A_PAGE.test(path) ? fallback : safeRedirectTarget(path, fallback);
 }

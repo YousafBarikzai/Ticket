@@ -5,11 +5,16 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   APPS,
+  chunkKind,
   evaluate,
+  explainRoute,
+  explainTable,
+  gzippedSize,
   manifestChunks,
   markdown,
   measureApp,
   pageRoutes,
+  parseArguments,
   readBudgets,
   table,
   withBaselines,
@@ -249,6 +254,93 @@ describe('judging the sizes', () => {
     expect(table(report, measured)).toMatch(/portal — shared by every route/);
     expect(table(report, measured)).toMatch(/\/tickets\/\[id\]/);
     expect(markdown(report)).toMatch(/\| portal \| `\/` \|/);
+  });
+});
+
+describe('explaining a route (--explain)', () => {
+  const measured = measureApp('portal', appDir);
+  const sizeOf = (file: string): number => gzippedSize(new Map(), join(appDir, '.next', file));
+  const rootFiles = new Set(measured.shared.files);
+
+  it('tells a shared chunk from a layout chunk and a page chunk, by the names Next gives them', () => {
+    expect(chunkKind('static/chunks/webpack-1.js', rootFiles)).toBe('shared');
+    expect(chunkKind('static/chunks/323-a.js', rootFiles)).toBe('shared');
+    expect(chunkKind('static/chunks/96b4b349-8f83bfd3bc81683c.js', rootFiles)).toBe('shared');
+    expect(chunkKind('static/chunks/app/layout-a.js', rootFiles)).toBe('layout');
+    expect(chunkKind('static/chunks/app/(portal)/layout-56351938aae0f0d0.js', rootFiles)).toBe('layout');
+    expect(chunkKind('static/chunks/app/(portal)/profile/loading-5fcab03f79c8bd6f.js', rootFiles)).toBe('layout');
+    expect(chunkKind('static/chunks/app/(portal)/error-0001a454306d4c35.js', rootFiles)).toBe('layout');
+    expect(chunkKind('static/chunks/app/global-error-2ece7df146aea99c.js', rootFiles)).toBe('layout');
+    expect(chunkKind('static/chunks/app/(portal)/tickets/[id]/page-a.js', rootFiles)).toBe('page');
+    expect(chunkKind('static/chunks/app/(portal)/knowledge/(list)/page-f368304f554c5351.js', rootFiles)).toBe('page');
+    expect(chunkKind('static/chunks/app/_global-error/page-b0b6d0202cfc2f2c.js', rootFiles)).toBe('page');
+    // A directory named like a segment file does not make its chunks one.
+    expect(chunkKind('static/chunks/app/page-tools/thing-a.js', rootFiles)).toBe('shared');
+  });
+
+  it('lists every file the route loads first, sized, with how many routes share it', () => {
+    const explanation = explainRoute(measured, '/tickets/[id]', sizeOf);
+    expect(explanation.app).toBe('portal');
+    expect(explanation.routeCount).toBe(2);
+    expect(explanation.files.map((one) => [one.kind, one.routes, one.file])).toEqual([
+      ['shared', 2, 'static/chunks/framework-1.js'],
+      ['shared', 2, 'static/chunks/323-a.js'],
+      ['shared', 2, 'static/chunks/webpack-1.js'],
+      ['shared', 2, 'static/chunks/main-app-1.js'],
+      ['layout', 2, 'static/chunks/app/layout-a.js'],
+      ['page', 1, 'static/chunks/app/(portal)/tickets/[id]/page-a.js'],
+    ]);
+    expect(explanation.files.find((one) => one.kind === 'page')!.bytes).toBe(gz(files.ticket));
+  });
+
+  it('adds up to the size the check judges the route by', () => {
+    for (const route of ['/', '/tickets/[id]']) {
+      const explanation = explainRoute(measured, route, sizeOf);
+      expect(explanation.bytes, route).toBe(measured.routes.find((one) => one.route === route)!.bytes);
+      const kinds = explanation.byKind;
+      expect(kinds.shared.bytes + kinds.layout.bytes + kinds.page.bytes, route).toBe(explanation.bytes);
+    }
+    const home = explainRoute(measured, '/', sizeOf).byKind;
+    expect(home).toEqual({
+      shared: { bytes: shared + gz(files.shared), files: 4 },
+      layout: { bytes: gz(files.layout), files: 1 },
+      page: { bytes: gz(files.home), files: 1 },
+    });
+  });
+
+  it('accepts a trailing slash, and names the routes there are when the route is not one', () => {
+    expect(explainRoute(measured, '/tickets/[id]/', sizeOf).route).toBe('/tickets/[id]');
+    expect(() => explainRoute(measured, '/catalogue/[key]', sizeOf)).toThrow('portal has no page route "/catalogue/[key]"; its routes are: /, /tickets/[id]');
+    // A route handler serves no document, so it is not a route to explain.
+    expect(() => explainRoute(measured, '/api/health', sizeOf)).toThrow(/no page route/);
+  });
+
+  it('prints a table to paste into a change’s description', () => {
+    const text = explainTable(explainRoute(measured, '/tickets/[id]', sizeOf));
+    const lines = text.trimEnd().split('\n');
+    expect(lines[0]).toMatch(/^portal \/tickets\/\[id\] — [\d.]+ kB first load in 6 files \(gzip -9\)$/);
+    expect(lines[1]).toMatch(/kind\s+loaded by\s+size\s+file/);
+    expect(lines).toContainEqual(expect.stringMatching(/^ {2}page\s+1\/2\s+[\d.]+ kB {2}static\/chunks\/app\/\(portal\)\/tickets\/\[id\]\/page-a\.js$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^ {2}layout\s+2\/2\s+[\d.]+ kB {2}static\/chunks\/app\/layout-a\.js$/));
+    expect(lines.at(-1)).toMatch(/^ {2}shared [\d.]+ kB \(4 files\) · layout [\d.]+ kB \(1 file\) · page [\d.]+ kB \(1 file\)$/);
+  });
+
+  it('reads --explain from the command line, once per route, for one named app', () => {
+    expect(parseArguments(['--app', 'portal', '--explain', '/catalogue/[key]', '--explain', '/tickets/[id]'])).toEqual({
+      apps: ['portal'],
+      update: false,
+      explain: ['/catalogue/[key]', '/tickets/[id]'],
+    });
+    expect(parseArguments([])).toEqual({ apps: [...APPS], update: false, explain: [] });
+    expect(parseArguments(['--update', '--app', 'site'])).toEqual({ apps: ['site'], update: true, explain: [] });
+  });
+
+  it('refuses an --explain it cannot honour', () => {
+    expect(() => parseArguments(['--explain', '/'])).toThrow('--explain needs --app');
+    expect(() => parseArguments(['--app', 'portal', '--explain'])).toThrow('--explain takes a route');
+    expect(() => parseArguments(['--app', 'portal', '--explain', '--update'])).toThrow('--explain takes a route');
+    expect(() => parseArguments(['--app', 'portal', '--explain', '/', '--update'])).toThrow('--explain only reads a build');
+    expect(() => parseArguments(['--app', 'nope'])).toThrow('--app takes one of portal, workbench, admin, site');
   });
 });
 

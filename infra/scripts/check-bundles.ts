@@ -26,10 +26,21 @@
  * which is why this reads the manifests itself. It needs `next build
  * --webpack`: the manifests it reads are webpack's.
  *
+ * **Where the bytes are.** `--explain <route>` lists the files one route
+ * loads first, each with its gzipped size, its kind (a `shared` chunk, the
+ * `layout` chunk of a segment the route sits in, or the route's own `page`
+ * chunk) and how many of the app's routes load it. Growth on every route
+ * that sits in one `shared` or `layout` file is the frame's; growth in a
+ * `page` file, or in a chunk only this route loads, is the page's. It answers
+ * "which change put 4 kB on `/catalogue/[key]`?" without a scratch script
+ * (A2 §13.3), and every portal change pastes it for `/catalogue/[key]` and
+ * `/tickets/[id]` (SPEC v3 §10.1).
+ *
  * Usage:
  *   pnpm tsx infra/scripts/check-bundles.ts             measure all four apps and check
  *   pnpm tsx infra/scripts/check-bundles.ts --app portal
  *   pnpm tsx infra/scripts/check-bundles.ts --update    record the current sizes as baselines
+ *   pnpm tsx infra/scripts/check-bundles.ts --app portal --explain /catalogue/[key] [--explain /tickets/[id]]
  */
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -279,19 +290,151 @@ export function readBudgets(path = BUDGETS_FILE): Budgets {
   return JSON.parse(readFileSync(path, 'utf8')) as Budgets;
 }
 
-function parseArguments(argv: readonly string[]): { apps: App[]; update: boolean } {
+/* ------------------------------------------------------------------ --explain */
+
+/**
+ * What a first-load file is to a route.
+ *
+ * `shared`: the root main files every route loads and webpack's split chunks
+ * (named by number), which any number of routes may share. `layout`: a
+ * segment file other than the page — a `layout`, `template`, `loading`,
+ * `error` or `not-found` boundary — which every route under that segment
+ * loads. `page`: the route's own `page` chunk. Read from the file names Next
+ * gives webpack chunks under `static/chunks/app/`.
+ */
+export type ChunkKind = 'shared' | 'layout' | 'page';
+
+const SEGMENT_FILE =
+  /^static\/chunks\/app\/(?:.*\/)?(page|layout|template|loading|error|not-found|global-error|forbidden|unauthorized|default)-[^/]+\.js$/;
+
+export function chunkKind(file: string, rootMainFiles: ReadonlySet<string>): ChunkKind {
+  if (rootMainFiles.has(file)) return 'shared';
+  const segment = SEGMENT_FILE.exec(file)?.[1];
+  if (!segment) return 'shared';
+  return segment === 'page' ? 'page' : 'layout';
+}
+
+export interface ExplainedFile {
+  readonly file: string;
+  /** Gzipped at level 9, as the route total counts it. */
+  readonly bytes: number;
+  readonly kind: ChunkKind;
+  /** How many of the app's page routes load this file first. */
+  readonly routes: number;
+}
+
+export interface Explanation {
+  readonly app: App;
+  readonly route: string;
+  /** The route's first-load total: the sum of `files`. */
+  readonly bytes: number;
+  /** How many page routes the app has, for reading `ExplainedFile.routes`. */
+  readonly routeCount: number;
+  /** Shared first, then layout, then page; the largest first within each. */
+  readonly files: readonly ExplainedFile[];
+  readonly byKind: Readonly<Record<ChunkKind, { readonly bytes: number; readonly files: number }>>;
+}
+
+const KIND_ORDER: readonly ChunkKind[] = ['shared', 'layout', 'page'];
+
+/** `/tickets/[id]/` and `/tickets/[id]` are one route; `/` stays `/`. */
+function routeName(route: string): string {
+  const trimmed = route.trim();
+  return trimmed.length > 1 ? trimmed.replace(/\/+$/, '') : trimmed;
+}
+
+/**
+ * One route's first-load files, sized and classified. `sizeOf` returns a
+ * file's gzipped size (`gzippedSize` against the app's `.next`); `measureApp`
+ * has already filled its cache, so nothing is compressed twice.
+ */
+export function explainRoute(measurement: AppMeasurement, route: string, sizeOf: (file: string) => number): Explanation {
+  const wanted = routeName(route);
+  const target = measurement.routes.find((one) => one.route === wanted);
+  if (!target) {
+    const known = measurement.routes.map((one) => one.route).join(', ');
+    throw new Error(`${measurement.app} has no page route "${wanted}"; its routes are: ${known}`);
+  }
+  const roots = new Set(measurement.shared.files);
+  const loadedBy = new Map<string, number>();
+  for (const { files } of measurement.routes) {
+    for (const file of files) loadedBy.set(file, (loadedBy.get(file) ?? 0) + 1);
+  }
+  const files = target.files
+    .map((file): ExplainedFile => ({ file, bytes: sizeOf(file), kind: chunkKind(file, roots), routes: loadedBy.get(file) ?? 1 }))
+    .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || b.bytes - a.bytes || a.file.localeCompare(b.file));
+  const byKind = Object.fromEntries(
+    KIND_ORDER.map((kind) => {
+      const ofKind = files.filter((one) => one.kind === kind);
+      return [kind, { bytes: ofKind.reduce((total, one) => total + one.bytes, 0), files: ofKind.length }];
+    }),
+  ) as Record<ChunkKind, { bytes: number; files: number }>;
+  return {
+    app: measurement.app,
+    route: target.route,
+    bytes: files.reduce((total, one) => total + one.bytes, 0),
+    routeCount: measurement.routes.length,
+    files,
+    byKind,
+  };
+}
+
+/** The explanation as a plain-text table, for the log and for a change's description. */
+export function explainTable(explanation: Explanation): string {
+  const { app, route, bytes, routeCount, files, byKind } = explanation;
+  const lines = [`${app} ${route} — ${kB(bytes)} first load in ${files.length} files (gzip -9)`];
+  lines.push(`  ${'kind'.padEnd(7)} ${'loaded by'.padStart(9)} ${'size'.padStart(9)}  file`);
+  for (const one of files) {
+    lines.push(`  ${one.kind.padEnd(7)} ${`${one.routes}/${routeCount}`.padStart(9)} ${kB(one.bytes).padStart(9)}  ${one.file}`);
+  }
+  lines.push(
+    `  ${KIND_ORDER.map((kind) => `${kind} ${kB(byKind[kind].bytes)} (${byKind[kind].files} ${byKind[kind].files === 1 ? 'file' : 'files'})`).join(' · ')}`,
+  );
+  return `${lines.join('\n')}\n`;
+}
+
+/* ------------------------------------------------------------------ The command line */
+
+export interface Options {
+  readonly apps: App[];
+  readonly update: boolean;
+  /** Routes to explain; explaining measures one app and judges nothing. */
+  readonly explain: string[];
+}
+
+export function parseArguments(argv: readonly string[]): Options {
   const index = argv.indexOf('--app');
   const named = index >= 0 ? argv[index + 1] : undefined;
   if (index >= 0 && !(APPS as readonly string[]).includes(named ?? '')) {
     throw new Error(`--app takes one of ${APPS.join(', ')}`);
   }
-  return { apps: named ? [named as App] : [...APPS], update: argv.includes('--update') };
+  const explain: string[] = [];
+  argv.forEach((argument, position) => {
+    if (argument !== '--explain') return;
+    const route = argv[position + 1];
+    if (!route || route.startsWith('--')) throw new Error('--explain takes a route, e.g. --explain /catalogue/[key]');
+    explain.push(route);
+  });
+  if (explain.length > 0 && !named) throw new Error('--explain needs --app: name the app the route belongs to');
+  if (explain.length > 0 && argv.includes('--update')) throw new Error('--explain only reads a build; run --update on its own');
+  return { apps: named ? [named as App] : [...APPS], update: argv.includes('--update'), explain };
 }
 
 function main(): void {
   const options = parseArguments(process.argv.slice(2));
-  const budgets = readBudgets();
   const cache = new Map<string, number>();
+
+  if (options.explain.length > 0) {
+    const app = options.apps[0]!;
+    const appDir = join(ROOT, 'apps', app);
+    const measurement = measureApp(app, appDir, cache);
+    for (const route of options.explain) {
+      console.log(explainTable(explainRoute(measurement, route, (file) => gzippedSize(cache, join(appDir, '.next', file)))));
+    }
+    return;
+  }
+
+  const budgets = readBudgets();
   const measurements = options.apps.map((app) => measureApp(app, join(ROOT, 'apps', app), cache));
 
   if (options.update) {
