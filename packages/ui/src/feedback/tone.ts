@@ -7,27 +7,33 @@ import type { IconName, Tone } from '../types.js';
  * components (`InlineAlert`) and by style modules alike.
  */
 
-export const tones: readonly Tone[] = ['neutral', 'accent', 'info', 'success', 'warning', 'danger'];
+export const tones: readonly Tone[] = ['neutral', 'accent', 'info', 'success', 'warning', 'danger', 'hold', 'high'];
+
+/** A palette group (`IntentName`) by its literal names, so this module needs nothing from the token tables. */
+type ToneIntent = 'neutral' | 'brand' | 'info' | 'success' | 'warning' | 'danger' | 'hold' | 'high';
 
 /**
  * The palette group a tone reads from. `accent` is the brand intent: the one
  * blue, for a notice about something the person can act on. `info` is indigo,
  * never blue (SPEC §1.2), so an informational notice is never mistaken for a
- * control.
+ * control. `hold` and `high` have intents of their own, one to one (v3 §2.4).
  */
-export const toneIntent: Readonly<Record<Tone, 'neutral' | 'brand' | 'info' | 'success' | 'warning' | 'danger'>> = {
+export const toneIntent: Readonly<Record<Tone, ToneIntent>> = {
   neutral: 'neutral',
   accent: 'brand',
   info: 'info',
   success: 'success',
   warning: 'warning',
   danger: 'danger',
+  hold: 'hold',
+  high: 'high',
 };
 
 /**
  * The icon each tone carries when the caller names none. Status always has a
  * shape as well as a colour (SPEC §1.1): a triangle reads as a warning to
- * somebody who cannot tell amber from green.
+ * somebody who cannot tell amber from green, a pause as waiting to somebody
+ * who cannot tell fuchsia from indigo, a flag as raised.
  */
 export const toneIcon: Readonly<Record<Tone, IconName>> = {
   neutral: 'info',
@@ -36,6 +42,8 @@ export const toneIcon: Readonly<Record<Tone, IconName>> = {
   success: 'circle-check',
   warning: 'triangle-alert',
   danger: 'circle-alert',
+  hold: 'pause',
+  high: 'flag',
 };
 
 /**

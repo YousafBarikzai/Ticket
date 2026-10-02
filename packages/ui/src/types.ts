@@ -16,8 +16,16 @@ import type { AnchorHTMLAttributes, ComponentType } from 'react';
 export type { IconName } from './icons/registry.js';
 import type { IconName } from './icons/registry.js';
 
-/** Colour intent of a notice, pill, badge or chart status. Never the only carrier of meaning. */
-export type Tone = 'neutral' | 'accent' | 'info' | 'success' | 'warning' | 'danger';
+/**
+ * Colour intent of a notice, pill, badge or chart status. Never the only
+ * carrier of meaning.
+ *
+ * `hold` (fuchsia) is anything waiting: on a requester, a third party, an
+ * approval, a paused clock. `high` (orange) is a P2 and a degraded service.
+ * Both exist so that `warning` can mean one thing only — an SLA at risk or
+ * due soon (D5) — and amber never has to stand in for "waiting" again.
+ */
+export type Tone = 'neutral' | 'accent' | 'info' | 'success' | 'warning' | 'danger' | 'hold' | 'high';
 
 /** Control and component size. `md` is every component's default. */
 export type Size = 'sm' | 'md' | 'lg';

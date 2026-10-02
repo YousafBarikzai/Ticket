@@ -28,9 +28,11 @@ import bellIcon from 'lucide/dist/esm/icons/bell.mjs';
 import bookOpenIcon from 'lucide/dist/esm/icons/book-open.mjs';
 import botIcon from 'lucide/dist/esm/icons/bot.mjs';
 import boxesIcon from 'lucide/dist/esm/icons/boxes.mjs';
+import bugIcon from 'lucide/dist/esm/icons/bug.mjs';
 import buildingComplexIcon from 'lucide/dist/esm/icons/building-complex.mjs';
 import calendarIcon from 'lucide/dist/esm/icons/calendar.mjs';
 import calendarClockIcon from 'lucide/dist/esm/icons/calendar-clock.mjs';
+import chartBarIcon from 'lucide/dist/esm/icons/chart-bar.mjs';
 import chartNoAxesCombinedIcon from 'lucide/dist/esm/icons/chart-no-axes-combined.mjs';
 import checkIcon from 'lucide/dist/esm/icons/check.mjs';
 import chevronDownIcon from 'lucide/dist/esm/icons/chevron-down.mjs';
@@ -42,6 +44,8 @@ import circleAlertIcon from 'lucide/dist/esm/icons/circle-alert.mjs';
 import circleCheckIcon from 'lucide/dist/esm/icons/circle-check.mjs';
 import circleCheckBigIcon from 'lucide/dist/esm/icons/circle-check-big.mjs';
 import circleDashedIcon from 'lucide/dist/esm/icons/circle-dashed.mjs';
+import circleDotIcon from 'lucide/dist/esm/icons/circle-dot.mjs';
+import circleMinusIcon from 'lucide/dist/esm/icons/circle-minus.mjs';
 import circlePauseIcon from 'lucide/dist/esm/icons/circle-pause.mjs';
 import circleQuestionMarkIcon from 'lucide/dist/esm/icons/circle-question-mark.mjs';
 import circleUserIcon from 'lucide/dist/esm/icons/circle-user.mjs';
@@ -60,6 +64,7 @@ import eyeOffIcon from 'lucide/dist/esm/icons/eye-off.mjs';
 import fileIcon from 'lucide/dist/esm/icons/file.mjs';
 import fileTextIcon from 'lucide/dist/esm/icons/file-text.mjs';
 import flagIcon from 'lucide/dist/esm/icons/flag.mjs';
+import gitCompareIcon from 'lucide/dist/esm/icons/git-compare.mjs';
 import globeIcon from 'lucide/dist/esm/icons/globe.mjs';
 import gripVerticalIcon from 'lucide/dist/esm/icons/grip-vertical.mjs';
 import hourglassIcon from 'lucide/dist/esm/icons/hourglass.mjs';
@@ -80,12 +85,14 @@ import lockIcon from 'lucide/dist/esm/icons/lock.mjs';
 import logInIcon from 'lucide/dist/esm/icons/log-in.mjs';
 import logOutIcon from 'lucide/dist/esm/icons/log-out.mjs';
 import mailIcon from 'lucide/dist/esm/icons/mail.mjs';
+import megaphoneIcon from 'lucide/dist/esm/icons/megaphone.mjs';
 import menuIcon from 'lucide/dist/esm/icons/menu.mjs';
 import messageCircleIcon from 'lucide/dist/esm/icons/message-circle.mjs';
 import messageSquareIcon from 'lucide/dist/esm/icons/message-square.mjs';
 import minusIcon from 'lucide/dist/esm/icons/minus.mjs';
 import monitorIcon from 'lucide/dist/esm/icons/monitor.mjs';
 import moonIcon from 'lucide/dist/esm/icons/moon.mjs';
+import packageIcon from 'lucide/dist/esm/icons/package.mjs';
 import panelLeftIcon from 'lucide/dist/esm/icons/panel-left.mjs';
 import panelRightIcon from 'lucide/dist/esm/icons/panel-right.mjs';
 import paperclipIcon from 'lucide/dist/esm/icons/paperclip.mjs';
@@ -96,6 +103,7 @@ import playIcon from 'lucide/dist/esm/icons/play.mjs';
 import plugIcon from 'lucide/dist/esm/icons/plug.mjs';
 import plusIcon from 'lucide/dist/esm/icons/plus.mjs';
 import refreshCwIcon from 'lucide/dist/esm/icons/refresh-cw.mjs';
+import repeatIcon from 'lucide/dist/esm/icons/repeat.mjs';
 import replyIcon from 'lucide/dist/esm/icons/reply.mjs';
 import rotateCcwClockIcon from 'lucide/dist/esm/icons/rotate-ccw-clock.mjs';
 import rows3Icon from 'lucide/dist/esm/icons/rows-3.mjs';
@@ -105,10 +113,12 @@ import sendIcon from 'lucide/dist/esm/icons/send.mjs';
 import settingsIcon from 'lucide/dist/esm/icons/settings.mjs';
 import settings2Icon from 'lucide/dist/esm/icons/settings-2.mjs';
 import shieldCheckIcon from 'lucide/dist/esm/icons/shield-check.mjs';
+import sirenIcon from 'lucide/dist/esm/icons/siren.mjs';
 import slidersHorizontalIcon from 'lucide/dist/esm/icons/sliders-horizontal.mjs';
 import smartphoneIcon from 'lucide/dist/esm/icons/smartphone.mjs';
 import sparklesIcon from 'lucide/dist/esm/icons/sparkles.mjs';
 import squareIcon from 'lucide/dist/esm/icons/square.mjs';
+import squareCheckIcon from 'lucide/dist/esm/icons/square-check.mjs';
 import squarePenIcon from 'lucide/dist/esm/icons/square-pen.mjs';
 import starIcon from 'lucide/dist/esm/icons/star.mjs';
 import stickyNoteIcon from 'lucide/dist/esm/icons/sticky-note.mjs';
@@ -129,6 +139,7 @@ import usersIcon from 'lucide/dist/esm/icons/users.mjs';
 import webhookIcon from 'lucide/dist/esm/icons/webhook.mjs';
 import wifiOffIcon from 'lucide/dist/esm/icons/wifi-off.mjs';
 import workflowIcon from 'lucide/dist/esm/icons/workflow.mjs';
+import wrenchIcon from 'lucide/dist/esm/icons/wrench.mjs';
 import xIcon from 'lucide/dist/esm/icons/x.mjs';
 import zapIcon from 'lucide/dist/esm/icons/zap.mjs';
 
@@ -180,6 +191,17 @@ export const iconNodes = {
   flag: flagIcon,
   archive: archiveIcon,
   'user-plus': userPlusIcon,
+  package: packageIcon,
+  bug: bugIcon,
+  'git-compare': gitCompareIcon,
+  'square-check': squareCheckIcon,
+  'book-open': bookOpenIcon,
+  zap: zapIcon,
+  siren: sirenIcon,
+  wrench: wrenchIcon,
+  megaphone: megaphoneIcon,
+  repeat: repeatIcon,
+  'chart-bar': chartBarIcon,
   search: searchIcon,
   bell: bellIcon,
   plus: plusIcon,
@@ -227,6 +249,8 @@ export const iconNodes = {
   'circle-alert': circleAlertIcon,
   'circle-x': circleXIcon,
   'circle-dashed': circleDashedIcon,
+  'circle-dot': circleDotIcon,
+  'minus-circle': circleMinusIcon,
   hourglass: hourglassIcon,
   info: infoIcon,
   'loader-circle': loaderCircleIcon,

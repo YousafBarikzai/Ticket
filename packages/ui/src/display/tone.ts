@@ -22,7 +22,9 @@ export const AVATAR_HUES = 8;
  * Each tone has its own *shape*, not only its own hue, so the state reads for
  * somebody who cannot tell amber from green (SPEC §1.1): a dot for a plain
  * state, a clock for something under way, an "i" for information, a tick,
- * a triangle and a circled "!".
+ * a triangle, a circled "!", a pause for waiting and a flag for raised.
+ * Ticket states name their own icons (`ticket-states.ts`); this is the
+ * fallback for a pill that names none.
  */
 export const statusIcon: Readonly<Record<Tone, IconName>> = {
   neutral: 'dot',
@@ -31,6 +33,8 @@ export const statusIcon: Readonly<Record<Tone, IconName>> = {
   success: 'circle-check',
   warning: 'triangle-alert',
   danger: 'circle-alert',
+  hold: 'pause',
+  high: 'flag',
 };
 
 /**

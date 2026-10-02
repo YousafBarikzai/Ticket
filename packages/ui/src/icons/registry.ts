@@ -73,6 +73,24 @@ export const iconRegistry = {
   flag: 'flag',
   archive: 'archive',
   'user-plus': 'user-plus',
+  // Ticket types (TYPE_LOOK, SPEC §2.4): generic glyphs under their lucide names.
+  package: 'package',
+  bug: 'bug',
+  'git-compare': 'git-compare',
+  'square-check': 'square-check',
+  // The concept keys draw these too (`knowledge`, `automation`); the state maps
+  // and the change calendar name the glyph itself, so it reads as what it shows
+  // rather than as a navigation destination.
+  'book-open': 'book-open',
+  zap: 'zap',
+  // Operations: the live major-incident chip and nav item, the status-page
+  // maintenance state, the war-room timeline's comms entries, a standard
+  // (repeating) change, and the team-performance nav item.
+  siren: 'siren',
+  wrench: 'wrench',
+  megaphone: 'megaphone',
+  repeat: 'repeat',
+  'chart-bar': 'chart-bar',
 
   // Controls.
   search: 'search',
@@ -124,6 +142,9 @@ export const iconRegistry = {
   'circle-alert': 'circle-alert',
   'circle-x': 'circle-x',
   'circle-dashed': 'circle-dashed',
+  // An open tenant status (STATUS_CATEGORY_LOOK), and Busy availability (lucide's file is `circle-minus`).
+  'circle-dot': 'circle-dot',
+  'minus-circle': 'circle-minus',
   hourglass: 'hourglass',
   info: 'info',
   'loader-circle': 'loader-circle',
