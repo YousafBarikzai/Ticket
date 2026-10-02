@@ -187,7 +187,7 @@ export function AttentionList({
           {...(empty.secondaryAction ? { secondaryAction: empty.secondaryAction } : {})}
         />
       ) : (
-        <ul className="itsm-AttentionList__rows" aria-label={label} data-actions={actions ? '' : undefined}>
+        <ul className="itsm-AttentionList__rows" aria-label={label}>
           {shown.map((item) => (
             <li key={item.id} className="itsm-AttentionList__row" data-severity={item.severity} data-overdue={item.due?.overdue ? '' : undefined}>
               <Icon name={SEVERITY_ICON[item.severity]} size="sm" className="itsm-AttentionList__severity" />

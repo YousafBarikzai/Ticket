@@ -228,6 +228,11 @@ describe('Avatar', () => {
     expect(card!.style.getPropertyValue('--_itsm-avatar-size')).toBe('2.75rem');
     expect(card!.textContent).toBe('GH');
     expect(tiny!.textContent).toBe('G');
+    cleanupDocument();
+    const { container: odd } = render(<Avatar name="Grace Hopper" size={Number.NaN} />);
+    const fallback = odd.querySelector<HTMLElement>('.itsm-Avatar')!;
+    expect(fallback.dataset.size).toBe('md');
+    expect(fallback.hasAttribute('style')).toBe(false);
   });
 
   it('never splits a letter outside the Basic Multilingual Plane', () => {

@@ -136,7 +136,7 @@ export function Avatar(props: AvatarProps): ReactNode {
       {...rest}
       ref={ref}
       className={cx('itsm-Avatar', className)}
-      data-size={custom === null ? (size as AvatarSize) : 'custom'}
+      data-size={custom !== null ? 'custom' : typeof size === 'string' ? size : 'md'}
       data-kind={kind}
       data-hue={hue}
       data-ring={ring ? '' : undefined}
