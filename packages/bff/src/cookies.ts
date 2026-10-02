@@ -1,5 +1,6 @@
 /**
- * The session cookie, and the rules the `__Host-` prefix imposes.
+ * The cookies this BFF writes — the session, and the short-lived marker the
+ * sign-in callback uses — and the rules the `__Host-` prefix imposes.
  *
  * The prefix is not decoration. A browser refuses to store a `__Host-` cookie
  * unless it is `Secure`, has `Path=/` and carries no `Domain` — which is
@@ -71,6 +72,79 @@ export function readCookie(header: string | null | undefined, name: string): str
     }
   }
   return undefined;
+}
+
+/**
+ * The stale-callback retry marker (Keycloak Step A; SPEC §4.5 rows C5–C7).
+ *
+ * A sign-in callback whose pending record is gone is usually not an attack:
+ * it is the Back button straight after signing in, or a login page left open
+ * past its life, and under the provider's single sign-on one fresh round trip
+ * finishes it without the person typing anything. The marker is what keeps
+ * that recovery to exactly one attempt — a second miss inside the minute is
+ * reported as stale rather than bounced through the provider again, so a
+ * genuinely broken flow cannot loop. Sixty seconds is long enough for one
+ * round trip through the provider and short enough that the next real
+ * sign-in starts clean.
+ *
+ * Same attributes as the session cookie, `SameSite=Lax` included: the
+ * provider brings the browser back here with a top-level cross-site GET, and
+ * that is the one request the marker has to arrive on.
+ */
+export const RETRY_COOKIE = '__Host-itsm-retry';
+export const RETRY_COOKIE_SECONDS = 60;
+
+/**
+ * Why a sign-in did not finish, as the code `/signed-out?reason=` carries.
+ *
+ * Codes rather than prose (SPEC §4.6.3). The page used to print whatever the
+ * query string said, which made `/signed-out?reason=…` a page anyone could
+ * put their own sentence on under this app's name. Now the BFF emits one of
+ * these codes, the page maps it to a sentence written here, and anything
+ * else — an old link, a hand-edited URL — reads as the generic sentence.
+ *
+ * Kept in this module because `@itsm/bff/cookies` is the package's light,
+ * dependency-free entry: the pages that show these sentences import it
+ * without pulling in the SDK or the Redis client, as the edge proxies do.
+ * `parked_expired` is emitted by the demo sign-out (row O2), not by the
+ * provider flow; it is listed so the vocabulary has one home.
+ */
+export const SIGN_IN_FAILURE_REASONS = [
+  'stale',
+  'incomplete',
+  'provider',
+  'refused',
+  'no_tenant',
+  'config',
+  'parked_expired',
+] as const;
+
+export type SignInFailureReason = (typeof SIGN_IN_FAILURE_REASONS)[number];
+
+const FAILURE_SENTENCES: Readonly<Record<SignInFailureReason, string>> = {
+  stale: 'That sign-in had already been used, or it expired.',
+  incomplete: 'That sign-in link was incomplete.',
+  provider: 'The identity provider didn’t finish the sign-in.',
+  refused: 'The identity provider refused the sign-in.',
+  no_tenant: 'Your account isn’t linked to a workspace yet. Ask your administrator.',
+  config: 'This deployment has no identity provider set up.',
+  parked_expired: 'Your account’s sign-in expired while you explored; sign in again.',
+};
+
+/** What the page says for a code it does not know. */
+export const GENERIC_SIGN_IN_FAILURE = 'Something went wrong while signing you in.';
+
+export function isSignInFailureReason(value: unknown): value is SignInFailureReason {
+  return typeof value === 'string' && (SIGN_IN_FAILURE_REASONS as readonly string[]).includes(value);
+}
+
+/**
+ * The sentence for a `reason` query value. Never echoes its input: an unknown
+ * code — including `constructor` and `__proto__`, which a plain object lookup
+ * would have answered — gets the generic sentence.
+ */
+export function signInFailureSentence(reason: string | null | undefined): string {
+  return isSignInFailureReason(reason) ? FAILURE_SENTENCES[reason] : GENERIC_SIGN_IN_FAILURE;
 }
 
 /**

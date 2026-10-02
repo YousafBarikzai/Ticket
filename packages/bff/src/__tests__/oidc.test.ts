@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { authorisationUrl, challengeFor, createVerifier, endSessionUrl, exchangeCode, readClaims } from '../oidc.js';
+import {
+  authorisationUrl,
+  challengeFor,
+  createVerifier,
+  END_SESSION_TIMEOUT_MS,
+  endProviderSession,
+  endSessionUrl,
+  exchangeCode,
+  readClaims,
+} from '../oidc.js';
 import { ConfigurationError, developmentSignInAvailable, readConfig } from '../config.js';
 
 const settings = { issuer: 'https://id.example.test/realms/itsm', clientId: 'workbench', clientSecret: 'shhh' };
@@ -50,6 +59,19 @@ describe('the authorisation request', () => {
 
   it('passes the tenant’s provider hint, so nobody picks from a list of other tenants', () => {
     expect(url.searchParams.get('kc_idp_hint')).toBe('acme-saml');
+  });
+
+  it('carries a login hint only when one is given', () => {
+    expect(url.searchParams.has('login_hint')).toBe(false);
+    const hinted = new URL(
+      authorisationUrl('https://id.example.test/auth', settings, {
+        state: 's',
+        challenge: 'c',
+        redirectUri: 'https://desk.example.test/api/session/callback',
+        loginHint: 'alex.morgan@northwind.example',
+      }),
+    );
+    expect(hinted.searchParams.get('login_hint')).toBe('alex.morgan@northwind.example');
   });
 });
 
@@ -126,9 +148,109 @@ describe('the code exchange', () => {
     ).rejects.toThrow(/refused the exchange \(400\)/);
   });
 
-  it('builds an end-session URL when the provider publishes one', () => {
+  it('still builds a front-channel end-session URL for a caller that holds an id token', () => {
     expect(endSessionUrl(discovery, 'id-token', 'https://desk.example.test/signed-out')).toContain('id_token_hint=id-token');
     expect(endSessionUrl({ authorization_endpoint: 'a', token_endpoint: 't' }, null, 'x')).toBeNull();
+  });
+});
+
+describe('ending the provider session over the back channel (O4)', () => {
+  const discovery = {
+    authorization_endpoint: 'https://id.example.test/auth',
+    token_endpoint: 'https://id.example.test/token',
+    end_session_endpoint: 'https://id.example.test/logout',
+  };
+
+  /**
+   * A unique issuer per test, for the same reason as the exchange tests:
+   * discovery is cached per issuer for the life of the process.
+   */
+  function issuer(name: string) {
+    return { ...settings, issuer: `https://id.example.test/realms/end-${name}` };
+  }
+
+  type Answer = (init: RequestInit | undefined) => Response | Promise<Response>;
+
+  function provider(name: string, endSession: Answer, document: unknown = discovery) {
+    const doFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url === `${issuer(name).issuer}/.well-known/openid-configuration`) return Response.json(document);
+      if (url === discovery.end_session_endpoint) return endSession(init);
+      throw new Error(`unexpected fetch of ${url}`);
+    });
+    return doFetch;
+  }
+
+  function endSessionCall(doFetch: ReturnType<typeof provider>) {
+    return doFetch.mock.calls.find((call) => String(call[0]) === discovery.end_session_endpoint);
+  }
+
+  it('O4 posts client_id, client_secret and refresh_token as a form to the end-session endpoint', async () => {
+    const doFetch = provider('posts', () => new Response(null, { status: 204 }));
+
+    await expect(endProviderSession(issuer('posts'), 'rt-1', doFetch as unknown as typeof fetch)).resolves.toBe(true);
+
+    const init = endSessionCall(doFetch)?.[1];
+    expect(init?.method).toBe('POST');
+    expect(new Headers(init?.headers).get('content-type')).toBe('application/x-www-form-urlencoded');
+    expect(Object.fromEntries(new URLSearchParams(String(init?.body)))).toEqual({
+      client_id: 'workbench',
+      client_secret: 'shhh',
+      refresh_token: 'rt-1',
+    });
+    // Bounded: the request carries a signal, so a provider that never answers
+    // cannot hold a sign-out open.
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('O4 does not throw when the provider answers 400', async () => {
+    const doFetch = provider('refused', () =>
+      Response.json({ error: 'invalid_grant', error_description: 'Session not active' }, { status: 400 }),
+    );
+    await expect(endProviderSession(issuer('refused'), 'rt-1', doFetch as unknown as typeof fetch)).resolves.toBe(false);
+  });
+
+  it('O4 does not throw when the provider cannot be reached', async () => {
+    const doFetch = provider('unreachable', () => Promise.reject(new TypeError('fetch failed')));
+    await expect(endProviderSession(issuer('unreachable'), 'rt-1', doFetch as unknown as typeof fetch)).resolves.toBe(
+      false,
+    );
+  });
+
+  it('O4 does not throw when discovery itself fails', async () => {
+    const doFetch = vi.fn(async () => new Response('down', { status: 503 }));
+    await expect(endProviderSession(issuer('no-discovery'), 'rt-1', doFetch as unknown as typeof fetch)).resolves.toBe(
+      false,
+    );
+  });
+
+  it('O4 asks nothing more of a provider that publishes no end-session endpoint', async () => {
+    const { end_session_endpoint: _omitted, ...withoutEndSession } = discovery;
+    const doFetch = provider('no-endpoint', () => new Response(null, { status: 204 }), withoutEndSession);
+
+    await expect(endProviderSession(issuer('no-endpoint'), 'rt-1', doFetch as unknown as typeof fetch)).resolves.toBe(
+      false,
+    );
+    expect(endSessionCall(doFetch)).toBeUndefined();
+  });
+
+  it('O4 gives up on a provider that never answers, after its timeout', async () => {
+    // A provider that holds the connection open until the request is aborted.
+    const hang: Answer = (init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+      });
+    const doFetch = provider('hangs', hang);
+
+    const started = Date.now();
+    await expect(
+      endProviderSession(issuer('hangs'), 'rt-1', doFetch as unknown as typeof fetch, 50),
+    ).resolves.toBe(false);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('O4 waits three seconds by default, no longer', () => {
+    expect(END_SESSION_TIMEOUT_MS).toBe(3000);
   });
 });
 

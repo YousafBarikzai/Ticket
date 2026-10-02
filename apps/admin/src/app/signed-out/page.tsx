@@ -1,18 +1,21 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import { signInFailureSentence } from '@itsm/bff/cookies';
 import { Banner, StatusScreen } from '@itsm/ui';
 
 export const metadata: Metadata = { title: 'Signed out' };
 export const dynamic = 'force-dynamic';
 
 /**
- * Where a sign-out lands, and where a failed sign-in lands (SPEC §6.1).
+ * Where a sign-out lands, and where a failed sign-in lands (SPEC v3 §4.6.3).
  *
  * The reason is shown because the alternative — bouncing somebody back to the
  * sign-in page with no explanation — produces a loop the person cannot tell
- * from a broken application. The text is only ever one of this app's own
- * messages: the identity provider's `error_description` is never echoed here,
- * since it is written about our client, not to this reader.
+ * from a broken application. The query carries a code (`stale`, `provider`,
+ * …), never prose: the sentence comes from the BFF's own list, and a code it
+ * does not know reads as the generic sentence, so nobody can put words of
+ * their own on this page by editing the link. The identity provider's
+ * `error_description` never reaches it either.
  *
  * *Sign in again* is a plain link, deliberately not a prefetched client
  * navigation: it starts a sign-in with the identity provider, which is a full
@@ -24,7 +27,7 @@ export default async function SignedOutPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
   const params = await searchParams;
-  const reason = typeof params.reason === 'string' ? params.reason.slice(0, 300) : null;
+  const reason = Array.isArray(params.reason) ? params.reason[0] : params.reason;
 
   return (
     <StatusScreen
@@ -34,10 +37,10 @@ export default async function SignedOutPage({
       body={
         reason ? (
           <Banner tone="danger" live="assertive">
-            {reason}
+            {signInFailureSentence(reason)}
           </Banner>
         ) : (
-          'Your session has ended on this device.'
+          'Your session on this device has ended.'
         )
       }
       actions={[{ id: 'sign-in', label: 'Sign in again', icon: 'log-in', href: '/api/session/login' }]}

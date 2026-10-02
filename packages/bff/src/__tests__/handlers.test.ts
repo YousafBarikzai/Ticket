@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBff } from '../bff.js';
-import { readCookie, SESSION_COOKIE } from '../cookies.js';
+import {
+  cookieAttributes,
+  GENERIC_SIGN_IN_FAILURE,
+  isSignInFailureReason,
+  readCookie,
+  RETRY_COOKIE,
+  RETRY_COOKIE_SECONDS,
+  SESSION_COOKIE,
+  SIGN_IN_FAILURE_REASONS,
+  signInFailureSentence,
+  violatesHostPrefix,
+} from '../cookies.js';
 import { memorySessionStore, type SessionStore } from '../session.js';
 import { setSessionStore } from '../store.js';
 
@@ -12,6 +23,10 @@ import { setSessionStore } from '../store.js';
  * session leaves as a cookie and comes back as a token, and that the two ways
  * a person stops being signed in (logging out, and a session that is gone)
  * both clear the cookie.
+ *
+ * The sign-in state machine's rows (SPEC v3 §4.5: L for login, C for the
+ * callback, O for logout) each have a test whose name starts with the row's
+ * id, so a row without a test is visible in the list rather than in review.
  *
  * No server and no framework: the handlers speak `Request` and `Response`, so
  * this is the real code path rather than an approximation of it.
@@ -80,16 +95,46 @@ const DISCOVERY = {
   end_session_endpoint: 'https://id.example.test/logout',
 };
 
+/** Every `Set-Cookie` a response carries, one entry per header. */
+function setCookies(response: Response): string[] {
+  return response.headers.getSetCookie();
+}
+
+/** The one `Set-Cookie` for a cookie name, or undefined. */
+function setCookieFor(response: Response, name: string): string | undefined {
+  return setCookies(response).find((header) => header.startsWith(`${name}=`));
+}
+
+/**
+ * A serialised cookie read back into the attributes `violatesHostPrefix`
+ * checks, so a test asserts the browser's rule rather than a substring.
+ */
+function attributesOf(header: string): { secure: boolean; path: string | undefined; domain: string | undefined } {
+  const parts = header.split(';').map((part) => part.trim());
+  const value = (name: string) =>
+    parts.find((part) => part.toLowerCase().startsWith(`${name.toLowerCase()}=`))?.split('=')[1];
+  return { secure: parts.includes('Secure'), path: value('Path'), domain: value('Domain') };
+}
+
+/** The `reason` a redirect to `/signed-out` carries, asserted to be one the page knows. */
+function reasonOf(response: Response): string | null {
+  const location = new URL(response.headers.get('location') ?? '');
+  expect(location.origin + location.pathname).toBe(`${ORIGIN}/signed-out`);
+  const reason = location.searchParams.get('reason');
+  expect(isSignInFailureReason(reason)).toBe(true);
+  return reason;
+}
+
 describe('signing in with no identity provider', () => {
   const bff = bffWith({ NODE_ENV: 'development' });
 
-  it('sends the person to the development form, keeping where they were going', async () => {
+  it('L5 sends the person to the development form, keeping where they were going', async () => {
     const response = await bff.login(new Request(`${ORIGIN}/api/session/login?redirectTo=/tickets/INC-1`));
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe(`${ORIGIN}/sign-in?redirectTo=%2Ftickets%2FINC-1`);
   });
 
-  it('refuses an off-origin landing page, whatever the link said', async () => {
+  it('L5 refuses an off-origin landing page, whatever the link said', async () => {
     const response = await bff.login(new Request(`${ORIGIN}/api/session/login?redirectTo=https://evil.example`));
     expect(response.headers.get('location')).toBe(`${ORIGIN}/sign-in?redirectTo=%2Fqueue`);
   });
@@ -161,6 +206,13 @@ describe('signing in with no identity provider', () => {
     );
     expect(response.status).toBe(403);
   });
+
+  it('C4 answers a callback with reason=config when no provider is configured', async () => {
+    const response = await bff.callback(new Request(`${ORIGIN}/api/session/callback?code=abc&state=xyz`));
+    expect(response.status).toBe(302);
+    expect(reasonOf(response)).toBe('config');
+    expect(setCookies(response)).toEqual([]);
+  });
 });
 
 describe('signing in through an identity provider', () => {
@@ -178,34 +230,55 @@ describe('signing in through an identity provider', () => {
   });
 
   /**
+   * Routes every URL the handlers touch: discovery, the token and end-session
+   * endpoints, and the API's session record.
+   *
    * Discovery is cached per issuer for the life of the process, so queuing a
    * response for it by call order works once and then silently hands the
    * *next* test's token response to the wrong caller. Routed by URL instead:
-   * the document is always available, and the token endpoint is queued.
+   * the document is always available, and each endpoint answers as the test
+   * says (the token endpoint fails, and the end-session endpoint answers 204,
+   * unless told otherwise).
    */
-  function answerDiscovery(): void {
-    upstream.mockImplementation(async (input: string) =>
-      String(input).includes('.well-known') ? json(DISCOVERY) : json({}, 500),
-    );
+  function provider(answers: { token?: () => Response; logout?: () => Response | Promise<Response> } = {}): void {
+    upstream.mockImplementation(async (input: string) => {
+      const url = String(input);
+      if (url.includes('.well-known')) return json(DISCOVERY);
+      if (url.endsWith('/api/v1/auth/session')) return json(RECORDED, 201);
+      if (url === DISCOVERY.token_endpoint) return answers.token ? answers.token() : json({}, 500);
+      if (url === DISCOVERY.end_session_endpoint) {
+        return answers.logout ? answers.logout() : new Response(null, { status: 204 });
+      }
+      return json({}, 404);
+    });
   }
 
-  async function startLogin(): Promise<string> {
-    answerDiscovery();
-    const response = await bff.login(new Request(`${ORIGIN}/api/session/login?redirectTo=/tickets/INC-9`));
+  function answerToken(body: unknown): void {
+    provider({ token: () => json(body) });
+  }
+
+  async function startLogin(query = 'redirectTo=/tickets/INC-9'): Promise<string> {
+    provider();
+    const response = await bff.login(new Request(`${ORIGIN}/api/session/login?${query}`));
     expect(response.status).toBe(302);
     return response.headers.get('location') ?? '';
   }
 
-  /** Routes each of the three URLs a callback touches: discovery, token, session record. */
-  function answerToken(body: unknown): void {
-    upstream.mockImplementation(async (input: string) => {
-      if (String(input).includes('.well-known')) return json(DISCOVERY);
-      if (String(input).endsWith('/api/v1/auth/session')) return json(RECORDED, 201);
-      return json(body);
-    });
+  /** Signs in through the provider, returning the session cookie's value. */
+  async function signedIn(): Promise<string> {
+    const state = new URL(await startLogin()).searchParams.get('state')!;
+    answerToken({ access_token: ACCESS, refresh_token: 'rt-1', expires_in: 300 });
+    const response = await bff.callback(new Request(`${ORIGIN}/api/session/callback?code=abc&state=${state}`));
+    return readCookie(setCookieFor(response, SESSION_COOKIE)?.split(';')[0], SESSION_COOKIE)!;
   }
 
-  it('redirects to the provider with a challenge and a state', async () => {
+  function callback(query: string, cookie?: string): Promise<Response> {
+    return bff.callback(
+      new Request(`${ORIGIN}/api/session/callback?${query}`, cookie ? { headers: { cookie } } : undefined),
+    );
+  }
+
+  it('L6 redirects to the provider with a challenge and a state', async () => {
     const url = new URL(await startLogin());
     expect(url.origin + url.pathname).toBe('https://id.example.test/auth');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
@@ -214,15 +287,186 @@ describe('signing in through an identity provider', () => {
     expect(url.toString()).not.toContain('code_verifier');
   });
 
-  it('exchanges the code, sets the cookie, and lands where the person was going', async () => {
+  it('L6 keeps the pending sign-in for 1,800 s, as long as the provider keeps its login page', async () => {
+    const putPending = vi.spyOn(store, 'putPending');
+    await startLogin();
+    expect(putPending).toHaveBeenCalledTimes(1);
+    expect(putPending).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ redirectTo: '/tickets/INC-9' }),
+      1800,
+    );
+  });
+
+  it('L6 passes an address on to the provider as login_hint', async () => {
+    const url = new URL(await startLogin(`login_hint=${encodeURIComponent('alex.morgan@northwind.example')}`));
+    expect(url.searchParams.get('login_hint')).toBe('alex.morgan@northwind.example');
+
+    // The longest address SMTP can carry is still an address.
+    const longest = `${'a'.repeat(247)}@b.test`;
+    expect(longest).toHaveLength(254);
+    expect(new URL(await startLogin(`login_hint=${longest}`)).searchParams.get('login_hint')).toBe(longest);
+  });
+
+  it.each([
+    ['not an address', 'alex.morgan'],
+    ['two at-signs', 'a@b@c.test'],
+    ['nothing before the at-sign', '@northwind.example'],
+    ['whitespace', 'alex morgan@northwind.example'],
+    ['a line break', 'alex@northwind.example\nX-Injected: 1'],
+    ['a control character', 'alex@northwind.example\u0000'],
+    ['a C1 control character', 'alex@northwind.example\u0085'],
+    ['more than 254 characters', `${'a'.repeat(248)}@b.test`],
+    ['an empty value', ''],
+  ])('L6 drops a login_hint with %s', async (_label, hint) => {
+    const url = new URL(await startLogin(`login_hint=${encodeURIComponent(hint)}`));
+    expect(url.searchParams.has('login_hint')).toBe(false);
+  });
+
+  it('L6 passes the tenant’s provider hint, so nobody picks from a list of other tenants', async () => {
+    const url = new URL(await startLogin('idp=acme-saml'));
+    expect(url.searchParams.get('kc_idp_hint')).toBe('acme-saml');
+  });
+
+  it.each(['login_required', 'interaction_required'])(
+    'C1 sends %s back to the sign-in page, not to an error',
+    async (error) => {
+      const response = await callback(`error=${error}&state=whatever`);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/sign-in?redirectTo=%2Fqueue`);
+      expect(setCookies(response)).toEqual([]);
+    },
+  );
+
+  it('C2 answers any other provider error with reason=provider, never the provider’s prose', async () => {
+    const response = await callback('error=access_denied&error_description=client+secret+is+wrong');
+    expect(response.status).toBe(302);
+    expect(reasonOf(response)).toBe('provider');
+    expect(response.headers.get('location')).not.toContain('secret');
+    expect(setCookies(response)).toEqual([]);
+  });
+
+  it.each([
+    ['a code but no state', 'code=abc'],
+    ['a state but no code', 'state=xyz'],
+    ['neither', ''],
+  ])('C3 answers a callback with %s with reason=incomplete', async (_label, query) => {
+    const response = await callback(query);
+    expect(reasonOf(response)).toBe('incomplete');
+  });
+
+  it('C5 sends a person who is already signed in to the app when they press Back, and spends no retry', async () => {
+    const state = new URL(await startLogin()).searchParams.get('state')!;
+    answerToken({ access_token: ACCESS, refresh_token: 'rt-1', expires_in: 300 });
+    const first = await callback(`code=abc&state=${state}`);
+    const id = readCookie(setCookieFor(first, SESSION_COOKIE)?.split(';')[0], SESSION_COOKIE)!;
+
+    // The same callback URL again, from the history, with the new session's
+    // cookie (and a retry marker from earlier, which this clears).
+    const replay = await callback(`code=abc&state=${state}`, `${SESSION_COOKIE}=${id}; ${RETRY_COOKIE}=1`);
+
+    expect(replay.status).toBe(302);
+    expect(replay.headers.get('location')).toBe(`${ORIGIN}/queue`);
+    expect(setCookieFor(replay, SESSION_COOKIE)).toBeUndefined();
+    expect(setCookieFor(replay, RETRY_COOKIE)).toContain('Max-Age=0');
+    // Still signed in, and the code was not exchanged a second time.
+    await expect(store.get(id)).resolves.not.toBeNull();
+    expect(upstream.mock.calls.filter((call) => String(call[0]) === DISCOVERY.token_endpoint)).toHaveLength(1);
+  });
+
+  it('C6 restarts a callback that finds no pending sign-in once, and marks the retry for 60 s', async () => {
+    const response = await callback('code=abc&state=invented');
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/api/session/login?redirectTo=%2Fqueue`);
+
+    const marker = setCookieFor(response, RETRY_COOKIE)!;
+    expect(marker).toContain('Max-Age=60');
+    expect(marker).toContain('HttpOnly');
+    expect(marker).toContain('SameSite=Lax');
+    expect(violatesHostPrefix(RETRY_COOKIE, attributesOf(marker))).toBeNull();
+    expect(setCookieFor(response, SESSION_COOKIE)).toBeUndefined();
+    // Nothing was exchanged: a code whose state nobody issued is never spent.
+    expect(upstream.mock.calls.filter((call) => String(call[0]) === DISCOVERY.token_endpoint)).toHaveLength(0);
+  });
+
+  it('C6 → L6 → C9: the silent restart finishes the sign-in and clears the marker', async () => {
+    const restart = await callback('code=stale&state=invented');
+    const marker = setCookieFor(restart, RETRY_COOKIE)!.split(';')[0]!;
+
+    // The browser follows the restart to this app's login, and the provider's
+    // single sign-on answers at once with a fresh code for a fresh state.
+    provider();
+    const login = await bff.login(new Request(restart.headers.get('location')!, { headers: { cookie: marker } }));
+    const state = new URL(login.headers.get('location')!).searchParams.get('state')!;
+
+    answerToken({ access_token: ACCESS, refresh_token: 'rt-1', expires_in: 300 });
+    const done = await callback(`code=fresh&state=${state}`, marker);
+
+    expect(done.headers.get('location')).toBe(`${ORIGIN}/queue`);
+    expect(setCookieFor(done, SESSION_COOKIE)).toContain('__Host-session=');
+    expect(setCookieFor(done, RETRY_COOKIE)).toContain('Max-Age=0');
+  });
+
+  it('C6 then C7: a callback replayed from the back button retries once, then reports reason=stale', async () => {
+    const state = new URL(await startLogin()).searchParams.get('state')!;
+    answerToken({ access_token: ACCESS, expires_in: 300 });
+    await callback(`code=abc&state=${state}`);
+
+    // No session cookie on the replay (a different browser profile, or one
+    // that has since been signed out): the first miss restarts silently…
+    const first = await callback(`code=abc&state=${state}`);
+    expect(first.headers.get('location')).toBe(`${ORIGIN}/api/session/login?redirectTo=%2Fqueue`);
+    const marker = setCookieFor(first, RETRY_COOKIE)!.split(';')[0]!;
+
+    // …and a second miss inside the minute stops, rather than looping.
+    const second = await callback(`code=abc&state=${state}`, marker);
+    expect(second.status).toBe(302);
+    expect(reasonOf(second)).toBe('stale');
+    expect(setCookieFor(second, RETRY_COOKIE)).toContain('Max-Age=0');
+    expect(setCookieFor(second, SESSION_COOKIE)).toBeUndefined();
+  });
+
+  it('C7 reports reason=stale for a state nobody issued once the retry is spent', async () => {
+    const response = await callback('code=abc&state=invented', `${RETRY_COOKIE}=1`);
+    expect(reasonOf(response)).toBe('stale');
+  });
+
+  it('C8 answers a token that names no tenant with reason=no_tenant', async () => {
+    const state = new URL(await startLogin()).searchParams.get('state')!;
+    answerToken({ access_token: token({ sub: 'kc-1', name: 'No Tenant' }), expires_in: 300 });
+    const response = await callback(`code=abc&state=${state}`);
+    expect(reasonOf(response)).toBe('no_tenant');
+    expect(setCookieFor(response, SESSION_COOKIE)).toBeUndefined();
+  });
+
+  it('C8 answers a refused exchange with reason=refused, never the provider’s prose', async () => {
+    const state = new URL(await startLogin()).searchParams.get('state')!;
+    provider({ token: () => json({ error: 'invalid_client', error_description: 'client secret is wrong' }, 400) });
+    const response = await callback(`code=abc&state=${state}`);
+    expect(reasonOf(response)).toBe('refused');
+    expect(response.headers.get('location')).not.toContain('secret');
+  });
+
+  it('C9 exchanges the code, sets the session, clears the retry marker and lands where the person was going', async () => {
     const state = new URL(await startLogin()).searchParams.get('state')!;
 
     answerToken({ access_token: ACCESS, refresh_token: 'rt', expires_in: 300 });
-    const response = await bff.callback(new Request(`${ORIGIN}/api/session/callback?code=abc&state=${state}`));
+    const response = await callback(`code=abc&state=${state}`, `${RETRY_COOKIE}=1`);
 
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe(`${ORIGIN}/tickets/INC-9`);
-    expect(response.headers.get('set-cookie')).toContain('__Host-session=');
+
+    // Two cookies, as two headers: folded into one, the browser would read
+    // neither as intended.
+    expect(setCookies(response)).toHaveLength(2);
+    const session = setCookieFor(response, SESSION_COOKIE)!;
+    const retry = setCookieFor(response, RETRY_COOKIE)!;
+    expect(session).toContain('Max-Age=43200');
+    expect(retry).toContain('Max-Age=0');
+    for (const header of [session, retry]) {
+      expect(violatesHostPrefix(header.split('=')[0]!, attributesOf(header))).toBeNull();
+    }
 
     // The exchange carried the verifier that never left the server. Found by
     // URL, not by position: the callback's last request is now the session
@@ -234,33 +478,90 @@ describe('signing in through an identity provider', () => {
     expect(body).toContain('grant_type=authorization_code');
   });
 
-  it('refuses a callback replayed from the back button', async () => {
-    const state = new URL(await startLogin()).searchParams.get('state')!;
-    answerToken({ access_token: ACCESS, expires_in: 300 });
-    await bff.callback(new Request(`${ORIGIN}/api/session/callback?code=abc&state=${state}`));
+  describe('signing out', () => {
+    function logout(cookie?: string): Promise<Response> {
+      return bff.logout(
+        new Request(`${ORIGIN}/api/session/logout`, {
+          method: 'POST',
+          headers: { 'sec-fetch-site': 'same-origin', ...(cookie ? { cookie } : {}) },
+        }),
+      );
+    }
 
-    const replay = await bff.callback(new Request(`${ORIGIN}/api/session/callback?code=abc&state=${state}`));
-    expect(replay.headers.get('location')).toContain('/signed-out?reason=');
-    expect(replay.headers.get('location')).toContain('already%20been%20used');
-    expect(replay.headers.get('set-cookie')).toBeNull();
-  });
+    function endSessionCalls() {
+      return upstream.mock.calls.filter((call) => String(call[0]) === DISCOVERY.end_session_endpoint);
+    }
 
-  it('refuses a state nobody issued', async () => {
-    const response = await bff.callback(new Request(`${ORIGIN}/api/session/callback?code=abc&state=invented`));
-    expect(response.headers.get('location')).toContain('/signed-out?reason=');
-  });
+    it('O1 cannot be triggered from another site, and ends nothing at the provider', async () => {
+      const id = await signedIn();
+      const response = await bff.logout(
+        new Request(`${ORIGIN}/api/session/logout`, {
+          method: 'POST',
+          headers: { 'sec-fetch-site': 'cross-site', cookie: `${SESSION_COOKIE}=${id}` },
+        }),
+      );
+      expect(response.status).toBe(403);
+      await expect(store.get(id)).resolves.not.toBeNull();
+      expect(endSessionCalls()).toHaveLength(0);
+    });
 
-  it('does not repeat the provider’s error prose back to the person', async () => {
-    const response = await bff.callback(
-      new Request(`${ORIGIN}/api/session/callback?error=access_denied&error_description=client+secret+is+wrong`),
-    );
-    const location = response.headers.get('location') ?? '';
-    expect(location).toContain('/signed-out?reason=');
-    expect(location).not.toContain('secret');
+    it('O4 ends the provider session over the back channel, then 303s to this app’s own signed-out page', async () => {
+      const id = await signedIn();
+      provider();
+
+      const response = await logout(`${SESSION_COOKIE}=${id}`);
+
+      expect(response.status).toBe(303);
+      // Same origin: the browser never goes to the provider, so neither a
+      // `form-action 'self'` block nor the provider's confirmation page can
+      // get in the way.
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out`);
+      expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
+      await expect(store.get(id)).resolves.toBeNull();
+
+      const calls = endSessionCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]![1]?.method).toBe('POST');
+      const form = new URLSearchParams(String(calls[0]![1]?.body));
+      expect(Object.fromEntries(form)).toEqual({
+        client_id: 'workbench',
+        client_secret: 'shhh',
+        refresh_token: 'rt-1',
+      });
+    });
+
+    it.each([
+      ['refuses', () => json({ error: 'invalid_grant' }, 400)],
+      ['fails', () => json({}, 503)],
+      ['cannot be reached', () => Promise.reject(new Error('ECONNREFUSED'))],
+    ])('O4 still signs the person out here when the provider %s', async (_label, answer) => {
+      const id = await signedIn();
+      provider({ logout: answer });
+
+      const response = await logout(`${SESSION_COOKIE}=${id}`);
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out`);
+      expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
+      await expect(store.get(id)).resolves.toBeNull();
+    });
+
+    it.each([
+      ['a cookie that names no session', `${SESSION_COOKIE}=vanished`],
+      ['no cookie at all', undefined],
+    ])('O5 with %s lands on the signed-out page with the cookie cleared and asks no provider', async (_label, cookie) => {
+      provider();
+      const response = await logout(cookie);
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out`);
+      expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
+      expect(endSessionCalls()).toHaveLength(0);
+    });
   });
 });
 
-describe('signing out', () => {
+describe('signing out of a development session', () => {
   const bff = bffWith({ NODE_ENV: 'development' });
 
   async function signedIn(): Promise<string> {
@@ -275,7 +576,7 @@ describe('signing out', () => {
     return readCookie((response.headers.get('set-cookie') ?? '').split(';')[0], SESSION_COOKIE)!;
   }
 
-  it('deletes the record and clears the cookie', async () => {
+  it('O5 deletes the record, clears the cookie and asks no provider', async () => {
     const id = await signedIn();
     const response = await bff.logout(
       new Request(`${ORIGIN}/api/session/logout`, {
@@ -285,12 +586,15 @@ describe('signing out', () => {
     );
 
     expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out`);
     expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
     // The record is what actually ends the session; the cookie is a hint.
     await expect(store.get(id)).resolves.toBeNull();
+    // Two calls, both from signing in: nothing went to a provider on the way out.
+    expect(upstream).toHaveBeenCalledTimes(2);
   });
 
-  it('cannot be triggered from another site', async () => {
+  it('O1 cannot be triggered from another site', async () => {
     const id = await signedIn();
     const response = await bff.logout(
       new Request(`${ORIGIN}/api/session/logout`, {
@@ -388,5 +692,43 @@ describe('the proxy', () => {
       ['api', 'v1', 'me'],
     );
     expect(response.status).toBe(502);
+  });
+});
+
+describe('the reasons the signed-out page explains', () => {
+  it('names exactly the codes the callback and the demo sign-out emit (SPEC v3 §4.6.3)', () => {
+    expect([...SIGN_IN_FAILURE_REASONS].sort()).toEqual(
+      ['config', 'incomplete', 'no_tenant', 'parked_expired', 'provider', 'refused', 'stale'].sort(),
+    );
+  });
+
+  it('gives every code a sentence of its own', () => {
+    const sentences = SIGN_IN_FAILURE_REASONS.map((reason) => signInFailureSentence(reason));
+    expect(new Set(sentences).size).toBe(SIGN_IN_FAILURE_REASONS.length);
+    for (const sentence of sentences) {
+      expect(sentence).not.toBe(GENERIC_SIGN_IN_FAILURE);
+      expect(sentence).toMatch(/^[A-Z].*\.$/);
+    }
+    expect(signInFailureSentence('stale')).toBe('That sign-in had already been used, or it expired.');
+    expect(signInFailureSentence('no_tenant')).toBe('Your account isn’t linked to a workspace yet. Ask your administrator.');
+  });
+
+  it.each([
+    ['the prose an older link carried', 'that sign-in has already been used, or it expired'],
+    ['markup', '<script>alert(1)</script>'],
+    ['a key every object has', 'constructor'],
+    ['the prototype', '__proto__'],
+    ['a code in the wrong case', 'STALE'],
+    ['an empty value', ''],
+    ['nothing', null],
+    ['undefined', undefined],
+  ])('reads %s as the generic sentence, never echoing it', (_label, reason) => {
+    expect(signInFailureSentence(reason)).toBe(GENERIC_SIGN_IN_FAILURE);
+  });
+
+  it('keeps the retry marker a valid __Host- cookie that lives one minute', () => {
+    expect(RETRY_COOKIE).toBe('__Host-itsm-retry');
+    expect(RETRY_COOKIE_SECONDS).toBe(60);
+    expect(violatesHostPrefix(RETRY_COOKIE, cookieAttributes(RETRY_COOKIE_SECONDS))).toBeNull();
   });
 });
