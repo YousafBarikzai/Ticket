@@ -15,7 +15,9 @@ const { default: HoldingPage } = await import('../app/page.js');
 const { default: NotFound } = await import('../app/not-found.js');
 
 /**
- * The holding page, as a whole document (SPEC v3 WP-10; A5 §3.13).
+ * The site's `/` as a whole document (SPEC v3 WP-10; A5 §3.13). In wave 0 that
+ * is the holding page; the landing page (WP-50) replaces both the page and
+ * this file, which is why the file carries the landing test's name.
  *
  * The page and the root layout are rendered to HTML on the server path —
  * `renderToStaticMarkup`, as Next renders a server component — and loaded into
