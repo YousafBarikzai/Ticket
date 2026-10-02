@@ -87,6 +87,99 @@ describe('submitting a request', () => {
   });
 });
 
+describe('the request\'s description', () => {
+  // An agent reads the description first. It used to print the form's storage
+  // keys and option values (`accessLevel: write`); it now reads as the
+  // requester saw the form (A4 §5.3), and the raw values stay on `custom`,
+  // where rules and reports match on them.
+  it('names each answer by its label and each option by its label', async () => {
+    const submitted = await request<{ ticketNumber: string }>('/api/v1/catalogue/system-access/submit', {
+      method: 'POST',
+      token: tenant.people.requester!.token,
+      body: {
+        answers: {
+          // Deliberately out of form order: the description follows the form.
+          until: '2026-10-12',
+          justification: 'I review pull requests for the payments team.',
+          accessLevel: 'write',
+          system: 'source-control',
+        },
+      },
+    });
+    expect(submitted.status).toBe(201);
+
+    const ticket = await request<{ description: string; custom: Record<string, unknown> }>(
+      `/api/v1/tickets/${submitted.body.ticketNumber}`,
+      { token: tenant.people.agent!.token },
+    );
+    expect(ticket.body.description).toBe(
+      'System: Source control\nAccess level: Read and write\n\nWhy you need it:\nI review pull requests for the payments team.\n\nNeeded until: 12 October 2026',
+    );
+    expect(ticket.body.description).not.toMatch(/source-control|accessLevel|: write/);
+    expect(ticket.body.custom).toMatchObject({ system: 'source-control', accessLevel: 'write', until: '2026-10-12' });
+  });
+
+  it('names a person rather than printing their id', async () => {
+    const stamp = Date.now();
+    const formKey = `labelled-${stamp}`;
+    const created = await request('/api/v1/forms', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: {
+        key: formKey,
+        name: 'Software licence',
+        document: {
+          key: formKey,
+          schema: {
+            type: 'object',
+            properties: {
+              manager: { type: 'string', title: 'Manager' },
+              licence: { type: 'string', enum: ['free', 'paid'] },
+              costCentre: { type: 'string' },
+              remote: { type: 'boolean', title: 'Works remotely' },
+            },
+          },
+          ui: {
+            elements: [
+              { kind: 'field', field: 'manager', control: 'user', label: 'Line manager' },
+              { kind: 'field', field: 'licence', control: 'select', label: 'Licence',
+                options: [{ value: 'free', label: 'Free edition' }, { value: 'paid', label: 'Paid licence' }] },
+              { kind: 'field', field: 'costCentre', control: 'text' },
+              { kind: 'field', field: 'remote', control: 'checkbox' },
+            ],
+          },
+        },
+      },
+    });
+    expect(created.status).toBe(201);
+    expect((await request(`/api/v1/forms/${formKey}/publish`, { method: 'POST', token: tenant.people.admin!.token })).status).toBe(200);
+
+    const itemKey = `licence-${stamp}`;
+    const item = await request('/api/v1/request-types', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: { key: itemKey, serviceKey: 'business-applications', name: 'A software licence', formKey },
+    });
+    expect(item.status).toBe(201);
+    expect((await request(`/api/v1/request-types/${itemKey}/publish`, { method: 'POST', token: tenant.people.admin!.token })).status).toBe(200);
+
+    const submitted = await request<{ ticketNumber: string }>(`/api/v1/catalogue/${itemKey}/submit`, {
+      method: 'POST',
+      token: tenant.people.requester!.token,
+      body: { answers: { manager: tenant.people.lead!.id, licence: 'paid', costCentre: 'FIN-204', remote: true } },
+    });
+    expect(submitted.status).toBe(201);
+
+    const ticket = await request<{ description: string }>(`/api/v1/tickets/${submitted.body.ticketNumber}`, {
+      token: tenant.people.admin!.token,
+    });
+    expect(ticket.body.description).toBe(
+      `Line manager: ${tenant.people.lead!.displayName}\nLicence: Paid licence\nCost centre: FIN-204\nWorks remotely: Yes`,
+    );
+    expect(ticket.body.description).not.toContain(tenant.people.lead!.id);
+  });
+});
+
 describe('the server validates the form, not the browser', () => {
   it('refuses a submission missing a required answer', async () => {
     const response = await request<{ detail: string }>('/api/v1/catalogue/system-access/submit', {

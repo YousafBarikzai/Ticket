@@ -26,6 +26,7 @@ import {
   enqueue,
 } from '@itsm/platform';
 import {
+  channelSchema,
   events,
   numberPrefix,
   type CanonicalState,
@@ -73,6 +74,22 @@ registerScopeResolver<repo.TicketRow>({
   orgId: (ticket) => ticket.orgId,
 });
 
+/**
+ * The channels a ticket can be raised on: every channel except `import`.
+ *
+ * `import` used to be accepted here too, and the ticket meter leaves that
+ * channel out, so any caller of `POST /tickets` could raise live work the
+ * meter never counted. How a row arrived is now `ticket.origin`, which only
+ * the import path writes; a creation that claims the channel is refused with
+ * 422 and told where imports go (ADR-0056).
+ */
+export const creatableChannelSchema = channelSchema.exclude(['import'], {
+  errorMap: (issue, context) =>
+    issue.code === 'invalid_enum_value' && issue.received === 'import'
+      ? { message: 'import is not a channel a new ticket can claim; tickets brought in from another tool go through the import API' }
+      : { message: context.defaultError },
+});
+
 export const createTicketSchema = z.object({
   type: z.enum(['incident', 'request', 'problem', 'change', 'task', 'question']).default('incident'),
   title: z.string().min(1).max(500),
@@ -89,7 +106,7 @@ export const createTicketSchema = z.object({
   assigneeId: z.string().uuid().optional(),
   orgId: z.string().uuid().optional(),
   parentId: z.string().uuid().optional(),
-  sourceChannel: z.enum(['portal', 'email', 'api', 'slack', 'teams', 'whatsapp', 'voice', 'mobile', 'import', 'system']).default('api'),
+  sourceChannel: creatableChannelSchema.default('api'),
   channelRef: z.string().max(500).optional(),
   externalRef: z.string().max(200).optional(),
   custom: z.record(z.unknown()).default({}),
@@ -1540,6 +1557,14 @@ export const importTicketSchema = z.object({
   orgId: z.string().uuid().nullable().optional(),
   /** The source's reference, kept so people can still find "INC0012345". */
   externalRef: z.string().min(1).max(200),
+  /**
+   * How the requester reached the desk in the source system, when the source
+   * says. Any real channel; omitted, the ticket records `import` exactly as
+   * every import did before ADR-0056, so a MOD-24 mapping that names no
+   * channel is unchanged. Either way the row's `origin` is `import`, which is
+   * what keeps it off the ticket meter.
+   */
+  sourceChannel: creatableChannelSchema.optional(),
   createdAt: z.coerce.date(),
   resolvedAt: z.coerce.date().nullable().optional(),
   closedAt: z.coerce.date().nullable().optional(),
@@ -1633,7 +1658,9 @@ export async function importTicket(ctx: TenantContext, input: ImportTicketInput)
       groupId: parsed.groupId ?? null,
       serviceId: parsed.serviceId ?? null,
       categoryId: parsed.categoryId ?? null,
-      sourceChannel: 'import',
+      sourceChannel: parsed.sourceChannel ?? 'import',
+      // Provenance, not a channel: set here and nowhere else (ADR-0056).
+      origin: 'import',
       channelRef: null,
       parentId: null,
       externalRef: parsed.externalRef,

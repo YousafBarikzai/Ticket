@@ -26,6 +26,8 @@ export interface TicketRow {
   serviceId: string | null;
   categoryId: string | null;
   sourceChannel: string;
+  /** `native` or `import`: how the row arrived, not how the work did (ADR-0056). */
+  origin: string;
   parentId: string | null;
   dueAt: Date | null;
   resolvedAt: Date | null;

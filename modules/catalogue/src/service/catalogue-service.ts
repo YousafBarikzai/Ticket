@@ -16,7 +16,13 @@ import { events, exprSchema, type FormDefinition, type FormValues } from '@itsm/
 import { ticketService } from '@itsm/module-ticket';
 import { approvalService } from '@itsm/module-approvals';
 import { isEntitled, type RequesterFacts } from '../domain/entitlement.js';
+import { NO_ANSWERS_DESCRIPTION, describeAnswers, userAnswerIds } from '../domain/describe-answers.js';
 import { currentVersion, validateSubmission } from './form-service.js';
+
+// Exported through the service so the demo build (`importSubmission`'s
+// callers) writes request descriptions with the very function a live
+// submission uses, and history reads like today (A4 §5.3).
+export { describeAnswers, userAnswerIds } from '../domain/describe-answers.js';
 
 /**
  * MOD-05 service catalogue and request fulfilment.
@@ -410,6 +416,7 @@ export async function submitRequest(
 
     let accepted: FormValues = {};
     let formVersionId: string | null = null;
+    let description = NO_ANSWERS_DESCRIPTION;
 
     if (item.formKey) {
       const form = await currentVersion(tx, item.formKey);
@@ -425,6 +432,7 @@ export async function submitRequest(
       }
       accepted = outcome.accepted;
       formVersionId = form.version.id;
+      description = describeAnswers(definition, accepted, await displayNames(tx, userAnswerIds(definition, accepted)));
     }
 
     // Everything that routes or prioritises the ticket comes from the item, not
@@ -432,7 +440,7 @@ export async function submitRequest(
     const service = await tx.service.findFirst({ where: { id: item.serviceId } });
     const ticket = await ticketService.createRequestFromCatalogue(ctx, tx, {
       title: item.name,
-      description: describeAnswers(accepted),
+      description,
       requesterId,
       serviceId: item.serviceId,
       groupId: item.groupId ?? service?.groupId ?? null,
@@ -493,13 +501,16 @@ export async function submitRequest(
   });
 }
 
-/** A readable summary of the answers, for the ticket description. */
-function describeAnswers(answers: FormValues): string {
-  const entries = Object.entries(answers);
-  if (entries.length === 0) return 'Raised from the service catalogue.';
-  return entries
-    .map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(', ') : String(value ?? '')}`)
-    .join('\n');
+/**
+ * The display names of the people a request's `user` questions were answered
+ * with, so the description names them rather than printing their ids. Read in
+ * the submission's own transaction, under the tenant's row-level security: an
+ * id from another tenant simply is not found, and reads as "Unknown person".
+ */
+async function displayNames(tx: Tx, ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
+  if (ids.length === 0) return new Map();
+  const people = await tx.user.findMany({ where: { id: { in: [...ids] } }, select: { id: true, displayName: true } });
+  return new Map(people.map((person) => [person.id.toLowerCase(), person.displayName]));
 }
 
 /**

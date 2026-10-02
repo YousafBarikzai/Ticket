@@ -5,7 +5,6 @@ import {
   disconnectDb,
   disconnectRedis,
   logger,
-  platformDb,
   withContext,
   type TenantContext,
 } from '@itsm/platform';
@@ -61,8 +60,14 @@ export interface SeededTenant {
 async function seedTenant(name: string, slug: string, domain: string): Promise<SeededTenant> {
   const existing = await tenantService.findTenantBySlug(slug);
   if (existing) {
-    logger.info('tenant already seeded; removing it so the seed is repeatable', { slug });
-    await platformDb().tenant.delete({ where: { id: existing.id } });
+    // Purged, not deleted. Deleting the directory row alone left every
+    // tenant-scoped row of the old tenant behind — tickets, people, comments,
+    // outbox events, facts — invisible because no context names that id any
+    // more, and one more set of orphans on every re-seed. `purgeTenant` empties
+    // each table inside the tenant's own context, then removes the row; the
+    // audit trail is append-only and is reported as retained (ADR-0014).
+    const purged = await tenantService.purgeTenant(existing.id);
+    logger.info('tenant already seeded; purged it so the seed is repeatable', { slug, rows: purged.rows, retained: purged.retained });
   }
 
   const { tenantId } = await tenantService.provisionTenant({ name, slug, region: 'eu-west' });
