@@ -65,6 +65,7 @@ An ADR records one architecturally significant decision: the context, the decisi
 | [0050](0050-a-pipeline-that-runs-before-it-can-deploy.md) | A pipeline that runs before it can deploy | Accepted | OD-06, doc 16 |
 | [0051](0051-a-decision-is-not-a-generation.md) | A decision is not a generation | Accepted | ADR-06, MOD-09, MOD-07, doc 13 |
 | [0052](0052-redesign-ui-primitives-and-frame.md) | The redesign's primitives, and the frame they sit in | Accepted | MOD-16, MOD-16-E1, doc 14 §2, §4, §8 |
+| [0062](0062-a-public-site-in-front-of-the-product.md) | A public site in front of the product | Accepted | D14, doc 14 §1, doc 16 §1 |
 
 ## Template
 

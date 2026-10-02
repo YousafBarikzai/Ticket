@@ -188,6 +188,8 @@ const SERVER_SAFE = [
   'display/Disclosure.tsx',
   'display/Prose.tsx',
   'display/FileChip.tsx',
+  'display/Count.tsx',
+  'display/ticket-states.ts',
   'web/Badge.tsx',
   'web/Avatar.tsx',
   'web/RichText.tsx',
@@ -213,6 +215,7 @@ const SERVER_SAFE = [
   'charts/parts.tsx',
   'charts/texture.tsx',
   'charts/scale.ts',
+  'charts/tone.ts',
   'theme/theme-script.ts',
   // Not the `theme` barrel: it re-exports `ThemeProvider`, a client module.
   // The script and the preference rules are what a server layout imports.

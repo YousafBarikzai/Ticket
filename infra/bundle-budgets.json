@@ -101,6 +101,7 @@
         "/workforce/shifts": 362530,
         "/workforce/skills": 362541
       }
-    }
+    },
+    "site": { "budget": 150000, "enforceGrowth": true, "baselines": {} }
   }
 }

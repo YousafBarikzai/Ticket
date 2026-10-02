@@ -710,6 +710,7 @@ const MATRIX: MatrixEntry[] = [
     allowed: [],
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 403 },
   },
+  { what: 'read the deployment warnings (D24)', path: () => '/api/platform/v1/deployment-warnings', allowed: [], deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 403 } },
 ];
 
 let tenant: TestTenant;

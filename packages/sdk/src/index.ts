@@ -5,6 +5,7 @@ export {
   admin,
   type ActivityRow,
   type Admin,
+  type DeploymentWarning,
   type FieldRow,
   type FlagRow,
   type ModuleRow,

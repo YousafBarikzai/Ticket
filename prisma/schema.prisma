@@ -3657,6 +3657,12 @@ model SlaTimer {
   nextWarningAt DateTime? @map("next_warning_at") @db.Timestamptz(6)
   metAt         DateTime? @map("met_at") @db.Timestamptz(6)
   breachedAt    DateTime? @map("breached_at") @db.Timestamptz(6)
+  /// An `update` target restarts on every agent reply (F1, ADR-0057): the
+  /// cycle counts on this row rather than as new rows, so reporting keeps one
+  /// fact per ticket and target. `cycleStartedAt` is null until the first
+  /// restart; cycle 1 began at `startedAt`.
+  cycle         Int       @default(1)
+  cycleStartedAt DateTime? @map("cycle_started_at") @db.Timestamptz(6)
   /// hash(ticket_id) % 16: the scheduler scans one partition per tick job.
   partition     Int       @default(0)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -3906,6 +3912,10 @@ model Tenant {
   status          String    @default("provisioning")
   parentTenantId  String?   @map("parent_tenant_id") @db.Uuid
   region          String    @default("eu-west")
+  /// 'standard' for a real customer, 'demo' for the shared demo (D25). Fixed
+  /// at insert: a database trigger refuses any change, and the application
+  /// role cannot write this table at all (20261002100000_v3_tenant_kind).
+  kind            String    @default("standard")
   /// Where this tenant's prompts may be processed. Empty means "wherever this
   /// tenant's own data lives" — the safe reading, and the one that needs no
   /// backfill guess for a tenant provisioned before the policy existed.
@@ -4125,6 +4135,10 @@ model Ticket {
   categoryId     String?   @map("category_id") @db.Uuid
   sourceChannel  String    @default("api") @map("source_channel")
   channelRef     String?   @map("channel_ref")
+  /// How the row reached the database, as distinct from how the work reached
+  /// the desk: `native` or `import` (CHECK constraint). Only the import path
+  /// writes `import`, and the ticket meter leaves those out (ADR-0056).
+  origin         String    @default("native")
   parentId       String?   @map("parent_id") @db.Uuid
   slaPolicyId    String?   @map("sla_policy_id") @db.Uuid
   dueAt          DateTime? @map("due_at") @db.Timestamptz(6)

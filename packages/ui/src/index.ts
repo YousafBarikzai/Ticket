@@ -94,6 +94,7 @@ export { BrandMark, Icon, type BrandMarkProps, type IconProps } from './icons/in
 /* -------------------------------------------------------------------- Actions */
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './web/Button.js';
 export { IconButton, type IconButtonProps } from './web/IconButton.js';
+export { InfoTipTrigger, type InfoTipContent, type InfoTipTriggerProps } from './web/InfoTipTrigger.js';
 export { Kbd, type KbdProps } from './web/Kbd.js';
 
 /* --------------------------------------------------------------------- Inputs */
@@ -229,34 +230,59 @@ export {
 export { RelativeTime, type RelativeTimeProps } from './format/RelativeTime.js';
 export {
   ActivityFeed,
+  APPROVAL_STATE_LOOK,
+  approvalStateLook,
   AvatarStack,
   // A ticket channel as a glyph and a word ("email" → Email, mail), for charts and lists that name channels.
   channelInfo,
+  COMPONENT_STATE_LOOK,
+  Count,
   DescriptionList,
   Disclosure,
   FileChip,
   isDisclosureKey,
+  MAJOR_INCIDENT_LOOK,
+  PRIORITY_LOOK,
+  priorityLook,
+  PROBLEM_STATE_LOOK,
   Prose,
+  SLA_STATE_LOOK,
+  STATUS_CATEGORY_LOOK,
   StatusPill,
   Stepper,
   Surface,
+  TICKET_STATE_LOOK,
+  ticketStateLook,
+  ticketTypeLook,
+  TYPE_LOOK,
   type ActivityActor,
   type ActivityFeedProps,
   type ActivityItem,
+  type ApprovalStateKey,
   type AvatarStackPerson,
   type AvatarStackProps,
   type ChannelInfo,
+  type ComponentStateKey,
+  type CountProps,
   type DescriptionItem,
   type DescriptionListProps,
   type DisclosureProps,
   type FileChipProps,
   type FileChipState,
+  type PriorityKey,
+  type PriorityLook,
+  type ProblemStateKey,
   type ProseProps,
+  type SlaStateKey,
+  type StateLook,
+  type StatusCategoryKey,
   type StatusPillProps,
   type StepStatus,
   type StepperProps,
   type StepperStep,
   type SurfaceProps,
+  type TicketStateKey,
+  type TicketTypeKey,
 } from './display/index.js';
 
 /* ----------------------------------------------------------------- Deprecated

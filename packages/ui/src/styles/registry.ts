@@ -70,6 +70,7 @@ import { olderNewerStyles } from '../data/OlderNewer.styles.js';
 import { viewMenuStyles } from '../data/ViewMenu.styles.js';
 import { activityFeedStyles } from '../display/ActivityFeed.styles.js';
 import { avatarStackStyles } from '../display/AvatarStack.styles.js';
+import { countStyles } from '../display/Count.styles.js';
 import { descriptionListStyles } from '../display/DescriptionList.styles.js';
 import { disclosureStyles } from '../display/Disclosure.styles.js';
 import { fileChipStyles } from '../display/FileChip.styles.js';
@@ -99,6 +100,7 @@ import { confirmDialogStyles } from '../overlays/ConfirmDialog.styles.js';
 import { conflictDialogStyles } from '../overlays/ConflictDialog.styles.js';
 import { contextMenuStyles } from '../overlays/ContextMenu.styles.js';
 import { dateRangePickerStyles } from '../overlays/DateRangePicker.styles.js';
+import { infoTipStyles } from '../overlays/InfoTip.styles.js';
 import { menuStyles } from '../overlays/Menu.styles.js';
 import { personPickerStyles } from '../overlays/PersonPicker.styles.js';
 import { popoverStyles } from '../overlays/Popover.styles.js';
@@ -210,6 +212,7 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'feedback/ConnectionStatus.styles.ts', css: connectionStatusStyles },
   { module: 'feedback/Skeletons.styles.ts', css: skeletonsStyles },
   { module: 'display/StatusPill.styles.ts', css: statusPillStyles },
+  { module: 'display/Count.styles.ts', css: countStyles },
   { module: 'display/AvatarStack.styles.ts', css: avatarStackStyles },
   { module: 'display/DescriptionList.styles.ts', css: descriptionListStyles },
   { module: 'display/Disclosure.styles.ts', css: disclosureStyles },
@@ -220,6 +223,7 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'overlays/Menu.styles.ts', css: menuStyles },
   { module: 'overlays/ContextMenu.styles.ts', css: contextMenuStyles },
   { module: 'overlays/Popover.styles.ts', css: popoverStyles },
+  { module: 'overlays/InfoTip.styles.ts', css: infoTipStyles },
   { module: 'overlays/Sheet.styles.ts', css: sheetStyles },
   { module: 'overlays/ConfirmDialog.styles.ts', css: confirmDialogStyles },
   { module: 'overlays/ConflictDialog.styles.ts', css: conflictDialogStyles },

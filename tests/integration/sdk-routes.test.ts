@@ -164,6 +164,8 @@ describe('the SDK calls routes that exist, with the method it uses', () => {
     expect(await mounted('POST', `/api/v1/tickets/${UUID}/comments`)).toBe(true);
   });
 
+  it('mounts GET /api/platform/v1/deployment-warnings, which the reader above does not scan (D24)', async () => expect(await mounted('GET', '/api/platform/v1/deployment-warnings')).toBe(true));
+
   for (const call of calls) {
     it(`mounts ${call.method} ${call.path}`, async () => {
       expect(await mounted(call.method, call.path), `${call.method} ${call.path} (${call.where}) has no route`).toBe(true);

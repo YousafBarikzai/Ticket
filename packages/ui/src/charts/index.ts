@@ -14,7 +14,9 @@ export { ProgressRing, type ProgressRingProps } from './ProgressRing.js';
 export { Sparkline, type SparklineProps } from './Sparkline.js';
 export { StatCard, type StatCardDelta, type StatCardProps } from './StatCard.js';
 export { StatGrid, type StatGridProps } from './StatGrid.js';
+export { chartToneOutline, chartToneVar } from './tone.js';
 export type { ChartSlot, ChartTableMode } from './types.js';
+export type { ChartTone } from './types.js';
 /** "Rising, 12 → 18": the words a `Sparkline` is named by. */
 export { describeTrend } from './scale.js';
 // Deprecated: wrappers over `StatCard` and `StatGrid` until nothing imports them.

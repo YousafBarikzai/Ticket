@@ -6,6 +6,7 @@ export * from './crypto.js';
 export * from './secrets.js';
 export * from './errors.js';
 export * from './config.js';
+export * from './config-warnings.js';
 export * from './context.js';
 export * from './authz.js';
 export * from './db.js';
