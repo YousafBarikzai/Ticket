@@ -61,11 +61,6 @@ export const cardStyles = layer(
 .itsm-Card[data-radius="xl"] { --_itsm-card-radius: var(--itsm-radius-xl); }
 .itsm-Card[data-radius="3xl"] { --_itsm-card-radius: var(--itsm-radius-3xl); }
 
-/* The outline tone draws its edge as a border here, not as Surface's inset hairline, so it is not drawn twice. */
-.itsm-Card[data-tone="outline"] {
-  --_itsm-surface-edge: 0 0 0 0 transparent;
-}
-
 /* ------------------------------------------------------------- Head */
 
 .itsm-Card__header {

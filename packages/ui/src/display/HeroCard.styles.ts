@@ -107,6 +107,7 @@ export const heroCardStyles = layer(
   background: var(--itsm-hero-card-background);
   box-shadow: var(--itsm-elevation-hero);
   color: var(--_itsm-hero-text);
+  -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
