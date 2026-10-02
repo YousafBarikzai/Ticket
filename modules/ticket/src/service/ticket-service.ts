@@ -1562,9 +1562,10 @@ export const importTicketSchema = z.object({
    * says. Any real channel; omitted, the ticket records `import` exactly as
    * every import did before ADR-0056, so a MOD-24 mapping that names no
    * channel is unchanged. Either way the row's `origin` is `import`, which is
-   * what keeps it off the ticket meter.
+   * what keeps it off the ticket meter — so, unlike a creation, an import may
+   * name `import` itself: it is only the default said out loud.
    */
-  sourceChannel: creatableChannelSchema.optional(),
+  sourceChannel: channelSchema.default('import'),
   createdAt: z.coerce.date(),
   resolvedAt: z.coerce.date().nullable().optional(),
   closedAt: z.coerce.date().nullable().optional(),
@@ -1658,7 +1659,7 @@ export async function importTicket(ctx: TenantContext, input: ImportTicketInput)
       groupId: parsed.groupId ?? null,
       serviceId: parsed.serviceId ?? null,
       categoryId: parsed.categoryId ?? null,
-      sourceChannel: parsed.sourceChannel ?? 'import',
+      sourceChannel: parsed.sourceChannel,
       // Provenance, not a channel: set here and nowhere else (ADR-0056).
       origin: 'import',
       channelRef: null,
