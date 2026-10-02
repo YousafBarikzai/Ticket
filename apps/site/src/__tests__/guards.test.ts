@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { uiStylesheet } from '@itsm/ui/styles';
 
 /**
  * What the public site may not become (SPEC v3 §6.1; A5 §3.1, §3.10, §13.1).
@@ -76,6 +77,15 @@ describe('site.css', () => {
     expect(css.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(css.match(/\brgba?\(/gi) ?? []).toEqual([]);
     expect(css.match(/\bhsla?\(/gi) ?? []).toEqual([]);
+  });
+
+  it('reads only custom properties the design system defines', () => {
+    // A renamed token would otherwise leave a declaration that silently
+    // computes to nothing — a card with no background, text with no colour.
+    const sheet = uiStylesheet();
+    const used = [...new Set([...css.matchAll(/var\((--itsm-[\w-]+)/g)].map((match) => match[1]!))];
+    expect(used.length).toBeGreaterThan(0);
+    expect(used.filter((name) => !sheet.includes(`${name}:`))).toEqual([]);
   });
 
   it('keeps to the app- prefix, leaving itsm- to the design system', () => {

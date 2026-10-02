@@ -717,7 +717,7 @@ describe('the pull pre-flight (Y-M6)', () => {
     const { fetcher, requests } = publicRegistry();
     await expect(checkPullable('ghcr.io', 'yousafbarikzai/ticket/site', 'sha-abc1234', fetcher)).resolves.toEqual({ verdict: 'pullable', detail: '200' });
     expect(requests[0]).toMatchObject({
-      url: 'https://ghcr.io/token?service=ghcr.io&scope=repository%3Ayousafbarikzai%2Fticket%2Fsite%3Apull',
+      url: 'https://ghcr.io/token?service=ghcr.io&scope=repository:yousafbarikzai/ticket/site:pull',
       method: 'GET',
     });
     expect(requests[1]).toMatchObject({
@@ -725,7 +725,7 @@ describe('the pull pre-flight (Y-M6)', () => {
       method: 'HEAD',
       headers: { accept: MANIFEST_ACCEPT, authorization: 'Bearer anonymous' },
     });
-    expect(pullTokenUrl('ghcr.io', 'o/r/site')).toBe(requests[0]!.url.replace('yousafbarikzai%2Fticket', 'o%2Fr'));
+    expect(pullTokenUrl('ghcr.io', 'o/r/site')).toBe('https://ghcr.io/token?service=ghcr.io&scope=repository:o/r/site:pull');
     expect(manifestUrl('ghcr.io', 'o/r/site', 'v1.2.3')).toBe('https://ghcr.io/v2/o/r/site/manifests/v1.2.3');
     // An index first: a multi-platform image answers with one.
     expect(MANIFEST_ACCEPT.split(', ')[0]).toBe('application/vnd.oci.image.index.v1+json');
@@ -756,6 +756,19 @@ describe('the pull pre-flight (Y-M6)', () => {
     );
     await expect(assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: fetcher, env: {}, log })).rejects.toThrow(
       /DEPLOY_SKIP_PULL_CHECK=1[\s\S]*needed by site, which this deploy would create/,
+    );
+  });
+
+  it('tells a missing tag from a private package, because the fixes differ', async () => {
+    // Against GHCR: a private or unknown package refuses the token (403); a
+    // readable package without this tag answers the manifest with 404.
+    const untagged = registry((path, kind) => (path.endsWith('/site') && kind === 'manifest' ? { status: 404 } : { status: 200 }));
+    await expect(assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: untagged.fetcher, env: {}, log: vi.fn() })).rejects.toThrow(
+      'ghcr.io/yousafbarikzai/ticket/site:sha-1 does not exist: the registry has no image with that tag, so Railway cannot pull it. Check that this commit\'s image build for site pushed it, then re-run this deploy.',
+    );
+    const denied = registry((path, kind) => (path.endsWith('/site') && kind === 'token' ? { status: 403 } : { status: 200 }));
+    await expect(assertPullable(catalogue, 'production', 'sha-1', withoutSite, { fetch: denied.fetcher, env: {}, log: vi.fn() })).rejects.toThrow(
+      /ticket\/site is not publicly pullable/,
     );
   });
 

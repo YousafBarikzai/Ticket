@@ -365,9 +365,14 @@ export const MANIFEST_ACCEPT = [
   'application/vnd.docker.distribution.manifest.v2+json',
 ].join(', ');
 
-/** GHCR's anonymous token for pulling one package: what Railway itself would be given. */
+/**
+ * GHCR's anonymous token for pulling one package: what Railway itself would be
+ * given. Written as a registry client writes it (`scope=repository:<path>:pull`,
+ * colons and slashes as they are); the path is lowercase alphanumerics and
+ * separators, which the catalogue's own test holds it to.
+ */
 export function pullTokenUrl(registry: string, path: string): string {
-  return `https://${registry}/token?service=${encodeURIComponent(registry)}&scope=${encodeURIComponent(`repository:${path}:pull`)}`;
+  return `https://${registry}/token?service=${registry}&scope=repository:${path}:pull`;
 }
 
 export function manifestUrl(registry: string, path: string, tag: string): string {
@@ -422,6 +427,20 @@ export function pullFix(registry: string, path: string): string {
   return `${registry}/${path} is not publicly pullable, so Railway cannot pull it. Make it public: GitHub → your profile → Packages → ${packageName(path)} → Package settings → Change visibility → Public, then re-run this deploy. If Railway pulls with a registry credential instead, set the repository variable DEPLOY_SKIP_PULL_CHECK=1.`;
 }
 
+/**
+ * The sentence for one refusal. A manifest 404 *after* GHCR handed out a pull
+ * token is a different fault from privacy — the package is readable and has no
+ * image with this tag — and the fix is the image build, not a visibility
+ * setting, so it says that instead. (Checked against GHCR: an unknown or
+ * private package refuses the token itself, 403.)
+ */
+export function pullProblem(registry: string, check: Pick<PullCheck, 'path' | 'detail'>, tag: string): string {
+  if (check.detail === 'manifest 404') {
+    return `${registry}/${check.path}:${tag} does not exist: the registry has no image with that tag, so Railway cannot pull it. Check that this commit's image build for ${check.path.split('/').pop()} pushed it, then re-run this deploy.`;
+  }
+  return pullFix(registry, check.path);
+}
+
 export interface PullOptions {
   readonly fetch?: typeof fetch;
   readonly env?: Readonly<Record<string, string | undefined>>;
@@ -467,7 +486,7 @@ export async function assertPullable(
     // that did not answer: worth a line in the run, not a stopped deploy.
     const why =
       check.verdict === 'refused'
-        ? `${pullFix(registry, check.path)} (${check.services.join(', ')} already exist, so this deploy goes ahead in case they pull with a credential.)`
+        ? `${pullProblem(registry, check, tag)} (${check.services.join(', ')} already exist, so this deploy goes ahead in case they pull with a credential.)`
         : `Could not check whether ${registry}/${check.path}:${tag} is pullable (${check.detail}); deploying anyway.`;
     log(`::warning title=Image pull::${why}`);
   }
@@ -476,7 +495,7 @@ export async function assertPullable(
     throw new Error(
       [
         'The deploy stopped before changing anything in Railway:',
-        ...blocking.map((check) => `  - ${pullFix(registry, check.path)} (needed by ${check.newServices.join(', ')}, which this deploy would create.)`),
+        ...blocking.map((check) => `  - ${pullProblem(registry, check, tag)} (needed by ${check.newServices.join(', ')}, which this deploy would create.)`),
       ].join('\n'),
     );
   }

@@ -139,5 +139,6 @@ the URL in script and navigates, never posts.
 - Until the owner moves to a custom domain the site is not indexed. That is the
   point, and it needs no code change to undo.
 - A fourth image is built, scanned and pushed on every pull request, and CI
-  builds a fourth Next app (about a minute and a half on a hosted runner).
+  builds a fourth Next app. The skeleton measured 131.5 kB of first-load
+  JavaScript per route — the framework floor — against its 150 kB budget.
 - Operations live in `docs/runbooks/public-site.md`.
