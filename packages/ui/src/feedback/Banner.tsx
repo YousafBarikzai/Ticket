@@ -14,6 +14,11 @@ import { toneIcon } from './tone.js';
 
 export interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'children' | 'role'> {
   readonly tone: Tone;
+  /**
+   * A short uppercase label over the title in the tone's text colour: "Major
+   * incident", "Sample data" (D6 allows kickers in banners and heroes only).
+   */
+  readonly kicker?: string;
   readonly title?: string;
   readonly children?: ReactNode;
   /** The tone's icon by default; `false` for none. */
@@ -39,8 +44,9 @@ export interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title
 
 /**
  * A section-level notice: "Couldn't load failed deliveries · Retry", "This
- * policy goes live immediately", "Search is in reduced mode". Replaces the
- * drafts' `Callout`.
+ * policy goes live immediately", "Search is in reduced mode", and below
+ * 1024 px the major incident above a list (`kicker="Major incident"`).
+ * Replaces the drafts' `Callout`.
  *
  * Icon and words together, never colour alone (SPEC §1.1). A status region by
  * default, and an alert only when the caller says the person's own action
@@ -57,6 +63,7 @@ export interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title
  */
 export function Banner({
   tone,
+  kicker,
   title,
   children,
   icon,
@@ -98,9 +105,10 @@ export function Banner({
       data-tone={tone}
       data-variant={variant}
     >
-      {shownIcon ? <Icon name={shownIcon} className="itsm-Banner__icon" /> : null}
+      {shownIcon ? <Icon name={shownIcon} size="sm" className="itsm-Banner__icon" /> : null}
       <div className="itsm-Banner__main">
         <div className="itsm-Banner__content">
+          {kicker ? <p className="itsm-Banner__kicker">{kicker}</p> : null}
           {title ? <p className="itsm-Banner__title">{title}</p> : null}
           {children !== undefined && children !== null && children !== false ? (
             <div className="itsm-Banner__body">{children}</div>

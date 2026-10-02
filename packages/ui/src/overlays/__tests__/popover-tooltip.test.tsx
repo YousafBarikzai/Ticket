@@ -2,6 +2,7 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestProvider } from '../../provider/__tests__/support/provider.js';
+import { tooltipStyles } from '../../web/Tooltip.styles.js';
 import { Tooltip } from '../../web/Tooltip.js';
 import { activeElement, cleanupDocument, click, focus, pointerDown, pointerEnter, press, render, settle } from '../../web/__tests__/support/render.js';
 import { Popover } from '../Popover.js';
@@ -128,6 +129,25 @@ describe('Tooltip', () => {
     advance(300);
     expect(bubble()).toBeNull();
     expect(activeElement()).toBe(trigger);
+  });
+
+  it('is the v3 bubble: inverse slate, radius 8, at most 240 px, with the shortcut caps inside it', () => {
+    const bubbleRule = tooltipStyles.match(/\.itsm-Tooltip__content \{([^}]*)\}/)![1]!;
+    expect(bubbleRule).toContain('background: var(--itsm-colour-surface-inverse);');
+    expect(bubbleRule).toContain('color: var(--itsm-colour-text-inverse);');
+    expect(bubbleRule).toContain('border-radius: var(--itsm-radius-md);');
+    expect(bubbleRule).toContain('max-inline-size: min(15rem, calc(100vw - 2 * var(--itsm-space-xs)));');
+    expect(bubbleRule).toContain('font-size: var(--itsm-text-footnote-size);');
+    render(
+      <Tooltip content="Copy the ticket link" shortcut="mod+shift+c">
+        <button type="button">Copy</button>
+      </Tooltip>,
+    );
+    press(document.body, 'Tab');
+    focus(document.querySelector<HTMLButtonElement>('button')!);
+    advance(10);
+    // The caps sit in the bubble, where the key-cap stylesheet draws them from its text colour.
+    expect(bubble()?.querySelector('.itsm-Kbd')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('names an icon-only control up front with asLabel, instead of describing it', () => {

@@ -26,9 +26,10 @@ export interface KbdProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> 
  * sign", if at all. Inside a control that already announces its shortcut
  * (`aria-keyshortcuts`), pass `aria-hidden` to silence the hint.
  *
- * The caps take their colour from the text around them and tint their face and
- * edge from it, so one hint reads right on a card, in a menu, on a dark
- * tooltip and in every theme.
+ * The caps are small raised keys in `text.muted` (v3 §2.14). On a dark
+ * tooltip or a navy surface the stylesheet draws them from the text colour
+ * around them instead, so one hint reads right on a card, in a menu, on a
+ * tooltip and in every theme without a prop for each.
  */
 export function Kbd({ keys, size = 'md', className, ...rest }: KbdProps): ReactNode {
   const shortcut = parseShortcut(keys);

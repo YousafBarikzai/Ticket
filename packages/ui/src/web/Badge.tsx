@@ -5,6 +5,9 @@ import type { IntentName } from '../tokens/tokens.js';
 import type { IconName, Tone } from '../types.js';
 import { cx } from './cx.js';
 
+/** The three states of a live connection the live dot can show. */
+export type BadgeDotState = 'live' | 'reconnecting' | 'offline';
+
 export interface BadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
   readonly children: ReactNode;
   /** The colour family. `neutral` by default. Never the only carrier of meaning: the label is. */
@@ -26,6 +29,15 @@ export interface BadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'child
   readonly icon?: IconName;
   /** Draws a dot before the label. Colour alone never carries the meaning (SC 1.4.1): the label does. */
   readonly dot?: boolean;
+  /**
+   * Makes the dot a connection's live dot (v3 §2.14), drawn in the state's
+   * own colour whatever the badge's tone: `live` green with a 2 s pulse ring
+   * (still under reduced motion), `reconnecting` amber, `offline` grey. Draws
+   * the dot by itself. The label must say the state in words — "Live",
+   * "Reconnecting…", "Offline" — because the dot is hidden from assistive
+   * technology and a colour is not a word.
+   */
+  readonly dotState?: BadgeDotState;
   /**
    * Prefix spoken before the label, e.g. "Priority". Badges are usually read
    * out of context in a table row, where "P1" alone means nothing.
@@ -55,6 +67,7 @@ export function Badge({
   size = 'md',
   icon,
   dot = false,
+  dotState,
   srPrefix,
   className,
   ref,
@@ -70,7 +83,7 @@ export function Badge({
       data-emphasis={emphasis}
       data-size={size}
     >
-      {dot ? <span className="itsm-Badge__dot" aria-hidden="true" /> : null}
+      {dot || dotState ? <span className="itsm-Badge__dot" data-state={dotState} aria-hidden="true" /> : null}
       {icon ? <Icon name={icon} size={size === 'sm' ? 12 : 'xs'} className="itsm-Badge__icon" /> : null}
       {srPrefix ? <span className="itsm-visually-hidden">{`${srPrefix}: `}</span> : null}
       {children}
