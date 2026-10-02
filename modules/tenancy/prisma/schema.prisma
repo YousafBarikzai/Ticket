@@ -10,6 +10,10 @@ model Tenant {
   status          String    @default("provisioning")
   parentTenantId  String?   @map("parent_tenant_id") @db.Uuid
   region          String    @default("eu-west")
+  /// 'standard' for a real customer, 'demo' for the shared demo (D25). Fixed
+  /// at insert: a database trigger refuses any change, and the application
+  /// role cannot write this table at all (20261002100000_v3_tenant_kind).
+  kind            String    @default("standard")
   /// Where this tenant's prompts may be processed. Empty means "wherever this
   /// tenant's own data lives" — the safe reading, and the one that needs no
   /// backfill guess for a tenant provisioned before the policy existed.

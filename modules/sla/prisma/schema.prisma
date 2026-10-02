@@ -96,6 +96,12 @@ model SlaTimer {
   nextWarningAt DateTime? @map("next_warning_at") @db.Timestamptz(6)
   metAt         DateTime? @map("met_at") @db.Timestamptz(6)
   breachedAt    DateTime? @map("breached_at") @db.Timestamptz(6)
+  /// An `update` target restarts on every agent reply (F1, ADR-0057): the
+  /// cycle counts on this row rather than as new rows, so reporting keeps one
+  /// fact per ticket and target. `cycleStartedAt` is null until the first
+  /// restart; cycle 1 began at `startedAt`.
+  cycle         Int       @default(1)
+  cycleStartedAt DateTime? @map("cycle_started_at") @db.Timestamptz(6)
   /// hash(ticket_id) % 16: the scheduler scans one partition per tick job.
   partition     Int       @default(0)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
