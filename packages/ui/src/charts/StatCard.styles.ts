@@ -198,7 +198,7 @@ export const statCardStyles = layer(
   align-self: start;
   justify-self: end;
   min-inline-size: 0;
-  /* The pill's middle on the numeral's cap height rather than its line box's top. */
+  /* Top right of the value, centred on the numeral's 32 px line rather than sitting on its top edge. */
   margin-block-start: calc((var(--itsm-text-statValue-line) - var(--itsm-space-ml)) / 2);
 }
 
