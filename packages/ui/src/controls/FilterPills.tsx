@@ -229,12 +229,24 @@ export function FilterPills({ label, options, value, mode, onValueChange, summar
 
   const phone = !useMediaQuery(MD_UP, true);
   const [expanded, setExpanded] = useState(false);
+  // The first pill "More" revealed, to take focus once it is in view.
+  const revealed = useRef<string | null>(null);
   const overflow = usePhoneOverflow(root, list, options, selected, phone);
   const parked = useMemo(() => new Set(expanded ? NONE : overflow), [expanded, overflow]);
   // Once nothing is behind "More" there is nothing to expand.
   useEffect(() => {
     if (overflow.length === 0 && expanded) setExpanded(false);
   }, [overflow, expanded]);
+  // The pills "More" shows appear before it, in their own places; focus goes
+  // to the first of them (as "Load more" does), or a keyboard or screen-reader
+  // user would have to go back to find what they asked to see.
+  useIsomorphicLayoutEffect(() => {
+    const value = revealed.current;
+    revealed.current = null;
+    if (!expanded || value === null) return;
+    const pill = [...(root.current?.querySelectorAll<HTMLElement>('.itsm-FilterPills__pill[data-value]') ?? [])].find((element) => element.dataset.value === value);
+    pill?.focus();
+  }, [expanded]);
 
   const selectedIndex = mode === 'single' ? options.findIndex((option) => selected.has(option.value)) : -1;
   const firstEnabled = Math.max(
@@ -282,7 +294,13 @@ export function FilterPills({ label, options, value, mode, onValueChange, summar
       hidden={expanded ? 0 : overflow.length}
       parked={!showMore}
       locale={locale}
-      onToggle={() => setExpanded((open) => !open)}
+      onToggle={() => {
+        if (!expanded) {
+          const reachable = (option: FilterPillOption): boolean => !option.disabled && (mode !== 'nav' || option.href !== undefined);
+          revealed.current = options.find((option) => overflow.includes(option.value) && reachable(option))?.value ?? null;
+        }
+        setExpanded((open) => !open);
+      }}
       asListItem={mode === 'nav'}
     />
   ) : null;
@@ -299,7 +317,7 @@ export function FilterPills({ label, options, value, mode, onValueChange, summar
             if (option.disabled || option.href === undefined) {
               return (
                 <li key={option.value} {...item}>
-                  <span role="link" aria-disabled="true" className="itsm-FilterPills__pill" data-tone={option.tone} data-on={on ? '' : undefined}>
+                  <span role="link" aria-disabled="true" className="itsm-FilterPills__pill" data-value={option.value} data-tone={option.tone} data-on={on ? '' : undefined}>
                     {body}
                   </span>
                 </li>
@@ -308,6 +326,7 @@ export function FilterPills({ label, options, value, mode, onValueChange, summar
             const linkProps = {
               href: option.href,
               className: 'itsm-FilterPills__pill',
+              'data-value': option.value,
               'aria-current': on ? ('page' as const) : undefined,
               'data-tone': option.tone,
               'data-on': on ? '' : undefined,
@@ -339,6 +358,7 @@ export function FilterPills({ label, options, value, mode, onValueChange, summar
           const shared = {
             type: 'button' as const,
             className: 'itsm-FilterPills__pill itsm-FilterPills__item',
+            'data-value': option.value,
             'data-pill-item': '',
             'data-overflow': isParked ? '' : undefined,
             'data-tone': option.tone,
@@ -399,9 +419,10 @@ export function FilterPills({ label, options, value, mode, onValueChange, summar
 /**
  * The phone row's "More": a disclosure that shows the pills that did not fit
  * on two lines, in place and in their own order, so each keeps its meaning
- * (a link stays a link, a radio a radio). It is always rendered on a phone —
- * parked out of sight when nothing overflows — so its width can be measured
- * before it is needed.
+ * (a link stays a link, a radio a radio), and moves focus to the first of
+ * them. It is always rendered on a phone — parked out of sight when nothing
+ * overflows — so its width can be measured before it is needed. Its name is
+ * "More filters", with the number it holds back.
  */
 function MoreButton({
   controls,

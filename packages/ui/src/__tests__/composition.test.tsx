@@ -2,7 +2,9 @@
 import { act, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { announcerText, destroyAnnouncer, installAnnouncer } from '../a11y/announcer.js';
+import { FilterPills } from '../controls/FilterPills.js';
 import { SearchField } from '../controls/SearchField.js';
+import { SegmentedControl } from '../controls/SegmentedControl.js';
 import { DataTable } from '../data/DataTable.js';
 import { Form, FormActions } from '../formkit/Form.js';
 import { Sheet } from '../overlays/Sheet.js';
@@ -13,6 +15,7 @@ import { resetRecentsForTesting } from '../provider/recents.js';
 import { PageHeader } from '../shell/PageHeader.js';
 import { resetShortcutsDialog } from '../shell/shortcuts.js';
 import { resetSidebarMemoryForTesting } from '../shell/Sidebar.js';
+import { TabNav } from '../shell/TabNav.js';
 import { createLocation, setViewport, sidebarProps } from '../shell/__tests__/support.js';
 import { componentStylesheet } from '../styles/index.js';
 import type { ActionSpec } from '../types.js';
@@ -23,6 +26,7 @@ import { Dialog } from '../web/Dialog.js';
 import { EmptyState } from '../web/EmptyState.js';
 import { FormField } from '../web/FormField.js';
 import { Input } from '../web/Input.js';
+import { Tabs } from '../web/Tabs.js';
 import { expectNoViolations } from '../web/__tests__/support/audit.js';
 import { activeElement, cleanupDocument, click, focus, press, render, settle, typeInto } from '../web/__tests__/support/render.js';
 
@@ -137,7 +141,7 @@ describe('buttons in a dialog’s footer', () => {
             <Button variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" disabledReason="Needs a connection">
+            <Button variant="primary" disabledReason="Needs a connection" disabledIcon="lock">
               Publish
             </Button>
           </>
@@ -179,7 +183,44 @@ describe('buttons in a dialog’s footer', () => {
     const bubble = [...dialog.querySelectorAll<HTMLElement>('*')].find((node) => node.textContent === 'Needs a connection' && !node.hidden);
     expect(bubble).toBeTruthy();
     expect(activeElement()).toBe(publish);
+    // The lock is decoration beside the words; the name stays the label.
+    expect(publish.querySelector('.itsm-Button__lock')?.getAttribute('aria-hidden')).toBe('true');
+    expect(publish.textContent).toBe('Publish');
     await expectNoViolations(document.body);
+  });
+});
+
+describe('one count, four controls', () => {
+  it('draws and speaks a count the same in a tab, a route tab, a segment and a filter pill', () => {
+    const location = createLocation('/rules');
+    render(
+      <TestProvider>
+        <location.Provider>
+          <Tabs label="Sections" items={[{ id: 'a', label: 'Rules', count: 5, content: <p>Rules</p> }]} />
+          <TabNav label="Pages" items={[{ id: 'a', label: 'Rules', href: '/rules', count: 5 }]} />
+          <SegmentedControl label="Scope" mode="value" value="a" options={[{ value: 'a', label: 'Rules', count: 5 }]} />
+          <FilterPills label="Filter" mode="nav" value="a" options={[{ value: 'a', label: 'Rules', count: 5, href: '/rules' }]} />
+        </location.Provider>
+      </TestProvider>,
+    );
+    const spoken = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+      if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return '';
+      return [...node.childNodes].map(spoken).join('');
+    };
+    const controls = [
+      document.querySelector('[role="tab"]')!,
+      document.querySelector('.itsm-TabNav a')!,
+      document.querySelector('[role="radio"]')!,
+      document.querySelector('.itsm-FilterPills a')!,
+    ];
+    expect(controls.map((control) => spoken(control))).toEqual(['Rules, 5', 'Rules, 5', 'Rules, 5', 'Rules, 5']);
+    // The current one in each carries the accent count, at the small size.
+    for (const control of controls) {
+      const count = control.querySelector('.itsm-Count')!;
+      expect(count.getAttribute('data-size')).toBe('sm');
+      expect(count.getAttribute('data-tone')).toBe('accent');
+    }
   });
 });
 

@@ -328,6 +328,8 @@ describe('FilterPills on a phone', () => {
     expect(more().getAttribute('aria-expanded')).toBe('true');
     expect(parkedLabels()).toEqual([]);
     expect(spoken(more())).toBe('More filters');
+    // Focus goes to the first pill it revealed, as "Load more" does.
+    expect(activeElement()?.getAttribute('href')).toBe('/x?f=six');
     click(more());
     expect(parkedLabels()).toEqual(['Six', 'Seven', 'Eight']);
   });
@@ -347,6 +349,12 @@ describe('FilterPills on a phone', () => {
     press(group[4]!, 'ArrowRight');
     // "Six" to "Eight" are behind "More": the arrow wraps to "One".
     expect(activeElement()).toBe(group[0]);
+    // Shown, they are in reach again, and the first of them has focus and is the tab stop.
+    click(more());
+    expect(activeElement()).toBe(group[5]);
+    expect(group[5]!.tabIndex).toBe(0);
+    press(group[5]!, 'ArrowRight');
+    expect(activeElement()).toBe(group[6]);
   });
 
   it('parks "More" itself, out of the tab order, when everything fits', () => {

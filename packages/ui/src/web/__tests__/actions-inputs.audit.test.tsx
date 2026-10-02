@@ -63,6 +63,12 @@ describe('actions', () => {
         <Button loading>Save</Button>
         <Button disabledReason="Needs a connection">Publish form</Button>
         <Button disabled>Unavailable</Button>
+        <Button variant="primary" disabledReason="Uploads are turned off in the demo" disabledIcon="lock">
+          Attach a file
+        </Button>
+        <Button size="lg" variant="primary">
+          Continue
+        </Button>
       </div>,
     );
   });
@@ -215,5 +221,46 @@ describe('inputs', () => {
         ]}
       />,
     );
+  });
+
+  it('Tabs: underline and pill, with counts (one not known yet) and a disabled tab', async () => {
+    await audit(
+      <div>
+        <Tabs
+          label="Sections"
+          items={[
+            { id: 'register', label: 'Register', count: 24, content: <p>The register.</p> },
+            { id: 'drafts', label: 'Drafts', count: 120, content: <p>Drafts.</p> },
+            { id: 'retired', label: 'Retired', count: null, disabled: true, content: <p>Retired.</p> },
+          ]}
+        />
+        <Tabs
+          label="Needs attention"
+          variant="pill"
+          items={[
+            { id: 'all', label: 'All', count: 7, content: <p>Everything.</p> },
+            { id: 'overdue', label: 'Overdue', count: 2, content: <p>Overdue.</p> },
+          ]}
+        />
+      </div>,
+    );
+  });
+
+  it('Input and Select: the large sign-in size, disabled and focused', async () => {
+    render(
+      <TestProvider>
+        <FormField label="Work email">
+          <Input size="lg" type="email" defaultValue="emma.clarke@northwind.example" />
+        </FormField>
+        <FormField label="Region">
+          <Select size="lg" options={[{ value: 'uk', label: 'United Kingdom' }]} />
+        </FormField>
+        <FormField label="Tenant">
+          <Input disabled defaultValue="Northwind Traders" />
+        </FormField>
+      </TestProvider>,
+    );
+    document.querySelector<HTMLInputElement>('input[type="email"]')!.focus();
+    await expectNoViolations(document.body);
   });
 });

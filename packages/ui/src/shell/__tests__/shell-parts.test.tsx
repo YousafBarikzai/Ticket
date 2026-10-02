@@ -23,6 +23,7 @@ import { SkipLinks } from '../SkipLinks.js';
 import { SplitView } from '../SplitView.js';
 import { TabBar } from '../TabBar.js';
 import { TabNav } from '../TabNav.js';
+import { tabNavStyles } from '../TabNav.styles.js';
 import { UserMenu } from '../UserMenu.js';
 import { createLocation, setViewport } from './support.js';
 
@@ -653,6 +654,41 @@ describe('Breadcrumbs, TabNav and HierNav', () => {
     );
     expect(q('nav[aria-label="Workflows"] [aria-current="page"]')?.textContent).toBe('Runs4, 4 failed');
     expect(all('[aria-current="page"]')).toHaveLength(1);
+  });
+
+  it('TabNav: a section’s count is the shared Count, accent on the current tab, spoken with its label', () => {
+    const location = createLocation('/catalogue/register');
+    render(
+      <location.Provider>
+        <TabNav
+          label="Catalogue"
+          items={[
+            { id: 'register', label: 'Register', href: '/catalogue/register', count: 24 },
+            { id: 'drafts', label: 'Drafts', href: '/catalogue/drafts', count: 3 },
+            { id: 'retired', label: 'Retired', href: '/catalogue/retired', count: null },
+          ]}
+        />
+      </location.Provider>,
+    );
+    const spoken = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+      if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return '';
+      return [...node.childNodes].map(spoken).join('');
+    };
+    const links = all('nav[aria-label="Catalogue"] a');
+    expect(links.map((link) => spoken(link))).toEqual(['Register, 24', 'Drafts, 3', 'Retired']);
+    expect(links.map((link) => link.querySelector('.itsm-Count')?.getAttribute('data-tone') ?? null)).toEqual(['accent', 'neutral', null]);
+    expect(links[0]!.querySelector('.itsm-Count')?.getAttribute('data-size')).toBe('sm');
+    // v3 underline tabs: 500 14/20 muted, 40 px, the rule drawn by the track so the indicator sits on it.
+    const rule = (selector: string): string => {
+      const start = tabNavStyles.indexOf(`${selector} {`);
+      return start < 0 ? '' : tabNavStyles.slice(start, tabNavStyles.indexOf('}', start));
+    };
+    expect(rule('.itsm-TabNav__link')).toContain('color: var(--itsm-colour-text-muted)');
+    expect(rule('.itsm-TabNav__link')).toContain('font-size: var(--itsm-text-body-size)');
+    expect(rule('.itsm-TabNav__link')).toContain('min-block-size: calc(var(--itsm-control-height-md) + var(--itsm-space-2xs))');
+    expect(rule('.itsm-TabNav__track')).toContain('box-shadow: inset 0 calc(-1 * var(--itsm-border-hair)) 0 var(--itsm-colour-border-subtle)');
+    expect(tabNavStyles).toContain('.itsm-TabNav__track {\n    --_fade:');
   });
 
   it('HierNav: nested links, current by path and query, counts spoken', () => {
