@@ -785,22 +785,53 @@ const avatarDeep = ['#1e3a8a', '#3730a3', '#5b21b6', '#86198f', '#155e75', '#115
 /** 700-level discs after dark: a step lighter, so a disc still reads as a shape on a dark card. */
 const avatarDark = ['#1d4ed8', '#4338ca', '#6d28d9', '#a21caf', '#0e7490', '#0f766e', '#475569', '#4d7c0f'] as const;
 
-/** The navy itself, shared by every theme. */
-const navy = {
+/*
+ * The navy objects below are written out in full rather than spread from a
+ * shared base: an object spread at module level is code the bundler cannot
+ * prove side-effect free, so it would ship to every browser that imports any
+ * token. `palette.test.ts` checks the navy surfaces are the same in every
+ * theme instead.
+ */
+
+/**
+ * Navy in the light theme. `textMuted` is the PMO's `#94a3b8` raised to
+ * `#a3b1c6`: the PMO's value is 4.14:1 at the landing band's strongest glow,
+ * this is 4.88.
+ */
+const heroStandard: HeroColours = {
   surface: '#0f172a',
   surfaceRaised: '#1e293b',
   surfaceDeep: '#0b1120',
   surfaceEnd: '#1e2a45',
-} as const;
-
-/**
- * Navy in the light and dark themes. `textMuted` is the PMO's `#94a3b8`
- * raised to `#a3b1c6`: the PMO's value is 4.14:1 at the landing band's
- * strongest glow, this is 4.88.
- */
-const heroStandard: HeroColours = {
-  ...navy,
   line: 'rgba(255, 255, 255, 0.09)',
+  lineStrong: 'rgba(255, 255, 255, 0.18)',
+  fill: 'rgba(255, 255, 255, 0.06)',
+  fillStrong: 'rgba(255, 255, 255, 0.14)',
+  text: '#f8fafc',
+  textSecondary: '#cbd5e1',
+  textMuted: '#a3b1c6',
+  link: '#8ec5ff',
+  accent: '#69a5fd',
+  glow: 'rgba(0, 122, 255, 0.26)',
+  glowBar: 'rgba(0, 122, 255, 0.32)',
+  glowPanel: 'rgba(0, 122, 255, 0.38)',
+  glowBand: 'rgba(0, 122, 255, 0.42)',
+  success: '#4ade80',
+  warning: '#fbbf24',
+  danger: '#f87171',
+  info: '#a5b4fc',
+  hold: '#f0abfc',
+  high: '#fb923c',
+  neutral: '#94a3b8',
+};
+
+/** Navy after dark: the light theme's, with the edge a step stronger so the card still separates from a black canvas. */
+const heroDark: HeroColours = {
+  surface: '#0f172a',
+  surfaceRaised: '#1e293b',
+  surfaceDeep: '#0b1120',
+  surfaceEnd: '#1e2a45',
+  line: 'rgba(255, 255, 255, 0.1)',
   lineStrong: 'rgba(255, 255, 255, 0.18)',
   fill: 'rgba(255, 255, 255, 0.06)',
   fillStrong: 'rgba(255, 255, 255, 0.14)',
@@ -829,7 +860,10 @@ const heroStandard: HeroColours = {
  * every navy surface.
  */
 const heroHighContrast: HeroColours = {
-  ...navy,
+  surface: '#0f172a',
+  surfaceRaised: '#1e293b',
+  surfaceDeep: '#0b1120',
+  surfaceEnd: '#1e2a45',
   line: '#ffffff',
   lineStrong: '#ffffff',
   fill: '#1e293b',
@@ -1156,7 +1190,7 @@ const appleDark: ColourTheme = {
     markerText: '#1d1d1f',
   },
   avatar: { fills: avatarDark, text: '#ffffff' },
-  hero: { ...heroStandard, line: 'rgba(255, 255, 255, 0.1)' },
+  hero: heroDark,
   shadow: '#000000',
   shadowStrength: 2.2,
   scrim: 'rgba(0, 0, 0, 0.56)',

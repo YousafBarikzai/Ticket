@@ -199,8 +199,6 @@ const textBackgrounds: readonly (readonly [string, Pick])[] = [
   ['surface.accentHover', (t) => t.surface.accentHover],
   ['surface.raisedAlt', (t) => t.surface.raisedAlt],
 ];
-const raisedAlt = textBackgrounds[7]!;
-const rowStates = [textBackgrounds[4]!, textBackgrounds[5]!];
 
 /**
  * Every pairing the components actually produce: 182 per theme.
@@ -240,6 +238,8 @@ const rowStates = [textBackgrounds[4]!, textBackgrounds[5]!];
  */
 export function contrastContract(): readonly ContrastPair[] {
   const pairs: ContrastPair[] = [];
+  const raisedAlt = textBackgrounds[7]!;
+  const rowStates = [textBackgrounds[4]!, textBackgrounds[5]!];
   const add = (name: string, kind: PairKind, foreground: Pick, background: Pick): void => {
     pairs.push({ name, kind, foreground, background });
   };
@@ -435,7 +435,13 @@ export const contracts: Readonly<Record<ContractName, () => readonly ContrastPai
   chart: chartContract,
 };
 
-export const contractNames = Object.keys(contracts) as ContractName[];
+/**
+ * The contracts in report order. Written out rather than read off `contracts`
+ * so that nothing here runs when the module loads: the token CSS pipeline
+ * imports this file, client code imports that, and a module-level call would
+ * keep every contract in the browser bundle.
+ */
+export const contractNames: readonly ContractName[] = ['core', 'hero', 'avatar', 'chart'];
 
 /** One contract in one theme. */
 export function auditContract(contract: ContractName, theme: ThemeName): readonly AuditResult[] {

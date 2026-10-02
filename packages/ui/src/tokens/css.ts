@@ -352,7 +352,7 @@ export function themeVariables(theme: ThemeName): Record<string, string> {
   vars[`${variablePrefix}-colour-avatar-text`] = palette.avatar.text;
 
   for (const [slot, value] of Object.entries(palette.hero)) vars[`${variablePrefix}-colour-hero-${slot}`] = value;
-  Object.assign(vars, heroBackgrounds);
+  Object.assign(vars, heroBackgrounds());
 
   vars[`${variablePrefix}-colour-shadow`] = palette.shadow;
   // Shadows are baked per theme because their alpha is applied to that theme's
@@ -375,16 +375,20 @@ export function themeVariables(theme: ThemeName): Record<string, string> {
  * page copy no colour of their own. Emitted with every theme rather than once
  * at the root: a custom property that reads `var()` is resolved where it is
  * declared, so a subtree pinned to another theme has to declare it again to
- * get that theme's slots.
+ * get that theme's slots. A function, not a module-level object, so nothing
+ * runs when the module loads (client code imports this file for one
+ * attribute name).
  */
-const hero = (slot: HeroSlot): string => `var(${variablePrefix}-colour-hero-${slot})`;
-const heroBackgrounds: Readonly<Record<string, string>> = {
-  [`${variablePrefix}-hero-card-background`]: `radial-gradient(90% 160% at 0% 0%, ${hero('glow')} 0%, transparent 58%), linear-gradient(125deg, ${hero('surface')} 0%, ${hero('surface')} 45%, ${hero('surfaceRaised')} 100%)`,
-  [`${variablePrefix}-hero-bar-background`]: `radial-gradient(560px 120px at 0 0, ${hero('glowBar')}, transparent), radial-gradient(420px 90px at 100% 100%, color-mix(in srgb, ${hero('glowBar')} 44%, transparent), transparent), linear-gradient(90deg, ${hero('surfaceDeep')} 0%, ${hero('surface')} 55%, ${hero('surfaceRaised')} 100%)`,
-  [`${variablePrefix}-hero-panel-background`]: `radial-gradient(640px circle at 100% 100%, ${hero('glowPanel')}, transparent 68%), linear-gradient(160deg, ${hero('surface')} 0%, ${hero('surface')} 38%, ${hero('surfaceEnd')} 100%)`,
-  [`${variablePrefix}-hero-band-background`]: `radial-gradient(1200px 820px at 50% 0%, ${hero('glowBand')}, transparent 70%), ${hero('surfaceDeep')}`,
-  [`${variablePrefix}-hero-light-background`]: `linear-gradient(125deg, var(${variablePrefix}-colour-surface-accentHover) 0%, var(${variablePrefix}-colour-surface-raised) 72%)`,
-};
+function heroBackgrounds(): Record<string, string> {
+  const hero = (slot: HeroSlot): string => `var(${variablePrefix}-colour-hero-${slot})`;
+  return {
+    [`${variablePrefix}-hero-card-background`]: `radial-gradient(90% 160% at 0% 0%, ${hero('glow')} 0%, transparent 58%), linear-gradient(125deg, ${hero('surface')} 0%, ${hero('surface')} 45%, ${hero('surfaceRaised')} 100%)`,
+    [`${variablePrefix}-hero-bar-background`]: `radial-gradient(560px 120px at 0 0, ${hero('glowBar')}, transparent), radial-gradient(420px 90px at 100% 100%, color-mix(in srgb, ${hero('glowBar')} 44%, transparent), transparent), linear-gradient(90deg, ${hero('surfaceDeep')} 0%, ${hero('surface')} 55%, ${hero('surfaceRaised')} 100%)`,
+    [`${variablePrefix}-hero-panel-background`]: `radial-gradient(640px circle at 100% 100%, ${hero('glowPanel')}, transparent 68%), linear-gradient(160deg, ${hero('surface')} 0%, ${hero('surface')} 38%, ${hero('surfaceEnd')} 100%)`,
+    [`${variablePrefix}-hero-band-background`]: `radial-gradient(1200px 820px at 50% 0%, ${hero('glowBand')}, transparent 70%), ${hero('surfaceDeep')}`,
+    [`${variablePrefix}-hero-light-background`]: `linear-gradient(125deg, var(${variablePrefix}-colour-surface-accentHover) 0%, var(${variablePrefix}-colour-surface-raised) 72%)`,
+  };
+}
 
 function block(selector: string, vars: Record<string, string>, indent = ''): string {
   const body = Object.entries(vars)
