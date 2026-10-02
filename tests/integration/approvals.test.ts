@@ -432,6 +432,57 @@ describe('withdrawn with the ticket (ADR-0059)', () => {
     expect(outcomes).toContain('approved');
     expect(outcomes).not.toContain('withdrawn');
   });
+
+  it('refuses a decision that races the withdrawal, rather than writing over it', async () => {
+    const submitted = await submitRequest();
+    const approver = await approverOf(submitted.approvalId);
+    // The ticket ends; the handler has not run yet.
+    await transition(submitted.ticketNumber, 'cancelled');
+
+    const { transaction, withContext } = await platform();
+    const { approvalService } = await import('@itsm/module-approvals');
+    const ctx = contextFor(tenant.id);
+    let written!: () => void;
+    let release!: () => void;
+    const hasWritten = new Promise<void>((resolve) => (written = resolve));
+    const released = new Promise<void>((resolve) => (release = resolve));
+
+    // The handler's transaction, held open after it has withdrawn the approval:
+    // the approver's decision reads the approval as pending and then has to
+    // wait for it.
+    const withdrawal = withContext(ctx, () =>
+      transaction(ctx, async (tx) => {
+        await approvalService.withdrawForTicket(ctx, tx, submitted.ticketId, 'ticket-cancelled');
+        written();
+        await released;
+      }),
+    );
+    await Promise.race([hasWritten, withdrawal]);
+    const deciding = decideAs(approver, submitted.approvalId);
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    release();
+    await withdrawal;
+    const decided = await deciding;
+
+    // Whichever way the race fell, the decision is refused and leaves no trace.
+    expect(decided.status).toBe(409);
+    expect(decided.body.detail).toBe(CANCELLED_SENTENCE);
+    const after = await view(submitted.approvalId);
+    expect(after.status).toBe('cancelled');
+    expect(after.outcome).toBe('withdrawn');
+    expect(after.steps.every((step) => step.status === 'cancelled')).toBe(true);
+    const decisions = await read((tx) =>
+      tx.approvalDecision.count({ where: { step: { requestId: submitted.approvalId } } }),
+    );
+    expect(decisions).toBe(0);
+
+    // The status change, delivered afterwards, finds nothing left to withdraw.
+    await drainEvents(tenant.id);
+    const published = await read((tx) =>
+      tx.outboxEvent.count({ where: { type: 'approval.cancelled', aggregateId: submitted.approvalId } }),
+    );
+    expect(published).toBe(1);
+  });
 });
 
 describe('delegation', () => {

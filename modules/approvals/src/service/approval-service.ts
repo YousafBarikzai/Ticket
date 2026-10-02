@@ -335,8 +335,7 @@ export async function decide(
   return transaction(ctx, async (tx) => {
     const request = await tx.approvalRequest.findFirst({ where: { id: requestId } });
     if (!request) throw new NotFoundError('approval not found');
-    if (request.outcome === WITHDRAWN) throw new ConflictError(withdrawnSentence(await withdrawalReasonOf(tx, request)));
-    if (request.status !== 'pending') throw new ConflictError('this approval has already been decided');
+    if (request.status !== 'pending') throw await settledConflict(tx, request);
 
     const step = await tx.approvalStep.findFirst({ where: { requestId, status: 'open' } });
     if (!step) throw new ConflictError('this approval has no open step');
@@ -384,10 +383,18 @@ export async function decide(
       return { requestStatus: 'pending' as const, stepStatus: 'open' as const };
     }
 
-    await tx.approvalStep.update({
-      where: { id: step.id },
+    // Conditional on the step still being open. A step settled by another
+    // transaction since it was read — a second approver reaching the quorum
+    // first, or the ticket ending and withdrawing the approval — refuses this
+    // decision rather than writing over that outcome.
+    const settled = await tx.approvalStep.updateMany({
+      where: { id: step.id, status: 'open' },
       data: { status: outcome.status, decidedAt: new Date() },
     });
+    if (settled.count === 0) {
+      const current = await tx.approvalRequest.findFirst({ where: { id: requestId } });
+      throw await settledConflict(tx, current ?? request);
+    }
 
     if (outcome.status === 'rejected') {
       await settleRequest(ctx, tx, requestId, 'rejected');
@@ -529,6 +536,18 @@ export async function withdrawForTicket(
     withdrawn.push(request.id);
   }
   return { withdrawn };
+}
+
+/**
+ * The 409 for deciding an approval that is no longer waiting on anybody:
+ * "already decided", or the withdrawn sentence when nobody decided it at all.
+ */
+async function settledConflict(
+  tx: Tx,
+  request: { outcome: string | null; ticketId: string | null },
+): Promise<ConflictError> {
+  if (request.outcome !== WITHDRAWN) return new ConflictError('this approval has already been decided');
+  return new ConflictError(withdrawnSentence(await withdrawalReasonOf(tx, request)));
 }
 
 /**
