@@ -15,7 +15,7 @@ export const slaManifest: ModuleManifest = registerModule({
     { key: 'sla.override', scopes: ['team', 'any'], description: 'Pause, resume or excuse a timer with a reason.' },
   ],
   events: {
-    publishes: ['sla.timer.started', 'sla.timer.warning', 'sla.timer.breached', 'sla.timer.paused', 'sla.timer.resumed', 'sla.timer.met'],
+    publishes: ['sla.timer.started', 'sla.timer.warning', 'sla.timer.breached', 'sla.timer.paused', 'sla.timer.resumed', 'sla.timer.met', 'sla.timer.restarted', 'sla.timer.cancelled'],
     consumes: ['ticket.created', 'ticket.status.changed', 'ticket.comment.added', 'ticket.updated', 'ticket.classified'],
   },
   featureFlags: [],

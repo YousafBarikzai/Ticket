@@ -38,6 +38,8 @@ export const analyticsManifest: ModuleManifest = registerModule({
       'sla.timer.resumed',
       'sla.timer.met',
       'sla.timer.breached',
+      'sla.timer.restarted',
+      'sla.timer.cancelled',
       'approval.requested',
       'approval.decided',
       'approval.cancelled',
