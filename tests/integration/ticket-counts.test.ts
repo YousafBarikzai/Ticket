@@ -146,7 +146,7 @@ describe('totals agree with the count', () => {
   });
 
   it('for a date window, on every dimension that takes one', async () => {
-    const window = `filter[createdAfter]=${new Date(now.getTime() - 400 * DAY).toISOString()}`;
+    const window = `filter[createdAfter]=${new Date(now.getTime() - 399 * DAY).toISOString()}`;
     const counted = await countOf('admin', window);
     expect(counted).toBe(6);
     for (const groupBy of dimensions.filter((dimension) => dimension !== 'sla' && dimension !== 'age')) {
@@ -181,7 +181,7 @@ describe('the groups', () => {
       { key: 'pending_requester', count: 1 },
     ]);
 
-    const category = await counts('admin', `groupBy=statusCategory&filter[createdAfter]=${new Date(now.getTime() - 400 * DAY).toISOString()}`);
+    const category = await counts('admin', `groupBy=statusCategory&filter[createdAfter]=${new Date(now.getTime() - 399 * DAY).toISOString()}`);
     expect(category.groups).toEqual([
       { key: 'open', count: 4 },
       { key: 'paused', count: 1 },
@@ -338,6 +338,9 @@ describe('the guard', () => {
   });
 
   it('accepts open work, a window of up to 400 days, or an SLA filter', async () => {
+    // An open-ended window is measured on the server's clock, after `now`
+    // here; the few minutes' grace keeps "400 days ago" from a caller valid.
+    await counts('admin', `groupBy=priority&filter[createdAfter]=${daysAgo(400)}`);
     await counts('admin', 'groupBy=priority&filter[statusCategory]=open');
     await counts('admin', 'groupBy=priority&filter[statusCategory]=paused');
     await counts('admin', `groupBy=priority&filter[createdAfter]=${daysAgo(400)}&filter[createdBefore]=${daysAgo(0)}`);

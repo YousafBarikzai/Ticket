@@ -437,6 +437,9 @@ export interface TicketCountsBy {
 /** The widest created or resolved window a grouped count accepts without open work. */
 export const GROUPED_COUNT_MAX_WINDOW_DAYS = 400;
 
+/** Clock skew allowed to a window that names only its start (see `assertBounded`). */
+const OPEN_WINDOW_GRACE_MS = 5 * 60 * 1000;
+
 const COLUMN_OF: Record<Exclude<CountDimension, 'age' | 'sla'>, repo.GroupColumn> = {
   priority: 'priority',
   status: 'status',
@@ -518,8 +521,12 @@ function assertBounded(filter: repo.ListFilter, now: Date): void {
   if (filter.sla) return;
   const limitMs = GROUPED_COUNT_MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000;
   // An open-ended window ends now: nothing is created or resolved in the
-  // future, so "since 1 September" is bounded by today.
-  const within = (after?: Date, before?: Date) => Boolean(after) && (before ?? now).getTime() - after!.getTime() <= limitMs;
+  // future, so "since 1 September" is bounded by today. It is measured on
+  // this server's clock, a moment after the caller computed "400 days ago" on
+  // its own, so it gets a few minutes' grace rather than a 422 for a request
+  // that was within the limit when it was written.
+  const within = (after?: Date, before?: Date) =>
+    Boolean(after) && (before ?? now).getTime() - after!.getTime() <= limitMs + (before ? 0 : OPEN_WINDOW_GRACE_MS);
   if (within(filter.createdAfter, filter.createdBefore) || within(filter.resolvedAfter, filter.resolvedBefore)) return;
   throw new ValidationError('a grouped count needs open work or a date window', [
     {
