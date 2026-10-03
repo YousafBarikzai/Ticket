@@ -79,15 +79,30 @@ function toItem(row: {
 }
 
 /**
+ * Where a notification about a ticket opens (SPEC v3 §3.9, A2 §3.7).
+ *
+ * `serviceDeskTickets` is the Service Desk's ticket page as the area model
+ * built it on the server — `crossAreaHref(areas, 'workbench', '/tickets/')`,
+ * so this module never reads an origin or carries the area model's code —
+ * and the ticket's key is appended as one path segment: tickets are worked
+ * in the Service Desk, same tab. Without it (the person does not work
+ * tickets, the Service Desk is not configured, or a demo visit, which cannot
+ * tell whether Alex Morgan's teams can open the ticket, X-B2) the ticket
+ * opens in this console's own register, drawer open.
+ */
+export function notificationHref(item: NotificationItem, serviceDeskTickets: string | null | undefined): string {
+  const key = item.ticketNumber ?? item.ticketId;
+  if (!key) return '/';
+  if (serviceDeskTickets) return `${serviceDeskTickets}${encodeURIComponent(key)}`;
+  return `/tickets?open=ticket:${encodeURIComponent(key)}`;
+}
+
+/**
  * The bell's data: the unread count from the API on mount, refreshed when the
  * stream says a notification arrived, when it reconnects (something may have
  * been missed) and when the tab comes back into view.
- *
- * `workbenchOrigin` is where a ticket opens: tickets are worked in the
- * workbench, same tab (SPEC §4.10 "Cross-app links"). Without it, a
- * notification about a ticket opens this console's ticket list.
  */
-export function useAdminNotifications(workbenchOrigin?: string): AdminNotifications {
+export function useAdminNotifications(serviceDeskTickets?: string | null): AdminNotifications {
   const [unread, setUnread] = useState(0);
   const [emergency, setEmergency] = useState(false);
 
@@ -128,11 +143,7 @@ export function useAdminNotifications(workbenchOrigin?: string): AdminNotificati
     [refresh],
   );
 
-  const hrefFor = useCallback(
-    (item: NotificationItem) =>
-      item.ticketId ? (workbenchOrigin ? `${workbenchOrigin.replace(/\/+$/, '')}/tickets/${encodeURIComponent(item.ticketId)}` : '/tickets') : '/',
-    [workbenchOrigin],
-  );
+  const hrefFor = useCallback((item: NotificationItem) => notificationHref(item, serviceDeskTickets), [serviceDeskTickets]);
 
   return useMemo(() => ({ unread, emergency, load, markRead, hrefFor }), [unread, emergency, load, markRead, hrefFor]);
 }

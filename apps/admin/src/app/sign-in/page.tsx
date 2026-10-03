@@ -1,66 +1,53 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
-import { Banner, Button, FormField, Input, StatusScreen } from '@itsm/ui';
-import { safeRedirectTarget } from '@itsm/bff';
+import { cookies } from 'next/headers';
+import { DEMO_COOKIE } from '@itsm/bff';
 import { bff } from '../../bff.js';
+import { demoModeOn, siteHome } from '../../server/session.js';
+import { EntryFrame, PublicBar } from '../demo/entry.js';
+import { SignInContent } from './content.js';
 
-export const metadata: Metadata = { title: 'Sign in' };
+export const metadata: Metadata = { title: 'Sign in', robots: { index: false, follow: false } };
 export const dynamic = 'force-dynamic';
 
 /**
- * The development sign-in form (SPEC §6.1 "/sign-in").
+ * `/sign-in`, in every mode (SPEC v3 §4.5 I rows, A3 §6.6, D22).
  *
- * Answers 404 wherever an identity provider is configured, so the page does
- * not exist in a deployment rather than existing and refusing. It is also
- * honest about what it is: there is no password, because a development
- * database is not a secret, and a form that asked for one would suggest this
- * was ever meant to be reachable from outside a laptop.
+ * The BFF decides which of three pages this is (`bff.signInPage`):
  *
- * Outside the console's frame and its providers — a branded card on the
- * canvas — so it renders without a session and without client JavaScript:
- * the form posts to `/api/session/dev`, carrying the page the person was
- * going to (`redirectTo`), so signing in lands them there.
+ *   - **I1**, development (no identity provider and not production): the
+ *     development form — there is no password, because a development
+ *     database is not a secret — and, when this browser was in the demo
+ *     today, "Continue the demo as Jordan Lee" beside it.
+ *   - **I2**, the demo's re-entry chooser: this browser was exploring the
+ *     demo here today (`__Host-itsm-demo`, read on the server and checked for
+ *     this area's persona and today's date — never a query parameter), so it
+ *     is offered the demo back, or a real sign-in, which always wins.
+ *   - **I3**: "Sign in to Administration" with the work account, and, with
+ *     the demo on, "New here? Explore the demo".
+ *
+ * Every link is a plain `<a>`, never a prefetched client navigation: a
+ * prefetcher must never begin a sign-in. Outside the console's frame, on the
+ * sign-in layout, with the public demo bar above it when the demo is on.
  */
 export default async function SignInPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
-  if (!bff.developmentSignInAvailable()) notFound();
-
   const params = await searchParams;
+  const jar = await cookies();
+  const decision = bff.signInPage({
+    demoCookie: jar.get(DEMO_COOKIE)?.value,
+    redirectTo: typeof params.redirectTo === 'string' ? params.redirectTo : null,
+  });
   const reason = typeof params.reason === 'string' ? params.reason.slice(0, 300) : null;
-  const redirectTo = safeRedirectTarget(typeof params.redirectTo === 'string' ? params.redirectTo : null, bff.config.defaultLanding);
+  const mode = demoModeOn();
+  const home = mode ? siteHome() : null;
 
   return (
-    <StatusScreen
-      brand="admin"
-      title="Sign in to Administration"
-      body={
-        <div className="app-SignIn">
-          <Banner tone="info" icon="info" live={false}>
-            Development sign-in — any active account in the workspace will do. Run <code>pnpm seed</code> if there are none.
-          </Banner>
-          {reason ? (
-            <Banner tone="danger" live="assertive">
-              {reason}
-            </Banner>
-          ) : null}
-          <form className="app-SignIn__form" action="/api/session/dev" method="post">
-            <input type="hidden" name="redirectTo" value={redirectTo} />
-            <FormField label="Workspace" hint="The workspace’s short name, e.g. acme.">
-              <Input name="tenantSlug" defaultValue="acme" autoComplete="organization" required spellCheck={false} autoCapitalize="off" />
-            </FormField>
-            <FormField label="Email address">
-              <Input name="email" type="email" autoComplete="username" required autoFocus />
-            </FormField>
-            <Button type="submit" variant="primary" size="lg" fullWidth>
-              Sign in
-            </Button>
-          </form>
-        </div>
-      }
-    />
+    <EntryFrame bar={mode ? <PublicBar home={home} /> : undefined} home={home}>
+      <SignInContent decision={decision} reason={reason} home={home} />
+    </EntryFrame>
   );
 }

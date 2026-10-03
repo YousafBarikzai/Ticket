@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useSyncExternalStore } from 'react';
+import { createContext, useContext, useMemo, useSyncExternalStore } from 'react';
+import type { AreaId, AreaModel } from '@itsm/contracts/areas';
 import type { FlagRow, SettingRow } from '@itsm/sdk';
 import { notify, type IconName } from '@itsm/ui';
-import { setShortcutsDialogOpen, type CommandItem, type CommandProvider } from '@itsm/ui/shell';
+import { areaPersonaLine, setShortcutsDialogOpen, type CommandItem, type CommandProvider } from '@itsm/ui/shell';
 import { useTheme } from '@itsm/ui/theme';
 import { createCommandsFor, isPending, visibleNav, visibleTabs } from '../navigation.js';
 import { holdsAny, type Grants } from '../permissions.js';
@@ -15,13 +16,16 @@ import { signOut } from './sign-out.js';
  * The console's command palette: ⌘K / Ctrl K from anywhere, inside text
  * fields too (SPEC §5.5, D14).
  *
- * Four groups, in the order people reach for them:
+ * Five groups, in the order people reach for them:
  *
  *   - **Go to** — every page this person may open, and each page's tabs, by
  *     name or by the words people use for them ("queues" finds Workforce,
  *     "flags" finds Settings › Features, "SLA" finds Service levels). Built
  *     from `navigation.ts`, so the palette cannot offer a page the sidebar
  *     hides.
+ *   - **Switch area** — the person's other areas ("ticketing" finds the
+ *     Service Desk), from the area model the frame draws (SPEC v3 §3.9, A2
+ *     §10.3); in the demo with the persona each one opens as, and the site.
  *   - **Create** — "New rule", "Add person"…, each only for people who hold
  *     the write permission, opening the right page with `?new=…`.
  *   - **Find** — tickets, people, rules, workflows, fields, forms, services,
@@ -294,6 +298,54 @@ const FIND_SOURCES: readonly FindSource[] = [
 ];
 
 /* -------------------------------------------------------------------------
+ * Switch area (SPEC v3 §3.9, A2 §10.3)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What the palette knows about the person's areas: the frame's model, and the
+ * words each area is found by. The words come from the server (`AREAS`, read
+ * in the layout): this module is in every route's first load, and the
+ * contracts module that holds them carries the demo's tables with it.
+ */
+export interface PaletteAreas {
+  readonly model: AreaModel;
+  readonly keywords: Readonly<Partial<Record<AreaId, readonly string[]>>>;
+}
+
+const PaletteAreasContext = createContext<PaletteAreas | null>(null);
+
+/** Set by `AdminShell` around the palette, which is drawn outside the frame's own areas context. */
+export const PaletteAreasProvider = PaletteAreasContext.Provider;
+
+/**
+ * "Switch to Help Portal", "Switch to Service Desk": the listed areas other
+ * than this one, each by its name, its one-liner and its words, linking where
+ * the area menu's rows link (`/resume` for a real session, the sibling's
+ * `/demo` for a visit). In the demo each says who it opens as, and the site's
+ * home closes the group. Nothing for a person with one area: the frame draws
+ * a lockup, and the palette offers no way out either. Pure, and tested.
+ */
+export function areaCommands(areas: PaletteAreas | null): CommandItem[] {
+  if (!areas || !areas.model.visible) return [];
+  const items: CommandItem[] = [];
+  for (const area of areas.model.areas) {
+    if (area.current) continue;
+    const persona = areaPersonaLine(area);
+    items.push({
+      id: `area-${area.id}`,
+      label: `Switch to ${area.name}`,
+      description: persona ? `${area.description} · ${persona}` : area.description,
+      icon: area.icon,
+      href: area.href,
+      keywords: [area.name, 'switch area', ...(areas.keywords[area.id] ?? [])],
+    });
+  }
+  const home = areas.model.demo ? areas.model.home : undefined;
+  if (home) items.push({ id: 'area-home', label: home.label, icon: 'home', href: home.href, keywords: ['website', 'demo', 'home page'] });
+  return items;
+}
+
+/* -------------------------------------------------------------------------
  * The registry
  * ---------------------------------------------------------------------- */
 
@@ -352,6 +404,8 @@ export interface AdminPalette {
 export function useAdminPalette(grants: Grants): AdminPalette {
   const { prefs, setPrefs, resolvedTheme } = useTheme();
   const permissionsKey = grants.permissions.map((permission) => permission.key).join(',');
+  const areas = useContext(PaletteAreasContext);
+  const demo = areas?.model.demo === true;
 
   return useMemo<AdminPalette>(() => {
     const contrastOn = prefs.contrast === 'more' || (prefs.contrast === 'system' && resolvedTheme.startsWith('high-contrast'));
@@ -406,11 +460,16 @@ export function useAdminPalette(grants: Grants): AdminPalette {
           setShortcutsDialogOpen(true);
         },
       },
-      { id: 'sign-out', label: 'Sign out', icon: 'log-out', keywords: ['log out'], run: signOut },
+      // A demo visit is ended, not signed out of (§3.7): the same form, the frame's words.
+      demo
+        ? { id: 'sign-out', label: 'End demo', icon: 'log-out', keywords: ['sign out', 'log out', 'leave the demo'], run: signOut }
+        : { id: 'sign-out', label: 'Sign out', icon: 'log-out', keywords: ['log out'], run: signOut },
     ];
 
+    const switchArea = areaCommands(areas);
     const providers: CommandProvider[] = [
       { id: 'go', group: 'Go to', items: goToCommands(grants) },
+      ...(switchArea.length > 0 ? [{ id: 'areas', group: 'Switch area', items: switchArea }] : []),
       { id: 'create', group: 'Create', items: createCommands(grants) },
       ...FIND_SOURCES.filter((source) => holdsAny(grants, source.read)).map<CommandProvider>((source) => ({
         id: `find-${source.id}`,
@@ -433,5 +492,5 @@ export function useAdminPalette(grants: Grants): AdminPalette {
           : null,
     };
     // Rebuilt on the permission *content*, not the array's identity.
-  }, [permissionsKey, prefs, resolvedTheme, setPrefs]);
+  }, [permissionsKey, prefs, resolvedTheme, setPrefs, areas, demo]);
 }

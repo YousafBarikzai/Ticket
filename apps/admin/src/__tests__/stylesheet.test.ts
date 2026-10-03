@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
@@ -21,13 +22,52 @@ import { dynamic, GET } from '../app/itsm-ui.css/route.js';
  */
 describe('the app stylesheet and the token pipeline agree', () => {
   const css = readFileSync(fileURLToPath(new URL('../app/globals.css', import.meta.url)), 'utf8');
+  const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('apple'))]);
 
   it('references no variable the pipeline does not emit', () => {
-    const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('apple'))]);
     const used = [...new Set([...css.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))];
 
     expect(used.length).toBeGreaterThan(10);
     expect(used.filter((variable) => !defined.has(variable))).toEqual([]);
+  });
+
+  /*
+   * Every sheet in the app, the areas' own beside their components and the
+   * pages' outside the frame (`app/demo/entry.css`) as well as `globals.css`.
+   */
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  function sheets(dir: string): string[] {
+    return readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
+      if (name === 'node_modules' || name === '__tests__') return [];
+      if (statSync(path).isDirectory()) return sheets(path);
+      return name.endsWith('.css') ? [path] : [];
+    });
+  }
+  const all = sheets(root).map((path) => ({ file: relative(root, path), css: readFileSync(path, 'utf8') }));
+
+  it('finds the sheets it checks', () => {
+    expect(all.map((sheet) => sheet.file)).toEqual(expect.arrayContaining(['app/globals.css', 'app/demo/entry.css']));
+  });
+
+  it('spends only variables the pipeline emits, in every sheet', () => {
+    const unknown = all.flatMap(({ file, css: text }) =>
+      [...new Set([...text.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))].filter((variable) => !defined.has(variable)).map((variable) => `${file}: ${variable}`),
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  /**
+   * No colour literal in any sheet (D3, A7 §1.1): a colour is a token, so a
+   * theme, dark mode and *Increase contrast* reach it. Comments are ignored,
+   * so a sheet may still say which token replaced which colour.
+   */
+  it('writes no hex colour in any sheet', () => {
+    const literals = all.flatMap(({ file, css: text }) => {
+      const code = text.replace(/\/\*[\s\S]*?\*\//g, '');
+      return [...code.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((match) => `${file}: ${match[0]}`);
+    });
+    expect(literals).toEqual([]);
   });
 });
 

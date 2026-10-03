@@ -1,0 +1,128 @@
+/*
+ * The column of the pages outside the frame: `/demo`, `/sign-in` and
+ * `/signed-out` (SPEC v3 §4.6). They sit in the design system's
+ * `SignInLayout`, which draws the navy panel and the light column; this sheet
+ * arranges only what goes in the column — a title, a sentence or two, the
+ * actions — from the design system's tokens. Imported by those three pages
+ * alone, so no framed page carries it.
+ */
+
+.app-Entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+}
+
+.app-Entry__title {
+  margin: 0;
+  font-family: var(--itsm-text-title1-family);
+  font-size: var(--itsm-text-title1-size);
+  font-weight: var(--itsm-text-title1-weight);
+  line-height: var(--itsm-text-title1-line);
+  letter-spacing: var(--itsm-text-title1-tracking);
+  color: var(--itsm-colour-text-primary);
+  text-wrap: balance;
+}
+
+.app-Entry__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  line-height: var(--itsm-line-height-normal);
+}
+
+.app-Entry__body p {
+  margin: 0;
+}
+
+.app-Entry__body strong {
+  font-weight: var(--itsm-font-weight-semibold);
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-Entry__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+}
+
+.app-Entry__actions form {
+  display: contents;
+}
+
+.app-Entry__actions .itsm-Button {
+  inline-size: 100%;
+}
+
+/* The "Explore as …" rows on `/signed-out`, and the other quiet links. */
+.app-Entry__links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Entry__link {
+  color: var(--itsm-colour-text-link);
+  font-weight: var(--itsm-font-weight-medium);
+  text-underline-offset: 0.2em;
+}
+
+.app-Entry__note {
+  margin: 0;
+  font-size: var(--itsm-font-size-sm);
+  color: var(--itsm-colour-text-muted);
+}
+
+/*
+ * "Open the demo" becomes "Taking a while? Open the demo" after 3 s while the
+ * form submits itself (§4.6.2) — in CSS, so the page needs no script for it
+ * and it works the same before hydration. Both labels share one cell, so the
+ * button never changes size, and the hidden one is `visibility: hidden`, so
+ * it is never part of the button's name. On the hop card the button itself
+ * appears only then: a quick hop never shows it.
+ */
+.app-Entry__swap {
+  display: inline-grid;
+}
+
+.app-Entry__swap > * {
+  grid-area: 1 / 1;
+}
+
+.app-Entry__later {
+  animation: app-entry-show 0s linear 3s both;
+}
+
+.app-Entry__now {
+  animation: app-entry-hide 0s linear 3s both;
+}
+
+@keyframes app-entry-show {
+  from {
+    visibility: hidden;
+  }
+
+  to {
+    visibility: visible;
+  }
+}
+
+@keyframes app-entry-hide {
+  from {
+    visibility: visible;
+  }
+
+  to {
+    visibility: hidden;
+  }
+}
+
+/* The hop card's fallback button (`StatusScreen variant="hop"`). */
+.app-Entry__hopAction {
+  animation: app-entry-show 0s linear 3s both;
+}

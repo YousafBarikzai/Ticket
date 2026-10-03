@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { signInFailureSentence } from '@itsm/bff/cookies';
-import { Banner, StatusScreen } from '@itsm/ui';
+import { demoExploreLinks, demoModeOn, currentSession, siteHome } from '../../server/session.js';
+import { EntryFrame, PublicBar } from '../demo/entry.js';
+import { SignedOutContent, signedOutVariant } from './content.js';
 
-export const metadata: Metadata = { title: 'Signed out' };
+export const metadata: Metadata = { title: 'Signed out', robots: { index: false, follow: false } };
 export const dynamic = 'force-dynamic';
 
 /**
- * Where a sign-out lands, and where a failed sign-in lands (SPEC v3 §4.6.3).
+ * Where a sign-out lands, where a demo visit ends, and where a failed sign-in
+ * lands (SPEC v3 §4.6.3, A3 §6.7).
  *
  * The reason is shown because the alternative — bouncing somebody back to the
  * sign-in page with no explanation — produces a loop the person cannot tell
@@ -17,33 +19,26 @@ export const dynamic = 'force-dynamic';
  * their own on this page by editing the link. The identity provider's
  * `error_description` never reaches it either.
  *
- * *Sign in again* is a plain link, deliberately not a prefetched client
- * navigation: it starts a sign-in with the identity provider, which is a full
- * page load and nothing a prefetcher should begin on its own.
+ * A demo visit ends here with `demo=1` — "Thanks for exploring", the site and
+ * the three ways back in — or with `demo=1&restored=1` when the person's own
+ * account came back on this device (§4.5 O2). Every action is a plain link,
+ * never a prefetched client navigation: a sign-in is a full page load through
+ * the identity provider, and nothing a prefetcher should begin on its own.
  */
 export default async function SignedOutPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
-  const params = await searchParams;
-  const reason = Array.isArray(params.reason) ? params.reason[0] : params.reason;
+  const variant = signedOutVariant(await searchParams);
+  const mode = demoModeOn();
+  const home = mode ? siteHome() : null;
+  // The restored account's name, from the session the BFF handed back under this browser's cookie.
+  const restoredAs = variant.kind === 'restored' ? ((await currentSession())?.displayName ?? null) : null;
 
   return (
-    <StatusScreen
-      brand="admin"
-      illustration={reason ? 'error' : 'success'}
-      title={reason ? 'That sign-in didn’t finish' : 'You’re signed out'}
-      body={
-        reason ? (
-          <Banner tone="danger" live="assertive">
-            {signInFailureSentence(reason)}
-          </Banner>
-        ) : (
-          'Your session on this device has ended.'
-        )
-      }
-      actions={[{ id: 'sign-in', label: 'Sign in again', icon: 'log-in', href: '/api/session/login' }]}
-    />
+    <EntryFrame bar={mode ? <PublicBar home={home} /> : undefined} home={home}>
+      <SignedOutContent variant={variant} home={home} restoredAs={restoredAs} explore={variant.kind === 'demo' ? demoExploreLinks() : []} />
+    </EntryFrame>
   );
 }
