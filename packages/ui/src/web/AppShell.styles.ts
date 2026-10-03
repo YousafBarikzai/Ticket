@@ -53,6 +53,7 @@ ${docked} .itsm-Sidebar__area {
 ${docked} .itsm-AreaSwitcher {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   inline-size: var(--itsm-control-height-lg);
   min-block-size: 0;
@@ -353,8 +354,6 @@ ${mq.xl} {
   font-size: var(--itsm-text-callout-size);
   line-height: var(--itsm-text-callout-line);
   letter-spacing: var(--itsm-text-callout-tracking);
-  container-type: inline-size;
-  container-name: itsm-sidebar;
 }
 .itsm-Sidebar[data-mode="sheet"] {
   border-inline-end: 0;
@@ -839,8 +838,11 @@ ${mq.belowSm} {
 .itsm-AppShell__action {
   display: none;
 }
-.itsm-AppShell[data-variant="topnav"] .itsm-TopBar .itsm-SearchTrigger {
-  inline-size: 12.5rem;
+/* The portal's search field is 200 px from 1024 px; below, the trigger is the magnifier (its own rule). */
+${mq.lg} {
+  .itsm-AppShell[data-variant="topnav"] .itsm-TopBar .itsm-SearchTrigger {
+    inline-size: 12.5rem;
+  }
 }
 
 ${mq.md} {

@@ -150,7 +150,7 @@ describe('search, help and the account', () => {
   it('sizes the search field by its column: 236, 200 under 1200 px, the magnifier under 960 px', () => {
     const sheet = componentStylesheet;
     expect(sheet).toMatch(/\.itsm-SearchTrigger \{[^}]*inline-size: 14\.75rem;/);
-    expect(sheet).toMatch(/@container itsm-column \(max-width: 74\.9375rem\) \{\s*\.itsm-AppTopBar__search \{\s*inline-size: 12\.5rem;/);
+    expect(sheet).toMatch(/@media \(min-width: 64rem\) \{\s*@container itsm-column \(max-width: 74\.9375rem\) \{\s*\.itsm-AppTopBar__search \{\s*inline-size: 12\.5rem;/);
     expect(sheet).toMatch(/@container itsm-column \(max-width: 59\.9375rem\) \{\s*\.itsm-AppTopBar__search \{[^}]*inline-size: calc\(var\(--itsm-control-height-md\) - var\(--itsm-space-3xs\)\);/);
     expect(sheet).toMatch(/\.itsm-AppShell__column \{[^}]*container-name: itsm-column itsm-page;/);
   });
@@ -206,7 +206,8 @@ describe('landmarks and phones', () => {
     expect(area.getAttribute('aria-label')).toBe('Switch area. Current: Administration');
     expect(area.compareDocumentPosition(q('.itsm-AppTopBar__title')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Shown below 768 px only, as a 32 × 44 chevron.
-    expect(componentStylesheet).toMatch(/@media \(max-width: 47\.9375rem\) \{\s*\.itsm-AppTopBar__area \{\s*display: inline-flex;/);
+    expect(componentStylesheet).toMatch(/\.itsm-AppTopBar \.itsm-AppTopBar__area \{\s*display: none;/);
+    expect(componentStylesheet).toMatch(/@media \(max-width: 47\.9375rem\) \{\s*\.itsm-AppTopBar \.itsm-AppTopBar__area \{\s*display: inline-flex;/);
     expect(componentStylesheet).toMatch(/button\.itsm-AreaSwitcher\.itsm-AppTopBar__area \{[^}]*inline-size: 2rem;[^}]*block-size: var\(--itsm-control-height-lg\);/);
   });
 

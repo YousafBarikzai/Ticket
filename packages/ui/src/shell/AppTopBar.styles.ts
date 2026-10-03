@@ -229,14 +229,15 @@ ${mq.coarse} {
 
 /* ---- the compact switcher on phones (RV5): a 32 × 44 chevron before the title ---- */
 
-.itsm-AppTopBar__area {
+/* Scoped to the bar so it outweighs the switcher's own compact display. */
+.itsm-AppTopBar .itsm-AppTopBar__area {
   display: none;
 }
 
 /* ---- by width ---- */
 
 ${mq.belowMd} {
-  .itsm-AppTopBar__area {
+  .itsm-AppTopBar .itsm-AppTopBar__area {
     display: inline-flex;
   }
   .itsm-AppTopBar__title {
@@ -264,7 +265,7 @@ ${mq.belowLg} {
   }
 }
 ${mq.lg} {
-  .itsm-AppTopBar__menu,
+  .itsm-AppTopBar .itsm-AppTopBar__menu,
   .itsm-AppTopBar__status {
     display: none;
   }
@@ -314,10 +315,12 @@ ${mq['2xl']} {
   }
 }
 
-/* The search field's width follows the column, not the window: a full sidebar narrows it. */
-@container itsm-column (max-width: 74.9375rem) {
-  .itsm-AppTopBar__search {
-    inline-size: 12.5rem;
+/* The search field's width follows the column, not the window: a full sidebar narrows it. (Below 1024 px the field is already the magnifier.) */
+${mq.lg} {
+  @container itsm-column (max-width: 74.9375rem) {
+    .itsm-AppTopBar__search {
+      inline-size: 12.5rem;
+    }
   }
 }
 @container itsm-column (max-width: 59.9375rem) {

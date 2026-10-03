@@ -443,7 +443,7 @@ describe('AppShell at 390, 768, 1024, 1280 and 1440 px', () => {
     const sheet = componentStylesheet;
     // Below 1024: no sidebar column; ☰ in the top bar opens the sheet.
     expect(sheet).toMatch(/\.itsm-AppShell__frame > \.itsm-AppShell__sidebar \{\s*display: none;/);
-    expect(sheet).toMatch(/@media \(min-width: 64rem\) \{[^}]*\.itsm-AppTopBar__menu,\s*\.itsm-AppTopBar__status \{\s*display: none;/);
+    expect(sheet).toMatch(/@media \(min-width: 64rem\) \{[^}]*\.itsm-AppTopBar \.itsm-AppTopBar__menu,\s*\.itsm-AppTopBar__status \{\s*display: none;/);
     // 1024 and up: the sidebar column at the rail width.
     expect(sheet).toMatch(/@media \(min-width: 64rem\) \{\s*\.itsm-AppShell\[data-variant="sidebar"\] \{\s*--_sidebar-w: var\(--itsm-sidebar-rail\);/);
     // 1280 and up: the full width, unless the person collapsed it.
