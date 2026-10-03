@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { setTenantKindReader } from '@itsm/platform';
 import { call, GatewayRefusedError, type GatewayLogEntry } from '../gateway/gateway.js';
 import { breakers, CircuitOpenError } from '../gateway/circuit-breaker.js';
 
@@ -35,7 +36,12 @@ const sink = async (entry: GatewayLogEntry) => {
 beforeEach(() => {
   logged = [];
   breakers.reset();
+  // `tenant-1` has no tenant row, which the demo guard (E1) reads as the
+  // shared demo and refuses; these cases are about a standard tenant's calls.
+  setTenantKindReader(async () => 'standard');
 });
+
+afterEach(() => setTenantKindReader(null));
 
 describe('a successful call', () => {
   it('returns the parsed body and the status', async () => {
