@@ -41,6 +41,14 @@ import { settleDecisions, thresholdsFor } from './decision-service.js';
 /** The provider every sample names. Never a provider anybody can register. */
 export const SAMPLE_PROVIDER = 'sample';
 
+/**
+ * The model every sample names. A4 §1.14 asked for none, but the table holds
+ * that a decision somebody answered names what answered it — only `rules`
+ * names no model (`ai_decision_rules_means_no_model`) — and a sample was
+ * answered, by the sample set.
+ */
+export const SAMPLE_MODEL = 'sample';
+
 /** The most decisions one call takes, so its one audit row can name each ticket. */
 export const SAMPLE_DECISIONS_MAX = 50;
 
@@ -130,7 +138,7 @@ export interface ImportedSampleDecision {
  * Writes sample triage decisions into the shared demo (A4 §2.3).
  *
  * Each row becomes one `ai_decision` exactly as `runTriage` records one in
- * `suggest` mode: provider `sample`, no model, nothing spent, every question
+ * `suggest` mode: provider and model `sample`, nothing spent, every question
  * of the set answered or recorded as unanswered, the plan the tenant's
  * thresholds give, `suggested` when the plan offers anything (otherwise
  * `shadowed`, as live). Responses are kept as the card keeps them; a resolved
@@ -255,7 +263,7 @@ export async function importSampleDecisions(
           responses[question] = { action: response.action, by: response.by, at: response.at.toISOString() };
         }
 
-        const attempt: ChainAttempt = { provider: SAMPLE_PROVIDER, outcome: 'answered', reason: null, model: null, ms: 0, costMicros: '0' };
+        const attempt: ChainAttempt = { provider: SAMPLE_PROVIDER, outcome: 'answered', reason: null, model: SAMPLE_MODEL, ms: 0, costMicros: '0' };
         const decisionId = newId();
         await tx.aiDecision.create({
           data: {
@@ -267,7 +275,7 @@ export async function importSampleDecisions(
             mode: 'suggest',
             questionSetVersion: definition.questionSetVersion,
             provider: SAMPLE_PROVIDER,
-            model: null,
+            model: SAMPLE_MODEL,
             providerRequestId: null,
             answers: checked.answers as never,
             proposed: proposed as never,

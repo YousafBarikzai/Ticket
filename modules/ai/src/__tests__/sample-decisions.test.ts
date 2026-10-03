@@ -169,7 +169,7 @@ const accepted: SampleDecisionInput = {
 };
 
 describe('a sample is recorded as runTriage records a decision in suggest mode', () => {
-  it('names the sample provider, no model, nothing spent, at the instant it was triaged', async () => {
+  it('names the sample provider and model, spends nothing, at the instant it was triaged', async () => {
     const [result] = await importSampleDecisions(importer, [open]);
     const [row] = db.table('aiDecision');
     expect(row).toMatchObject({
@@ -180,7 +180,8 @@ describe('a sample is recorded as runTriage records a decision in suggest mode',
       mode: 'suggest',
       questionSetVersion: 1,
       provider: 'sample',
-      model: null,
+      // Answered, so it names what answered it: the table refuses a null model for anything but `rules`.
+      model: 'sample',
       providerRequestId: null,
       outcome: 'suggested',
       latencyMs: 0,
@@ -191,7 +192,7 @@ describe('a sample is recorded as runTriage records a decision in suggest mode',
       createdAt: TRIAGED,
       problems: [],
       omitted: [],
-      attempts: [{ provider: 'sample', outcome: 'answered', reason: null, model: null, ms: 0, costMicros: '0' }],
+      attempts: [{ provider: 'sample', outcome: 'answered', reason: null, model: 'sample', ms: 0, costMicros: '0' }],
       baseline: { type: 'incident', categoryId: null, groupId: DESK, priority: 'P3' },
       responses: {},
     });
