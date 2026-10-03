@@ -587,7 +587,8 @@ describe('the request, in steps', () => {
     const tile = card.querySelector(':scope > .itsm-IconTile');
     expect(tile?.getAttribute('data-size')).toBe('28');
     expect(tile?.getAttribute('aria-hidden')).toBe('true');
-    // The item's own glyph, from its words ("System access" → access).
+    // A form's glyph (the item's own would bring the keyword table onto this route).
+    expect(tile?.getAttribute('data-tone')).toBe('accent');
     expect(tile?.querySelector('svg')).not.toBeNull();
     expect(card.querySelector(':scope > .itsm-FormRenderer[data-mode="steps"] > .itsm-FormRenderer__step .itsm-FormRenderer__stepHeading')).not.toBeNull();
     // Focus follows the step to its heading, by keyboard as by mouse.

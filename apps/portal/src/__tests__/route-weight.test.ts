@@ -143,6 +143,16 @@ describe('the heavy Help Portal routes (route weight)', () => {
     expect(routeGraph(CATALOGUE_ITEM).serverReferences).toEqual(['help/actions.ts']);
   });
 
+  it('keeps the panel’s timeout in step with help/sent.ts in both flows, which write it out', async () => {
+    const { SENT_PANEL_TIMEOUT_MS } = await import('../help/sent.js');
+    for (const file of ['catalogue/RequestFlow.tsx', 'help/HelpFlow.tsx']) {
+      const source = readFileSync(join(SRC, file), 'utf8');
+      expect(source).toContain(`resolve(null), ${SENT_PANEL_TIMEOUT_MS})`);
+      expect(staticImports(source)).not.toContain('../help/sent.js');
+      expect(staticImports(source)).not.toContain('./sent.js');
+    }
+  });
+
   it('never names PriorityChip anywhere in the portal’s sources', () => {
     const offenders: string[] = [];
     const walk = (directory: string): void => {

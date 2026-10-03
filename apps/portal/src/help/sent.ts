@@ -117,5 +117,10 @@ export function sentPanelModel(input: { readonly number: string; readonly kind: 
 /** How long the server waits for the first-response clock when it has not started yet: it starts moments after the ticket. */
 export const SLA_RETRY_MS = 1500;
 
-/** How long a flow waits for the drawn panel before ending with its own words instead. */
+/**
+ * How long a flow waits for the drawn panel before ending with its own words
+ * instead. Both flows write the number out rather than import it (imported,
+ * this module would be a chunk of its own on `/catalogue/[key]`);
+ * `route-weight.test.ts` holds them to this value.
+ */
 export const SENT_PANEL_TIMEOUT_MS = 6000;

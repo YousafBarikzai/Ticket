@@ -8,7 +8,6 @@ import {
   announce,
   asRichBlocks,
   Button,
-  DescriptionList,
   DraftNotice,
   DraftStatus,
   FormErrorSummary,
@@ -53,7 +52,6 @@ import {
   type ReportDraft,
   type Urgency,
 } from './model.js';
-import { SENT_PANEL_TIMEOUT_MS } from './sent.js';
 import { KnownIssueCallout, Suggested } from './Suggested.js';
 import { useSuggestions } from './suggestions.js';
 
@@ -163,13 +161,15 @@ export function stepLabelFor(step: HelpStep): string {
 }
 
 /**
- * The server's panel for a number, or `null` — after {@link SENT_PANEL_TIMEOUT_MS}
- * at the latest, so a slow or unreachable server never holds the ending up.
+ * The server's panel for a number, or `null` — after `SENT_PANEL_TIMEOUT_MS`
+ * (help/sent.ts, written out here: shared with the request flow, the constant
+ * would be a module of its own on `/catalogue/[key]`) at the latest, so a
+ * slow or unreachable server never holds the ending up.
  */
 function drawSent(number: string, headingLevel: 2 | 3): Promise<ReactNode> {
   return Promise.race([
     renderSentPanel({ number, kind: 'issue', headingLevel }).catch(() => null),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), SENT_PANEL_TIMEOUT_MS)),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
   ]);
 }
 
@@ -605,16 +605,25 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
                 Edit<VisuallyHidden> the report</VisuallyHidden>
               </Button>
             </div>
-            <DescriptionList
-              className="app-HelpReview__answers"
-              layout="inline"
-              emptyLabel="None given"
-              items={[
-                { id: 'title', label: 'Title', value: form.title.trim() },
-                { id: 'details', label: 'Details', value: form.details.trim() ? <span className="app-HelpReview__text">{form.details.trim()}</span> : 'None given' },
-                { id: 'urgency', label: 'How much it’s holding you up', value: choice?.label ?? '' },
-              ]}
-            />
+            {/*
+              A plain definition list in this file's styles, not the design system's
+              DescriptionList: shared with the request flow's renderer, that module
+              would move into a chunk `/tickets/[id]` loads too (≈ 0.4 kB there).
+            */}
+            <dl className="app-HelpReview__answers">
+              <div className="app-HelpReview__pair">
+                <dt>Title</dt>
+                <dd>{form.title.trim()}</dd>
+              </div>
+              <div className="app-HelpReview__pair">
+                <dt>Details</dt>
+                <dd className="app-HelpReview__text">{form.details.trim() || 'None given'}</dd>
+              </div>
+              <div className="app-HelpReview__pair">
+                <dt>How much it’s holding you up</dt>
+                <dd>{choice?.label}</dd>
+              </div>
+            </dl>
           </form>
         </div>
       ),

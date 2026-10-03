@@ -282,6 +282,13 @@
   padding-inline-start: 0;
 }
 
+/* Without `:has()` the heading cannot make room for the tile, so the tile is left out. */
+@supports not selector(:has(*)) {
+  .app-ServiceRequest__tile {
+    display: none;
+  }
+}
+
 /* A question group inside a step: a section of the card, set off by a rule. */
 .app-ServiceRequest__card .itsm-FormRenderer__section {
   padding-block-start: var(--itsm-space-md);

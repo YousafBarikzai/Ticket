@@ -8,8 +8,6 @@ import { useFullScreenFlow } from '@itsm/ui/shell';
 import { api } from '../client/api.js';
 import { toastProblem, useAction } from '../client/useAction.js';
 import { renderSentPanel } from '../help/actions.js';
-import { SENT_PANEL_TIMEOUT_MS } from '../help/sent.js';
-import { serviceIcon } from './icons.js';
 
 /**
  * Asking for something from the catalogue (SPEC §6.3 `/catalogue/[key]`,
@@ -32,7 +30,7 @@ import { serviceIcon } from './icons.js';
  *   Only the answers to questions the person can see are sent
  *   (`submissionValues`, the rule the API applies), in a fixed order, so the
  *   same answers are always the same body.
- * - **Each step a card** (v3 §7.2, X-M12): the item's `IconTile` (28) beside
+ * - **Each step a card** (v3 §7.2, X-M12): a form's `IconTile` (28) beside
  *   the step's heading, the review a definition grid, the progress a small
  *   `Stepper` — the renderer's own parts, arranged by `catalogue.css`, so
  *   the route gains no client module (`route-weight.test.ts`).
@@ -240,7 +238,8 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
       // The server draws the ending; past the timeout (or on any failure) this file's own words stand in.
       const panel = await Promise.race([
         renderSentPanel({ number: result.value.ticketNumber, kind: 'request', approval: Boolean(result.value.approvalId) }).catch(() => null),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), SENT_PANEL_TIMEOUT_MS)),
+        // `SENT_PANEL_TIMEOUT_MS` (help/sent.ts), written out: importing it would put a module of its own on this route.
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
       ]);
       sending.current = false;
       setDone({ result: result.value, panel });
@@ -313,7 +312,8 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
               }}
             />
             <div className="app-ServiceRequest__card">
-              {definition ? <IconTile icon={serviceIcon(service?.name, item.name)} className="app-ServiceRequest__tile" /> : null}
+              {/* A form's glyph, the same for every item: the item's own (`serviceIcon`) would bring its keyword table onto this route (≈ 0.8 kB). */}
+              {definition ? <IconTile icon="forms" className="app-ServiceRequest__tile" /> : null}
               {definition ? (
                 <FormRenderer
                   key={epoch}

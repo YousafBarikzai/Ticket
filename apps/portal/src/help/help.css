@@ -121,10 +121,45 @@
   border-radius: var(--itsm-radius-sm);
 }
 
-/* What they wrote, as they wrote it: line breaks kept, long words broken. */
+/* Label beside value from 30rem (the flow is the container), stacked below; hairlines between. */
+.app-HelpReview__answers {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.app-HelpReview__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-3xs) var(--itsm-space-md);
+  padding-block: var(--itsm-space-sm);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+}
+
+@container (min-width: 30rem) {
+  .app-HelpReview__pair {
+    grid-template-columns: minmax(8rem, 2fr) minmax(0, 3fr);
+  }
+}
+
+.app-HelpReview__pair > dt {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-HelpReview__pair > dd {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  overflow-wrap: anywhere;
+}
+
+/* What they wrote, as they wrote it: line breaks kept. */
 .app-HelpReview__text {
   white-space: pre-line;
-  overflow-wrap: anywhere;
 }
 
 .app-HelpFlow__form {
