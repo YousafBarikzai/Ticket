@@ -4,7 +4,7 @@ import { createContext, useContext, useMemo, useSyncExternalStore } from 'react'
 import type { AreaId, AreaModel } from '@itsm/contracts/areas';
 import type { FlagRow, SettingRow } from '@itsm/sdk';
 import { notify, type IconName } from '@itsm/ui';
-import { areaPersonaLine, setShortcutsDialogOpen, type CommandItem, type CommandProvider } from '@itsm/ui/shell';
+import { setShortcutsDialogOpen, type CommandItem, type CommandProvider } from '@itsm/ui/shell';
 import { useTheme } from '@itsm/ui/theme';
 import { createCommandsFor, isPending, visibleNav, visibleTabs } from '../navigation.js';
 import { holdsAny, type Grants } from '../permissions.js';
@@ -330,7 +330,8 @@ export function areaCommands(areas: PaletteAreas | null): CommandItem[] {
   const items: CommandItem[] = [];
   for (const area of areas.model.areas) {
     if (area.current) continue;
-    const persona = areaPersonaLine(area);
+    // The area menu's persona line (D11), spelt here: the shell's helper lives in a module this one would pull into every first load.
+    const persona = area.persona ? `You'll continue as ${area.persona.name}, ${area.persona.title}` : null;
     items.push({
       id: `area-${area.id}`,
       label: `Switch to ${area.name}`,

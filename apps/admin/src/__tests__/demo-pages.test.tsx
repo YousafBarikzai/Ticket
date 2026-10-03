@@ -420,6 +420,56 @@ describe('the console’s ended screen in a demo visit (§4.6.4)', () => {
   });
 });
 
+describe('the demo bar’s lazy wrappers (app/demo/bars.tsx, session-bar.tsx)', () => {
+  const clock = { nextResetAt: 86_400_000, serverNow: 3_600_000, periodMs: 86_400_000, resetLabel: '00:00 UK time', timeZone: 'Europe/London' };
+
+  async function until(check: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 50 && !check(); attempt += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+  }
+
+  it('draws the public bar once its own chunk has arrived', async () => {
+    const { LazyPublicDemoBar } = await vi.importActual<typeof import('../app/demo/bars.js')>('../app/demo/bars.js');
+    const page = render(<LazyPublicDemoBar variant="public" clock={clock} links={{ home: 'https://itsm.example/' }} />).container;
+    await until(() => page.querySelector('.itsm-SystemBar') !== null);
+    const bar = page.querySelector('.itsm-SystemBar[aria-label="Demo environment"]')!;
+    expect(bar).not.toBeNull();
+    expect(bar.textContent).toContain('Demo data resets every day at 00:00 UK time.');
+    expect(bar.textContent).not.toContain('End demo');
+    expect(await violations(page)).toEqual([]);
+  });
+
+  it('draws the session bar, which forgets the visit’s keys when the demo is rebuilt', async () => {
+    // The bar's status watch starts when the browser is idle; it is not what this test is about.
+    vi.stubGlobal('requestIdleCallback', () => 0);
+    vi.stubGlobal('cancelIdleCallback', () => undefined);
+    localStorage.setItem('itsm-recents:admin:u-1', '[]');
+    localStorage.setItem('itsm-keep-me', '1');
+    const { LazySessionDemoBar } = await vi.importActual<typeof import('../app/demo/bars.js')>('../app/demo/bars.js');
+    const page = render(
+      <LazySessionDemoBar variant="session" clock={clock} persona={{ name: 'Jordan Lee', title: 'IT Service Manager' }} generation={3} />,
+    ).container;
+    await until(() => page.querySelector('.itsm-SystemBar') !== null);
+    expect(page.querySelector('.itsm-SystemBar')?.textContent).toContain('Jordan Lee');
+    expect(page.querySelector('button[form="itsm-signout"]')?.textContent).toContain('End demo');
+
+    let work: Promise<unknown> | null = null;
+    window.dispatchEvent(new CustomEvent('itsm:demo-generation-change', { detail: { generation: 4, waitUntil: (promise: Promise<unknown>) => (work = promise) } }));
+    expect(work).not.toBeNull();
+    await act(async () => {
+      await work;
+    });
+    expect(localStorage.getItem('itsm-recents:admin:u-1')).toBeNull();
+    expect(localStorage.getItem('itsm-keep-me')).toBe('1');
+    expect(localStorage.getItem('itsm-demo:last-gen')).toBe('4');
+    expect(await violations(page)).toEqual([]);
+    localStorage.clear();
+  });
+});
+
 describe('what a refused /me means for a demo visit', () => {
   const problem = (code: string, extra: Record<string, unknown> = {}) => ({
     type: `https://itsm.example/problems/${code}`,

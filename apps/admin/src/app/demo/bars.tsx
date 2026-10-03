@@ -1,6 +1,6 @@
 'use client';
 
-import dynamic from 'next/dynamic';
+import { lazy, Suspense, type ReactNode } from 'react';
 import type { DemoBarProps } from '@itsm/ui/shell';
 
 /**
@@ -14,24 +14,45 @@ import type { DemoBarProps } from '@itsm/ui/shell';
  * it only when there is a demo to show: a real administrator's pages carry
  * these few bytes and never the bar.
  *
- * `next/dynamic` keeps server rendering, so the bar is in the HTML and
- * nothing moves when its chunk arrives; Next preloads the chunk with the page
- * that draws it.
+ * `React.lazy` rather than `next/dynamic`: React is already on every page,
+ * and Next's loadable wrapper put about 1 kB of its own runtime on every
+ * route for this one component (measured, WP-42a). The bar is still rendered
+ * on the server: its module is in the server's bundle, so the HTML carries
+ * the bar in place (only a process's very first render of it streams in a
+ * moment later, within the same response). In the browser the server's
+ * markup stays where it is while the chunk arrives — the boundary hydrates
+ * on its own, so the rest of the page does not wait — and then the islands
+ * take over.
  */
+
+const SessionDemoBar = lazy(() => import('./session-bar.js'));
+
+/** `webpackExports` keeps the chunk to `DemoBar` and what it imports rather than the whole shell barrel. */
+const PublicDemoBar = lazy(() =>
+  import(/* webpackExports: ["DemoBar"] */ '@itsm/ui/shell').then((module) => ({ default: module.DemoBar })),
+);
 
 /**
  * The bar inside a demo visit, with the generation-change clearing
  * (`session-bar.tsx`). The `(console)` layout renders it only when
  * `areas.demo`.
  */
-export const LazySessionDemoBar = dynamic<DemoBarProps>(() => import('./session-bar.js'));
+export function LazySessionDemoBar(props: DemoBarProps): ReactNode {
+  return (
+    <Suspense fallback={null}>
+      <SessionDemoBar {...props} />
+    </Suspense>
+  );
+}
 
 /**
  * The public bar of `/demo`, `/sign-in` and `/signed-out` (§3.8 "Public
  * variant"): badge, countdown, one sentence and Demo details, no polling.
- * `webpackExports` keeps the chunk to `DemoBar` and what it imports rather
- * than the whole shell barrel.
  */
-export const LazyPublicDemoBar = dynamic<DemoBarProps>(() =>
-  import(/* webpackExports: ["DemoBar"] */ '@itsm/ui/shell').then((module) => module.DemoBar),
-);
+export function LazyPublicDemoBar(props: DemoBarProps): ReactNode {
+  return (
+    <Suspense fallback={null}>
+      <PublicDemoBar {...props} />
+    </Suspense>
+  );
+}
