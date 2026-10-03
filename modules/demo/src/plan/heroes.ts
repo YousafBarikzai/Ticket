@@ -277,17 +277,19 @@ export function planHero(hero: HeroContent, t0: Instant, mode: 'day' | 'night', 
     if (approval?.decidedAt) setStatus(Math.max(approval.decidedAt, timing.firstReplyAt), 'in_progress', null, 'Approved');
   }
 
-  // Requester messages and internal notes, spread through the life so far.
-  const lastAt = timing.resolvedAt ?? timing.waitAt ?? t0 - 5 * MINUTE_MS;
-  const span = Math.max(MINUTE_MS, lastAt - (timing.firstReplyAt ?? createdAt));
+  // Requester messages and internal notes, spread through the life so far —
+  // before the agent's last public message, so only H1 reads "customer
+  // replied" (its requester's message is placed last, on purpose).
+  const agentTimes = comments.filter((comment) => comment.author === agent && comment.visibility === 'public').map((comment) => comment.at);
+  const lastAgentAt = agentTimes.length > 0 ? Math.max(...agentTimes) : null;
+  const spreadFrom = timing.firstReplyAt ?? createdAt;
+  const spreadTo = Math.max(spreadFrom + MINUTE_MS, (lastAgentAt ?? timing.resolvedAt ?? timing.waitAt ?? t0 - 5 * MINUTE_MS) - MINUTE_MS);
+  const lastRequesterIndex = timing.requesterLastAt === undefined ? -1 : otherMessages.map((m) => m.author).lastIndexOf('requester');
   otherMessages.forEach((message, index) => {
-    const isLastRequester = timing.requesterLastAt !== undefined && message.author === 'requester' && index === otherMessages.length - 1;
-    const at = isLastRequester
-      ? (timing.requesterLastAt as Instant)
-      : (timing.firstReplyAt ?? createdAt) + Math.round(((index + 1) / (otherMessages.length + 1)) * span);
+    const at = index === lastRequesterIndex ? (timing.requesterLastAt as Instant) : spreadFrom + Math.round(((index + 1) / (otherMessages.length + 1)) * (spreadTo - spreadFrom));
     say(Math.min(at, t0 - MINUTE_MS), message);
   });
-  if (timing.requesterLastAt !== undefined && otherMessages.at(-1)?.author !== 'requester') {
+  if (timing.requesterLastAt !== undefined && lastRequesterIndex === -1) {
     comments.push({
       at: timing.requesterLastAt,
       author: requester,

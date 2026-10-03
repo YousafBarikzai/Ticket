@@ -1,4 +1,5 @@
 import { loadConfig, type PlatformConfig } from '@itsm/platform';
+import { DEMO_GENERATOR_VERSION } from './plan/version.js';
 
 /**
  * The generator's configuration (A4 §3.11), read from the platform's validated
@@ -7,12 +8,7 @@ import { loadConfig, type PlatformConfig } from '@itsm/platform';
  * is a code default: a deployment that never heard of the demo runs as before.
  */
 
-/**
- * Recorded on every generation in the ledger and in `settings.demo`. Bump it
- * whenever the planner's output changes for the same (seed, T0, scale), so a
- * plan hash is only ever compared with one made by the same rules (W8).
- */
-export const DEMO_GENERATOR_VERSION = '3.0.0';
+export { DEMO_GENERATOR_VERSION };
 
 export interface DemoConfig {
   /** `on` builds and serves the demo; `off` leaves every demo job idle. */

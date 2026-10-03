@@ -59,13 +59,13 @@ export interface CategoryModel {
 }
 
 export const CATEGORIES: Readonly<Record<CategoryKey, CategoryModel>> = Object.freeze({
-  'access-identity': { name: 'Access & identity', share: 22, priorities: { P1: 0, P2: 2, P3: 44, P4: 54 } },
-  'software-m365': { name: 'Software & Microsoft 365', share: 20, priorities: { P1: 0, P2: 2, P3: 46, P4: 52 } },
-  hardware: { name: 'Hardware', share: 18, priorities: { P1: 0, P2: 3, P3: 50, P4: 47 } },
-  'business-apps': { name: 'Business applications', share: 16, priorities: { P1: 3, P2: 16, P3: 66, P4: 15 } },
-  network: { name: 'Network', share: 12, priorities: { P1: 7, P2: 18, P3: 60, P4: 15 } },
-  security: { name: 'Security', share: 5, priorities: { P1: 6, P2: 20, P3: 64, P4: 10 } },
-  'facilities-howto': { name: 'Facilities & how-to', share: 7, priorities: { P1: 0, P2: 0, P3: 20, P4: 80 } },
+  'access-identity': { name: 'Access & identity', share: 22, priorities: { P1: 0, P2: 2, P3: 43, P4: 55 } },
+  'software-m365': { name: 'Software & Microsoft 365', share: 20, priorities: { P1: 0, P2: 2, P3: 45, P4: 53 } },
+  hardware: { name: 'Hardware', share: 18, priorities: { P1: 0, P2: 3, P3: 48, P4: 49 } },
+  'business-apps': { name: 'Business applications', share: 16, priorities: { P1: 3, P2: 16, P3: 65, P4: 16 } },
+  network: { name: 'Network', share: 12, priorities: { P1: 7, P2: 18, P3: 58, P4: 17 } },
+  security: { name: 'Security', share: 5, priorities: { P1: 6, P2: 20, P3: 62, P4: 12 } },
+  'facilities-howto': { name: 'Facilities & how-to', share: 7, priorities: { P1: 0, P2: 0, P3: 19, P4: 81 } },
 });
 
 export interface SubcategoryModel {
@@ -213,6 +213,12 @@ export const WEEKDAY_HOURS: readonly { readonly from: number; readonly to: numbe
   { from: 17, to: 18, share: 3 },
   { from: 18, to: 31, share: 2 },
 ]);
+
+/** About how many tickets the days hold at full scale, before the story's own (A4 §1.10.3). */
+export const BASE_TICKETS_AT_FULL_SCALE = 1760;
+
+/** The P2 share aimed for: A4 §1.11's 10 %, less the half point the month-end and rollout weeks add on average. */
+export const PRIORITY_TARGET_P2 = 0.096;
 
 /* ------------------------------------------------------------------ Channels (A4 §1.11) */
 

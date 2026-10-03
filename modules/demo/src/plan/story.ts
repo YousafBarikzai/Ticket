@@ -74,7 +74,19 @@ function nearestMonthEnd(calendar: StoryCalendar, key: DateKey): DateKey {
 const LIVE_TITLE = 'VPN sign-in failures for remote staff';
 const BRIDGE = 'https://teams.example/l/meetup/vpn-bridge';
 
-export function planMajorIncidents(t0: Instant, mode: 'day' | 'night', calendar: StoryCalendar): MajorIncidentStory {
+/**
+ * How many reports each major incident had. The live incident's are the
+ * presenter's (Alex's war room, Jordan's unowned urgent work) and do not
+ * scale; the three historic ones are history, and scale with `DEMO_SCALE` as
+ * every other ticket of the history does.
+ */
+export function majorIncidentReportCounts(scale: number, mode: 'day' | 'night'): Readonly<Record<1 | 2 | 3 | 4, number>> {
+  const historic = (count: number) => Math.max(2, Math.round(count * scale));
+  return { 1: historic(14), 2: historic(6), 3: historic(9), 4: mode === 'day' ? 18 : 9 };
+}
+
+export function planMajorIncidents(t0: Instant, mode: 'day' | 'night', calendar: StoryCalendar, scale = 1): MajorIncidentStory {
+  const counts = majorIncidentReportCounts(scale, mode);
   const today = londonWall(t0).dateKey;
   const at = (key: DateKey, time: string): Instant => {
     const [h, m] = time.split(':').map(Number) as [number, number];
@@ -239,9 +251,9 @@ export function planMajorIncidents(t0: Instant, mode: 'day' | 'night', calendar:
 
   /* -------------------------------------------- The reports raised against them */
   const reports: MajorIncidentTicketSpec[] = [
-    { majorIncident: 1, count: 14, from: mi1.declaredAt - 5 * MINUTE_MS, to: at(d61, '12:00'), channels: { teams: 5, voice: 4, email: 3, system: 2 }, withAisha: 14, resolvedAt: at(d61, '12:15'), subcategory: 'site-connectivity', title: 'Leeds' },
-    { majorIncident: 2, count: 6, from: mi2.declaredAt - 10 * MINUTE_MS, to: at(d34, '15:20'), channels: { email: 3, voice: 2, teams: 1 }, withAisha: 0, resolvedAt: at(d34, '15:30'), subcategory: 'sage-intacct', title: 'Sage' },
-    { majorIncident: 3, count: 9, from: mi3.declaredAt - 8 * MINUTE_MS, to: at(d12, '09:55'), channels: { email: 3, teams: 3, portal: 2, voice: 1 }, withAisha: 0, resolvedAt: at(d12, '10:00'), subcategory: 'app-access', title: 'Salesforce' },
+    { majorIncident: 1, count: counts[1], from: mi1.declaredAt - 5 * MINUTE_MS, to: at(d61, '12:00'), channels: { teams: 5, voice: 4, email: 3, system: 2 }, withAisha: counts[1], resolvedAt: at(d61, '12:15'), subcategory: 'site-connectivity', title: 'Leeds' },
+    { majorIncident: 2, count: counts[2], from: mi2.declaredAt - 10 * MINUTE_MS, to: at(d34, '15:20'), channels: { email: 3, voice: 2, teams: 1 }, withAisha: 0, resolvedAt: at(d34, '15:30'), subcategory: 'sage-intacct', title: 'Sage' },
+    { majorIncident: 3, count: counts[3], from: mi3.declaredAt - 8 * MINUTE_MS, to: at(d12, '09:55'), channels: { email: 3, teams: 3, portal: 2, voice: 1 }, withAisha: 0, resolvedAt: at(d12, '10:00'), subcategory: 'app-access', title: 'Salesforce' },
     day
       ? { majorIncident: 4, count: 18, from: rel(-52), to: rel(-5), channels: { email: 7, portal: 5, teams: 4, voice: 2 }, withAisha: 7, resolvedAt: null, subcategory: 'vpn', title: 'VPN' }
       : { majorIncident: 4, count: 9, from: declaredAt + 5 * MINUTE_MS, to: t0 - 10 * MINUTE_MS, channels: { email: 4, portal: 3, teams: 2 }, withAisha: 4, resolvedAt: null, subcategory: 'vpn', title: 'VPN' },

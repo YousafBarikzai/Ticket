@@ -9,6 +9,8 @@ import {
   STAR_SHARES,
   BREACH_ODDS,
   ATTAINMENT_TARGETS,
+  BASE_TICKETS_AT_FULL_SCALE,
+  PRIORITY_TARGET_P2,
   BREACH_ODDS_SCALE,
   BREACH_STAR_PENALTY,
   CANCELLED_SHARE,
@@ -39,7 +41,7 @@ import { planObjects } from './objects.js';
 import { planPeople, workersOf } from './people.js';
 import { poissonAt, quantile, streamFor, weightedPick, type Stream } from './rng.js';
 import { attainment, evaluateSla, targetMs } from './sla-plan.js';
-import { majorIncidentAcknowledgement, planMajorIncidents, planWorkforce, type MajorIncidentTicketSpec } from './story.js';
+import { majorIncidentAcknowledgement, majorIncidentReportCounts, planMajorIncidents, planWorkforce, type MajorIncidentTicketSpec } from './story.js';
 import {
   DAY_MS,
   HOUR_MS,
@@ -187,6 +189,19 @@ export function planWithContent(input: DemoPlanInput, content: DemoContent): Dem
   const clockFor = (priority: Priority): BusinessClock => calendar.clockFor(priority);
   const tools = (priority: Priority) => ({ clock: clockFor(priority), office, words });
 
+  /*
+   * A4's priority mix (P2 10 %) is the whole history's, the story's own P2
+   * reports included: the major incidents' (fixed for the live one) and the
+   * P2 heroes. At a small scale those are a larger share of fewer tickets, so
+   * the days' own P2 share gives way by just enough. It depends on the scale
+   * and the mode, never on the date, so a day's tickets keep their story.
+   */
+  const reportCounts = majorIncidentReportCounts(input.scale, mode);
+  const storyP2 = reportCounts[1] + reportCounts[2] + reportCounts[3] + reportCounts[4] + content.heroes.filter((hero) => hero.priority === 'P2').length;
+  const storyTotal = storyP2 + 2 + 6 + content.heroes.filter((hero) => hero.priority !== 'P2').length;
+  const expectedDays = BASE_TICKETS_AT_FULL_SCALE * input.scale;
+  const p2Factor = Math.min(1.25, Math.max(0.2, (PRIORITY_TARGET_P2 * (expectedDays + storyTotal) - storyP2) / (expectedDays * baseP2Share())));
+
   /* -------------------------------------------------- Drawing a ticket */
   const drawTicket = (slot: Slot, overrides: Partial<TicketDraw> = {}): Drawn => {
     const rng = streamFor(seed, 'ticket', slot.ref);
@@ -209,6 +224,9 @@ export function planWithContent(input: DemoPlanInput, content: DemoContent): Dem
     const type = channel === 'system' ? 'incident' : rng.weighted(model.types);
     const mix = { ...CATEGORIES[category].priorities };
     if (slot.monthEnd && category === 'business-apps') mix.P2 *= 2;
+    // What P2 gives way, P4 takes: A4's P3 share stays where the categories put it.
+    mix.P4 += mix.P2 * (1 - p2Factor);
+    mix.P2 *= p2Factor;
     const priority: Priority = slot.priority ?? weightedPick(mix, q('priority'));
 
     let requester: string;
@@ -536,7 +554,7 @@ export function planWithContent(input: DemoPlanInput, content: DemoContent): Dem
   });
 
   /* -------------------------------------------------- 3. The major incidents and their reports */
-  const story = planMajorIncidents(t0, mode, calendar);
+  const story = planMajorIncidents(t0, mode, calendar, input.scale);
   const reportTickets: PlannedTicket[] = [];
   const reportsByIncident = new Map<number, string[]>();
   for (const spec of story.reports) {
@@ -1047,6 +1065,18 @@ function minuteOfDay(rng: Stream, business: boolean): number {
   // 18:00–07:00: the evening, or the small hours of the same date.
   const offset = rng.int(0, 13 * 60 - 1);
   return offset < 6 * 60 ? 18 * 60 + offset : offset - 6 * 60;
+}
+
+/** The days' own P2 share before the story's reports are allowed for: the categories' mixes, plus month-end's doubling in business applications. */
+function baseP2Share(): number {
+  let share = 0;
+  for (const key of CATEGORY_KEYS) {
+    const category = CATEGORIES[key];
+    const total = category.priorities.P1 + category.priorities.P2 + category.priorities.P3 + category.priorities.P4;
+    share += (category.share / 100) * (category.priorities.P2 / total);
+  }
+  const bizapps = CATEGORIES['business-apps'];
+  return share + (bizapps.share / 100) * (bizapps.priorities.P2 / 100) * (3 / 21.7);
 }
 
 /** How many of `n` answers get each mark: `STAR_SHARES`, by largest remainder. */
