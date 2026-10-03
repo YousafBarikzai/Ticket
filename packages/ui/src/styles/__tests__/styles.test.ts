@@ -151,21 +151,14 @@ describe('the assembled stylesheet', () => {
   it('edges every card class with a 1px border.subtle, the only thing that separates a card from the canvas', () => {
     // Light canvas and card differ by 1.07:1 by design (SPEC-v3 §2.9, §2.11):
     // depth is border-first, so a card class without its border vanishes.
-    // The four classes reach their v3 styles in the waves after the tokens;
-    // until then each is listed with the package that brings it, and the
-    // integrator empties the list once all four have landed.
-    const pending: Readonly<Record<string, string>> = {
-      '.itsm-Card': 'WP-14',
-      '.itsm-KanbanColumn': 'WP-16',
-      '.itsm-StatCard': 'WP-18',
-      '.itsm-DataTable__frame': 'WP-26',
-    };
+    // All four have their v3 styles (WP-14, WP-16, WP-18 and WP-26), so none
+    // is waiting any more.
     const border = /border:\s*(?:var\(--itsm-border-hair\)|1px)\s+solid\s+var\(--itsm-colour-border-subtle\)/;
     for (const card of ['.itsm-Card', '.itsm-StatCard', '.itsm-DataTable__frame', '.itsm-KanbanColumn']) {
       const escaped = card.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const rule = componentStylesheet.match(new RegExp(`(?:^|\\n)\\s*${escaped} \\{([^}]*)\\}`));
-      if (rule && border.test(rule[1]!)) continue;
-      expect(pending[card], `${card} must declare a 1px border.subtle`).toBeDefined();
+      expect(rule?.[1], `${card} must have a rule of its own`).toBeDefined();
+      expect(rule![1], `${card} must declare a 1px border.subtle`).toMatch(border);
     }
   });
 
