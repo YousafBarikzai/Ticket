@@ -1,7 +1,7 @@
 /**
  * The cookies this BFF writes — the session, the short-lived marker the
- * sign-in callback uses and the last page for `/resume` — and the rules the
- * `__Host-` prefix imposes.
+ * sign-in callback uses, the demo's re-entry cookie and the last page for
+ * `/resume` — and the rules the `__Host-` prefix imposes.
  *
  * The prefix is not decoration. A browser refuses to store a `__Host-` cookie
  * unless it is `Secure`, has `Path=/` and carries no `Domain` — which is
@@ -20,6 +20,15 @@
  * package works in any handler that speaks `Request` and `Response` — and so
  * the rules are testable without one.
  */
+import {
+  DEMO_PERSONA_FOR_AREA,
+  isDemoArea,
+  isDemoPersonaKey,
+  secondsUntilNextReset,
+  ukDateKey,
+  type DemoArea,
+  type DemoPersonaKey,
+} from '@itsm/contracts/demo';
 import { safeRedirectTarget } from './redirects.js';
 
 export const SESSION_COOKIE = '__Host-session';
@@ -105,8 +114,9 @@ export const RETRY_COOKIE_SECONDS = 60;
  * these codes, the page maps it to a sentence written here, and anything
  * else — an old link, a hand-edited URL — reads as the generic sentence.
  *
- * Kept in this module because `@itsm/bff/cookies` is the package's light,
- * dependency-free entry: the pages that show these sentences import it
+ * Kept in this module because `@itsm/bff/cookies` is the package's light
+ * entry (its only import outside this package is the zod-free
+ * `@itsm/contracts/demo`): the pages that show these sentences import it
  * without pulling in the SDK or the Redis client, as the edge proxies do.
  * `parked_expired` is emitted by the demo sign-out (row O2), not by the
  * provider flow; it is listed so the vocabulary has one home.
@@ -162,6 +172,82 @@ export function violatesHostPrefix(
   if (attributes.path !== '/') return 'a __Host- cookie must have Path=/';
   if ('domain' in attributes && attributes.domain !== undefined) return 'a __Host- cookie must not set Domain';
   return null;
+}
+
+/* ------------------------------------------------------------------ The demo re-entry cookie */
+
+/**
+ * The demo re-entry cookie `D` (SPEC §4.5; D22): `<persona>.<ukDateKey>`, set
+ * with the demo session (M7) and re-set by a re-mint in the proxy (X8).
+ *
+ * It answers one question for a browser whose session is gone — "was this
+ * browser exploring the demo today?" — so `/sign-in` can offer "Continue the
+ * demo as …" (I1, I2) and a login link can send it there (L4) instead of to
+ * an identity provider the visitor has no account with. It is never a
+ * credential: honoured silently only together with `demo=1` (L2, L3), and
+ * otherwise only ever *offered*. A real sign-in always clears it (L1, C9 and
+ * every sign-out), so a person who signs in for real is never steered back
+ * into the demo.
+ *
+ * It lives until the next reset at most, and never longer than a day: a
+ * visitor who comes back after midnight meets a new generation, so the
+ * cookie's date no longer matches and nothing is offered. `HttpOnly`, as the
+ * page reads it server-side; the same `__Host-` attributes as the session.
+ */
+export const DEMO_COOKIE = '__Host-itsm-demo';
+
+/** The cookie's ceiling: a day, `DEMO_SESSION_MAX_SECONDS`' default. */
+export const DEMO_COOKIE_MAX_SECONDS = 86_400;
+
+/** `D`'s value for a persona at an instant: `<persona>.<ukDateKey>`. */
+export function demoCookieValue(persona: DemoPersonaKey, now: number = Date.now()): string {
+  return `${persona}.${ukDateKey(now)}`;
+}
+
+/** Seconds `D` may live from `now`: until the next reset, never more than a day. */
+export function demoCookieMaxAge(now: number = Date.now()): number {
+  return Math.min(secondsUntilNextReset(now), DEMO_COOKIE_MAX_SECONDS);
+}
+
+/** The whole `Set-Cookie` header for `D`. */
+export function demoCookie(persona: DemoPersonaKey, now: number = Date.now()): string {
+  return serialiseCookie(DEMO_COOKIE, demoCookieValue(persona, now), cookieAttributes(demoCookieMaxAge(now)));
+}
+
+/** `D` cleared: every real sign-in and every sign-out sends this. */
+export function clearedDemoCookie(): string {
+  return serialiseCookie(DEMO_COOKIE, '', clearedAttributes());
+}
+
+/**
+ * The persona `D` names, when it is valid for this app today; otherwise
+ * `null`. Valid means: this app's own persona (an `agent` cookie means
+ * nothing to the Help Portal, D11) and today's date in London (a cookie from
+ * before the last reset names a generation that is gone). The value is read
+ * from the `Cookie` header and is client input like any other.
+ */
+export function readDemoReentry(
+  cookieHeader: string | null | undefined,
+  app: string,
+  now: number = Date.now(),
+): DemoPersonaKey | null {
+  return demoReentryFromValue(readCookie(cookieHeader, DEMO_COOKIE), app, now);
+}
+
+/** As `readDemoReentry`, from the cookie's value (a page's `cookies().get(DEMO_COOKIE)?.value`). */
+export function demoReentryFromValue(
+  value: string | null | undefined,
+  app: string,
+  now: number = Date.now(),
+): DemoPersonaKey | null {
+  if (!isDemoArea(app)) return null;
+  if (!value) return null;
+  const separator = value.indexOf('.');
+  if (separator < 1) return null;
+  const persona = value.slice(0, separator);
+  const date = value.slice(separator + 1);
+  if (!isDemoPersonaKey(persona) || persona !== DEMO_PERSONA_FOR_AREA[app as DemoArea]) return null;
+  return date === ukDateKey(now) ? persona : null;
 }
 
 /* ------------------------------------------------------------------ The last page, for /resume */

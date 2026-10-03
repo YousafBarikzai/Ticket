@@ -1,3 +1,4 @@
+import { isDemoTokenShape } from '@itsm/contracts/demo';
 import type { BffConfig } from './config.js';
 
 /**
@@ -21,6 +22,13 @@ import type { BffConfig } from './config.js';
  * refresh interval rather than lasting the session's life.
  *
  * What it must never do is fail *silently*. It logs, and the caller carries on.
+ *
+ * **A demo token is never recorded** (SPEC §4.4, §4.7.3). Every visitor of a
+ * persona shares one account, so a session list would show strangers'
+ * visits, and the API answers a demo context's recording with 204 anyway.
+ * `createSession` already skips the call for demo sessions; the check here
+ * is the second lock on the same door, so a future caller cannot post a demo
+ * bearer by passing it the wrong token.
  */
 
 /** How long to wait before giving up. A sign-in must not hang on this. */
@@ -42,6 +50,8 @@ export async function recordSession(
   accessToken: string,
   deps: RecordDeps = {},
 ): Promise<RecordedSession | null> {
+  if (isDemoTokenShape(accessToken)) return null;
+
   const doFetch = deps.fetchImpl ?? fetch;
   const report = deps.onFailure ?? ((reason: string) => {
     // `console` rather than the platform logger: this package is imported by a

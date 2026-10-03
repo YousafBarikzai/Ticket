@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBff } from '../bff.js';
 import {
   cookieAttributes,
+  DEMO_COOKIE,
   GENERIC_SIGN_IN_FAILURE,
   isSignInFailureReason,
   readCookie,
@@ -12,6 +13,9 @@ import {
   signInFailureSentence,
   violatesHostPrefix,
 } from '../cookies.js';
+import { memoryLoginCounter, setLoginCounter } from '../demo/handlers.js';
+import { memoryDemoTokenStore } from '../demo/memory-store.js';
+import { setDemoTokenStore } from '../demo/store.js';
 import { memorySessionStore, type SessionStore } from '../session.js';
 import { setSessionStore } from '../store.js';
 
@@ -57,12 +61,20 @@ let upstream: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   store = memorySessionStore();
   setSessionStore(APP.appName, store);
+  // Signing in counts against the L0 limiter in every mode, which reads the
+  // day's IP salt from the demo store: both in memory, so no test reaches a
+  // real Redis.
+  const tokens = memoryDemoTokenStore({ appName: APP.appName, clock: () => Date.now() });
+  setDemoTokenStore(APP.appName, tokens);
+  setLoginCounter(APP.appName, memoryLoginCounter(tokens.keyspace));
   upstream = vi.fn();
   vi.stubGlobal('fetch', upstream);
 });
 
 afterEach(() => {
   setSessionStore(APP.appName, null);
+  setDemoTokenStore(APP.appName, null);
+  setLoginCounter(APP.appName, null);
   vi.unstubAllGlobals();
 });
 
@@ -457,14 +469,17 @@ describe('signing in through an identity provider', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe(`${ORIGIN}/tickets/INC-9`);
 
-    // Two cookies, as two headers: folded into one, the browser would read
-    // neither as intended.
-    expect(setCookies(response)).toHaveLength(2);
+    // Three cookies, as three headers: folded into one, the browser would
+    // read none of them as intended. The demo's re-entry cookie goes too: a
+    // real sign-in always wins (D22).
+    expect(setCookies(response)).toHaveLength(3);
     const session = setCookieFor(response, SESSION_COOKIE)!;
     const retry = setCookieFor(response, RETRY_COOKIE)!;
+    const reentry = setCookieFor(response, DEMO_COOKIE)!;
     expect(session).toContain('Max-Age=43200');
     expect(retry).toContain('Max-Age=0');
-    for (const header of [session, retry]) {
+    expect(reentry).toContain('Max-Age=0');
+    for (const header of [session, retry, reentry]) {
       expect(violatesHostPrefix(header.split('=')[0]!, attributesOf(header))).toBeNull();
     }
 

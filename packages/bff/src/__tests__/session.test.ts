@@ -14,6 +14,7 @@ function session(overrides: Partial<Session> = {}): Session {
     userId: 'user',
     displayName: 'A Person',
     createdAt: Date.now(),
+    kind: 'oidc',
     ...overrides,
   };
 }

@@ -74,6 +74,12 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * Request headers worth carrying. Short on purpose: anything absent from this
  * list has to be argued for, which is the opposite of a deny-list, where
  * anything forgotten is forwarded.
+ *
+ * The list is also the demo's privacy rule (SPEC §4.5 X7, §4.7.6): the
+ * client's address and browser never reach the API — no `x-forwarded-for`,
+ * `x-real-ip`, `forwarded` or `user-agent` — so no demo audit row, log line
+ * or rate-limit key the API writes can hold a visitor's IP. The demo's IP
+ * bucket is computed here, salted, and travels only inside the token record.
  */
 const FORWARD_REQUEST = new Set([
   'accept',
@@ -101,6 +107,9 @@ const FORWARD_RESPONSE = new Set([
   'x-ratelimit-remaining',
   'x-ratelimit-reset',
 ]);
+
+/** The request headers the proxy carries, for tests that pin what it never does. */
+export const FORWARDED_REQUEST_HEADERS: ReadonlySet<string> = FORWARD_REQUEST;
 
 export function forwardRequestHeaders(incoming: Headers, accessToken: string, correlationId: string): Headers {
   const out = new Headers();
@@ -155,4 +164,49 @@ export function refusalBody(error: ProxyRefused, correlationId: string): Record<
     detail: error.message,
     correlationId,
   };
+}
+
+/**
+ * The problem `code` an upstream answer carries: the last path segment of its
+ * RFC 9457 `type` (`…/problems/demo_reset` → `demo_reset`), the same word the
+ * SDK's `ApiError.code` reads. `null` for a body that is not a problem, a
+ * `type` of `about:blank`, or anything unreadable — never a guess.
+ *
+ * The demo's transparent re-mint keys on this (X2): a 401 whose code is
+ * `demo_reset` means the demo was rebuilt underneath a live visit, which the
+ * BFF repairs without the visitor seeing it; any other 401 is passed on.
+ */
+export function problemCodeOf(body: string | null | undefined): string | null {
+  if (!body) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const type = parsed && typeof parsed === 'object' ? (parsed as { type?: unknown }).type : undefined;
+  if (typeof type !== 'string' || type === '' || type === 'about:blank') return null;
+  const path = type.split(/[?#]/, 1)[0]!.replace(/\/+$/, '');
+  const segment = path.slice(path.lastIndexOf('/') + 1);
+  return /^[a-z][a-z0-9_]*$/.test(segment) ? segment : null;
+}
+
+/**
+ * Where the platform's problem types live (`toProblemDetails` in
+ * `@itsm/platform`). The BFF answers a few demo problems itself — the visit
+ * that ended in the proxy (X3) — and spells their `type` the API's way, so a
+ * page reads the BFF's answer and the API's with the same `ApiError.code`.
+ */
+export const PROBLEM_TYPE_BASE = 'https://docs.itsm.example/problems/';
+
+/** An RFC 9457 body with a coded `type`, in the API's shape. */
+export function codedProblemBody(
+  status: number,
+  code: string,
+  title: string,
+  detail: string,
+  correlationId: string,
+  extensions: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { type: `${PROBLEM_TYPE_BASE}${code}`, title, status, detail, correlationId, ...extensions };
 }
