@@ -1,5 +1,14 @@
+import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import { SESSION_COOKIE, lastPathCookie, shouldRecordLastPath } from '@itsm/bff/cookies';
+import {
+  LAST_PATH_COOKIE,
+  LAST_PATH_COOKIE_SECONDS,
+  LAST_PATH_MAX_BYTES,
+  SESSION_COOKIE,
+  cookieAttributes,
+  serialiseCookie,
+  shouldRecordLastPath,
+} from '@itsm/bff/cookies';
 
 /**
  * The console's front door (Next 16 Proxy; SPEC §5.1, F5; v3 §3.3).
@@ -22,11 +31,10 @@ import { SESSION_COOKIE, lastPathCookie, shouldRecordLastPath } from '@itsm/bff/
  * to this session by a hash of its cookie, so coming back from another area
  * (`/resume`) lands on it rather than on the Command centre (§3.3). Never for
  * a prefetch, a non-page request or the routes that are not a place to come
- * back to (`shouldRecordLastPath`); the hash is computed with WebCrypto, which
- * is why this function is asynchronous.
+ * back to (`shouldRecordLastPath`).
  *
- * It imports cookie helpers and nothing else: the session store, Redis and
- * the SDK stay out of the proxy, which runs on every request.
+ * It imports cookie helpers and Node's digest, and nothing else: the session
+ * store, Redis and the SDK stay out of the proxy, which runs on every request.
  */
 
 /** The header that carries the requested path to server components. */
@@ -47,7 +55,26 @@ export function requestedPath(url: URL): string {
   return query ? `${url.pathname}?${query}` : url.pathname;
 }
 
-export async function proxy(request: NextRequest): Promise<NextResponse> {
+/**
+ * The `Set-Cookie` header that remembers `path` (already without `_rsc`) for
+ * the session `sessionId`, or `null` for a path that is not a same-origin
+ * page or would not fit in a cookie.
+ *
+ * The value is exactly the one `lastPathCookie` in `@itsm/bff/cookies` writes
+ * and `resumeTarget` reads — `1.<first 16 hex of SHA-256(session)>.<path>` —
+ * computed with Node's digest, the proxy's runtime, so the proxy answers
+ * synchronously. `proxy.test.ts` holds the two equal, byte for byte, so the
+ * shared helper cannot change its format without this failing.
+ */
+export function lastPathHeader(sessionId: string, path: string): string | null {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || /[\u0000-\u001f]/.test(path)) return null;
+  const hash = createHash('sha256').update(sessionId, 'utf8').digest('hex').slice(0, 16);
+  const value = `1.${hash}.${encodeURIComponent(path)}`;
+  if (encodeURIComponent(value).length > LAST_PATH_MAX_BYTES) return null;
+  return serialiseCookie(LAST_PATH_COOKIE, value, cookieAttributes(LAST_PATH_COOKIE_SECONDS));
+}
+
+export function proxy(request: NextRequest): NextResponse {
   const path = requestedPath(request.nextUrl);
   const session = request.cookies.get(SESSION_COOKIE)?.value;
 
@@ -61,7 +88,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   forwarded.set(PATH_HEADER, path);
   const response = NextResponse.next({ request: { headers: forwarded } });
   if (shouldRecordLastPath(request)) {
-    const cookie = await lastPathCookie(session, path);
+    const cookie = lastPathHeader(session, path);
     if (cookie) response.headers.append('set-cookie', cookie);
   }
   return response;

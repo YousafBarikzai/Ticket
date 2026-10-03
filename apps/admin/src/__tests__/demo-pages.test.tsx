@@ -121,7 +121,7 @@ const ORIGINS = { portal: 'https://help.acme.test', workbench: 'https://desk.acm
 
 /** A `/demo` decision as the BFF makes it, from the real decision table. */
 function decide(
-  overrides: Partial<Parameters<typeof decideDemoEntry>[0]> & { query?: Record<string, string>; headers?: Record<string, string> } = {},
+  overrides: Partial<Omit<Parameters<typeof decideDemoEntry>[0], 'query' | 'headers'>> & { query?: Record<string, string>; headers?: Record<string, string> } = {},
 ): DemoEntryDecision {
   const { query = {}, headers = {}, ...rest } = overrides;
   return decideDemoEntry({
@@ -421,7 +421,13 @@ describe('the console’s ended screen in a demo visit (§4.6.4)', () => {
 });
 
 describe('what a refused /me means for a demo visit', () => {
-  const problem = (code: string, extra: Record<string, unknown> = {}) => ({ type: `https://itsm.example/problems/${code}`, title: code, status: 401, ...extra });
+  const problem = (code: string, extra: Record<string, unknown> = {}) => ({
+    type: `https://itsm.example/problems/${code}`,
+    title: code,
+    status: 401,
+    correlationId: 'c-1',
+    ...extra,
+  });
   const demo = { kind: 'demo' as const, createdAt: 1_000_000 };
   const later = demo.createdAt + DEMO_LOOP_BREAKER_MS;
 

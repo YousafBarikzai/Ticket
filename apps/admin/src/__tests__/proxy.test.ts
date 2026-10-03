@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
-import { LAST_PATH_COOKIE, SESSION_COOKIE, readCookie, resumeTarget } from '@itsm/bff/cookies';
-import { PATH_HEADER, config, proxy, requestedPath } from '../proxy.js';
+import { LAST_PATH_COOKIE, SESSION_COOKIE, lastPathCookie, readCookie, resumeTarget } from '@itsm/bff/cookies';
+import { PATH_HEADER, config, lastPathHeader, proxy, requestedPath } from '../proxy.js';
 
 /**
  * The console's front door (SPEC §5.1, F5; v3 §3.3, §4.6.1): a deep link
@@ -29,7 +29,7 @@ function lastPathCookieOf(response: Response): string | undefined {
 
 describe('without a session', () => {
   it('sends the person to sign in, keeping the page and its query', async () => {
-    const response = await proxy(request('/rules?open=rule:vip'));
+    const response = proxy(request('/rules?open=rule:vip'));
     expect(response.status).toBe(307);
     const location = new URL(response.headers.get('location')!);
     expect(location.pathname).toBe('/api/session/login');
@@ -38,7 +38,7 @@ describe('without a session', () => {
   });
 
   it('sends `/resume` to sign in too, so it is resumed afterwards', async () => {
-    const response = await proxy(request('/resume'));
+    const response = proxy(request('/resume'));
     expect(new URL(response.headers.get('location')!).searchParams.get('redirectTo')).toBe('/resume');
   });
 
@@ -50,13 +50,13 @@ describe('without a session', () => {
 
 describe('with a session cookie', () => {
   it('passes the request through with the path for the layout, overwriting a header the client sent', async () => {
-    const response = await proxy(request('/sla/calendars?x=1', { cookie: `${SESSION_COOKIE}=abc`, [PATH_HEADER]: '//evil.example' }));
+    const response = proxy(request('/sla/calendars?x=1', { cookie: `${SESSION_COOKIE}=abc`, [PATH_HEADER]: '//evil.example' }));
     expect(response.status).toBe(200);
     expect(response.headers.get(`x-middleware-request-${PATH_HEADER}`)).toBe('/sla/calendars?x=1');
   });
 
   it('remembers the page a person navigates to, bound to their session', async () => {
-    const response = await proxy(navigation('/rules/vip-requester?tab=history'));
+    const response = proxy(navigation('/rules/vip-requester?tab=history'));
     const header = response.headers.get('set-cookie')!;
     expect(header).toMatch(new RegExp(`^${LAST_PATH_COOKIE}=1\\.[0-9a-f]{16}\\.`));
     expect(header).toContain('HttpOnly');
@@ -71,7 +71,7 @@ describe('with a session cookie', () => {
   });
 
   it('remembers a client navigation too, without the router’s cache key', async () => {
-    const response = await proxy(request('/workflows?_rsc=x1', { cookie: `${SESSION_COOKIE}=session-1`, rsc: '1' }));
+    const response = proxy(request('/workflows?_rsc=x1', { cookie: `${SESSION_COOKIE}=session-1`, rsc: '1' }));
     expect(await resumeTarget(lastPathCookieOf(response), 'session-1', '/')).toBe('/workflows');
   });
 
@@ -83,8 +83,32 @@ describe('with a session cookie', () => {
       navigation('/resume'),
     ];
     for (const one of cases) {
-      const response = await proxy(one);
+      const response = proxy(one);
       expect(response.headers.get('set-cookie'), one.nextUrl.pathname).toBeNull();
+    }
+  });
+});
+
+describe('the remembered page', () => {
+  /*
+   * The proxy writes the cookie with Node's digest so it can answer
+   * synchronously; the value must be the shared helper's to the byte, or
+   * `/resume` (which reads it with the helper) would never match.
+   */
+  it.each([
+    '/',
+    '/rules',
+    '/rules/vip-requester?tab=history&open=rule:vip',
+    '/people?q=%C3%A9lodie',
+    '/tickets?open=ticket:INC-000004#history',
+    `/audit?q=${'x'.repeat(2_000)}`,
+  ])('writes exactly what @itsm/bff/cookies writes for %s', async (path) => {
+    expect(lastPathHeader('session-1', path)).toBe(await lastPathCookie('session-1', path));
+  });
+
+  it('writes nothing for a path that is not a same-origin page', () => {
+    for (const path of ['//evil.example/x', '/\\evil.example', 'https://evil.example/', 'rules', '/a\u0001b']) {
+      expect(lastPathHeader('session-1', path), path).toBeNull();
     }
   });
 });
