@@ -1,11 +1,20 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   APPS,
+  BANNED_ENGINES,
+  LEAN_APPS,
+  ZOD_MARKER,
+  asyncTable,
+  bannedPackages,
+  checkAsync,
+  chunkFiles,
   chunkKind,
+  engineDependencies,
   evaluate,
   explainRoute,
   explainTable,
@@ -16,6 +25,7 @@ import {
   pageRoutes,
   parseArguments,
   readBudgets,
+  scanFirstLoad,
   table,
   withBaselines,
   type AppMeasurement,
@@ -329,10 +339,12 @@ describe('explaining a route (--explain)', () => {
     expect(parseArguments(['--app', 'portal', '--explain', '/catalogue/[key]', '--explain', '/tickets/[id]'])).toEqual({
       apps: ['portal'],
       update: false,
+      async: false,
       explain: ['/catalogue/[key]', '/tickets/[id]'],
     });
-    expect(parseArguments([])).toEqual({ apps: [...APPS], update: false, explain: [] });
-    expect(parseArguments(['--update', '--app', 'site'])).toEqual({ apps: ['site'], update: true, explain: [] });
+    expect(parseArguments([])).toEqual({ apps: [...APPS], update: false, async: false, explain: [] });
+    expect(parseArguments(['--update', '--app', 'site'])).toEqual({ apps: ['site'], update: true, async: false, explain: [] });
+    expect(parseArguments(['--app', 'admin', '--async'])).toEqual({ apps: ['admin'], update: false, async: true, explain: [] });
   });
 
   it('refuses an --explain it cannot honour', () => {
@@ -344,8 +356,188 @@ describe('explaining a route (--explain)', () => {
   });
 });
 
+/** A fake build with extra files written into its `.next`, for the scans below. */
+function buildWith(name: string, extra: Record<string, string | Buffer> = {}): string {
+  const dir = fakeBuild(name);
+  for (const [file, content] of Object.entries(extra)) write(join(dir, '.next', file), content);
+  return dir;
+}
+
+/** Deterministic text that barely compresses (base64 of a hash chain), so a chunk's gzipped size is under the test's control. */
+function noise(length: number): string {
+  let text = '';
+  let block = createHash('sha256').update('check-bundles').digest();
+  while (text.length < length) {
+    block = createHash('sha256').update(block).digest();
+    text += block.toString('base64url');
+  }
+  return text.slice(0, length);
+}
+
+/** A webpack async chunk holding the reader core: its marker, then `padding` characters of code that barely compresses. */
+const readerCore = (padding: number): string =>
+  `"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[8098],{8098:(e,t,r)=>{const m="itsm-reader-core";const x="${noise(padding)}";}}]);`;
+
+const withAsync = (budget = 3000, required: Budgets['asyncRequired'] = ['admin', 'workbench']): Budgets => ({
+  ...budgets(),
+  async: { 'itsm-reader-core': budget },
+  asyncRequired: required,
+});
+
+describe('lazy chunks (--async)', () => {
+  it('finds every chunk the build emitted, in nested folders too', () => {
+    const dir = buildWith('async-files', { 'static/chunks/8098.abc.js': readerCore(100) });
+    expect(chunkFiles(dir)).toEqual([
+      'static/chunks/323-a.js',
+      'static/chunks/8098.abc.js',
+      'static/chunks/app/(portal)/page-a.js',
+      'static/chunks/app/(portal)/tickets/[id]/page-a.js',
+      'static/chunks/app/layout-a.js',
+      'static/chunks/framework-1.js',
+      'static/chunks/main-app-1.js',
+      'static/chunks/polyfills-1.js',
+      'static/chunks/webpack-1.js',
+    ]);
+    expect(chunkFiles(join(scratch, 'no-build-here'))).toEqual([]);
+  });
+
+  it('measures the chunk carrying the marker, and passes it lazy and within its budget', () => {
+    const content = readerCore(1_500);
+    const dir = buildWith('async-ok', { 'static/chunks/8098.abc.js': content });
+    const report = checkAsync(measureApp('admin', dir), dir, withAsync());
+    expect(report.failures).toEqual([]);
+    expect(report.chunks).toEqual([
+      { app: 'admin', marker: 'itsm-reader-core', file: 'static/chunks/8098.abc.js', bytes: gz(Buffer.from(content)), budget: 3000, firstLoad: [] },
+    ]);
+  });
+
+  it('fails a chunk over its async budget', () => {
+    const content = readerCore(5_000);
+    const dir = buildWith('async-heavy', { 'static/chunks/8098.abc.js': content });
+    const report = checkAsync(measureApp('workbench', dir), dir, withAsync());
+    expect(gz(Buffer.from(content))).toBeGreaterThan(3000);
+    expect(report.failures).toEqual([
+      `workbench: static/chunks/8098.abc.js carries "itsm-reader-core" and weighs ${(gz(Buffer.from(content)) / 1000).toFixed(1)} kB gzipped, over its 3.0 kB async budget`,
+    ]);
+  });
+
+  it('fails the marker in a file a route loads first: the core must wait for intent', () => {
+    const dir = buildWith('async-leaked', { 'static/chunks/323-a.js': readerCore(200) });
+    const report = checkAsync(measureApp('admin', dir), dir, withAsync());
+    expect(report.chunks[0]!.firstLoad).toEqual(['/', '/tickets/[id]']);
+    expect(report.failures).toEqual(['admin: static/chunks/323-a.js carries "itsm-reader-core" but /, /tickets/[id] load it first; it must load only on intent']);
+    // A root file is first load for every route.
+    const root = buildWith('async-root', { 'static/chunks/main-app-1.js': readerCore(200) });
+    expect(checkAsync(measureApp('admin', root), root, withAsync()).failures).toEqual([
+      'admin: static/chunks/main-app-1.js carries "itsm-reader-core" but /, /tickets/[id] load it first; it must load only on intent',
+    ]);
+  });
+
+  it('fails an app with interactive charts that has no chunk for the marker, and no other app', () => {
+    const dir = buildWith('async-missing');
+    expect(checkAsync(measureApp('workbench', dir), dir, withAsync()).failures).toEqual([
+      'workbench: no chunk carries "itsm-reader-core"; it must be its own async chunk in an app with interactive charts (asyncRequired)',
+    ]);
+    expect(checkAsync(measureApp('portal', dir), dir, withAsync()).failures).toEqual([]);
+    expect(checkAsync(measureApp('workbench', dir), dir, withAsync(3000, [])).failures).toEqual([]);
+  });
+
+  it('says so when the budgets file names no async budgets, and judges nothing', () => {
+    const dir = buildWith('async-unbudgeted', { 'static/chunks/8098.abc.js': readerCore(4_000) });
+    expect(checkAsync(measureApp('admin', dir), dir, budgets())).toEqual({
+      chunks: [],
+      failures: [],
+      notes: ['admin: --async found no "async" budgets in infra/bundle-budgets.json'],
+    });
+  });
+
+  it('prints the lazy chunks, flagging one that is first load or over budget', () => {
+    const text = asyncTable([
+      { app: 'admin', marker: 'itsm-reader-core', file: 'static/chunks/8098.abc.js', bytes: 1552, budget: 3000, firstLoad: [] },
+      { app: 'workbench', marker: 'itsm-reader-core', file: 'static/chunks/1.js', bytes: 3200, budget: 3000, firstLoad: [] },
+      { app: 'workbench', marker: 'itsm-reader-core', file: 'static/chunks/2.js', bytes: 900, budget: 3000, firstLoad: ['/'] },
+    ]);
+    const lines = text.trimEnd().split('\n');
+    expect(lines[0]).toBe('async chunks (gzip -9, loaded on intent)');
+    expect(lines[2]).toMatch(/^ {2}admin\s+itsm-reader-core\s+1\.6 kB\s+3\.0 kB {2}static\/chunks\/8098\.abc\.js$/);
+    expect(lines[3]).toMatch(/static\/chunks\/1\.js {2}OVER BUDGET$/);
+    expect(lines[4]).toMatch(/static\/chunks\/2\.js {2}FIRST LOAD$/);
+    expect(asyncTable([])).toBe('');
+  });
+});
+
+describe('what never reaches a lean first load', () => {
+  it('holds the portal, the Service Desk and the site to it, and not Administration', () => {
+    expect([...LEAN_APPS]).toEqual(['portal', 'workbench', 'site']);
+    expect([...BANNED_ENGINES]).toEqual(['echarts', 'zrender', 'recharts', 'chart.js']);
+    expect(ZOD_MARKER).toBe('invalid_enum_value');
+  });
+
+  it('fails zod in a first-load chunk, naming the routes, and not in a lazy chunk or in Administration', () => {
+    const zod = `var a={invalid_type:"invalid_type",${ZOD_MARKER}:"${ZOD_MARKER}"};`;
+    const leaked = buildWith('zod-leaked', { 'static/chunks/app/layout-a.js': zod });
+    expect(scanFirstLoad(measureApp('portal', leaked), leaked)).toEqual([
+      'portal: static/chunks/app/layout-a.js carries zod ("invalid_enum_value") into the first load of /, /tickets/[id]; import schemas only on the server (`…/schemas` subpaths)',
+    ]);
+    expect(scanFirstLoad(measureApp('admin', leaked), leaked)).toEqual([]);
+    const lazy = buildWith('zod-lazy', { 'static/chunks/9725.abc.js': zod });
+    expect(scanFirstLoad(measureApp('site', lazy), lazy)).toEqual([]);
+  });
+
+  it('fails a chart engine’s module path in a first-load chunk', () => {
+    const dir = buildWith('engine-leaked', { 'static/chunks/323-a.js': '/*! node_modules/echarts/lib/echarts.js */var e=1;' });
+    expect(scanFirstLoad(measureApp('workbench', dir), dir)).toEqual([
+      'workbench: static/chunks/323-a.js carries the chart engine echarts into the first load of /, /tickets/[id]; charts are server-rendered SVG (D8)',
+    ]);
+    // Our own names are not an engine's: only `node_modules/<engine>/` counts.
+    const ours = buildWith('engine-ours', { 'static/chunks/323-a.js': 'var n="chart.js",r="./echarts-free.js";' });
+    expect(scanFirstLoad(measureApp('workbench', ours), ours)).toEqual([]);
+  });
+
+  it('asks pnpm for the dependency graph once per lean app, and passes when it finds nothing', () => {
+    const run = vi.fn((_command: string, _args: readonly string[]) => '[]\n');
+    expect(engineDependencies('site', run)).toEqual([]);
+    expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledWith('pnpm', ['--filter', '@itsm/site', 'why', 'echarts', 'zrender', 'recharts', 'chart.js', '--json']);
+    expect(engineDependencies('portal', () => '')).toEqual([]);
+  });
+
+  it('fails every banned engine the graph holds, in either shape pnpm prints', () => {
+    // pnpm 10: the packages found, each with the packages that depend on it.
+    const found = JSON.stringify([{ name: 'zrender', version: '5.6.1', dependents: [{ name: 'echarts', version: '5.6.0', dependents: [{ name: '@itsm/workbench', version: '0.1.0' }] }] }]);
+    expect(engineDependencies('workbench', () => found)).toEqual([
+      'workbench depends on echarts; chart engines are banned from the portal, the Service Desk and the site (D8). See: pnpm --filter @itsm/workbench why echarts',
+      'workbench depends on zrender; chart engines are banned from the portal, the Service Desk and the site (D8). See: pnpm --filter @itsm/workbench why zrender',
+    ]);
+    // Older pnpm: the importer, its dependencies keyed by name.
+    const importers = JSON.stringify([{ name: '@itsm/portal', version: '0.1.0', dependencies: { 'react-chartjs-2': { version: '5.0.0', dependencies: { 'chart.js': { version: '4.4.0' } } } } }]);
+    expect(bannedPackages(importers)).toEqual(['chart.js']);
+    expect(bannedPackages(JSON.stringify([{ name: 'react', version: '19.3.0', dependents: [{ name: '@itsm/site' }] }]))).toEqual([]);
+  });
+
+  it('fails a graph it cannot read rather than passing it', () => {
+    expect(
+      engineDependencies('portal', () => {
+        throw new Error('spawn pnpm ENOENT\nmore detail');
+      }),
+    ).toEqual(['portal: could not read its dependency graph (`pnpm --filter @itsm/portal why echarts zrender recharts chart.js --json`): spawn pnpm ENOENT']);
+    expect(engineDependencies('site', () => 'ERR_PNPM_SOMETHING')[0]).toMatch(/^site: could not read its dependency graph/);
+  });
+
+  it('leaves Administration’s graph alone', () => {
+    const run = vi.fn(() => '[]');
+    expect(engineDependencies('admin', run)).toEqual([]);
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
 describe('the budgets file', () => {
   const file = readBudgets();
+
+  it('budgets the reader core as a lazy chunk and requires it where charts are interactive (SPEC v3 §8.6, §10.1)', () => {
+    expect(file.async).toEqual({ 'itsm-reader-core': 3000 });
+    expect(file.asyncRequired).toEqual(['admin', 'workbench']);
+  });
 
   it('measures the four Next applications, the public site among them', () => {
     expect([...APPS]).toEqual(['portal', 'workbench', 'admin', 'site']);

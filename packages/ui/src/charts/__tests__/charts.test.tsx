@@ -10,7 +10,7 @@ import { contrastRatio } from '../../tokens/contrast.js';
 import { themeVariables } from '../../tokens/css.js';
 import { themeNames } from '../../tokens/tokens.js';
 import { AreaChart } from '../AreaChart.js';
-import { BarChart, type BarDatum } from '../BarChart.js';
+import { BarChart } from '../BarChart.js';
 import { BulletList } from '../Bullet.js';
 import { ChartCard } from '../ChartCard.js';
 import { CHART_TABLE_DEFAULTS, ChartFigure } from '../ChartFigure.js';
@@ -399,135 +399,8 @@ describe('line and area charts', () => {
   });
 });
 
-describe('bar charts', () => {
-  const channels: BarDatum[] = [
-    { id: 'email', label: 'Email', value: 412, icon: 'mail', href: '/tickets?channel=email' },
-    { id: 'slack', label: 'Slack', value: 142 },
-    { id: 'portal', label: 'Portal', value: 318, secondary: 'self-service' },
-  ];
-
-  it('lists label · bar · value rows, largest first, as a ranked list', () => {
-    const markup = html(<BarChart title="By channel" variant="list" data={channels} />);
-    expect(markup).toMatch(/<ol class="itsm-BarChart__rows">/);
-    const labels = [...markup.matchAll(/itsm-BarChart__name[^"]*">([^<]+)</g)].map((match) => match[1]);
-    expect(labels).toEqual(['Email', 'Portal', 'Slack']);
-    // Each row reads as "Email 412": the label, then the value; the bar is decoration.
-    expect(markup).toMatch(/<span class="itsm-BarChart__value">412<\/span><span class="itsm-BarChart__track" aria-hidden="true">/);
-    expect(markup).toContain('data-layout="list"');
-  });
-
-  it('keeps the given order when asked, as an unordered list', () => {
-    const markup = html(<BarChart title="By channel" variant="list" sort="none" data={channels} />);
-    expect(markup).toMatch(/<ul class="itsm-BarChart__rows">/);
-    expect([...markup.matchAll(/itsm-BarChart__name[^"]*">([^<]+)</g)].map((match) => match[1])).toEqual(['Email', 'Slack', 'Portal']);
-  });
-
-  it('links a row and carries its icon and qualifier', () => {
-    const markup = html(<BarChart title="By channel" variant="list" data={channels} />);
-    expect(markup).toContain('<a href="/tickets?channel=email" class="itsm-BarChart__name itsm-BarChart__link">Email</a>');
-    expect(markup).toMatch(/<svg[^>]*itsm-BarChart__icon/);
-    expect(markup).toContain('<span class="itsm-BarChart__secondary">self-service</span>');
-  });
-
-  it('sizes each bar against the largest, and draws nothing for a zero', () => {
-    const markup = html(<BarChart title="By channel" variant="list" data={[...channels, { id: 'fax', label: 'Fax', value: 0 }]} />);
-    expect(markup).toContain('--_itsm-bar:1');
-    expect(markup).toMatch(/--_itsm-bar:0\.3446/);
-    const fax = markup.slice(markup.indexOf('>Fax<'));
-    expect(fax.slice(0, fax.indexOf('</li>'))).not.toContain('itsm-BarChart__segment');
-  });
-
-  it('paints one series in one colour, and "Other" in the de-emphasis grey', () => {
-    const markup = html(<BarChart title="By channel" variant="list" maxBars={2} data={channels} />);
-    expect(count(markup, /data-slot="1"/g)).toBe(1);
-    expect(markup).toContain('data-slot="other"');
-    expect(markup).toMatch(/itsm-BarChart__name">Other<\/span>.*?itsm-BarChart__value">460</);
-  });
-
-  it('stacks parts with their series colours, says the breakdown in words, and adds a legend', () => {
-    const markup = html(
-      <BarChart
-        title="By team"
-        variant="list"
-        seriesDefs={[
-          { id: 'p1', label: 'P1', slot: 6 },
-          { id: 'p2', label: 'P2', slot: 2 },
-        ]}
-        data={[{ id: 'desk', label: 'Desk', value: 0, series: { p1: 3, p2: 9 } }]}
-      />,
-    );
-    expect(markup).toMatch(/itsm-BarChart__value">12<span class="itsm-visually-hidden"> \(P1 3, P2 9\)<\/span>/);
-    expect(markup).toContain('data-slot="6" style="flex-grow:3"');
-    expect(markup).toContain('data-slot="2" style="flex-grow:9"');
-    expect(count(markup, /itsm-ChartLegend__item/g)).toBe(2);
-  });
-
-  it('puts the value at the tip of a horizontal bar, measured in the widest value', () => {
-    const markup = html(<BarChart title="By team" data={channels} />);
-    expect(markup).toContain('data-layout="rows"');
-    expect(markup).toContain('--_itsm-value-ch:3');
-  });
-
-  it('draws vertical bars on a value axis, keeps their order, and puts the data behind "View as table"', () => {
-    const markup = html(
-      <BarChart title="Per day" orientation="vertical" data={['Mon', 'Tue', 'Wed'].map((label, index) => ({ id: label, label, value: [5, 12, 7][index]! }))} />,
-    );
-    expect(markup).toContain('data-layout="columns"');
-    expect([...markup.matchAll(/itsm-BarChart__xTick"[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(['Mon', 'Tue', 'Wed']);
-    expect([...markup.matchAll(/itsm-BarChart__yTick"[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(['0', '5', '10', '15']);
-    expect(markup).toContain('View as table');
-    expect(markup).toMatch(/itsm-ChartFigure__summary itsm-visually-hidden">(<span[^>]*>\. <\/span>)?Highest: Tue \(12\); lowest: Mon \(5\)\./);
-  });
-
-  it('leaves the table out of rows, which already say every value, unless asked', () => {
-    expect(html(<BarChart title="By channel" variant="list" data={channels} />)).not.toContain('<table');
-    expect(html(<BarChart title="By channel" variant="list" data={channels} table="toggle" />)).toContain('<table');
-  });
-
-  it('formats values, empty and loading states', () => {
-    expect(html(<BarChart title="Accuracy" variant="list" valueFormat={{ style: 'percent' }} data={[{ id: 'p', label: 'Priority', value: 0.92 }]} />)).toContain('>92%<');
-    expect(html(<BarChart title="By team" data={[]} />)).toContain('No data for this period');
-    expect(html(<BarChart title="By team" data={channels} loading />)).toContain('aria-busy="true"');
-  });
-
-  it('reads rows with the arrow keys down the list when interactive', () => {
-    const markup = html(<BarChart title="By team" data={channels} interactive />);
-    expect(markup).toContain('Use ↑ ↓ to read values');
-    expect(count(markup, /data-point="\d"/g)).toBe(3);
-  });
-});
-
-describe('donut chart', () => {
-  const segments = ['Email', 'Portal', 'Slack', 'Teams', 'Phone', 'API', 'Fax'].map((label, index) => ({ id: label.toLowerCase(), label, value: 70 - index * 10 }));
-
-  it('is for six parts at most: the smallest fold into "Other"', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments} />);
-    expect(count(markup, /class="itsm-DonutChart__segment"/g)).toBe(6);
-    expect(markup).toMatch(/itsm-ChartLegend__label">Other<\/span><span class="itsm-ChartLegend__value">30<\/span><span class="itsm-ChartLegend__detail">11%</);
-  });
-
-  it('gives every part its value and share in the legend, so nobody reads an angle', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments.slice(0, 2)} />);
-    expect(markup).toMatch(/Email<\/span><span class="itsm-ChartLegend__value">70<\/span><span class="itsm-ChartLegend__detail">54%/);
-    expect(markup).toMatch(/itsm-visually-hidden">(<span[^>]*>\. <\/span>)?Email 54% and Portal 46%, of 130 in all\./);
-  });
-
-  it('draws each textured part twice, with the hatch shown by CSS only when wanted', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments.slice(0, 3)} />);
-    expect(count(markup, /<pattern /g)).toBe(2);
-    expect(count(markup, /itsm-DonutChart__texture" fill="url\(#itsm-donut-[a-z0-9]+-t[23]\)"/g)).toBe(2);
-  });
-
-  it('says the centre figure once, in words', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments.slice(0, 2)} centerValue="130" centerLabel="tickets" />);
-    expect(markup).toContain('<span class="itsm-DonutChart__centre" aria-hidden="true">');
-    expect(markup).toContain('<span class="itsm-visually-hidden">130 tickets</span>');
-  });
-
-  it('is empty when nothing adds up to anything', () => {
-    expect(html(<DonutChart title="Channels" segments={[{ id: 'a', label: 'A', value: 0 }]} />)).toContain('No data for this period');
-  });
-});
+// The bar and donut cases moved to `bar.test.tsx` and `donut.test.tsx` with
+// the v3 charts (WP-44), each with its own axe cases in light and dark.
 
 describe('progress ring and sparkline', () => {
   it('names the ring with its value, and keeps the centre text visual', () => {
