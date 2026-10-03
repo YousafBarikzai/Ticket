@@ -484,6 +484,12 @@
   color: var(--itsm-colour-danger-subtleText);
 }
 
+/* P2 cells read `high` (D5): orange, not SLA-risk amber. */
+.app-HeatGrid__cell[data-tone='high'] {
+  background: var(--itsm-colour-high-subtle);
+  color: var(--itsm-colour-high-subtleText);
+}
+
 .app-HeatGrid__cell[data-tone='warning'] {
   background: var(--itsm-colour-warning-subtle);
   color: var(--itsm-colour-warning-subtleText);

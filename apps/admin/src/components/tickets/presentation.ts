@@ -256,11 +256,6 @@ export function plainText(description: string): string {
     .trim();
 }
 
-/** Where a ticket is worked: the workbench, same tab (SPEC §4.10 cross-app links). */
-export function workbenchHref(origin: string | undefined, number: string): string | undefined {
-  return origin ? `${origin.replace(/\/+$/, '')}/tickets/${encodeURIComponent(number)}` : undefined;
-}
-
 /* =========================================================================
  * The drawer
  * ====================================================================== */

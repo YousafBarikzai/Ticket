@@ -203,7 +203,7 @@ describe('a ticket in words', () => {
   });
 
   it('reads statuses, types and priorities as words', () => {
-    expect(presentation.statusLook('pending_requester', 'paused')).toEqual({ label: 'Waiting on requester', tone: 'neutral', icon: 'pause' });
+    expect(presentation.statusLook('pending_requester', 'paused')).toEqual({ label: 'Waiting on requester', tone: 'hold', icon: 'pause' });
     expect(presentation.statusLook('awaiting_parts', 'paused').label).toBe('Awaiting parts');
     expect(presentation.typeLabel('question')).toBe('Question');
     expect(presentation.priorityText(ticketFixture())).toBe('P2 · High (high impact, medium urgency)');
@@ -214,11 +214,6 @@ describe('a ticket in words', () => {
   it('shows a description as text, never as markup', () => {
     expect(presentation.plainText('<p>Smoke &amp; flames</p><p>Second floor</p><script>alert(1)</script><style>p{}</style>')).toBe('Smoke & flames\nSecond floor');
     expect(presentation.plainText('Plain text\n\n\n\nkept')).toBe('Plain text\n\nkept');
-  });
-
-  it('links to the workbench only when it is configured', () => {
-    expect(presentation.workbenchHref('https://desk.example/', 'INC-000042')).toBe('https://desk.example/tickets/INC-000042');
-    expect(presentation.workbenchHref(undefined, 'INC-000042')).toBeUndefined();
   });
 });
 
