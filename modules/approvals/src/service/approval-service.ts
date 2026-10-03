@@ -147,12 +147,26 @@ export interface RequestInput {
 }
 
 /**
+ * When an approval step happened, for a history written after the fact (the
+ * shared demo's four months, A4 §2.3). Omitted, the present — exactly what
+ * every live caller has always recorded.
+ */
+export interface ApprovalClock {
+  at?: Date;
+}
+
+/**
  * Opens an approval for a subject, if a published policy matches it.
  *
  * Returns null when no policy matches, which is not an error: most tickets need
  * no approval, and the caller carries on.
+ *
+ * `at` dates the request, its first step's opening and that step's due time,
+ * so an approval imported with its ticket's history is due when it was due
+ * then, not two days after the import ran.
  */
-export async function requestApproval(ctx: TenantContext, tx: Tx, input: RequestInput) {
+export async function requestApproval(ctx: TenantContext, tx: Tx, input: RequestInput, clock: ApprovalClock = {}) {
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
   const facts = input.facts ?? {};
   const policies = await tx.approvalPolicy.findMany({
     where: { subjectType: input.subjectType, status: 'published' },
@@ -186,6 +200,7 @@ export async function requestApproval(ctx: TenantContext, tx: Tx, input: Request
       ticketId: input.ticketId ?? null,
       status: 'pending',
       requestedBy: ctx.actor.id,
+      ...(at ? { requestedAt: at } : {}),
     },
   });
 
@@ -205,11 +220,17 @@ export async function requestApproval(ctx: TenantContext, tx: Tx, input: Request
     });
   }
 
-  await openNextStep(ctx, tx, request.id, {
-    subjectUserId: input.subjectUserId ?? null,
-    serviceId: input.serviceId ?? null,
-    facts,
-  });
+  await openNextStep(
+    ctx,
+    tx,
+    request.id,
+    {
+      subjectUserId: input.subjectUserId ?? null,
+      serviceId: input.serviceId ?? null,
+      facts,
+    },
+    at,
+  );
 
   await recordAudit(tx, ctx, {
     action: 'approval.requested',
@@ -245,8 +266,17 @@ interface OpenContext {
  * A step whose `when` does not hold is skipped, and a step that resolves to
  * nobody is skipped too — with a reason recorded. Blocking forever on an empty
  * step is the failure mode that turns an approval policy into an outage.
+ *
+ * `at` is when this happens: the step's opening, its due time and any skip
+ * are stamped with it. Omitted, the present.
  */
-export async function openNextStep(ctx: TenantContext, tx: Tx, requestId: string, open: OpenContext): Promise<void> {
+export async function openNextStep(
+  ctx: TenantContext,
+  tx: Tx,
+  requestId: string,
+  open: OpenContext,
+  at: Date = new Date(),
+): Promise<void> {
   const request = await tx.approvalRequest.findFirst({ where: { id: requestId } });
   if (!request || request.status !== 'pending') return;
 
@@ -269,7 +299,7 @@ export async function openNextStep(ctx: TenantContext, tx: Tx, requestId: string
       if (!applies) {
         await tx.approvalStep.update({
           where: { id: step.id },
-          data: { status: 'skipped', decidedAt: new Date() },
+          data: { status: 'skipped', decidedAt: at },
         });
         continue;
       }
@@ -283,7 +313,7 @@ export async function openNextStep(ctx: TenantContext, tx: Tx, requestId: string
     if (resolved.approverIds.length === 0) {
       await tx.approvalStep.update({
         where: { id: step.id },
-        data: { status: 'skipped', decidedAt: new Date() },
+        data: { status: 'skipped', decidedAt: at },
       });
       await recordAudit(tx, ctx, {
         action: 'approval.step.skipped',
@@ -294,14 +324,14 @@ export async function openNextStep(ctx: TenantContext, tx: Tx, requestId: string
       continue;
     }
 
-    const dueAt = definition.timeout ? new Date(Date.now() + parseDuration(definition.timeout)) : null;
+    const dueAt = definition.timeout ? new Date(at.getTime() + parseDuration(definition.timeout)) : null;
     await tx.approvalStep.update({
       where: { id: step.id },
       data: {
         status: 'open',
         approverIds: resolved.approverIds,
         quorum: resolveQuorum(definition.quorum, resolved.approverIds.length),
-        openedAt: new Date(),
+        openedAt: at,
         dueAt,
       },
     });
@@ -315,7 +345,7 @@ export async function openNextStep(ctx: TenantContext, tx: Tx, requestId: string
   }
 
   // Every step is settled or skipped, so the request is settled too.
-  await settleRequest(ctx, tx, requestId, 'approved');
+  await settleRequest(ctx, tx, requestId, 'approved', at);
 }
 
 // ---------------------------------------------------------------------------
@@ -327,11 +357,20 @@ export const decisionSchema = z.object({
   comment: z.string().max(2000).optional(),
 });
 
+/**
+ * Records one approver's decision and settles what it settles.
+ *
+ * `at` dates the decision, the step and request it settles, and the next step
+ * it opens; it cannot come before the step opened, because nobody decides a
+ * question before it is put to them. Omitted, the present.
+ */
 export async function decide(
   ctx: TenantContext,
   requestId: string,
   input: { decision: Decision; comment?: string; via?: string },
+  clock: ApprovalClock = {},
 ) {
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
   return transaction(ctx, async (tx) => {
     const request = await tx.approvalRequest.findFirst({ where: { id: requestId } });
     if (!request) throw new NotFoundError('approval not found');
@@ -347,6 +386,14 @@ export async function decide(
     // 404, not 403: whether a given person is an approver is itself information.
     if (!slot) throw new NotFoundError('approval not found');
 
+    // Checked once the caller is known to be an approver, so the step's
+    // opening time is told only to somebody it was put to.
+    if (at && step.openedAt && at < step.openedAt) {
+      throw new ValidationError('a decision cannot come before its step was opened', [
+        { field: 'at', code: 'before_opened', message: `the step opened at ${step.openedAt.toISOString()}` },
+      ]);
+    }
+
     const already = await tx.approvalDecision.findFirst({ where: { stepId: step.id, approverId: slot.approverId } });
     if (already) throw new ConflictError('this approver has already decided');
 
@@ -360,6 +407,7 @@ export async function decide(
         decision: input.decision,
         comment: input.comment ?? null,
         via: input.via ?? 'api',
+        ...(at ? { decidedAt: at } : {}),
       },
     });
 
@@ -389,7 +437,7 @@ export async function decide(
     // decision rather than writing over that outcome.
     const settled = await tx.approvalStep.updateMany({
       where: { id: step.id, status: 'open' },
-      data: { status: outcome.status, decidedAt: new Date() },
+      data: { status: outcome.status, decidedAt: at ?? new Date() },
     });
     if (settled.count === 0) {
       const current = await tx.approvalRequest.findFirst({ where: { id: requestId } });
@@ -397,24 +445,30 @@ export async function decide(
     }
 
     if (outcome.status === 'rejected') {
-      await settleRequest(ctx, tx, requestId, 'rejected');
+      await settleRequest(ctx, tx, requestId, 'rejected', at);
       return { requestStatus: 'rejected' as const, stepStatus: 'rejected' as const };
     }
 
     const subject = await subjectContextFor(tx, request);
-    await openNextStep(ctx, tx, requestId, subject);
+    await openNextStep(ctx, tx, requestId, subject, at);
     const after = await tx.approvalRequest.findFirst({ where: { id: requestId } });
     return { requestStatus: (after?.status ?? 'pending') as 'pending' | 'approved' | 'rejected', stepStatus: 'approved' as const };
   });
 }
 
-async function settleRequest(ctx: TenantContext, tx: Tx, requestId: string, outcome: 'approved' | 'rejected') {
+async function settleRequest(
+  ctx: TenantContext,
+  tx: Tx,
+  requestId: string,
+  outcome: 'approved' | 'rejected',
+  at: Date = new Date(),
+) {
   const request = await tx.approvalRequest.findFirst({ where: { id: requestId } });
   if (!request || request.status !== 'pending') return;
 
   await tx.approvalRequest.update({
     where: { id: requestId },
-    data: { status: outcome, outcome, decidedAt: new Date() },
+    data: { status: outcome, outcome, decidedAt: at },
   });
   await recordAudit(tx, ctx, {
     action: `approval.${outcome}`,
@@ -722,6 +776,23 @@ export async function createDelegation(ctx: TenantContext, input: unknown, fromU
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * A supplied clock, once it is known to be a real instant that has already
+ * happened. A history records the past; an approval dated after now would be
+ * due, decided or overdue at a moment nobody has reached yet.
+ */
+function pastInstant(at: Date): Date {
+  if (Number.isNaN(at.getTime())) {
+    throw new ValidationError('the time given is not a date', [{ field: 'at', code: 'invalid', message: 'not a date' }]);
+  }
+  if (at.getTime() > Date.now()) {
+    throw new ValidationError('an approval cannot be dated in the future', [
+      { field: 'at', code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+  return at;
+}
 
 async function loadPolicy(tx: Tx, idOrKey: string) {
   const policy = await tx.approvalPolicy.findFirst({

@@ -82,14 +82,29 @@ export function plainTextOf(body: unknown): string {
   return out.join(' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * When something happened to an article, for a knowledge base written after
+ * the fact: the shared demo's articles were written and published over nine
+ * months (A4 §1.5), and a base whose every article reads "published today" is
+ * plainly not one anybody uses. Omitted, the present — exactly what every live
+ * caller has always recorded.
+ */
+export interface ArticleClock {
+  at?: Date;
+}
+
 // ---------------------------------------------------------------------------
 // Authoring
 // ---------------------------------------------------------------------------
 
-export async function createArticle(ctx: TenantContext, input: unknown) {
+/**
+ * Starts an article as a draft. `at` dates the article and its first version.
+ */
+export async function createArticle(ctx: TenantContext, input: unknown, clock: ArticleClock = {}) {
   authz.require(ctx, 'knowledge.write');
   const parsed = articleSchema.parse(input);
   assertAudienceIsCoherent(parsed.audience, parsed.orgId ?? null);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at, 'at');
 
   return transaction(ctx, async (tx) => {
     const existing = await tx.knowledgeArticle.findFirst({ where: { key: parsed.key } });
@@ -111,6 +126,7 @@ export async function createArticle(ctx: TenantContext, input: unknown) {
         ownerId: parsed.ownerId ?? ctx.actor.id ?? null,
         authorId: ctx.actor.id ?? null,
         keywords: parsed.keywords,
+        ...(at ? { createdAt: at, updatedAt: at } : {}),
       },
     });
 
@@ -126,6 +142,7 @@ export async function createArticle(ctx: TenantContext, input: unknown) {
         changeNote: parsed.changeNote ?? null,
         status: 'draft',
         authorId: ctx.actor.id ?? null,
+        ...(at ? { createdAt: at } : {}),
       },
     });
 
@@ -246,9 +263,14 @@ export async function submitForReview(ctx: TenantContext, key: string) {
  *
  * Indexing happens here, in the same transaction, so an article is never
  * published-but-unfindable or findable-but-unpublished.
+ *
+ * `at` dates the publication: the version's and (the first time) the
+ * article's `publishedAt`, the review date that follows from it, and the
+ * search document. It cannot come before the draft it publishes was written.
  */
-export async function publishArticle(ctx: TenantContext, key: string) {
+export async function publishArticle(ctx: TenantContext, key: string, clock: ArticleClock = {}) {
   authz.require(ctx, 'knowledge.publish');
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at, 'at');
 
   return transaction(ctx, async (tx) => {
     const article = await loadArticle(tx, key);
@@ -263,6 +285,11 @@ export async function publishArticle(ctx: TenantContext, key: string) {
       orderBy: { version: 'desc' },
     });
     if (!draft) throw new ValidationError('there is no draft to publish; start one by editing the article');
+    if (at && at < draft.createdAt) {
+      throw new ValidationError('an article cannot be published before its draft was written', [
+        { field: 'at', code: 'before_draft', message: `the draft was written at ${draft.createdAt.toISOString()}` },
+      ]);
+    }
 
     const requiresApproval = await getSetting<boolean>(ctx, 'knowledge.requireApprovalToPublish');
     if (requiresApproval && article.status !== 'in_review') {
@@ -272,7 +299,7 @@ export async function publishArticle(ctx: TenantContext, key: string) {
     }
 
     const intervalDays = (await getSetting<number>(ctx, 'knowledge.reviewIntervalDays')) ?? 180;
-    const now = new Date();
+    const now = at ?? new Date();
 
     await tx.knowledgeArticleVersion.update({
       where: { id: draft.id },
@@ -288,10 +315,11 @@ export async function publishArticle(ctx: TenantContext, key: string) {
         publishedAt: article.publishedAt ?? now,
         retiredAt: null,
         reviewDueAt: new Date(now.getTime() + intervalDays * 86_400_000),
+        ...(at ? { updatedAt: at } : {}),
       },
     });
 
-    await indexArticle(tx, ctx, { ...article, status: 'published' }, draft);
+    await indexArticle(tx, ctx, { ...article, status: 'published' }, draft, at);
 
     await recordAudit(tx, ctx, {
       action: 'knowledge.article.published',
@@ -590,14 +618,19 @@ export async function recordFeedback(ctx: TenantContext, key: string, helpful: b
  * article", which counts curiosity, but "this article is why the ticket
  * closed". A knowledge base judged on views optimises for titles that look
  * interesting.
+ *
+ * `at` dates a new link: when the article was used, which for a history is
+ * the day the ticket was worked, not the day it was imported.
  */
 export async function linkToTicket(
   ctx: TenantContext,
   key: string,
   ticketId: string,
   relation: 'referenced' | 'resolved' = 'referenced',
+  clock: ArticleClock = {},
 ) {
   authz.require(ctx, 'knowledge.read');
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at, 'at');
 
   return transaction(ctx, async (tx) => {
     const article = await loadArticle(tx, key);
@@ -616,6 +649,7 @@ export async function linkToTicket(
           ticketId,
           relation,
           createdBy: ctx.actor.id ?? null,
+          ...(at ? { createdAt: at } : {}),
         },
       });
     }
@@ -631,9 +665,208 @@ export async function linkToTicket(
   });
 }
 
+/**
+ * One vote an article had before it arrived here. `userId` is the reader who
+ * gave it: a vote is one person's, one per article, as `recordFeedback` keeps
+ * it.
+ */
+export const importedVoteSchema = z
+  .object({
+    userId: z.string().uuid(),
+    helpful: z.boolean(),
+    comment: z.string().min(1).max(2000).optional(),
+    at: z.coerce.date(),
+  })
+  .strict();
+
+export const importUsageSchema = z
+  .object({
+    /** Reads to add to the article's count. */
+    views: z.number().int().min(0).max(100_000_000).default(0),
+    /**
+     * "Yes, this helped" answers to add, the votes below included. Omitted,
+     * the helpful votes below and no more; never fewer than them, because
+     * each one is an answer the count must hold.
+     */
+    helpful: z.number().int().min(0).max(100_000_000).optional(),
+    /** "No" answers to add, on the same terms. */
+    notHelpful: z.number().int().min(0).max(100_000_000).optional(),
+    /**
+     * When the article was first published where it came from, if earlier
+     * than its publication here. It becomes the article's `publishedAt`, and
+     * no vote may come before it.
+     */
+    publishedAt: z.coerce.date().optional(),
+    /** The votes that are kept as rows, with who gave them and any comment. */
+    feedback: z.array(importedVoteSchema).max(10_000).default([]),
+  })
+  .strict();
+export type ImportUsageInput = z.input<typeof importUsageSchema>;
+
+export interface ImportUsageOptions {
+  /** The audit row's reason, e.g. the demo build's `DEMO_BUILD_REASON`. */
+  reason?: string;
+}
+
+/**
+ * Brings in the use a published article had before it arrived: reads,
+ * "did this help?" answers, and the votes kept with who gave them.
+ *
+ * A knowledge base is judged by these numbers, and an imported or generated
+ * one would otherwise open with every article read by nobody. The counts are
+ * added to whatever the article has recorded since, so nothing a reader did
+ * here is lost; the votes are written as `knowledge_feedback` rows dated when
+ * they were given, against the current version, one per person as
+ * `recordFeedback` keeps them. A person who has already voted here keeps
+ * their own vote and the import is refused (409), rather than one silently
+ * replacing the other.
+ *
+ * Usage is not an edit, so the article's `updatedAt` — the order the article
+ * list is read in — is left where it was; and nothing is set off: no
+ * `knowledge.article.feedback` event per vote and no enqueue, so it runs
+ * inside the demo build's quiet window. One audit row says what came in.
+ */
+export async function importUsage(ctx: TenantContext, key: string, input: ImportUsageInput, options: ImportUsageOptions = {}) {
+  authz.require(ctx, 'knowledge.publish');
+  const parsed = importUsageSchema.parse(input);
+  const reason = z.string().min(1).max(500).optional().parse(options.reason);
+
+  const votes = parsed.feedback;
+  const helpfulVotes = votes.filter((vote) => vote.helpful).length;
+  const unhelpfulVotes = votes.length - helpfulVotes;
+  const helpful = parsed.helpful ?? helpfulVotes;
+  const notHelpful = parsed.notHelpful ?? unhelpfulVotes;
+
+  const problems: { field: string; code: string; message: string }[] = [];
+  if (helpful < helpfulVotes) {
+    problems.push({ field: 'helpful', code: 'fewer_than_votes', message: `${helpfulVotes} helpful votes are listed` });
+  }
+  if (notHelpful < unhelpfulVotes) {
+    problems.push({ field: 'notHelpful', code: 'fewer_than_votes', message: `${unhelpfulVotes} unhelpful votes are listed` });
+  }
+  if (parsed.publishedAt && parsed.publishedAt.getTime() > Date.now()) {
+    problems.push({ field: 'publishedAt', code: 'in_future', message: 'must not be later than now' });
+  }
+  const voters = new Set<string>();
+  votes.forEach((vote, index) => {
+    if (voters.has(vote.userId)) {
+      problems.push({ field: `feedback.${index}.userId`, code: 'duplicate', message: 'one vote per person' });
+    }
+    voters.add(vote.userId);
+    if (vote.at.getTime() > Date.now()) {
+      problems.push({ field: `feedback.${index}.at`, code: 'in_future', message: 'must not be later than now' });
+    }
+  });
+  if (problems.length > 0) throw new ValidationError('this usage cannot be imported as it stands', problems);
+
+  return transaction(ctx, async (tx) => {
+    const article = await loadArticle(tx, key);
+    if (article.status !== 'published') {
+      throw new ValidationError(`only a published article has readers; ${article.key} is ${article.status}`);
+    }
+
+    // A first publication elsewhere can only be earlier than the one here: a
+    // later one would leave the article saying it was published after the
+    // version readers have been getting.
+    if (parsed.publishedAt && article.publishedAt && parsed.publishedAt > article.publishedAt) {
+      throw new ValidationError('the article was already published here before then', [
+        { field: 'publishedAt', code: 'after_publication', message: `published here at ${article.publishedAt.toISOString()}` },
+      ]);
+    }
+    const since = parsed.publishedAt ?? article.publishedAt;
+    const early = since ? votes.flatMap((vote, index) => (vote.at < since ? [index] : [])) : [];
+    if (early.length > 0) {
+      throw new ValidationError(
+        'a vote cannot come before the article was published',
+        early.map((index) => ({ field: `feedback.${index}.at`, code: 'before_published', message: `published at ${since!.toISOString()}` })),
+      );
+    }
+
+    if (votes.length > 0) {
+      const people = await tx.user.findMany({ where: { id: { in: [...voters] }, deletedAt: null }, select: { id: true } });
+      const known = new Set(people.map((person) => person.id));
+      const strangers = votes.flatMap((vote, index) => (known.has(vote.userId) ? [] : [index]));
+      if (strangers.length > 0) {
+        throw new ValidationError(
+          'every vote must be by somebody in this directory',
+          strangers.map((index) => ({ field: `feedback.${index}.userId`, code: 'not_found', message: votes[index]!.userId })),
+        );
+      }
+      const existing = await tx.knowledgeFeedback.count({ where: { articleId: article.id, userId: { in: [...voters] } } });
+      if (existing > 0) {
+        throw new ConflictError(`${existing} of these readers have already voted on ${article.key}, and their own vote stands`);
+      }
+      await tx.knowledgeFeedback.createMany({
+        data: votes.map((vote) => ({
+          id: newId(),
+          tenantId: ctx.tenantId,
+          articleId: article.id,
+          versionId: article.currentVersionId,
+          userId: vote.userId,
+          helpful: vote.helpful,
+          comment: vote.comment ?? null,
+          createdAt: vote.at,
+        })),
+      });
+    }
+
+    const updated = await tx.knowledgeArticle.update({
+      where: { id: article.id },
+      data: {
+        viewCount: { increment: parsed.views },
+        helpfulCount: { increment: helpful },
+        unhelpfulCount: { increment: notHelpful },
+        ...(parsed.publishedAt ? { publishedAt: parsed.publishedAt } : {}),
+        updatedAt: article.updatedAt,
+      },
+    });
+
+    await recordAudit(tx, ctx, {
+      action: 'knowledge.usage.imported',
+      targetType: 'knowledge_article',
+      targetId: article.id,
+      before: { views: article.viewCount, helpful: article.helpfulCount, notHelpful: article.unhelpfulCount },
+      after: {
+        views: updated.viewCount,
+        helpful: updated.helpfulCount,
+        notHelpful: updated.unhelpfulCount,
+        votes: votes.length,
+        ...(parsed.publishedAt ? { publishedAt: parsed.publishedAt.toISOString() } : {}),
+      },
+      ...(reason ? { reason } : {}),
+    });
+
+    return {
+      key: article.key,
+      views: updated.viewCount,
+      helpful: updated.helpfulCount,
+      notHelpful: updated.unhelpfulCount,
+      votes: votes.length,
+      publishedAt: updated.publishedAt,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+/**
+ * A supplied clock, once it is known to be a real instant that has already
+ * happened. A history records the past; an article published "tomorrow" would
+ * sit in the base with a review date nobody chose.
+ */
+function pastInstant(at: Date, field: string): Date {
+  if (Number.isNaN(at.getTime())) {
+    throw new ValidationError('the time given is not a date', [{ field, code: 'invalid', message: 'not a date' }]);
+  }
+  if (at.getTime() > Date.now()) {
+    throw new ValidationError('an article cannot be dated in the future', [
+      { field, code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+  return at;
+}
 
 async function loadArticle(tx: Tx, key: string) {
   const article = await tx.knowledgeArticle.findFirst({ where: { key } });
@@ -700,12 +933,13 @@ async function categoryIdFor(tx: Tx, key: string): Promise<string> {
   return category.id;
 }
 
-/** Writes the search document for a published article. */
+/** Writes the search document for a published article, as of `at` when a history says when. */
 async function indexArticle(
   tx: Tx,
   ctx: TenantContext,
   article: ArticleVisibility & { id: string; key: string; keywords: string[]; categoryId: string | null },
   version: { title: string; summary: string | null; body: unknown },
+  at?: Date,
 ): Promise<void> {
   await indexDocument(tx, ctx, {
     entityType: 'knowledge',
@@ -717,7 +951,7 @@ async function indexArticle(
     orgId: article.orgId,
     acl: aclForArticle(article),
     facets: { key: article.key, audience: article.audience, categoryId: article.categoryId },
-    sourceUpdatedAt: new Date(),
+    sourceUpdatedAt: at ?? new Date(),
   });
 }
 
