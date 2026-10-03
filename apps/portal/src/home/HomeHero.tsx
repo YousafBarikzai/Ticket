@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Button, IconTile } from '@itsm/ui';
+import { Button, IconTile, VisuallyHidden } from '@itsm/ui';
 import { useHelpFlow } from '../components/PortalShell.js';
 import { HomeSearch, type HomeSearchProps } from './HomeSearch.js';
 
@@ -41,6 +41,7 @@ export function ReportTile(): ReactNode {
       <IconTile icon="flag" size={40} />
       <span className="app-QuickAction__text">
         <span className="app-QuickAction__label">Report an issue</span>
+        <VisuallyHidden>, </VisuallyHidden>
         <span className="app-QuickAction__sub">Tell us what’s wrong</span>
       </span>
     </button>

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { IconTile, Skeleton, type IconName } from '@itsm/ui';
+import { IconTile, Skeleton, VisuallyHidden, type IconName } from '@itsm/ui';
 import { AppLink } from '../app/AppLink.js';
 import { ReportTile } from './HomeHero.js';
 
@@ -32,7 +32,12 @@ function Tile({ id, href, icon, label, sub }: { readonly id: string; readonly hr
         <IconTile icon={icon} size={40} />
         <span className="app-QuickAction__text">
           <span className="app-QuickAction__label">{label}</span>
-          {sub ? <span className="app-QuickAction__sub">{sub}</span> : null}
+          {sub ? (
+            <>
+              <VisuallyHidden>, </VisuallyHidden>
+              <span className="app-QuickAction__sub">{sub}</span>
+            </>
+          ) : null}
         </span>
       </AppLink>
     </li>

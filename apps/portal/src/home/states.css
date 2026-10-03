@@ -1,0 +1,85 @@
+/*
+ * The in-frame state pages — not found and a page that failed (v3 §7.0.7,
+ * A6 §3.7, §6.12): a page-level placeholder drawn as a 1 px dashed edge at a
+ * card's radius, the look of `EmptyState frame="dashed"`, so a missing or
+ * failed page reads as an empty place in the page rather than as a dialog.
+ * The parts stay the design system's server-safe ones (`StatusScreen`) and
+ * `ProblemState` (which keeps the error's `h1`, Try again and its id); this
+ * file only places them. Imported by `NotFoundScreen` and `(portal)/error.tsx`,
+ * so it travels with the not-found boundary, which every route carries.
+ * Arrangement only, from the design system's tokens.
+ */
+
+.app-StatePage {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--itsm-space-2xl);
+}
+
+/* Not found: the status screen's own card becomes the dashed placeholder. */
+.app-StatePage[data-frame='dashed'] .itsm-StatusScreen {
+  inline-size: 100%;
+  min-block-size: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.app-StatePage[data-frame='dashed'] .itsm-StatusScreen__card {
+  max-inline-size: 40rem;
+  border: var(--itsm-border-hair) dashed var(--itsm-colour-border-soft);
+  border-radius: var(--itsm-radius-xl);
+  background: transparent;
+  box-shadow: none;
+}
+
+/* A page that failed: the dashed edge around the problem's own layout. */
+.app-StatePage__frame {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: 40rem;
+  padding: var(--itsm-space-xl);
+  border: var(--itsm-border-hair) dashed var(--itsm-colour-border-soft);
+  border-radius: var(--itsm-radius-xl);
+}
+
+/* "Search from here": a plain GET form, so the not-found screen ships no script. */
+.app-StatePage__search {
+  display: flex;
+  gap: var(--itsm-space-xs);
+  inline-size: 100%;
+  margin-block-start: var(--itsm-space-sm);
+}
+
+.app-StatePage__field {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  min-block-size: var(--itsm-control-height-lg);
+  padding-inline: var(--itsm-space-sm);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-interactive);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-raised);
+  color: var(--itsm-colour-text-primary);
+  font: inherit;
+  font-size: var(--itsm-input-font-size);
+}
+
+.app-StatePage__field:focus-visible {
+  outline: var(--itsm-border-thick) solid var(--itsm-colour-border-focus);
+  outline-offset: 0;
+}
+
+@media (forced-colors: active) {
+  .app-StatePage[data-frame='dashed'] .itsm-StatusScreen__card,
+  .app-StatePage__frame,
+  .app-StatePage__field {
+    border-color: CanvasText;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .app-StatePage[data-frame='dashed'] .itsm-StatusScreen__card,
+  .app-StatePage__frame {
+    border-color: var(--itsm-colour-border-strong);
+  }
+}

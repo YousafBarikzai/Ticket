@@ -8,20 +8,21 @@ import { describe, expect, it } from 'vitest';
  * §6.0): P1..P4 is an internal scheduling decision made from impact and
  * urgency, and showing it invites an argument with somebody who cannot change
  * it. The design system now has a priority chip and a priority map (D5), so
- * this guard reads every source file of the Help Portal and fails on any use
- * of either — an import, a re-export or a stray reference.
+ * this guard reads every source file of the Help Portal (its tests aside,
+ * which name the chip to assert it is absent) and fails on any use of either
+ * — an import, a re-export or a stray reference.
  */
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const self = fileURLToPath(import.meta.url);
 
 function sources(dir: string): string[] {
   const found: string[] = [];
   for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name === '.next') continue;
+    // The tests may name the chip to assert that it is absent.
+    if (name === 'node_modules' || name === '.next' || name === '__tests__') continue;
     const path = join(dir, name);
     if (statSync(path).isDirectory()) found.push(...sources(path));
-    else if (/\.(ts|tsx|js|jsx|mjs)$/.test(name) && path !== self) found.push(path);
+    else if (/\.(ts|tsx|js|jsx|mjs)$/.test(name)) found.push(path);
   }
   return found;
 }

@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import { AREAS } from '@itsm/contracts/areas';
 import { StatusScreen } from '@itsm/ui';
+import '../home/states.css';
 
 /**
  * Not found, inside the frame (SPEC §4.10, §6.3): a request that does not
@@ -9,9 +11,16 @@ import { StatusScreen } from '@itsm/ui';
  * deliberately, and so does this. The top bar stays, so search is one press
  * away as well as the way home.
  *
- * `StatusScreen` rather than `ProblemState`: it is server-safe, so the screen
- * costs no JavaScript at all — the not-found boundary is part of every
- * portal route's first load, whether or not it is ever shown (SPEC §3.7).
+ * v3 (§7.0.7, A6 §6.12) draws it as a page-level placeholder — the dashed
+ * edge of `EmptyState frame="dashed"` — and keeps Home and search on the
+ * screen itself: "Go to Home" (the area's home, from the one area model) and
+ * a search field that is a plain GET form to `/search`.
+ *
+ * `StatusScreen` rather than `EmptyState` or `ProblemState`: it is
+ * server-safe, so the screen costs no JavaScript at all — the not-found
+ * boundary is part of every portal route's first load, whether or not it is
+ * ever shown (SPEC §3.7) — and its title is the page's visible `h1`. The
+ * dashed look is `home/states.css`.
  *
  * The pages for one request, one service and one article reach it by calling
  * `notFound()`, and they call it **before streaming** (SPEC §5.5, A4 §5.4):
@@ -27,13 +36,23 @@ import { StatusScreen } from '@itsm/ui';
  */
 export function NotFoundScreen(): ReactNode {
   return (
-    <div className="app-Page app-Page--state">
+    <div className="app-Page app-StatePage" data-frame="dashed">
       <StatusScreen
         as="div"
         illustration="search"
         title="We couldn’t find that"
-        body="It may have moved, the link may be out of date, or it isn’t yours to see. Search from the bar above, or start again from Home."
-        actions={[{ id: 'home', label: 'Go to Home', href: '/', variant: 'primary' }]}
+        body={
+          <>
+            <p>It may have moved, the link may be out of date, or it isn’t yours to see. Search for it, or start again from Home.</p>
+            <form className="app-StatePage__search" role="search" action="/search" method="get">
+              <input className="app-StatePage__field" type="search" name="q" aria-label="Search help, services and your requests" placeholder="Search help, services and your requests" autoComplete="off" />
+              <button type="submit" className="itsm-Button itsm-Button--secondary itsm-Button--lg">
+                <span className="itsm-Button__label">Search</span>
+              </button>
+            </form>
+          </>
+        }
+        actions={[{ id: 'home', label: 'Go to Home', href: AREAS.portal.home, variant: 'primary' }]}
       />
     </div>
   );

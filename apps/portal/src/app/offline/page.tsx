@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import { AREAS } from '@itsm/contracts/areas';
 import { StatusScreen } from '@itsm/ui';
 import { uiStylesheet } from '@itsm/ui/styles';
 import { AvailableOffline } from './AvailableOffline.js';
@@ -20,6 +21,10 @@ export const dynamic = 'force-static';
  * kept, and that the three things the portal queues (a report, a reply, an
  * approval decision) still go when sent from one of them — because "you are
  * offline" on its own reads as "stop".
+ *
+ * v3 (§7.2, A6 §6.12): the area lockup names the Help Portal from the one
+ * area model (D1), and the way back is the area's home, both from
+ * `@itsm/contracts/areas` (zod-free, so the precached page stays light).
  */
 export default function OfflinePage(): ReactNode {
   return (
@@ -27,6 +32,7 @@ export default function OfflinePage(): ReactNode {
       <style dangerouslySetInnerHTML={{ __html: uiStylesheet() }} />
       <StatusScreen
         brand="portal"
+        brandName={AREAS.portal.name}
         illustration="offline"
         title="You’re offline"
         body={
@@ -35,7 +41,7 @@ export default function OfflinePage(): ReactNode {
             <AvailableOffline />
           </>
         }
-        actions={[{ id: 'home', label: 'Back to Home', href: '/', variant: 'primary' }]}
+        actions={[{ id: 'home', label: 'Back to Home', href: AREAS.portal.home, variant: 'primary' }]}
       />
     </>
   );
