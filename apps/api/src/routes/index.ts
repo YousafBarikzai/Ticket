@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   ForbiddenError,
+  NotFoundError,
   ValidationError,
   authz,
   metrics,
@@ -134,7 +135,15 @@ async function authorisedTopic(ctx: TenantContext, requested: string): Promise<s
       // A queue. Yours if you are in the team, or anybody's if your ticket
       // read scope is already `any` — in which case the topic tells you
       // nothing you could not list.
-      if (ctx.teamIds.includes(id) || authz.effectiveScope(ctx, 'ticket.read') === 'any') {
+      if (ctx.teamIds.includes(id)) return topicForGroup(ctx.tenantId, id);
+      if (authz.effectiveScope(ctx, 'ticket.read') === 'any') {
+        // But only a queue this tenant has. The topic is in the caller's own
+        // namespace, so another tenant's team id could never deliver anything;
+        // it is refused as not found all the same, because a stream that
+        // accepts any id answers "may I watch that?" with a yes about a record
+        // the caller cannot see (A3 §11.2 row 27).
+        if (!UUID.test(id)) throw new NotFoundError('team', id);
+        await userService.listTeamMembers(ctx, id);
         return topicForGroup(ctx.tenantId, id);
       }
       throw new ForbiddenError('ticket.read', 'that is not one of your queues');
@@ -149,6 +158,8 @@ async function authorisedTopic(ctx: TenantContext, requested: string): Promise<s
       throw new ValidationError(`"${kind}" is not a topic that can be watched`);
   }
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** One person as every user route returns them. */
 function userRow(user: { id: string; email: string; displayName: string; status: string; primaryOrgId: string | null; isExternal: boolean }) {
