@@ -20,7 +20,18 @@ const files = readdirSync(RESOURCES).filter((name) => name.endsWith('.ts'));
 
 describe('the paths the SDK calls', () => {
   it('finds the resource files', () => {
-    expect(files).toEqual(expect.arrayContaining(['admin.ts', 'portal.ts', 'workbench.ts', 'operations.ts', 'builders.ts']));
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'admin.ts',
+        'portal.ts',
+        'workbench.ts',
+        'operations.ts',
+        'builders.ts',
+        'insights.ts',
+        'service-management.ts',
+        'demo.ts',
+      ]),
+    );
   });
 
   for (const file of files) {

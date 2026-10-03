@@ -2,15 +2,8 @@ import type { Client, RequestOptions } from '../client.js';
 import type { FieldRow } from './admin.js';
 import type { ServiceRow } from './builders.js';
 import { metricQueries } from './insights.js';
-import type { AvailabilityRow, OnCallRow, RotationRow } from './operations.js';
-import {
-  majorIncidentsApi,
-  onCallApi,
-  type MajorIncidentAudience,
-  type MajorIncidentDetail,
-  type MajorIncidentFilter,
-  type MajorIncidentRow,
-} from './service-management.js';
+import type { AvailabilityRow } from './operations.js';
+import { majorIncidentsApi, onCallApi } from './service-management.js';
 import {
   getUser,
   listTeamMembers,
@@ -32,11 +25,10 @@ import type {
   CreateTicketInput,
   Me,
   NotificationInbox,
-  Page,
+  RecordCiRow,
   RunningTimer,
   SearchOptions,
   SearchResults,
-  RecordCiRow,
   SlaTimers,
   Suggestion,
   TeamListRow,
@@ -47,6 +39,7 @@ import type {
   TicketCountsBy,
   TicketLinkRow,
   TicketLinkType,
+  TicketPage,
   TicketPatch,
   TimeEntryRow,
   Timeline,
@@ -181,13 +174,11 @@ export function ticketCountsQuery(groupBy: TicketCountDimension, filter: TicketF
 const unwrap = <T>(body: { data: T }): T => body.data;
 
 export function workbench(client: Client) {
-  const incidents = majorIncidentsApi(client);
-  const onCall = onCallApi(client);
   return {
     me: (): Promise<Me> => client.request<Me>('/api/v1/me'),
 
-    tickets: (filter: TicketFilter = {}): Promise<Page<Ticket>> =>
-      client.request<Page<Ticket>>('/api/v1/tickets', { query: ticketQuery(filter) }),
+    tickets: (filter: TicketFilter = {}): Promise<TicketPage> =>
+      client.request<TicketPage>('/api/v1/tickets', { query: ticketQuery(filter) }),
 
     /**
      * How many tickets a view holds, for its badge. The same filter and the
@@ -351,18 +342,16 @@ export function workbench(client: Client) {
      */
     insights: metricQueries(client),
 
-    /** `open: true` for the ones still running: the frame's chip and the Overview's banner. */
-    majorIncidents: (filter: MajorIncidentFilter = {}): Promise<MajorIncidentRow[]> => incidents.majorIncidents(filter),
+    /**
+     * `majorIncidents({ open: true })` for the frame's chip and the Overview's
+     * banner, and `majorIncident(number)` — whose `ticketId` is the way to the
+     * incident's ticket until the incident pages ship. Shared with the
+     * console (`service-management.ts`).
+     */
+    ...majorIncidentsApi(client),
 
-    /** One incident by number; `ticketId` is the way to its ticket until the incident pages ship. */
-    majorIncident: (number: string, audience?: MajorIncidentAudience): Promise<MajorIncidentDetail> =>
-      incidents.majorIncident(number, audience),
-
-    /** A team's rotations, or every one the reader may see (`workload.read`). */
-    rotations: (teamId?: string): Promise<RotationRow[]> => onCall.rotations(teamId),
-
-    /** Who is on call for one rotation, now or at `at`, through any cover somebody agreed to. */
-    onCall: (rotationKey: string, at?: string): Promise<OnCallRow> => onCall.onCall(rotationKey, at),
+    /** `rotations(teamId?)` and `onCall(key, at?)`, for "On call now" (`workload.read`). */
+    ...onCallApi(client),
 
     /**
      * The service catalogue's services, for naming a grouped count's keys.

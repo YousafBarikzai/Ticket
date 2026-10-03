@@ -9,8 +9,9 @@ import type { ProblemDetails } from './types.js';
  * the same questions. Administration reads the whole group through
  * `observe.insights`; the Service Desk's Overview and team pages ask only
  * the metric questions (`metricQueries`), and the two must not drift into
- * two spellings of one request. `operations.ts` re-exports every type here
- * under the names it always had, so nothing that imported them moves.
+ * two spellings of one request. `operations.ts` re-exports every type that
+ * used to live there, under the same names, so nothing that imported them
+ * has to move.
  *
  * A reader with no `analytics.read` gets a 403 from every call. The agent
  * role holds none (D9), so a Service Desk page decides with

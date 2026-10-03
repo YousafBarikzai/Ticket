@@ -12,11 +12,8 @@ import type { Me } from './resources/types.js';
 /** How far a permission reaches. `any` is the whole tenant, `team` the holder's teams, `own` their own records. */
 export type PermissionScope = 'own' | 'team' | 'any';
 
-const SCOPE_RANK: Readonly<Record<PermissionScope, number>> = { own: 1, team: 2, any: 3 };
-
-function isScope(value: unknown): value is PermissionScope {
-  return value === 'own' || value === 'team' || value === 'any';
-}
+/** Narrowest first, so a wider scope has a higher index. */
+const SCOPES: readonly PermissionScope[] = ['own', 'team', 'any'];
 
 /**
  * The scope a person holds a permission at, from `me.permissions`, or null
@@ -26,16 +23,15 @@ function isScope(value: unknown): value is PermissionScope {
  * a Service Desk page that asked for a trend and caught the 403 would spend a
  * round trip to learn what `/me` already said, and draw an error where the
  * card should simply not be. A team-scoped answer is still an answer: its
- * figures read "in your teams".
+ * figures read "in your teams". A scope this release does not know grants
+ * nothing it can reason about, so it is ignored.
  */
 export function permissionScope(me: Pick<Me, 'permissions'> | null | undefined, key: string): PermissionScope | null {
-  let widest: PermissionScope | null = null;
+  let widest = -1;
   for (const grant of me?.permissions ?? []) {
-    // A scope this release does not know grants nothing it can reason about.
-    if (grant.key !== key || !isScope(grant.scope)) continue;
-    if (widest === null || SCOPE_RANK[grant.scope] > SCOPE_RANK[widest]) widest = grant.scope;
+    if (grant.key === key) widest = Math.max(widest, SCOPES.indexOf(grant.scope as PermissionScope));
   }
-  return widest;
+  return SCOPES[widest] ?? null;
 }
 
 /** The SLA attainment target, ready to draw: a gauge's needle wants the fraction, a sentence the per cent. */
@@ -64,10 +60,9 @@ const FALLBACK_TARGET_PERCENT = 90;
  */
 export function attainmentTarget(result?: Pick<MetricResult, 'target'> | null): AttainmentGoal {
   const target = result?.target;
-  if (target && typeof target.value === 'number' && Number.isFinite(target.value)) {
-    return { fraction: target.value / 100, percent: target.value, source: target.source === 'setting' ? 'setting' : 'default' };
-  }
-  return { fraction: FALLBACK_TARGET_PERCENT / 100, percent: FALLBACK_TARGET_PERCENT, source: 'fallback' };
+  return target && typeof target.value === 'number' && Number.isFinite(target.value)
+    ? { fraction: target.value / 100, percent: target.value, source: target.source === 'setting' ? 'setting' : 'default' }
+    : { fraction: FALLBACK_TARGET_PERCENT / 100, percent: FALLBACK_TARGET_PERCENT, source: 'fallback' };
 }
 
 /**
@@ -82,8 +77,6 @@ export function attainmentTarget(result?: Pick<MetricResult, 'target'> | null): 
  * that could have been dropped.
  */
 export function honoured(response: { readonly applied?: readonly string[] } | null | undefined, keys: readonly string[]): boolean {
-  if (keys.length === 0) return true;
   const applied = response?.applied;
-  if (!Array.isArray(applied)) return false;
-  return keys.every((key) => applied.includes(key));
+  return keys.length === 0 || (Array.isArray(applied) && keys.every((key) => applied.includes(key)));
 }

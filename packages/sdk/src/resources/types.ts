@@ -23,6 +23,16 @@ export type { ProblemDetails, ProblemExtensions } from '@itsm/contracts';
 export interface Page<T> {
   data: T[];
   nextCursor: string | null;
+}
+
+/**
+ * A page of tickets, with the filters the server applied to it.
+ *
+ * Its own type rather than a field on every `Page`, because only the ticket
+ * list echoes its filters — and a field every page seemed to have, but only
+ * one ever filled in, would invite a check that is always false.
+ */
+export interface TicketPage extends Page<Ticket> {
   /**
    * The `filter[…]` names the server honoured, sorted (R2). A route drops a
    * query key it does not know without a word and answers for everything, so
@@ -400,7 +410,7 @@ export interface SessionRow {
 export interface TicketCount {
   count: number;
   capped: boolean;
-  /** The `filter[…]` names the server honoured (R2); see `Page.applied`. */
+  /** The `filter[…]` names the server honoured (R2); see `TicketPage.applied`. */
   applied?: string[];
 }
 

@@ -231,6 +231,91 @@ describe('observe', () => {
   });
 });
 
+describe('observe, Phase 1 reads', () => {
+  it('counts tickets with the list grammar and no paging, as the workbench does', async () => {
+    const { calls, api } = recording({ count: 4, capped: false, applied: ['sla'] });
+    const answer = await api.observe.ticketCount({ sla: 'breached', limit: 200, sort: 'dueAt' });
+    expect(calls[0]!.url).toBe('http://api.test/api/v1/tickets/count?filter%5Bsla%5D=breached');
+    expect(answer).toEqual({ count: 4, capped: false, applied: ['sla'] });
+  });
+
+  it('breaks the desk down on the grouped route', async () => {
+    const { calls, api } = recording({ groupBy: 'group', groups: [{ key: null, count: 6 }], total: 6, applied: ['statusCategory'] });
+    const answer = await api.observe.ticketCounts('group', { statusCategory: 'open,paused' });
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname).toBe('/api/v1/tickets/counts');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ 'filter[statusCategory]': 'open,paused', groupBy: 'group' });
+    expect(answer.groups[0]).toEqual({ key: null, count: 6 });
+  });
+
+  it('reads one major incident by number for the frame’s chip', async () => {
+    const { calls, api } = recording({ number: 'MI-0004', ticketId: 't-1' });
+    await api.observe.majorIncident('MI-0004');
+    expect(calls[0]!.url).toBe('http://api.test/api/v1/major-incidents/MI-0004');
+  });
+
+  it('asks for approvals waiting on the reader, and decided ones only when told to', async () => {
+    const { calls, api } = recording({ data: [{ id: 'a-1' }] });
+    const waiting = await api.observe.approvals();
+    await api.observe.approvals({ includeDecided: false });
+    await api.observe.approvals({ includeDecided: true, ticketId: 't-1' });
+    expect(waiting).toEqual([{ id: 'a-1' }]);
+    // `includeDecided=false` once read as true and listed every decision ever
+    // made, so `false` is left out rather than sent.
+    expect(calls.map((call) => call.url)).toEqual([
+      'http://api.test/api/v1/approvals',
+      'http://api.test/api/v1/approvals',
+      'http://api.test/api/v1/approvals?includeDecided=true&ticketId=t-1',
+    ]);
+  });
+
+  it('reads one approval with its steps', async () => {
+    const { calls, api } = recording({ id: 'a-1', steps: [], answers: null });
+    const approval = await api.observe.approval('a-1');
+    expect(calls[0]!.method).toBe('GET');
+    expect(calls[0]!.url).toBe('http://api.test/api/v1/approvals/a-1');
+    expect(approval.steps).toEqual([]);
+  });
+
+  it('asks a batch of metric questions in one POST (R4)', async () => {
+    const { calls, api } = recording({ results: [{ id: 'open', ok: true, result: { value: 41 } }] });
+    const answers = await api.observe.insights.queryBatch([{ id: 'open', metricKey: 'tickets.open' }]);
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.url).toBe('http://api.test/api/v1/analytics/query/batch');
+    expect(calls[0]!.body).toEqual({ queries: [{ id: 'open', metricKey: 'tickets.open' }] });
+    expect(answers).toEqual([{ id: 'open', ok: true, result: { value: 41 } }]);
+  });
+
+  it('keeps the whole insights group, dashboards and reports included', () => {
+    const { api } = recording({});
+    expect(Object.keys(api.observe.insights).sort()).toEqual([
+      'createDashboard',
+      'dashboard',
+      'dashboards',
+      'deleteDashboard',
+      'forecast',
+      'metrics',
+      'query',
+      'queryBatch',
+      'render',
+      'reportRuns',
+      'reports',
+      'runReport',
+      'updateDashboard',
+    ]);
+  });
+
+  it('reads rotations and who is on call through the shared calls, on the same paths', async () => {
+    const { calls, api } = recording({ data: [] });
+    await api.observe.queues.rotations('team-1');
+    await api.observe.queues.onCall('network', '2026-10-03T09:00:00.000Z');
+    expect(calls.map((call) => call.url)).toEqual([
+      'http://api.test/api/v1/workload/rotations?teamId=team-1',
+      'http://api.test/api/v1/workload/rotations/network/on-call?at=2026-10-03T09%3A00%3A00.000Z',
+    ]);
+  });
+});
+
 describe('the platform surface', () => {
   const id = '01a0ee8e-2e36-7705-b28e-80a403f83962';
 

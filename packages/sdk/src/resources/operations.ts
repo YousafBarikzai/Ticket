@@ -9,7 +9,7 @@ import {
   type MajorIncidentFilter,
   type MajorIncidentRow,
 } from './service-management.js';
-import type { AvailabilityInput, Page, SlaTimers, Ticket, TicketCount, TicketCountDimension, TicketCountsBy } from './types.js';
+import type { AvailabilityInput, SlaTimers, Ticket, TicketCount, TicketCountDimension, TicketCountsBy, TicketPage } from './types.js';
 import { ticketCountQuery, ticketCountsQuery, ticketQuery, type TicketFilter } from './workbench.js';
 
 /**
@@ -635,7 +635,7 @@ export interface Operations {
    * `ticketQuery` is imported rather than re-implemented for exactly that
    * reason.
    */
-  tickets(filter?: TicketFilter): Promise<Page<Ticket>>;
+  tickets(filter?: TicketFilter): Promise<TicketPage>;
   /**
    * How many tickets a filter holds, at the reader's own scope: the same
    * grammar and visibility as `tickets`, so a KPI never promises a row the
@@ -667,7 +667,6 @@ const unwrap = <T>(body: { data: T }): T => body.data;
 
 export function operations(client: Client): Operations {
   const onCall = onCallApi(client);
-  const incidents = majorIncidentsApi(client);
   return {
     queues: {
       availability: () => client.request<{ data: AvailabilityRow[] }>('/api/v1/workload/availability').then(unwrap),
@@ -801,7 +800,7 @@ export function operations(client: Client): Operations {
         query: { ...filter },
       }),
 
-    tickets: (filter = {}) => client.request<Page<Ticket>>('/api/v1/tickets', { query: ticketQuery(filter) }),
+    tickets: (filter = {}) => client.request<TicketPage>('/api/v1/tickets', { query: ticketQuery(filter) }),
 
     ticketCount: (filter = {}) => client.request<TicketCount>('/api/v1/tickets/count', { query: ticketCountQuery(filter) }),
 
@@ -812,9 +811,8 @@ export function operations(client: Client): Operations {
 
     ticketSla: (idOrNumber) => client.request<SlaTimers>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/sla`),
 
-    majorIncidents: incidents.majorIncidents,
-
-    majorIncident: incidents.majorIncident,
+    // Shared with the Service Desk, which reads the same incidents for its chip.
+    ...majorIncidentsApi(client),
 
     // `false` is never sent (see `queryString`): the route used to read
     // `includeDecided=false` as true.

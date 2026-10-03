@@ -170,3 +170,52 @@ describe('when it goes wrong', () => {
     expect([retryable.retryable, rateLimited.retryable, refused.retryable]).toEqual([true, true, false]);
   });
 });
+
+describe('what went wrong, as a word', () => {
+  const problem = (type: string, extra: Record<string, unknown> = {}) => ({ type, title: 't', status: 403, correlationId: 'c', ...extra });
+
+  it('reads the code from the end of the problem type', () => {
+    expect(new ApiError(403, problem('https://docs.itsm.example/problems/demo_disabled', { demo: true, feature: 'integrations' }), 'x').code).toBe(
+      'demo_disabled',
+    );
+    expect(new ApiError(401, problem('https://docs.itsm.example/problems/demo_reset'), 'x').code).toBe('demo_reset');
+    expect(new ApiError(429, problem('https://docs.itsm.example/problems/rate_limited'), 'x').code).toBe('rate_limited');
+  });
+
+  it('tells two problems with one status apart, which the status alone cannot', () => {
+    // Both are 401, and they want opposite things: a re-mint, or "Continue the demo".
+    const reset = new ApiError(401, problem('https://docs.itsm.example/problems/demo_reset'), 'x');
+    const ended = new ApiError(401, problem('https://docs.itsm.example/problems/demo_session_ended'), 'x');
+    expect(reset.status).toBe(ended.status);
+    expect([reset.code, ended.code]).toEqual(['demo_reset', 'demo_session_ended']);
+  });
+
+  it('ignores a trailing slash, a query and a fragment', () => {
+    expect(new ApiError(429, problem('https://docs.itsm.example/problems/demo_limit/'), 'x').code).toBe('demo_limit');
+    expect(new ApiError(429, problem('https://docs.itsm.example/problems/demo_limit?lang=en#cap'), 'x').code).toBe('demo_limit');
+  });
+
+  it('reads a relative type, and nothing from a type that names no code', () => {
+    expect(new ApiError(404, problem('/problems/not_found'), 'x').code).toBe('not_found');
+    expect(new ApiError(404, problem('not_found'), 'x').code).toBe('not_found');
+    expect(new ApiError(400, problem('about:blank'), 'x').code).toBeNull();
+    expect(new ApiError(400, problem('urn:itsm:problem'), 'x').code).toBeNull();
+    expect(new ApiError(400, problem(''), 'x').code).toBeNull();
+  });
+
+  it('is null when there was no problem body at all', () => {
+    expect(new ApiError(502, null, 'the request failed with 502').code).toBeNull();
+  });
+
+  it('keeps the demo extension members a page words its sentence from', async () => {
+    const { fetchImpl } = recorder({
+      status: 429,
+      body: { type: 'https://docs.itsm.example/problems/demo_limit', title: 'demo limit', status: 429, correlationId: 'c', demo: true, category: 'ticket.create', limit: 20 },
+    });
+    const error = (await createClient({ baseUrl: 'https://api.test', fetch: fetchImpl })
+      .request('/api/v1/tickets', { method: 'POST', body: {} })
+      .catch((e: unknown) => e)) as ApiError;
+    expect(error.code).toBe('demo_limit');
+    expect(error.problem).toMatchObject({ demo: true, category: 'ticket.create', limit: 20 });
+  });
+});

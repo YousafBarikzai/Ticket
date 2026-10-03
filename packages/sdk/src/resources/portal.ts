@@ -7,7 +7,6 @@ import type {
   ArticleSummary,
   Me,
   NotificationInbox,
-  Page,
   SearchOptions,
   SearchResults,
   SessionRow,
@@ -16,6 +15,7 @@ import type {
   TicketCount,
   TicketCountDimension,
   TicketCountsBy,
+  TicketPage,
   Timeline,
 } from './types.js';
 
@@ -369,8 +369,8 @@ export function portal(client: Client) {
      * whose account was re-provisioned, and everything to nobody in particular
      * if the parameter were ever dropped.
      */
-    myTickets: (filter: Omit<TicketFilter, 'requester'> = {}): Promise<Page<Ticket>> =>
-      client.request<Page<Ticket>>('/api/v1/tickets', { query: ticketQuery({ ...filter, requester: 'me' }) }),
+    myTickets: (filter: Omit<TicketFilter, 'requester'> = {}): Promise<TicketPage> =>
+      client.request<TicketPage>('/api/v1/tickets', { query: ticketQuery({ ...filter, requester: 'me' }) }),
 
     /**
      * How many of my own tickets a filter holds: My requests' summary tiles.
