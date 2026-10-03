@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { SubmitResult } from '@itsm/sdk';
-import { Banner, Button, DraftNotice, DraftStatus, Icon, useDraft } from '@itsm/ui';
+import { Banner, Button, DraftNotice, DraftStatus, IconTile, useDraft } from '@itsm/ui';
 import { FormRenderer, submissionValues, withDefaults, type FormDefinition, type FormErrors, type FormValue, type FormValues, type UiElement, type UserOption } from '@itsm/ui/forms';
 import { useFullScreenFlow } from '@itsm/ui/shell';
 import { api } from '../client/api.js';
 import { toastProblem, useAction } from '../client/useAction.js';
+import { renderSentPanel } from '../help/actions.js';
+import { SENT_PANEL_TIMEOUT_MS } from '../help/sent.js';
+import { serviceIcon } from './icons.js';
 
 /**
  * Asking for something from the catalogue (SPEC §6.3 `/catalogue/[key]`,
@@ -29,9 +32,18 @@ import { toastProblem, useAction } from '../client/useAction.js';
  *   Only the answers to questions the person can see are sent
  *   (`submissionValues`, the rule the API applies), in a fixed order, so the
  *   same answers are always the same body.
- * - **The outcome on this page** (F38): "Requested · REQ-000046", and when
- *   the request needs a decision first, "Sent for approval. Nothing starts
- *   until it's approved." Focus moves to it; Track it opens the request.
+ * - **Each step a card** (v3 §7.2, X-M12): the item's `IconTile` (28) beside
+ *   the step's heading, the review a definition grid, the progress a small
+ *   `Stepper` — the renderer's own parts, arranged by `catalogue.css`, so
+ *   the route gains no client module (`route-weight.test.ts`).
+ * - **The outcome on this page** (F38): the success panel the server draws
+ *   (`renderSentPanel`: "Request sent", "REQ-003377 · We'll reply by 14:00",
+ *   what happens next), or, when it cannot be had, "Requested · REQ-000046"
+ *   in this file's words — with "Sent for approval. Nothing starts until
+ *   it's approved." when the request needs a decision first. Focus moves to
+ *   it; Track it opens the request.
+ * - **No attach control** (v3 RV4): forms have no file question, and nothing
+ *   here adds one.
  * - **Offline**, sending waits ("Requests can't be sent offline…"), and the
  *   answers are written to the device at once.
  * - **A person question** offers the requester only ("You"): the directory
@@ -168,7 +180,9 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
 
   const [values, setValues] = useState<FormValues>(initial);
   const [errors, setErrors] = useState<FormErrors>(NO_ERRORS);
-  const [done, setDone] = useState<SubmitResult | null>(null);
+  /** Sent, and waiting for the server's panel: the button keeps saying so. */
+  const [drawing, setDrawing] = useState(false);
+  const [done, setDone] = useState<{ readonly result: SubmitResult; readonly panel: ReactNode } | null>(null);
   const [gone, setGone] = useState(false);
   const [staleNote, setStaleNote] = useState(false);
   /** Bumped to start the form again from its first step (a discarded draft). */
@@ -220,12 +234,19 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
     const key = keyFor(answers);
     draft.flush();
     const result = await action.run(item.key, answers, key);
-    sending.current = false;
     if (result.ok) {
       draft.clear();
-      setDone(result.value);
+      setDrawing(true);
+      // The server draws the ending; past the timeout (or on any failure) this file's own words stand in.
+      const panel = await Promise.race([
+        renderSentPanel({ number: result.value.ticketNumber, kind: 'request', approval: Boolean(result.value.approvalId) }).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), SENT_PANEL_TIMEOUT_MS)),
+      ]);
+      sending.current = false;
+      setDone({ result: result.value, panel });
       return;
     }
+    sending.current = false;
     const { problem } = result;
     if (problem.status === 422) {
       setErrors(
@@ -261,7 +282,7 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
     <div className="app-ServiceRequest__layout">
       <div className="app-ServiceRequest__main">
         {done ? (
-          <Outcome result={done} />
+          <Outcome result={done.result} panel={done.panel} />
         ) : (
           <>
             {gone ? (
@@ -292,6 +313,7 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
               }}
             />
             <div className="app-ServiceRequest__card">
+              {definition ? <IconTile icon={serviceIcon(service?.name, item.name)} className="app-ServiceRequest__tile" /> : null}
               {definition ? (
                 <FormRenderer
                   key={epoch}
@@ -306,7 +328,7 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
                   locale={me.locale}
                   title={item.name}
                   submitLabel={submitLabel}
-                  submitting={action.pending}
+                  submitting={action.pending || drawing}
                   {...(offlineReason ? { submitDisabledReason: offlineReason } : {})}
                   onSubmit={() => void send()}
                 />
@@ -316,7 +338,7 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
                     Nothing to fill in
                   </h2>
                   <p className="app-ServiceRequest__quiet">Send it and we’ll take it from there.</p>
-                  <Button variant="primary" loading={action.pending} {...(offlineReason ? { disabledReason: offlineReason } : {})} onClick={() => void send()}>
+                  <Button variant="primary" loading={action.pending || drawing} {...(offlineReason ? { disabledReason: offlineReason } : {})} onClick={() => void send()}>
                     {submitLabel}
                   </Button>
                 </section>
@@ -345,24 +367,28 @@ export function RequestFlow({ item, service, form, me }: RequestFlowProps): Reac
   );
 }
 
-/** "Requested · REQ-000046", with focus on it, and the two ways on. */
-function Outcome({ result }: { readonly result: SubmitResult }): ReactNode {
-  const heading = useRef<HTMLHeadingElement | null>(null);
-  const copy = outcomeOf(result);
+/**
+ * The ending: the server's panel when it came (a hero named by its own
+ * heading, focused as a whole), else "Requested · REQ-000046" with its
+ * sentence — and under either, the two ways on.
+ */
+function Outcome({ result, panel }: { readonly result: SubmitResult; readonly panel: ReactNode }): ReactNode {
+  const focus = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    heading.current?.focus();
+    focus.current?.focus();
   }, []);
 
   return (
-    <section className="app-ServiceDone" aria-labelledby="request-done-title">
-      <span className="app-ServiceDone__mark" data-tone={result.approvalId ? 'neutral' : 'success'} aria-hidden="true">
-        <Icon name={result.approvalId ? 'approvals' : 'check'} size="lg" />
-      </span>
-      <h2 id="request-done-title" ref={heading} tabIndex={-1} className="app-ServiceDone__title">
-        Requested · <span className="app-ServiceDone__number">{result.ticketNumber}</span>
-      </h2>
-      <p className="app-ServiceDone__body">{copy.body}</p>
+    <div ref={focus} tabIndex={-1} className="app-ServiceDone" data-panel={panel ? '' : undefined}>
+      {panel ?? (
+        <section className="app-ServiceDone__plain" aria-labelledby="request-done-title">
+          <h2 id="request-done-title" className="app-ServiceDone__title">
+            Requested · <span className="app-ServiceDone__number">{result.ticketNumber}</span>
+          </h2>
+          <p className="app-ServiceDone__body">{outcomeOf(result).body}</p>
+        </section>
+      )}
       <div className="app-ServiceDone__actions">
         <Button variant="primary" href={`/tickets/${encodeURIComponent(result.ticketNumber)}`}>
           Track it
@@ -371,6 +397,6 @@ function Outcome({ result }: { readonly result: SubmitResult }): ReactNode {
           Request something else
         </Button>
       </div>
-    </section>
+    </div>
   );
 }

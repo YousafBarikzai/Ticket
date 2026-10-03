@@ -8,25 +8,29 @@ import {
   announce,
   asRichBlocks,
   Button,
+  DescriptionList,
   DraftNotice,
   DraftStatus,
   FormErrorSummary,
   FormField,
   Icon,
+  IconTile,
   Input,
   notify,
   Prose,
   RadioGroup,
   RichText,
   Spinner,
+  Stepper,
   Textarea,
   useDraft,
-  useItsm,
+  VisuallyHidden,
 } from '@itsm/ui';
 import { api } from '../client/api.js';
 import { articleHref } from '../client/palette.js';
 import { reportSessionEnded } from '../client/useAction.js';
 import { URGENCY_CHOICES } from '../tickets/presentation.js';
+import { renderSentPanel } from './actions.js';
 import { useKnownIssues } from './known-issues.js';
 import {
   DETAILS_MAX,
@@ -38,10 +42,10 @@ import {
   isUrgency,
   matchingIssues,
   readReportDraft,
-  responseDueAt,
   sendFailureMessage,
   sendProblemOf,
   splitDescription,
+  URGENCY_LOOK,
   validateReport,
   type HelpCan,
   type HelpStep,
@@ -49,13 +53,14 @@ import {
   type ReportDraft,
   type Urgency,
 } from './model.js';
+import { SENT_PANEL_TIMEOUT_MS } from './sent.js';
 import { KnownIssueCallout, Suggested } from './Suggested.js';
 import { useSuggestions } from './suggestions.js';
-import { replyByPhrase } from './timing.js';
 
 /**
  * "How can we help?" — the portal's one way in to getting help (SPEC D17,
- * §6.3, X-40, §6.4): one flow, two steps.
+ * §6.3, X-40, §6.4; v3 §7.2, X-M12): one flow, three steps under a small
+ * `Stepper` (Describe · Details · Review).
  *
  *   1. **Describe.** One field, "What do you need help with?". Typing pauses
  *      for 300 ms, then what might already answer it appears underneath:
@@ -64,12 +69,18 @@ import { replyByPhrase } from './timing.js';
  *      like it, "Is it this?". The way on is always there:
  *      *Continue — report this as an issue*.
  *   2. **Details.** The title (from what they typed), optional details, and
- *      how much it is holding them up, in their words. Never a priority,
- *      a category or an impact: the desk sets those.
+ *      how much it is holding them up, in their words, as cards with a tile
+ *      and what the choice means. Never a priority, a category or an impact:
+ *      the desk sets those.
+ *   3. **Review.** What will be sent, as a definition list, with Edit; then
+ *      *Send report*.
  *
- * Then a clear ending: "We've got it · INC-000124" with when we aim to reply
- * (when the clock has started), or — with no network — "Saved on this
- * device. We'll send it when you're back online."
+ * Then a clear ending: the success panel, drawn on the server
+ * (`renderSentPanel`: "Request sent · INC-000124 · We'll reply by 14:00" and
+ * what happens next), or — when the panel cannot be had — "We've got it ·
+ * INC-000124" in the flow's own words; or, with no network, "Saved on this
+ * device. We'll send it when you're back online." No step offers to attach
+ * a file: the product has no upload control (v3 RV4).
  *
  * **One intent, one key.** The idempotency key is minted when *Send report*
  * is first pressed and reused for that same report online, in the offline
@@ -92,7 +103,8 @@ import { replyByPhrase } from './timing.js';
 export type HelpPhase = HelpStep | 'sent' | 'queued';
 
 export interface HelpFlowStart {
-  readonly step?: HelpStep;
+  /** Never the review: a flow opened elsewhere starts where there is something to write. */
+  readonly step?: Exclude<HelpStep, 'review'>;
   /** What they typed elsewhere: step 1's field, or step 2's title. */
   readonly text?: string;
   /** Step 2's details, already begun ("Related to INC-000123"). */
@@ -102,7 +114,7 @@ export interface HelpFlowStart {
 export interface HelpFlowParts {
   /** The sheet's title for this step. */
   readonly title: string;
-  /** "Step 1 of 2 · Describe it", while there are steps. */
+  /** "Step 1 of 3 · Describe it", while there are steps. */
   readonly stepLabel?: string;
   readonly body: ReactNode;
   readonly footer: ReactNode;
@@ -127,8 +139,8 @@ export interface HelpFlowProps {
 
 interface SentOutcome {
   readonly number: string | null;
-  /** When the first reply is due: `undefined` while asking, `null` when there is no clock (yet). */
-  readonly replyBy?: string | null;
+  /** The server's success panel, or `null` when it could not be had (the flow's own words stand in). */
+  readonly panel: ReactNode;
 }
 
 interface OpenAnswer {
@@ -137,8 +149,29 @@ interface OpenAnswer {
   readonly failed: boolean;
 }
 
-/** How long after sending the flow asks for the reply target a second time: the clock starts moments after the ticket. */
-export const SLA_RETRY_MS = 1500;
+/** The Stepper's three steps, in order. */
+const STEPS: readonly { readonly id: HelpStep; readonly label: string; readonly lead: string }[] = [
+  { id: 'describe', label: 'Describe', lead: 'Describe it' },
+  { id: 'details', label: 'Details', lead: 'Add the details' },
+  { id: 'review', label: 'Review', lead: 'Check and send' },
+];
+
+/** "Step 2 of 3 · Add the details". */
+export function stepLabelFor(step: HelpStep): string {
+  const index = STEPS.findIndex((candidate) => candidate.id === step);
+  return `Step ${index + 1} of ${STEPS.length} · ${STEPS[index]!.lead}`;
+}
+
+/**
+ * The server's panel for a number, or `null` — after {@link SENT_PANEL_TIMEOUT_MS}
+ * at the latest, so a slow or unreachable server never holds the ending up.
+ */
+function drawSent(number: string, headingLevel: 2 | 3): Promise<ReactNode> {
+  return Promise.race([
+    renderSentPanel({ number, kind: 'issue', headingLevel }).catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), SENT_PANEL_TIMEOUT_MS)),
+  ]);
+}
 
 function initialDraft(start: HelpFlowStart | undefined): ReportDraft {
   const text = start?.text?.trim() ?? '';
@@ -162,7 +195,6 @@ function useFocusOnChange(ref: RefObject<HTMLElement | null>, key: unknown, when
 }
 
 export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, variant, onClose, children }: HelpFlowProps): ReactNode {
-  const { locale, timeZone } = useItsm();
   const ids = useId();
   const H = variant === 'page' ? 'h2' : 'h3';
   const explicit = Boolean(start?.text?.trim() || start?.details?.trim());
@@ -178,7 +210,7 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
   const ignoredRestore = useRef(false);
   const draft = useDraft<ReportDraft>({
     key: draftKey(userId),
-    value: { ...form, step: phase === 'details' ? 'details' : 'describe' },
+    value: { ...form, step: phase === 'details' || phase === 'review' ? phase : 'describe' },
     isEmpty: isEmptyDraft,
     onRestore: (value) => {
       const restored = readReportDraft(value);
@@ -287,7 +319,7 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
     if (answer && (answer.article || answer.failed)) articleRef.current?.focus();
   }, [answer]);
 
-  /* ---- Step 2 ------------------------------------------------------------------ */
+  /* ---- Step 2 and the review ------------------------------------------------------ */
 
   const [errors, setErrors] = useState<{ title?: string; details?: string }>({});
   const [formMessage, setFormMessage] = useState<string | null>(null);
@@ -308,8 +340,31 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
   const titleId = `${ids}-title`;
   const detailsId = `${ids}-details`;
   const formId = `${ids}-form`;
+  const reviewId = `${ids}-review`;
+  const headingLevel = variant === 'page' ? 2 : 3;
 
-  const finish = (outcome: 'sent' | 'queued', number: string | null = null): void => {
+  /** Field problems from the checks or the API: shown beside their fields, on the details step. */
+  const showFieldProblems = (problems: { title?: string | undefined; details?: string | undefined }, message: string | null): void => {
+    setErrors({ ...(problems.title ? { title: problems.title } : {}), ...(problems.details ? { details: problems.details } : {}) });
+    setFormMessage(message);
+    setAttempt((count) => count + 1);
+    setPhase('details');
+  };
+
+  /** Details → review, once the title and details check out. */
+  const toReview = (event?: FormEvent): void => {
+    event?.preventDefault();
+    const problems = validateReport(form);
+    if (problems.title || problems.details) {
+      showFieldProblems(problems, null);
+      return;
+    }
+    setErrors({});
+    setFormMessage(null);
+    setPhase('review');
+  };
+
+  const finish = (outcome: 'sent' | 'queued', number: string | null = null, panel: ReactNode = null): void => {
     sending.current = false;
     intent.current = null;
     setForm(EMPTY_DRAFT);
@@ -318,7 +373,7 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
     setErrors({});
     setFormMessage(null);
     if (outcome === 'sent') {
-      setSent({ number });
+      setSent({ number, panel });
       // The page behind (Home, My requests) shows the new request when the sheet closes.
       startRefresh(() => router.refresh());
     }
@@ -333,9 +388,7 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
     if (sending.current) return;
     const problems = validateReport(form);
     if (problems.title || problems.details) {
-      setErrors({ ...(problems.title ? { title: problems.title } : {}), ...(problems.details ? { details: problems.details } : {}) });
-      setFormMessage(null);
-      setAttempt((count) => count + 1);
+      showFieldProblems(problems, null);
       return;
     }
     sending.current = true;
@@ -370,81 +423,64 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
       return;
     }
     if (result.ok) {
+      // It is in: nothing typed is worth restoring from here on, whatever the panel does.
+      draft.clear();
       const created = (await result.response?.json().catch(() => null)) as { number?: unknown } | null;
+      const number = typeof created?.number === 'string' ? created.number : null;
+      // "Sending" stays on the button while the server draws the ending: one change of screen, not two.
+      const panel = number ? await drawSent(number, headingLevel) : null;
       if (!live.current) return;
-      finish('sent', typeof created?.number === 'string' ? created.number : null);
+      finish('sent', number, panel);
       return;
     }
 
     const problem = result.response ? await sendProblemOf(result.response) : { status: 0, fields: {} };
     if (!live.current) return;
+    sending.current = false;
+    setBusy(false);
     if (problem.status === 401) {
       // The frame asks them to sign in again; what they wrote waits on this device.
       draft.flush();
       reportSessionEnded('action');
-      sending.current = false;
-      setBusy(false);
       return;
     }
     const fieldTitle = problem.fields.title;
     const fieldDetails = problem.fields.description;
-    setErrors({ ...(fieldTitle ? { title: fieldTitle } : {}), ...(fieldDetails ? { details: fieldDetails } : {}) });
+    if (fieldTitle || fieldDetails) {
+      // The API named a field: back to it, with the message beside it.
+      showFieldProblems({ title: fieldTitle, details: fieldDetails }, sendFailureMessage(problem));
+      return;
+    }
     setFormMessage(sendFailureMessage(problem));
     setAttempt((count) => count + 1);
-    sending.current = false;
-    setBusy(false);
   };
 
+  /** Mod+Enter moves on from anywhere in a step's form; Enter in the title moves to the details. */
   const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>): void => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
     const mod = event.metaKey || event.ctrlKey;
     if (mod && !event.shiftKey && !event.altKey) {
-      // The details box sends on its own shortcut; from anywhere else in the
+      // The details box moves on with its own shortcut; from anywhere else in the
       // form (the title, an urgency card that took the key first) it is ours.
       if (event.target instanceof HTMLTextAreaElement) return;
       event.preventDefault();
       event.currentTarget.requestSubmit();
       return;
     }
-    // Enter in the title moves on to the details rather than sending a report half-written.
+    // Enter in the title moves on to the details rather than skipping them.
     if (!event.defaultPrevented && event.target === titleRef.current) {
       event.preventDefault();
       document.getElementById(detailsId)?.focus();
     }
   };
 
-  /* ---- After sending ----------------------------------------------------------- */
-
-  const sentNumber = sent?.number ?? null;
-  useEffect(() => {
-    if (phase !== 'sent' || !sentNumber) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const lookUp = async (again: boolean): Promise<void> => {
-      let dueAt: string | null = null;
-      try {
-        dueAt = responseDueAt((await api.slaTimers(sentNumber)).timers);
-      } catch {
-        dueAt = null;
-      }
-      if (cancelled) return;
-      if (dueAt || !again) {
-        setSent((current) => (current ? { ...current, replyBy: dueAt } : current));
-        return;
-      }
-      timer = setTimeout(() => void lookUp(false), SLA_RETRY_MS);
-    };
-    void lookUp(true);
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [phase, sentNumber]);
-
   /* ---- Focus as the steps change ---------------------------------------------- */
 
+  const reviewRef = useRef<HTMLHeadingElement | null>(null);
   useFocusOnChange(textRef, phase, phase === 'describe' && !answer);
-  useFocusOnChange(titleRef, phase, phase === 'details');
+  // Back on the details because of a problem: the summary takes focus (its own `focusKey`), not the title.
+  useFocusOnChange(titleRef, phase, phase === 'details' && !errors.title && !errors.details);
+  useFocusOnChange(reviewRef, phase, phase === 'review');
   useFocusOnChange(doneRef, phase, phase === 'sent' || phase === 'queued');
 
   /* ---- Drawing ----------------------------------------------------------------- */
@@ -466,15 +502,33 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
     />
   );
 
+  /** The step header (v3 §7.2): where they are of the three, done steps ticked. */
+  const progress = (step: HelpStep): ReactNode => {
+    const at = STEPS.findIndex((candidate) => candidate.id === step);
+    return (
+      <Stepper
+        className="app-HelpFlow__steps"
+        label="Steps"
+        size="sm"
+        steps={STEPS.map((candidate, index) => ({ id: candidate.id, label: candidate.label, status: index < at ? 'complete' : index === at ? 'current' : 'upcoming' }))}
+      />
+    );
+  };
+
   let parts: HelpFlowParts;
 
   if (phase === 'sent') {
-    const replyBy = sent?.replyBy ? replyByPhrase(sent.replyBy, new Date(), locale, timeZone) : null;
+    const sentNumber = sent?.number ?? null;
     parts = {
       title: 'Report sent',
       initialFocusRef: doneRef,
       phase,
-      body: (
+      body: sent?.panel ? (
+        // The server's panel: a hero named by its heading, focused as a whole so it is read from the top.
+        <div ref={doneRef} tabIndex={-1} className="app-HelpSent" data-outcome="sent">
+          {sent.panel}
+        </div>
+      ) : (
         <div ref={doneRef} tabIndex={-1} className="app-HelpDone" data-outcome="sent">
           <span className="app-HelpDone__mark" aria-hidden="true">
             <Icon name="circle-check" size="2xl" />
@@ -482,10 +536,6 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
           <H className="app-HelpDone__title">
             We’ve got it{sentNumber ? <> · <strong className="app-HelpDone__number">{sentNumber}</strong></> : null}
           </H>
-          {/* Always there, so the promise is heard when it arrives a moment after the rest. */}
-          <div role="status" className="app-HelpDone__slot">
-            {replyBy ? <p className="app-HelpDone__promise">We aim to reply by {replyBy}.</p> : null}
-          </div>
           <p className="app-HelpDone__next">
             <strong>What happens next:</strong> someone from the service desk will pick it up. You’ll get updates here and by email.
           </p>
@@ -535,6 +585,50 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
         </>
       ),
     };
+  } else if (phase === 'review') {
+    const choice = URGENCY_CHOICES.find((candidate) => candidate.value === form.urgency);
+    parts = {
+      title: 'Report an issue',
+      stepLabel: stepLabelFor('review'),
+      initialFocusRef: reviewRef as RefObject<HTMLElement | null>,
+      phase,
+      body: (
+        <div className="app-HelpFlow app-HelpFlow--review">
+          {progress('review')}
+          <FormErrorSummary errors={[]} {...(formMessage ? { description: formMessage } : {})} title="It didn’t send" headingLevel={headingLevel} focusKey={attempt} />
+          <form id={reviewId} className="app-HelpReview" noValidate onSubmit={(event) => void send(event)} onKeyDown={onFormKeyDown} aria-labelledby={`${reviewId}-heading`}>
+            <div className="app-HelpReview__head">
+              <H id={`${reviewId}-heading`} ref={reviewRef} tabIndex={-1} className="app-HelpReview__title">
+                Check your report
+              </H>
+              <Button variant="ghost" size="sm" iconStart="pencil" onClick={() => setPhase('details')} disabled={busy}>
+                Edit<VisuallyHidden> the report</VisuallyHidden>
+              </Button>
+            </div>
+            <DescriptionList
+              className="app-HelpReview__answers"
+              layout="inline"
+              emptyLabel="None given"
+              items={[
+                { id: 'title', label: 'Title', value: form.title.trim() },
+                { id: 'details', label: 'Details', value: form.details.trim() ? <span className="app-HelpReview__text">{form.details.trim()}</span> : 'None given' },
+                { id: 'urgency', label: 'How much it’s holding you up', value: choice?.label ?? '' },
+              ]}
+            />
+          </form>
+        </div>
+      ),
+      footer: (
+        <>
+          <Button variant="secondary" onClick={() => setPhase('details')} disabled={busy}>
+            Back
+          </Button>
+          <Button variant="primary" type="submit" form={reviewId} loading={busy} loadingLabel="Sending" iconEnd="send">
+            Send report
+          </Button>
+        </>
+      ),
+    };
   } else if (phase === 'details') {
     const summary = [
       ...(errors.title ? [{ fieldId: titleId, message: errors.title }] : []),
@@ -542,20 +636,21 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
     ];
     parts = {
       title: 'Report an issue',
-      stepLabel: 'Step 2 of 2 · Add the details',
+      stepLabel: stepLabelFor('details'),
       initialFocusRef,
       phase,
       body: (
         <div className="app-HelpFlow app-HelpFlow--details">
+          {progress('details')}
           {draftNotice}
           <FormErrorSummary
             errors={summary}
             {...(formMessage ? { description: formMessage } : {})}
             title={summary.length > 0 ? 'Check the report' : 'It didn’t send'}
-            headingLevel={variant === 'page' ? 2 : 3}
+            headingLevel={headingLevel}
             focusKey={attempt}
           />
-          <form id={formId} className="app-HelpFlow__form" noValidate onSubmit={(event) => void send(event)} onKeyDown={onFormKeyDown} aria-labelledby={`${ids}-details-heading`}>
+          <form id={formId} className="app-HelpFlow__form" noValidate onSubmit={toReview} onKeyDown={onFormKeyDown} aria-labelledby={`${ids}-details-heading`}>
             <H id={`${ids}-details-heading`} className="itsm-visually-hidden">
               The details
             </H>
@@ -582,13 +677,14 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
                 autoGrow
                 maxLength={DETAILS_MAX}
                 submitShortcut="mod+enter"
-                submitHint="to send"
+                submitHint="to continue"
                 onChange={(event) => edit({ details: event.target.value })}
               />
             </FormField>
             <RadioGroup<Urgency>
               label="How much is this holding you up?"
               variant="cards"
+              className="app-HelpFlow__urgency"
               value={form.urgency}
               onChange={(value) => {
                 if (isUrgency(value)) edit({ urgency: value });
@@ -596,8 +692,8 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
               options={URGENCY_CHOICES.map((choice) => ({
                 value: choice.value,
                 label: choice.label,
-                description: choice.description,
-                icon: choice.value === 'high' ? 'circle-alert' : choice.value === 'medium' ? 'hourglass' : 'circle-check',
+                description: URGENCY_LOOK[choice.value].consequence,
+                icon: <IconTile icon={URGENCY_LOOK[choice.value].icon} size={32} tone={URGENCY_LOOK[choice.value].tone} />,
               }))}
             />
           </form>
@@ -606,11 +702,11 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
       footer: (
         <>
           <DraftStatus savedAt={showSaved} className="app-HelpFlow__saved" />
-          <Button variant="secondary" onClick={() => setPhase('describe')} disabled={busy}>
+          <Button variant="secondary" onClick={() => setPhase('describe')}>
             Back
           </Button>
-          <Button variant="primary" type="submit" form={formId} loading={busy} loadingLabel="Sending" iconEnd="send">
-            Send report
+          <Button variant="primary" type="submit" form={formId} iconEnd="arrow-right">
+            Continue
           </Button>
         </>
       ),
@@ -619,7 +715,7 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
     const { hit, article, failed } = answer;
     parts = {
       title: 'How can we help?',
-      stepLabel: 'Step 1 of 2 · Describe it',
+      stepLabel: stepLabelFor('describe'),
       initialFocusRef: textRef as RefObject<HTMLElement | null>,
       phase,
       body: (
@@ -667,11 +763,12 @@ export function HelpFlow({ userId, can = HELP_CAN_ALL, start, knownIssues, varia
   } else {
     parts = {
       title: 'How can we help?',
-      stepLabel: 'Step 1 of 2 · Describe it',
+      stepLabel: stepLabelFor('describe'),
       initialFocusRef,
       phase,
       body: (
         <div className="app-HelpFlow app-HelpFlow--describe">
+          {progress('describe')}
           {draftNotice}
           <form
             className="app-HelpFlow__form"

@@ -59,13 +59,14 @@
 }
 
 /*
- * The chips: a row that stays under the top bar while the services scroll
- * past, and scrolls sideways on its own when it is wider than the screen.
- * Opaque, on the canvas (glass is for the frame's own bars, D6).
+ * The chips: a row that stays under the frame's top (`--itsm-frame-top`: the
+ * top bar, and in a demo visit the demo bar above it — v3 §3.4, V1-M6) while
+ * the services scroll past, and scrolls sideways on its own when it is wider
+ * than the screen. Opaque, on the canvas (glass is for the frame's own bars, D6).
  */
 .app-Services__chips {
   position: sticky;
-  inset-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top));
+  inset-block-start: calc(var(--itsm-frame-top) + var(--itsm-safe-area-top));
   z-index: var(--itsm-z-sticky);
   margin-block: calc(-1 * var(--itsm-space-md));
   margin-inline: calc(-1 * var(--itsm-space-2xs));
@@ -126,8 +127,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-sm);
-  /* A chip's jump lands the heading below the top bar and the chips, not under them. */
-  scroll-margin-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-control-height-sm) + var(--itsm-space-lg));
+  /* A chip's jump lands the heading below the frame's top and the chips, not under them. */
+  scroll-margin-block-start: calc(var(--itsm-frame-top) + var(--itsm-safe-area-top) + var(--itsm-control-height-sm) + var(--itsm-space-lg));
 }
 
 .app-Services__service {
@@ -195,7 +196,7 @@
 
   .app-ServiceRequest__rail {
     position: sticky;
-    inset-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
+    inset-block-start: calc(var(--itsm-frame-top) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
   }
 }
 
@@ -207,17 +208,98 @@
 }
 
 /*
- * The form in one card. Its action bar (sticky at the bottom of the view on
- * a long step) reaches the card's edges, so when it floats it reads as the
- * card's own footer.
+ * The form in one card (Card v3: border-first, no resting shadow). Its action
+ * bar (sticky at the bottom of the view on a long step) reaches the card's
+ * edges, so when it floats it reads as the card's own footer.
+ *
+ * v3 §7.2 (X-M12): each step is a question group with the item's IconTile
+ * (28) beside its heading. The renderer's parts become the card's own grid
+ * items (`display: contents`), so the tile — this page's element, drawn
+ * before the renderer — can share the step's row and sit at its heading
+ * without a line of the renderer changing. The error line, the progress, the
+ * step, the actions and the sentinel keep their order in named rows; a row
+ * with nothing in it takes no space.
  */
 .app-ServiceRequest__card {
-  --app-request-pad: var(--itsm-space-lg);
+  --app-request-pad: var(--itsm-card-padding);
+  --app-request-tile: 1.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(5, auto);
   box-sizing: border-box;
   padding: var(--app-request-pad) var(--app-request-pad) 0;
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   border-radius: var(--itsm-radius-2xl);
   background: var(--itsm-colour-surface-raised);
-  box-shadow: var(--itsm-elevation-xs);
+  container-type: inline-size;
+}
+
+.app-ServiceRequest__card > .itsm-FormRenderer[data-mode='steps'] {
+  display: contents;
+}
+
+.app-ServiceRequest__card .itsm-FormRenderer__error {
+  grid-row: 1;
+}
+
+.app-ServiceRequest__card .itsm-FormRenderer__progress {
+  grid-row: 2;
+}
+
+.app-ServiceRequest__card .itsm-FormRenderer__step {
+  grid-row: 3;
+  grid-column: 1;
+}
+
+.app-ServiceRequest__card .itsm-FormRenderer__actions {
+  grid-row: 4;
+}
+
+.app-ServiceRequest__card .itsm-FormRenderer__sentinel {
+  grid-row: 5;
+}
+
+/* The tile: level with the step's title line (the line under "Step 2 of 3"). */
+.app-ServiceRequest__tile {
+  grid-row: 3;
+  grid-column: 1;
+  align-self: start;
+  justify-self: start;
+  margin-block-start: calc(var(--itsm-text-footnote-line) + var(--itsm-space-3xs) + (var(--itsm-text-title2-line) - var(--app-request-tile)) / 2);
+  pointer-events: none;
+}
+
+.app-ServiceRequest__card:has(> .app-ServiceRequest__tile) .itsm-FormRenderer__stepHeading {
+  padding-inline-start: calc(var(--app-request-tile) + var(--itsm-space-sm));
+}
+
+/* A step that opens with its error summary moves its heading down: the tile steps aside rather than sit on the summary. */
+.app-ServiceRequest__card:has(.itsm-FormRenderer__step > .itsm-FormErrorSummary) .app-ServiceRequest__tile {
+  display: none;
+}
+
+.app-ServiceRequest__card:has(.itsm-FormRenderer__step > .itsm-FormErrorSummary) .itsm-FormRenderer__stepHeading {
+  padding-inline-start: 0;
+}
+
+/* A question group inside a step: a section of the card, set off by a rule. */
+.app-ServiceRequest__card .itsm-FormRenderer__section {
+  padding-block-start: var(--itsm-space-md);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+}
+
+/* The review: each group's answers as a definition grid, label beside value from 30rem. */
+.app-ServiceRequest__card .itsm-FormRenderer__reviewGroup {
+  padding-block: var(--itsm-space-sm);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+}
+
+@container (min-width: 30rem) {
+  .app-ServiceRequest__card .itsm-FormRenderer__answers > div {
+    display: grid;
+    grid-template-columns: minmax(8rem, 2fr) minmax(0, 3fr);
+    column-gap: var(--itsm-space-md);
+  }
 }
 
 .app-ServiceRequest__card .itsm-FormRenderer__actions {
@@ -231,6 +313,11 @@
   .app-ServiceRequest__card {
     --app-request-pad: var(--itsm-space-md);
   }
+}
+
+/* A form with no questions: the card is just its button, laid out as before. */
+.app-ServiceRequest__card:has(> .app-ServiceRequest__plain) {
+  display: block;
 }
 
 /* The skeleton has no action bar to close the card, so it keeps its bottom padding. */
@@ -270,9 +357,9 @@
   flex-direction: column;
   gap: var(--itsm-space-xs);
   padding: var(--itsm-space-lg);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   border-radius: var(--itsm-radius-2xl);
   background: var(--itsm-colour-surface-raised);
-  box-shadow: var(--itsm-elevation-xs);
 }
 
 .app-ServiceRequest__railItem {
@@ -341,17 +428,26 @@
 
 /* ---- Requested ------------------------------------------------------------------ */
 
+/*
+ * The ending: the server's success panel (a light HeroCard, v3 §7.2) or, when
+ * it could not be had, the plain card below — then the two ways on. Focused
+ * as a whole when it appears, so it is read from the top.
+ */
 .app-ServiceDone {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--itsm-space-sm);
-  padding: var(--itsm-space-2xl) var(--itsm-space-lg);
+  gap: var(--itsm-space-md);
   border-radius: var(--itsm-radius-2xl);
-  background: var(--itsm-colour-surface-raised);
-  box-shadow: var(--itsm-elevation-xs);
-  text-align: center;
   animation: app-ServiceDone-in var(--itsm-duration-normal) var(--itsm-easing-entrance);
+}
+
+.app-ServiceDone:focus {
+  outline: none;
+}
+
+.app-ServiceDone:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-focus-offset);
 }
 
 @keyframes app-ServiceDone-in {
@@ -377,20 +473,16 @@
   animation-name: app-ServiceDone-fade;
 }
 
-.app-ServiceDone__mark {
-  display: grid;
-  place-items: center;
-  inline-size: calc(var(--itsm-icon-2xl) + var(--itsm-space-md));
-  block-size: calc(var(--itsm-icon-2xl) + var(--itsm-space-md));
-  margin-block-end: var(--itsm-space-2xs);
-  border-radius: var(--itsm-radius-pill);
-  background: var(--itsm-colour-success-subtle);
-  color: var(--itsm-colour-success-subtleText);
-}
-
-.app-ServiceDone__mark[data-tone='neutral'] {
-  background: var(--itsm-colour-neutral-subtle);
-  color: var(--itsm-colour-neutral-subtleText);
+.app-ServiceDone__plain {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-2xl) var(--itsm-space-lg);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  text-align: center;
 }
 
 .app-ServiceDone__title {
@@ -401,11 +493,8 @@
   letter-spacing: var(--itsm-text-title2-tracking);
 }
 
-.app-ServiceDone__title:focus {
-  outline: none;
-}
-
 .app-ServiceDone__number {
+  font-variant-numeric: tabular-nums slashed-zero;
   white-space: nowrap;
 }
 
@@ -421,15 +510,17 @@
 .app-ServiceDone__actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: var(--itsm-space-xs);
-  margin-block-start: var(--itsm-space-sm);
+}
+
+/* Under the plain card the buttons centre with it; under the hero they start where its words do. */
+.app-ServiceDone:not([data-panel]) > .app-ServiceDone__actions {
+  justify-content: center;
 }
 
 @media (max-width: 47.9375rem) {
   .app-ServiceDone__actions {
     flex-direction: column;
-    align-self: stretch;
   }
 }
 
@@ -440,7 +531,7 @@
 
   .app-ServiceRequest__card,
   .app-ServiceRequest__summary,
-  .app-ServiceDone {
+  .app-ServiceDone__plain {
     border: var(--itsm-hairline) solid CanvasText;
   }
 }

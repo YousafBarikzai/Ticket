@@ -36,9 +36,23 @@ export function isUrgency(value: unknown): value is Urgency {
   return value === 'low' || value === 'medium' || value === 'high';
 }
 
+/**
+ * Each urgency card's tile and its one-line consequence (SPEC v3 §7.2, X-M12):
+ * what choosing it means for the person, beside the words they choose by.
+ * Only "I cannot work" takes a tone of its own (`high`, never a status
+ * colour: urgency is the requester's word, not a state); the others stay
+ * neutral, so the cards differ by shape and words first.
+ */
+export const URGENCY_LOOK: Readonly<Record<Urgency, { readonly icon: 'circle-check' | 'hourglass' | 'circle-alert'; readonly tone: 'neutral' | 'high'; readonly consequence: string }>> = {
+  low: { icon: 'circle-check', tone: 'neutral', consequence: 'We’ll fit it in around more urgent work.' },
+  medium: { icon: 'hourglass', tone: 'neutral', consequence: 'We’ll pick it up in the usual order.' },
+  high: { icon: 'circle-alert', tone: 'high', consequence: 'We’ll treat it as urgent.' },
+};
+
 /* ------------------------------------------------------------------- Drafts */
 
-export type HelpStep = 'describe' | 'details';
+/** The three steps (v3 §7.2: Describe · Details · Review). */
+export type HelpStep = 'describe' | 'details' | 'review';
 
 /** What is kept on this device while somebody writes a report. */
 export interface ReportDraft {
@@ -72,7 +86,7 @@ export function readReportDraft(value: unknown): ReportDraft | null {
   const record = value as Record<string, unknown>;
   const text = (key: string): string => (typeof record[key] === 'string' ? (record[key] as string) : '');
   const draft: ReportDraft = {
-    step: record.step === 'details' ? 'details' : 'describe',
+    step: record.step === 'details' || record.step === 'review' ? record.step : 'describe',
     text: text('text'),
     title: text('title'),
     details: text('details'),
