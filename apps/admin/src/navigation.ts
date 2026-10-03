@@ -1,5 +1,5 @@
 import type { IconName } from '@itsm/ui';
-import type { NavItem as ShellNavItem, NavModel, NavSection } from '@itsm/ui/shell';
+import type { NavItem as ShellNavItem, NavModel, NavSection, RouteTitle } from '@itsm/ui/shell';
 import { holdsAny, permissionLabel, type Grants } from './permissions.js';
 
 /**
@@ -19,7 +19,11 @@ import { holdsAny, permissionLabel, type Grants } from './permissions.js';
  * Three rules this file keeps:
  *
  *   - **Nav label = H1 = `<title>`.** "Rules", not "What happens
- *     automatically"; the sentence moves into the page's subtitle.
+ *     automatically"; the sentence is the page's **purpose** (v3, A7 §3.1):
+ *     the top bar's second line, one per route in `PAGE_PURPOSES`, with no
+ *     full stop. An item's `description` is the purpose of the item as a
+ *     whole, which the bar shows for every page under it until the page
+ *     publishes its own (`purposeFor`).
  *   - **A gate is "any one of" a list, matched exactly** (`holdsAny`). An empty
  *     list is open to everyone signed in (the Command centre filters its own
  *     sections). A withheld item is *absent*, never disabled — and that is
@@ -38,7 +42,7 @@ import { holdsAny, permissionLabel, type Grants } from './permissions.js';
 export type NavGroupId = 'overview' | 'desk' | 'catalogue' | 'automation' | 'cmdb' | 'organisation' | 'footer' | 'platform';
 
 /** The counts `NavBadges` streams into the sidebar (SPEC §5.2, "Badge" column). */
-export type NavBadgeKey = 'draftRequestTypes' | 'draftRules' | 'failedRuns' | 'failedDeliveries' | 'securityAlerts' | 'warranties';
+export type NavBadgeKey = 'draftRequestTypes' | 'draftRules' | 'failedRuns' | 'failedDeliveries' | 'securityAlerts' | 'warranties' | 'statusIncidents';
 
 /** A route tab inside one item: `TabNav` on the page, a "Go to" entry in the palette. */
 export interface AdminTab {
@@ -112,8 +116,25 @@ function unionOf(tabs: readonly AdminTab[]): string[] {
   return [...new Set(tabs.flatMap((entry) => entry.read))];
 }
 
+/** Whether `href` is `base` or below it: `/sla/calendars` is under `/sla`. */
+function under(href: string, base: string): boolean {
+  return href === base || href.startsWith(`${base}/`);
+}
+
+/**
+ * The tab every other tab of an item sits under (`/sla` for Service levels),
+ * or the first tab when there is none. The item links here when the person
+ * may open it, because the sidebar keeps an item current on its own `href`
+ * and below: linking `/sla/performance` would leave Service levels unlit on
+ * `/sla/calendars`. The tab *order* is the design's (Performance first); the
+ * item's *landing* is its root.
+ */
+export function rootTab(tabs: readonly AdminTab[]): AdminTab {
+  return tabs.find((candidate) => tabs.every((other) => under(other.href, candidate.href))) ?? tabs[0]!;
+}
+
 function withTabs(item: Omit<AdminNavItem, 'read' | 'href'> & { readonly tabs: readonly AdminTab[] }): AdminNavItem {
-  return { ...item, href: item.tabs[0]!.href, read: unionOf(item.tabs) };
+  return { ...item, href: rootTab(item.tabs).href, read: unionOf(item.tabs) };
 }
 
 export const NAV: readonly AdminNavItem[] = [
@@ -125,7 +146,7 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'home',
     group: 'overview',
     read: [],
-    description: 'What needs you, and how the desk is doing.',
+    description: 'Desk health, what needs you and where the service is heading',
     keywords: ['home', 'overview', 'dashboard', 'briefing', 'setup'],
     shortcut: 'g c',
   },
@@ -134,7 +155,7 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Insights',
     icon: 'insights',
     group: 'overview',
-    description: 'Dashboards, metrics and scheduled reports.',
+    description: 'Dashboards, metrics and scheduled reports',
     keywords: ['analytics', 'reports', 'dashboards', 'metrics', 'charts'],
     tabs: [
       tab('dashboards', 'Dashboards', '/insights', INSIGHTS_READ),
@@ -151,7 +172,7 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'ticket',
     group: 'desk',
     read: ['ticket.read'],
-    description: 'Everything raised on this desk, across every team.',
+    description: 'Everything raised on this desk, across every team',
     keywords: ['incidents', 'requests', 'workload', 'backlog'],
     shortcut: 'g t',
   },
@@ -160,7 +181,7 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Workforce',
     icon: 'workforce',
     group: 'desk',
-    description: 'Who is available, who is on call, shifts, skills and routing.',
+    description: 'Who is available, who is on call, shifts, skills and routing',
     keywords: ['queues', 'availability', 'rota', 'on call', 'shifts', 'skills', 'routing', 'agents'],
     tabs: [
       tab('now', 'Now', '/workforce', WORKLOAD_READ),
@@ -175,14 +196,29 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Service levels',
     icon: 'sla',
     group: 'desk',
-    description: 'Response and resolution targets, business hours and the priority matrix.',
+    description: 'Response and resolution targets, business hours and the priority matrix',
     keywords: ['sla', 'slas', 'targets', 'business hours', 'calendars', 'priority matrix', 'impact', 'urgency'],
+    // Performance first, gated on analytics, so a team lead without the policy permissions still finds SLA
+    // performance (A7 §3.2). The item still links to Policies for someone who may open it: `/sla` is the
+    // root every other tab sits under, so the sidebar keeps the item current on all four (`rootTab`).
     tabs: [
+      tab('performance', 'Performance', '/sla/performance', ['analytics.read'], { keywords: ['attainment', 'breaches', 'heatmap'] }),
       tab('policies', 'Policies', '/sla', SLA_READ),
       tab('calendars', 'Calendars', '/sla/calendars', SLA_READ, { keywords: ['business hours', 'holidays'] }),
       tab('matrix', 'Priority matrix', '/sla/matrix', SLA_READ, { keywords: ['impact', 'urgency'] }),
     ],
   }),
+  {
+    id: 'status-page',
+    label: 'Status page',
+    href: '/status-page',
+    icon: 'globe',
+    group: 'desk',
+    read: ['statuspage.read', 'statuspage.manage'],
+    description: 'Your public service status: components, incidents and maintenance',
+    keywords: ['status', 'uptime', 'outage', 'maintenance'],
+    badge: 'statusIncidents',
+  },
 
   /* --------------------------------------------------- Service catalogue */
   withTabs({
@@ -190,8 +226,8 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Services & requests',
     icon: 'catalogue',
     group: 'catalogue',
-    description: 'What people can ask for on the portal, and the forms they fill in.',
-    keywords: ['catalogue', 'catalog', 'services', 'request types', 'portal', 'forms'],
+    description: 'What people can ask for in the Help Portal, and the forms they fill in',
+    keywords: ['catalogue', 'catalog', 'services', 'request types', 'portal', 'help portal', 'forms'],
     badge: 'draftRequestTypes',
     tabs: [
       tab('request-types', 'Request types', '/catalogue', ['catalogue.manage']),
@@ -210,7 +246,7 @@ export const NAV: readonly AdminNavItem[] = [
     // The API lets any ticket reader list fields, but this page is for the
     // people who shape a ticket, so the nav and page gates stay identical.
     read: ['ticket.config.manage'],
-    description: 'The custom fields a ticket carries, who sees each one and when it is required.',
+    description: 'The custom fields a ticket carries, who sees each and when it is required',
     keywords: ['custom fields', 'shape of a ticket', 'attributes'],
   },
 
@@ -223,7 +259,7 @@ export const NAV: readonly AdminNavItem[] = [
     group: 'automation',
     read: ['rules.rule.read', 'rules.rule.manage', 'rules.rule.publish'],
     routes: ['/rules/new', '/rules/[key]'],
-    description: 'What happens automatically when something happens to a ticket.',
+    description: 'What happens automatically when something happens to a ticket',
     keywords: ['business rules', 'triggers', 'automation', 'conditions'],
     badge: 'draftRules',
     shortcut: 'g r',
@@ -233,7 +269,7 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Workflows',
     icon: 'workflow',
     group: 'automation',
-    description: 'Work that runs across several steps and can wait, and each run of it.',
+    description: 'Work that runs across several steps and can wait, and each run of it',
     keywords: ['automation', 'processes', 'runs', 'approvals'],
     badge: 'failedRuns',
     shortcut: 'g w',
@@ -247,7 +283,7 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Integrations',
     icon: 'integrations',
     group: 'automation',
-    description: 'Outbound actions, the credentials behind them, webhooks and failed deliveries.',
+    description: 'Outbound actions, credentials, webhooks, channels and failed deliveries',
     keywords: ['connectors', 'outbound', 'api', 'deliveries', 'retries'],
     badge: 'failedDeliveries',
     tabs: [
@@ -257,6 +293,7 @@ export const NAV: readonly AdminNavItem[] = [
         keywords: ['secrets', 'api keys', 'tokens'],
       }),
       tab('webhooks', 'Webhooks', '/integrations/webhooks', ['webhook.read']),
+      tab('channels', 'Channels', '/integrations/channels', ['channel.account.read'], { keywords: ['mailboxes', 'email', 'chat', 'inbound'] }),
     ],
   }),
   withTabs({
@@ -264,12 +301,14 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'AI triage',
     icon: 'ai',
     group: 'automation',
-    description: 'How well suggestions match the desk, and what AI may set by itself.',
+    description: 'How well suggestions match the desk, and what AI may set by itself',
     keywords: ['ai', 'machine learning', 'suggestions', 'auto-apply', 'confidence'],
     tabs: [
       tab('overview', 'Overview', '/ai-triage', ['ai.read']),
       tab('quality', 'Quality', '/ai-triage/quality', ['ai.read'], { keywords: ['accuracy'] }),
-      tab('decisions', 'Decisions', '/ai-triage/decisions', ['ai.manage']),
+      // `ai.decision.read` (AI2, P2) lets a reader list decisions without the power to change AI; until the
+      // API grants it nobody holds it, so the tab stays with `ai.manage` holders (A7 §3.2, SPEC §3.5).
+      tab('decisions', 'Decisions', '/ai-triage/decisions', ['ai.manage', 'ai.decision.read']),
     ],
   }),
 
@@ -281,7 +320,7 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'cmdb',
     group: 'cmdb',
     read: ['cmdb.read', 'cmdb.manage'],
-    description: 'The services and systems a ticket can point at, and how they depend on each other.',
+    description: 'The services and systems tickets point at, and what depends on what',
     keywords: ['cmdb', 'ci', 'services', 'estate', 'dependencies'],
   },
   {
@@ -291,7 +330,7 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'assets',
     group: 'cmdb',
     read: ['asset.read', 'asset.manage'],
-    description: 'Hardware and licences, who holds them and when warranties end.',
+    description: 'Hardware and licences, who holds them and when warranties end',
     keywords: ['hardware', 'laptops', 'warranty', 'inventory', 'licences'],
     badge: 'warranties',
   },
@@ -302,7 +341,7 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'People',
     icon: 'people',
     group: 'organisation',
-    description: 'Everyone who can sign in to this desk, their teams and organisations.',
+    description: 'Everyone who can sign in to this desk, their teams and organisations',
     keywords: ['users', 'agents', 'staff', 'teams', 'organisations', 'directory'],
     tabs: [
       tab('people', 'People', '/people', PEOPLE_READ),
@@ -317,7 +356,7 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Security',
     icon: 'security',
     group: 'organisation',
-    description: 'Security alerts, roles and the permissions they grant.',
+    description: 'Security alerts, roles and the permissions they grant',
     keywords: ['alerts', 'roles', 'permissions', 'access'],
     badge: 'securityAlerts',
     tabs: [
@@ -332,7 +371,7 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'audit',
     group: 'organisation',
     read: ['audit.read'],
-    description: 'Every change recorded on this desk, in the order it happened.',
+    description: 'Every change recorded on this desk, in the order it happened',
     keywords: ['history', 'changes', 'log', 'compliance'],
   },
 
@@ -342,16 +381,19 @@ export const NAV: readonly AdminNavItem[] = [
     label: 'Settings',
     icon: 'settings',
     group: 'footer',
-    description: 'How this desk behaves: settings, features, AI, modules, usage and plan.',
+    description: 'How this desk behaves: settings, features, AI, modules, usage and plan',
     keywords: ['configuration', 'preferences', 'options', 'flags', 'feature flags'],
     shortcut: 'g s',
     tabs: [
-      tab('general', 'General', '/settings', ['admin.setting.read']),
+      // `admin.setting.manage` opens General too: every key of the Administration gate opens a page here
+      // (`areas-gate.test.ts`), and someone who may change settings may see them.
+      tab('general', 'General', '/settings', ['admin.setting.read', 'admin.setting.manage']),
       tab('features', 'Features', '/settings/features', ['admin.setting.read', 'admin.flag.manage'], {
         keywords: ['flags', 'feature flags', 'kill switch'],
       }),
       tab('ai', 'AI', '/settings/ai', ['admin.setting.read', 'admin.flag.manage'], { keywords: ['ai budget', 'capabilities'] }),
-      tab('modules', 'Modules', '/settings/modules', ['admin.module.manage']),
+      // `GET /modules` checks `admin.setting.read`, so the page reads without the write key (A7 §3.2).
+      tab('modules', 'Modules', '/settings/modules', ['admin.module.manage', 'admin.setting.read']),
       tab('usage', 'Usage & plan', '/settings/usage', ['tenant.usage.read'], { keywords: ['limits', 'billing', 'plan', 'meters'] }),
     ],
   }),
@@ -364,7 +406,7 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'platform',
     group: 'platform',
     read: ['platform.tenant.manage'],
-    description: 'Every desk on this deployment.',
+    description: 'Every desk on this deployment',
     keywords: ['platform', 'customers', 'workspaces'],
     operator: true,
   },
@@ -375,7 +417,7 @@ export const NAV: readonly AdminNavItem[] = [
     icon: 'layers-2',
     group: 'platform',
     read: ['platform.tenant.manage'],
-    description: 'The price list every desk is sold against.',
+    description: 'The price list every desk is sold against',
     keywords: ['platform', 'pricing', 'limits'],
     operator: true,
   },
@@ -441,6 +483,10 @@ function buildPages(): Map<string, PageEntry> {
 
 const PAGES = buildPages();
 
+/** Built once: the same for everybody, and handed to the frame with every model. */
+let routeTitleCache: RouteTitle[] | null = null;
+const ROUTE_TITLES_GETTER = (): RouteTitle[] => (routeTitleCache ??= routeTitles());
+
 /** Every route pattern this map knows, pending ones included. */
 export function allRoutes(): string[] {
   return [...PAGES.keys()];
@@ -501,7 +547,9 @@ export function visibleNav(me: Grants): AdminNavItem[] {
   const visible: AdminNavItem[] = [];
   for (const item of NAV) {
     if (item.tabs) {
-      const first = visibleTabs(me, item)[0];
+      const open = visibleTabs(me, item);
+      const root = rootTab(item.tabs);
+      const first = open.includes(root) ? root : open[0];
       if (first) visible.push({ ...item, href: first.href });
     } else if (!isPending(item.href) && holdsAny(me, item.read)) {
       visible.push(item);
@@ -527,17 +575,23 @@ export function isOperator(me: Grants): boolean {
   return holdsAny(me, ['platform.tenant.manage']);
 }
 
-/** The DS route tabs for a page's `PageHeader`, filtered for this person. */
+/**
+ * The DS route tabs for a page's `PageHeader`, filtered for this person.
+ *
+ * A tab matches exactly when another tab of the item sits below it (A7 §3.2):
+ * Policies (`/sla`) would otherwise read as current on `/sla/performance`,
+ * which is no longer its neighbour but the first tab. Every other tab matches
+ * its subtree, so a builder (`/catalogue/forms/[key]`) keeps its tab lit.
+ */
 export function tabsFor(me: Grants, itemId: string): { id: string; label: string; href: string; match?: 'exact' }[] {
   const item = NAV.find((entry) => entry.id === itemId);
   if (!item) return [];
-  // The first tab shares its href with deeper tabs' prefix (`/sla` and
-  // `/sla/calendars`), so it matches exactly.
-  return visibleTabs(me, item).map((entry, index) => ({
+  const all = item.tabs ?? [];
+  return visibleTabs(me, item).map((entry) => ({
     id: entry.id,
     label: entry.label,
     href: entry.href,
-    ...(index === 0 || entry.href === item.tabs?.[0]?.href ? { match: 'exact' as const } : {}),
+    ...(all.some((other) => other !== entry && other.href.startsWith(`${entry.href}/`)) ? { match: 'exact' as const } : {}),
   }));
 }
 
@@ -549,8 +603,114 @@ export function breadcrumbsFor(route: string): { label: string; href?: string }[
   const entry = PAGES.get(route);
   if (!entry?.item) return [];
   const crumbs: { label: string; href?: string }[] = [{ label: entry.item.label, href: entry.item.href }];
-  if (entry.tab && entry.tab.href !== entry.item.tabs?.[0]?.href) crumbs.push({ label: entry.tab.label, href: entry.tab.href });
+  if (entry.tab && !isRootTab(entry.item, entry.tab)) crumbs.push({ label: entry.tab.label, href: entry.tab.href });
   return crumbs;
+}
+
+/** Whether a tab is its item's landing page (`rootTab`), which breadcrumbs and Forbidden name by the item alone. */
+export function isRootTab(item: AdminNavItem, tab: AdminTab): boolean {
+  return item.tabs !== undefined && rootTab(item.tabs).href === tab.href;
+}
+
+/* =========================================================================
+ * Purposes: the top bar's second line (A7 §3.1, SPEC §3.5)
+ * ====================================================================== */
+
+/**
+ * Every page route's purpose, the line under its title in the top bar: one
+ * line, at most 80 characters, no full stop (A2 §5.2.3; A7 §3.1). The one
+ * place this copy lives — a page publishes `purposeFor(route)` through
+ * `PageHeader purpose`, the frame's route titles read it, and
+ * `navigation.test.ts` holds every route to it. A record page (a rule, a
+ * form, a workflow) carries its section's purpose: the bar shows "‹ Rules"
+ * over it.
+ */
+export const PAGE_PURPOSES: Readonly<Record<string, string>> = Object.freeze({
+  '/': 'Desk health, what needs you and where the service is heading',
+  '/insights': 'The numbers your desk reviews, as dashboards',
+  '/insights/metrics': 'Every number Insights can show, with its trend',
+  '/insights/reports': 'Scheduled reports and their latest runs',
+  '/tickets': 'Everything raised on this desk, across every team',
+  '/workforce': 'Who is available now, and how loaded each person is',
+  '/workforce/on-call': 'Who is on call for each rota, and who takes over next',
+  '/workforce/shifts': 'When each shift runs and who works it',
+  '/workforce/skills': 'Who knows what, and where knowledge rests on one person',
+  '/workforce/routing': 'How new tickets find a person, and why',
+  '/sla/performance': 'How well the desk keeps its promises, by priority and team',
+  '/sla': 'Response, update and resolution targets, and the tickets they cover',
+  '/sla/calendars': 'Business hours and holidays the clocks run on',
+  '/sla/matrix': 'How impact and urgency set a ticket’s priority',
+  '/status-page': 'Your public service status: components, incidents and maintenance',
+  '/catalogue': 'What people can ask for in the Help Portal',
+  '/catalogue/forms': 'The questions people answer when they ask',
+  '/catalogue/forms/[key]': 'The questions people answer when they ask',
+  '/fields': 'The custom fields a ticket carries, who sees each and when it is required',
+  '/rules': 'What happens automatically when something happens to a ticket',
+  '/rules/new': 'What happens automatically when something happens to a ticket',
+  '/rules/[key]': 'What happens automatically when something happens to a ticket',
+  '/workflows': 'Work that runs across several steps and can wait',
+  '/workflows/runs': 'Every run, what it is waiting for and what failed',
+  '/workflows/[key]': 'Work that runs across several steps and can wait',
+  '/integrations': 'Outbound calls that did not arrive, and what to do about them',
+  '/integrations/actions': 'The calls this desk can make to other systems',
+  '/integrations/credentials': 'The secrets behind those calls, and when they expire',
+  '/integrations/webhooks': 'Where this desk sends events as they happen',
+  '/integrations/channels': 'The mailboxes and chat channels tickets arrive through',
+  '/ai-triage': 'How AI triage is doing, and what it may set by itself',
+  '/ai-triage/quality': 'How often suggestions match what agents chose',
+  '/ai-triage/decisions': 'Every suggestion, who answered and what it cost',
+  '/cmdb': 'The services and systems tickets point at, and what depends on what',
+  '/cmdb/assets': 'Hardware and licences, who holds them and when warranties end',
+  '/people': 'Everyone who can sign in to this desk',
+  '/people/teams': 'How each team is doing: workload, speed, promises kept and satisfaction',
+  '/people/organisations': 'Sites and departments, and who belongs where',
+  '/security': 'Unusual sign-ins and other events worth a look',
+  '/security/access': 'Roles and the permissions they grant',
+  '/audit': 'Every change recorded on this desk, in the order it happened',
+  '/settings': 'How this desk behaves',
+  '/settings/features': 'Features you can switch on or off',
+  '/settings/ai': 'What AI may do here and what it may spend',
+  '/settings/modules': 'The parts of the product this desk uses',
+  '/settings/usage': 'Your plan, and how close you are to its limits',
+  '/tenants': 'Every desk on this deployment',
+  '/plans': 'The price list every desk is sold against',
+});
+
+/** The purpose of a route pattern (`/rules/[key]`) or a concrete path (`/rules/vip`); its item's description as a fallback. */
+export function purposeFor(routeOrPath: string): string | undefined {
+  const route = PAGES.has(routeOrPath) ? routeOrPath : routeFor(routeOrPath);
+  if (route === null) return undefined;
+  return PAGE_PURPOSES[route] ?? PAGES.get(route)?.item?.description;
+}
+
+/** The record pages, whose bar reads "‹ {section}" back to the list (A2 §5.2.3 rule 2). */
+const RECORD_ROUTES: ReadonlySet<string> = new Set(['/rules/new', '/rules/[key]', '/catalogue/forms/[key]', '/workflows/[key]']);
+
+/** The bar's title for an address no page answers: the in-frame 404 (A7 §8). */
+export const NOT_FOUND_TITLE = 'Page not found';
+
+/**
+ * The frame's route titles (`NavModel.routes`): every page route with its
+ * title and purpose, record pages with the list to go back to, and last the
+ * catch-all, so an unknown address reads "Page not found" in the server HTML
+ * rather than the area's name. The frame consults these for a route no nav
+ * item covers (`resolveBarTitle`); one under an item reads the item's.
+ */
+export function routeTitles(): RouteTitle[] {
+  const titles: RouteTitle[] = [];
+  for (const [route, entry] of PAGES) {
+    if (!entry.item) continue;
+    const purpose = PAGE_PURPOSES[route] ?? entry.item.description;
+    const record = RECORD_ROUTES.has(route);
+    titles.push({
+      pattern: route,
+      title: entry.item.label,
+      purpose,
+      ...(record ? { href: entry.tab ? entry.tab.href : entry.item.href } : {}),
+    });
+  }
+  titles.push({ pattern: '/[...missing]', title: NOT_FOUND_TITLE });
+  return titles;
 }
 
 /* =========================================================================
@@ -567,6 +727,7 @@ const BADGE_TONE: Readonly<Record<NavBadgeKey, 'neutral' | 'accent' | 'danger'>>
   failedDeliveries: 'danger',
   securityAlerts: 'danger',
   warranties: 'neutral',
+  statusIncidents: 'danger',
 };
 
 const BADGE_NOUN: Readonly<Record<NavBadgeKey, { one: string; other: string }>> = {
@@ -576,6 +737,7 @@ const BADGE_NOUN: Readonly<Record<NavBadgeKey, { one: string; other: string }>> 
   failedDeliveries: { one: 'failed delivery', other: 'failed deliveries' },
   securityAlerts: { one: 'high-severity alert', other: 'high-severity alerts' },
   warranties: { one: 'warranty ending soon', other: 'warranties ending soon' },
+  statusIncidents: { one: 'open status incident', other: 'open status incidents' },
 };
 
 function shellItem(item: AdminNavItem, badges: NavBadgeValues): ShellNavItem {
@@ -619,7 +781,7 @@ export function navModel(me: Grants, badges: NavBadgeValues = {}): NavModel {
     if (items.length > 0) sections.push({ id: group.id, label: group.label, items });
   }
   const footer = visible.filter((item) => item.group === 'footer').map((item) => shellItem(item, badges));
-  return { label: 'Administration', sections, ...(footer.length > 0 ? { footer } : {}) };
+  return { label: 'Administration', sections, ...(footer.length > 0 ? { footer } : {}), routes: ROUTE_TITLES_GETTER() };
 }
 
 /* =========================================================================

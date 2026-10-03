@@ -47,6 +47,6 @@ export interface TriageSummary {
   /** "Suggest", or "Off" with the reason. */
   readonly label: string;
   readonly sentence: string;
-  readonly tone: 'neutral' | 'info' | 'success' | 'warning';
+  readonly tone: 'neutral' | 'info' | 'success';
   readonly href?: string;
 }

@@ -25,19 +25,22 @@ export const LIFECYCLE: Readonly<Record<string, LifecycleLook>> = {
   live: { label: 'Live', tone: 'success', icon: 'circle-check' },
   active: { label: 'Active', tone: 'success', icon: 'circle-check' },
   // A published object with edits not yet published (rules, request types, forms).
-  changed: { label: 'Unpublished changes', tone: 'warning', icon: 'pencil' },
+  // Work in progress, not a risk: `info`, so amber stays SLA risk and due soon (D5, A7 §2.9).
+  changed: { label: 'Unpublished changes', tone: 'info', icon: 'pencil' },
   archived: { label: 'Retired', tone: 'neutral', icon: 'archive' },
   retired: { label: 'Retired', tone: 'neutral', icon: 'archive' },
   inactive: { label: 'Retired', tone: 'neutral', icon: 'archive' },
   deactivated: { label: 'Deactivated', tone: 'neutral', icon: 'ban' },
   // Runs.
   running: { label: 'Running', tone: 'info', icon: 'loader-circle' },
-  waiting: { label: 'Waiting', tone: 'warning', icon: 'hourglass' },
+  // Paused on something else, not at risk: `hold` (D5, SPEC WP-45b).
+  waiting: { label: 'Waiting', tone: 'hold', icon: 'hourglass' },
   completed: { label: 'Completed', tone: 'success', icon: 'circle-check' },
   failed: { label: 'Failed', tone: 'danger', icon: 'circle-x' },
   cancelled: { label: 'Cancelled', tone: 'neutral', icon: 'circle-x' },
   // Deliveries and alerts.
-  open: { label: 'Open', tone: 'warning', icon: 'circle-alert' },
+  // An open failed delivery or alert wants a look, but is not an SLA risk: `high`, never amber (D5).
+  open: { label: 'Open', tone: 'high', icon: 'circle-alert' },
   resolved: { label: 'Resolved', tone: 'success', icon: 'circle-check' },
   dismissed: { label: 'Dismissed', tone: 'neutral', icon: 'circle-x' },
 };

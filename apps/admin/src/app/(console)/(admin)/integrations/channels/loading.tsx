@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Skeleton, SkeletonStat, SkeletonTable } from '@itsm/ui';
 
 /**
- * Integrations › Credentials while it loads: the register template (A7 §2.6 T2) — the toolbar,
+ * Integrations › Channels while it loads: the register template (A7 §2.6 T2) — the toolbar,
  * 4 KPI tiles, the filter pills and the table's rows, at their final
  * heights and revealed only after 200 ms. The status is the table's, spoken
  * once after a second.
@@ -25,7 +25,7 @@ export default function Loading(): ReactNode {
         <Skeleton width="5.5rem" height="var(--itsm-control-height-sm)" radius="pill" />
       </div>
       <div className="itsm-SkeletonPage__panel">
-        <SkeletonTable rows={8} columns={5} label="Loading credentials…" />
+        <SkeletonTable rows={8} columns={4} label="Loading channels…" />
       </div>
     </div>
   );

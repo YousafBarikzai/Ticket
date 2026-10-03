@@ -29,7 +29,7 @@ export interface TenantsViewProps {
 const NOUN: Plural = { one: 'tenant', other: 'tenants' };
 const STATUS_MAP = {
   active: { label: 'Active', tone: 'success' as const, icon: 'circle-check' as const },
-  suspended: { label: 'Suspended', tone: 'warning' as const, icon: 'pause' as const },
+  suspended: { label: 'Suspended', tone: 'hold' as const, icon: 'pause' as const },
 };
 
 export function drawerParam(id: string): string {
