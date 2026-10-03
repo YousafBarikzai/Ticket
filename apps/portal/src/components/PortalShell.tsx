@@ -2,11 +2,11 @@
 
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { AreaId, AreaModel } from '@itsm/contracts/areas';
 import { useLiveState } from '@itsm/pwa/live';
 import { Button } from '@itsm/ui';
-import { TopNavShell } from '@itsm/ui/shell';
+import { TopNavShell, type DemoBarProps } from '@itsm/ui/shell';
 import { useTheme } from '@itsm/ui/theme';
 import { api } from '../client/api.js';
 import type { PortalPaletteDeps } from '../client/palette.js';
@@ -84,6 +84,8 @@ const LazyConnectionPill = dynamic(() => loadStatus().then((module) => module.Co
 const LazyConnectionBanner = dynamic(() => loadStatus().then((module) => module.ConnectionBanner), { ssr: false });
 const LazyConfirmDialog = dynamic(() => import('@itsm/ui/overlays').then((module) => module.ConfirmDialog), { ssr: false });
 const LazyDialog = dynamic(() => import('@itsm/ui/overlays').then((module) => module.Dialog), { ssr: false });
+// Rendered on the server too (the bar is in the HTML), but an async chunk: only a demo visit renders it.
+const LazySessionDemoBar = dynamic(() => import('../app/demo/session-bar.js'));
 
 /** A component that is mounted the first time it is wanted, and stays mounted (so it can animate closed). */
 function useWanted(): [boolean, boolean, (open: boolean) => void] {
@@ -165,21 +167,6 @@ function useOnline(): boolean {
   );
 }
 
-/* ------------------------------------------------------- A demo visit ended */
-
-/**
- * What the session-ended dialog says in a demo visit (v3 §4.6.2's `ended`
- * row): `DEMO_COPY.sessionEnded` and `.continueDemo` from
- * `@itsm/contracts/demo`, written out because a value imported from there
- * would bring its whole frozen table into every route's first load. A test
- * holds the words equal to the contract's.
- */
-export const DEMO_SESSION_ENDED = {
-  title: 'Your demo session ended',
-  description: 'Pick up where you left off — the demo data may have been reset since.',
-  action: 'Continue the demo',
-} as const;
-
 /* --------------------------------------------------------------- Sign-out */
 
 const SIGN_OUT_ACTION = '/api/session/logout';
@@ -215,6 +202,24 @@ function useSignInHref(demo: boolean): string {
 
 /* ------------------------------------------------------------------ Frame */
 
+/** What the layout hands the frame for a demo visit. */
+export interface PortalDemoFrame {
+  /**
+   * The bar's facts — the clock, the persona, the generation — computed on
+   * the server. The bar itself is loaded only when this is given, as an async
+   * chunk (`app/demo/session-bar.tsx`): its two islands are client code a
+   * real tenant's pages must not carry.
+   */
+  readonly bar: Omit<DemoBarProps, 'variant' | 'areas'>;
+  /**
+   * What the session-ended dialog says when the visit ends (§4.6.2's `ended`
+   * row: `DEMO_COPY.sessionEnded`, `.continueDemo`). Passed rather than
+   * imported, because a value from `@itsm/contracts/demo` would bring its
+   * whole frozen table into every route's first load.
+   */
+  readonly ended: { readonly title: string; readonly description: string; readonly action: string };
+}
+
 export interface PortalShellProps {
   /** Line 2 (`detail`): the demo persona's title, else the organisation, else the workspace. */
   readonly user: { readonly id: string | null; readonly name: string; readonly detail?: string };
@@ -231,16 +236,15 @@ export interface PortalShellProps {
   readonly approvalsWaiting: number;
   /** When the server drew this page (ISO), for the offline banner. */
   readonly renderedAt: string;
-  /** The demo bar, rendered by the layout in a demo visit only (`LazySessionDemoBar`); first after the skip links. */
-  readonly systemBar?: ReactNode;
+  /** A demo visit's own parts (v3 §3.8, §4.6.2), from the layout; absent outside one. */
+  readonly demo?: PortalDemoFrame;
   readonly children: ReactNode;
 }
 
-export function PortalShell({ user, areas, areaKeywords, frame, can, approvalsWaiting, renderedAt, systemBar, children }: PortalShellProps): ReactNode {
+export function PortalShell({ user, areas, areaKeywords, frame, can, approvalsWaiting, renderedAt, demo, children }: PortalShellProps): ReactNode {
   const { prefs, setPrefs } = useTheme();
   const pathname = usePathname();
-  const demo = areas.demo;
-  const signInHref = useSignInHref(demo);
+  const signInHref = useSignInHref(areas.demo);
   useIdlePrefetch(PREFETCH);
 
   /* "How can we help?" and the palette, each loaded on first use. */
@@ -340,7 +344,13 @@ export function PortalShell({ user, areas, areaKeywords, frame, can, approvalsWa
       <TopNavShell
         areas={areas}
         brand={{ href: '/', ...(areas.workspace ? { workspace: areas.workspace } : {}) }}
-        systemBar={systemBar}
+        systemBar={
+          demo ? (
+            <Suspense fallback={null}>
+              <LazySessionDemoBar {...demo.bar} variant="session" areas={areas} />
+            </Suspense>
+          ) : undefined
+        }
         nav={frame.nav}
         search={{ placeholder: 'Search', shortcut: 'mod+k' }}
         onOpenSearch={openPalette}
@@ -398,15 +408,15 @@ export function PortalShell({ user, areas, areaKeywords, frame, can, approvalsWa
             role="alertdialog"
             initialFocusRef={signInRef}
             size="sm"
-            title={demo ? DEMO_SESSION_ENDED.title : 'Your session ended'}
-            description={demo ? DEMO_SESSION_ENDED.description : 'Sign in again to carry on. What you were writing is kept on this device.'}
+            title={demo?.ended.title ?? 'Your session ended'}
+            description={demo?.ended.description ?? 'Sign in again to carry on. What you were writing is kept on this device.'}
             footer={
               <>
                 <Button variant="secondary" onClick={() => setEnded('background')}>
                   Not now
                 </Button>
                 <Button ref={signInRef} variant="primary" onClick={signIn}>
-                  {demo ? DEMO_SESSION_ENDED.action : 'Sign in again'}
+                  {demo?.ended.action ?? 'Sign in again'}
                 </Button>
               </>
             }

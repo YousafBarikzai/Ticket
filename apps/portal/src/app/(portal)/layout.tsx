@@ -1,15 +1,14 @@
 import type { ReactNode } from 'react';
 import type { Me } from '@itsm/sdk';
 import { AREAS, type AreaId, type AreaModel } from '@itsm/contracts/areas';
-import { demoPersona, demoPersonaForArea } from '@itsm/contracts/demo';
+import { DEMO_COPY, demoPersona, demoPersonaForArea } from '@itsm/contracts/demo';
 import { Button, StatusScreen } from '@itsm/ui';
 import { bff } from '../../bff.js';
 import { PortalProviders } from '../../components/PortalProviders.js';
 import { PortalShell } from '../../components/PortalShell.js';
 import { portalCan, portalFrame } from '../../navigation.js';
 import { currentApprovals, currentAreas, currentMe, heldPermissions, isTenantSuspended, requireSession } from '../../server/session.js';
-import { LazySessionDemoBar } from '../demo/LazySessionDemoBar.js';
-import { demoClock } from '../demo/server.js';
+import { DEMO_ENDED_BODY, demoClock } from '../demo/server.js';
 
 /**
  * Everything behind a session: the portal frame (SPEC §5.1, §5.4; v3 §3.6–§3.8).
@@ -86,14 +85,12 @@ export default async function PortalLayout({ children }: { children: ReactNode }
 
   const persona = areas.demo ? (demoPersona(session.persona) ?? demoPersonaForArea('portal')) : null;
   const generation = bff.latestSession(session).demoGeneration;
-  const systemBar = persona ? (
-    <LazySessionDemoBar
-      clock={demoClock()}
-      persona={{ name: persona.name, title: persona.title }}
-      {...(generation !== undefined ? { generation } : {})}
-      areas={areas}
-    />
-  ) : undefined;
+  const demo = persona
+    ? {
+        bar: { clock: demoClock(), persona: { name: persona.name, title: persona.title }, ...(generation !== undefined ? { generation } : {}) },
+        ended: { title: DEMO_COPY.sessionEnded, description: DEMO_ENDED_BODY, action: DEMO_COPY.continueDemo },
+      }
+    : undefined;
 
   return (
     <PortalProviders locale={me.locale} timeZone={me.timeZone} {...(me.actor.id ? { storageScope: me.actor.id } : {})}>
@@ -105,7 +102,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
         can={can}
         approvalsWaiting={waiting}
         renderedAt={new Date().toISOString()}
-        systemBar={systemBar}
+        {...(demo ? { demo } : {})}
       >
         {children}
       </PortalShell>

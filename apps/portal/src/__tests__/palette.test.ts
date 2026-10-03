@@ -12,6 +12,8 @@ import {
   serviceMatches,
   type PortalPaletteDeps,
 } from '../client/palette.js';
+import { buildAreaModel } from '@itsm/contracts/areas';
+import { areaItems, paletteProviders } from '../components/PortalPalette.js';
 import { portalFrame, type PortalCan } from '../navigation.js';
 
 /**
@@ -195,5 +197,49 @@ describe('links', () => {
     const item = { key: 'k', name: 'Monitor', description: 'A second screen', shortSummary: null, formKey: null, service: 'Devices', serviceKey: 'd' };
     expect(serviceMatches(item, 'second DEVICES')).toBe(true);
     expect(serviceMatches(item, 'monitor keyboard')).toBe(false);
+  });
+});
+
+describe('Switch area (v3 §3.9, A2 §10.3)', () => {
+  const ORIGINS = { workbench: 'https://desk.example', admin: 'https://admin.example', site: 'https://itsm.example' };
+  const staff = buildAreaModel({ app: 'portal', held: ['ticket.update', 'audit.read'], session: { kind: 'oidc' }, origins: ORIGINS });
+  const requester = buildAreaModel({ app: 'portal', held: ['ticket.create'], session: { kind: 'oidc' }, origins: ORIGINS });
+  const demo = buildAreaModel({ app: 'portal', held: [], session: { kind: 'demo', persona: 'employee' }, origins: ORIGINS });
+
+  it('comes straight after Go to, offering the other areas (never this one) at their /resume, with their keywords', () => {
+    const providers = paletteProviders(deps({ areas: staff, areaKeywords: { workbench: ['ticketing'], admin: ['settings'] } }));
+    const ids = providers.map((candidate) => candidate.id);
+    expect(ids.indexOf('areas')).toBe(ids.lastIndexOf('go') + 1);
+    const items = provider(providers, 'areas')!.items!;
+    expect(provider(providers, 'areas')!.group).toBe('Switch area');
+    expect(items.map((item) => [item.label, item.href])).toEqual([
+      ['Switch to Service Desk', 'https://desk.example/resume'],
+      ['Switch to Administration', 'https://admin.example/resume'],
+    ]);
+    expect(items[0]!.keywords).toContain('ticketing');
+    expect(items[0]!.description).toBe('Work tickets, queues and SLAs');
+    expect(items[0]!.icon).toBe('inbox');
+  });
+
+  it('is not there for a requester with one area, and keeps Sign out', () => {
+    const providers = paletteProviders(deps({ areas: requester }));
+    expect(provider(providers, 'areas')).toBeUndefined();
+    expect(areaItems(requester)).toEqual([]);
+    expect(areaItems(undefined)).toEqual([]);
+    expect(provider(providers, 'account')!.items![0]!.label).toBe('Sign out');
+  });
+
+  it('in a demo visit names who the visitor continues as, adds the public site, and ends the demo instead of signing out', () => {
+    const d = deps({ areas: demo });
+    const providers = paletteProviders(d);
+    const items = provider(providers, 'areas')!.items!;
+    expect(items.map((item) => item.label)).toEqual(['Switch to Service Desk', 'Switch to Administration', 'IT Service Management home']);
+    expect(items[0]!.description).toBe("You'll continue as Alex Morgan, Service Desk team lead");
+    expect(items[0]!.href).toBe('https://desk.example/demo?persona=agent&demo=1&redirectTo=%2Fresume');
+    expect(items[2]!.href).toBe('https://itsm.example/');
+    const end = provider(providers, 'account')!.items![0]!;
+    expect(end.label).toBe('End demo');
+    end.run!();
+    expect(d.signOut).toHaveBeenCalledTimes(1);
   });
 });

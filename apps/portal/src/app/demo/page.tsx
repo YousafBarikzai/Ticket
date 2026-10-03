@@ -7,6 +7,7 @@ import { DEMO_COMPANY, DEMO_COPY, demoEtaPhrase } from '@itsm/contracts/demo';
 import { StatusScreen } from '@itsm/ui';
 import { bff } from '../../bff.js';
 import { AREA_IN_SENTENCE, EntryActions, EntryBody, EntryLayout, EntryLink, EntryTitle, HOME_LABEL, PERSONA, siteHome } from './entry.js';
+import { DEMO_ENDED_BODY } from './server.js';
 import { EntryForm } from './EntryForm.js';
 
 /**
@@ -145,7 +146,7 @@ function Reason({ decision }: { readonly decision: Extract<Shown, { kind: 'reaso
       home: false,
     },
     invalid: { title: "That link didn't work", body: 'Open the demo from the start.', action: 'Open the demo', home: true },
-    ended: { title: DEMO_COPY.sessionEnded, body: 'Pick up where you left off — the demo data may have been reset since.', action: DEMO_COPY.continueDemo, home: false },
+    ended: { title: DEMO_COPY.sessionEnded, body: DEMO_ENDED_BODY, action: DEMO_COPY.continueDemo, home: false },
   }[decision.reason];
   return (
     <>

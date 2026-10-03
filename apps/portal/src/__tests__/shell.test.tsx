@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, forwardRef, type AnchorHTMLAttributes, type ReactNode } from 'react';
+import ts from 'typescript';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildAreaModel, type AreaModel } from '@itsm/contracts/areas';
 import { DEMO_COPY } from '@itsm/contracts/demo';
@@ -58,7 +60,8 @@ vi.mock('../help/HelpSheet.js', () => ({
     ) : null,
 }));
 
-const { DEMO_SESSION_ENDED, PortalShell, signInHrefFor, useHelpFlow } = await import('../components/PortalShell.js');
+const { PortalShell, signInHrefFor, useHelpFlow } = await import('../components/PortalShell.js');
+type PortalDemoFrame = import('../components/PortalShell.js').PortalDemoFrame;
 const { reportSessionEnded } = await import('../client/useAction.js');
 
 /* ---- A browser jsdom does not quite provide ----------------------------- */
@@ -121,6 +124,16 @@ const requesterAreas = buildAreaModel({ app: 'portal', held: ['ticket.create', '
 const staffAreas = buildAreaModel({ app: 'portal', held: ['ticket.update', 'audit.read'], session: { kind: 'oidc' }, origins: ORIGINS, workspace: 'Acme' });
 /** Emma Clarke's demo visit. */
 const demoAreas = buildAreaModel({ app: 'portal', held: [], session: { kind: 'demo', persona: 'employee' }, origins: ORIGINS, workspace: 'Northwind Traders (UK)' });
+const NOW = Date.UTC(2026, 9, 2, 14, 58, 22);
+/** What the layout hands the frame in Emma's visit. */
+const demoFrame: PortalDemoFrame = {
+  bar: {
+    clock: { nextResetAt: Date.UTC(2026, 9, 2, 23, 0, 0), serverNow: NOW, periodMs: 86_400_000, resetLabel: '00:00 UK time', timeZone: 'Europe/London' },
+    persona: { name: 'Emma Clarke', title: 'Finance Manager' },
+    generation: 41,
+  },
+  ended: { title: DEMO_COPY.sessionEnded, description: 'Pick up where you left off — the demo data may have been reset since.', action: DEMO_COPY.continueDemo },
+};
 
 function Link({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }): ReactNode {
   return (
@@ -144,8 +157,8 @@ function mount({
   waiting = 0,
   page,
   areas = requesterAreas,
-  systemBar,
-}: { can?: PortalCan; waiting?: number; page?: ReactNode; areas?: AreaModel; systemBar?: ReactNode } = {}): void {
+  demo,
+}: { can?: PortalCan; waiting?: number; page?: ReactNode; areas?: AreaModel; demo?: PortalDemoFrame } = {}): void {
   render(
     <ItsmProvider
       app="portal"
@@ -162,7 +175,7 @@ function mount({
         areaKeywords={{ workbench: ['ticketing'] }}
         frame={portalFrame(can, waiting)}
         can={can}
-        systemBar={systemBar}
+        {...(demo ? { demo } : {})}
         approvalsWaiting={waiting}
         renderedAt="2026-09-30T09:42:00Z"
       >
@@ -255,15 +268,23 @@ describe('the areas (v3 §3.6, A2 §6.2)', () => {
     expect(document.querySelector('.itsm-TopBar button.itsm-AreaSwitcher')).not.toBeNull();
   });
 
-  it('draws the demo bar first, straight after the skip links, above the top bar', () => {
-    mount({ areas: demoAreas, systemBar: <div className="stub-DemoBar" role="region" aria-label="Demo environment" /> });
+  it('draws the demo bar in a demo visit — loaded on its own — first after the skip links, above the top bar', async () => {
+    mount({ areas: demoAreas, demo: demoFrame });
+    await until(() => document.querySelector('.itsm-SystemBar') !== null);
     const root = document.querySelector('.itsm-AppShell')!;
     const children = [...root.children];
-    const bar = children.findIndex((child) => child.classList.contains('stub-DemoBar'));
-    expect(bar).toBeGreaterThan(-1);
-    expect(children.slice(0, bar).every((child) => child.matches('.itsm-SkipLinks, nav, [class*="SkipLink"]'))).toBe(true);
+    const bar = children.findIndex((child) => child.classList.contains('itsm-SystemBar'));
+    expect(bar).toBe(1);
+    expect(children[0]!.classList.contains('itsm-SkipLinks')).toBe(true);
     expect(children.findIndex((child) => child.querySelector('.itsm-TopBar') !== null || child.classList.contains('itsm-TopBar'))).toBeGreaterThan(bar);
     expect(root.getAttribute('data-system-bar')).toBe('');
+    // The session variant: who the visitor is, and End demo for the frame's one sign-out form.
+    const region = children[bar]!;
+    expect(region.getAttribute('aria-label')).toBe('Demo environment');
+    expect(region.textContent).toContain('Emma Clarke');
+    expect(region.textContent).toContain('Finance Manager');
+    expect(region.querySelector('button[type="submit"]')?.getAttribute('form')).toBe('itsm-signout');
+    expect(document.getElementById('itsm-signout')?.getAttribute('action')).toBe('/api/session/logout');
   });
 
   it('draws no bar, and leaves no trace of one, outside a demo visit', () => {
@@ -273,11 +294,26 @@ describe('the areas (v3 §3.6, A2 §6.2)', () => {
   });
 
   it('passes the frame only the v3 props (RV1: the wave-3 alias guard)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../components/PortalShell.tsx', import.meta.url)), 'utf8');
-    expect(source).not.toMatch(/\bswitcher\b|sidebarHeaderExtra|tenantName|AppSwitcherItem/);
-    const brand = /brand=\{\{([^}]*)\}\}/.exec(source)?.[1] ?? '';
-    expect(brand).toContain('href');
-    expect(brand).not.toMatch(/\b(name|tenant|app)\s*:/);
+    const file = resolve(dirname(fileURLToPath(import.meta.url)), '../components/PortalShell.tsx');
+    const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const attributes: string[] = [];
+    const brandKeys: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isJsxAttribute(node)) {
+        const name = node.name.getText(source);
+        attributes.push(name);
+        const value = node.initializer && ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined;
+        if (name === 'brand' && value && ts.isObjectLiteralExpression(value)) {
+          for (const property of value.properties) if (property.name) brandKeys.push(property.name.getText(source));
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(attributes).toContain('areas');
+    expect(attributes.filter((name) => name === 'switcher' || name === 'sidebarHeaderExtra')).toEqual([]);
+    expect(brandKeys).toContain('href');
+    expect(brandKeys.filter((key) => ['name', 'tenant', 'app', 'switcher'].includes(key))).toEqual([]);
   });
 });
 
@@ -378,7 +414,7 @@ describe('the frame’s states', () => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign, pathname: '/tickets/INC-000123', search: '?tab=details' });
     pathname = '/tickets/INC-000123';
-    mount({ areas: demoAreas });
+    mount({ areas: demoAreas, demo: demoFrame });
     await settle();
     act(() => reportSessionEnded('action'));
     await until(() => document.querySelector('[role="alertdialog"]') !== null);
@@ -390,9 +426,7 @@ describe('the frame’s states', () => {
     expect(assign).toHaveBeenCalledWith('/api/session/login?redirectTo=%2Ftickets%2FINC-000123%3Ftab%3Ddetails&demo=1');
   });
 
-  it('words a demo visit’s ending exactly as the contract does', () => {
-    expect(DEMO_SESSION_ENDED.title).toBe(DEMO_COPY.sessionEnded);
-    expect(DEMO_SESSION_ENDED.action).toBe(DEMO_COPY.continueDemo);
+  it('sends a real session to sign in, and a demo visit back into the demo (`demo=1`)', () => {
     expect(signInHrefFor('/tickets?x=1', false)).toBe('/api/session/login?redirectTo=%2Ftickets%3Fx%3D1');
     expect(signInHrefFor('/tickets?x=1', true)).toBe('/api/session/login?redirectTo=%2Ftickets%3Fx%3D1&demo=1');
   });

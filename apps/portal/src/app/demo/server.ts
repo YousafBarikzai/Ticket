@@ -24,6 +24,9 @@ export const AREA_IN_SENTENCE = `the ${AREA.name}`;
 /** "IT Service Management home" (D18). */
 export const HOME_LABEL = SITE.homeLabel;
 
+/** §4.6.2's `ended` row: what a demo visit that ended says, on `/demo` and in the frame's dialog. */
+export const DEMO_ENDED_BODY = 'Pick up where you left off — the demo data may have been reset since.';
+
 /** Whether `DEMO_MODE=on` here: the bar, the demo's links and the explore offers exist only then. */
 export function demoModeOn(): boolean {
   return bff.config.demo !== null;

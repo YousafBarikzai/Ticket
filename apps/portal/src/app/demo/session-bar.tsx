@@ -15,7 +15,7 @@ import { DemoBar, onDemoGenerationChange, type DemoBarProps } from '@itsm/ui/she
  * (`isPersonalKey`, the sign-out's list). Both modules are fetched only then —
  * a generation change happens once a night at most.
  *
- * Loaded only through `LazySessionDemoBar`, so none of this is
+ * Loaded only by the frame's `next/dynamic` in a demo visit (`PortalShell`), so none of this is
  * in any route's first load.
  */
 export function clearForGeneration(generation: number): Promise<unknown> {

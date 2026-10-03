@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
@@ -27,6 +28,38 @@ describe('the app stylesheet and the token pipeline agree', () => {
     const used = [...new Set([...css.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))];
 
     expect(used.length).toBeGreaterThan(10);
+    expect(used.filter((variable) => !defined.has(variable))).toEqual([]);
+  });
+});
+
+/**
+ * Every stylesheet in the app, not only the global one (A7 §1.1 D3–D4,
+ * applied to the Help Portal [V1-m7]): each spends only custom properties the
+ * pipeline emits, and none writes a colour literal — a hex value in an app
+ * sheet is a colour no theme, contrast mode or audit can see.
+ */
+describe('every app stylesheet', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const sheets: string[] = [];
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      // `app/itsm-ui.css/` is the route that serves the design system's sheet, not a sheet.
+      if (statSync(path).isDirectory()) walk(path);
+      else if (name.endsWith('.css')) sheets.push(path);
+    }
+  };
+  walk(root);
+  const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('apple'))]);
+
+  it('finds the app’s sheets', () => {
+    expect(sheets.map((path) => relative(root, path))).toEqual(expect.arrayContaining(['app/globals.css', 'app/demo/entry.css', 'profile/profile.css']));
+  });
+
+  it.each(sheets.map((path) => [relative(root, path), path]))('%s writes no hex colour and spends only declared variables', (_name, path) => {
+    const css = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
+    const used = [...new Set([...css.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))];
     expect(used.filter((variable) => !defined.has(variable))).toEqual([]);
   });
 });

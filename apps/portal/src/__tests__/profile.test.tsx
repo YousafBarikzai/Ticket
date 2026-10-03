@@ -8,6 +8,7 @@ import type { ApprovalRequest, Me, NotificationPreference, NotificationPreferenc
 import { ApiError } from '@itsm/sdk';
 import { ItsmProvider } from '@itsm/ui';
 import { structuralVariables, themeVariables } from '@itsm/ui/tokens';
+import { buildAreaModel, type AreaModel } from '@itsm/contracts/areas';
 import { cleanupDocument, clickAsync, render, type } from './support/render.js';
 
 /**
@@ -59,6 +60,9 @@ let permissions: string[] = [];
 let person: Partial<Me> = {};
 let waiting: ApprovalRequest[] | null = [];
 let directory: { email: string | null; teams: string[] | null } = { email: null, teams: null };
+const ORIGINS = { workbench: 'https://desk.example', admin: 'https://admin.example', site: 'https://itsm.example' };
+const requesterAreas = buildAreaModel({ app: 'portal', held: ['ticket.create'], session: { kind: 'oidc' }, origins: ORIGINS });
+let areas: AreaModel = requesterAreas;
 const serverApi = {
   notificationPreferences: vi.fn(async (): Promise<NotificationPreference[]> => []),
   sessions: vi.fn(async (): Promise<SessionRow[]> => []),
@@ -81,6 +85,7 @@ vi.mock('../server/session.js', () => ({
   heldPermissions: (who: Me) => new Set(who.permissions.map((permission) => permission.key)),
   apiFor: () => serverApi,
   currentApprovals: async () => waiting,
+  currentAreas: async () => areas,
 }));
 
 const readDirectoryEntry = vi.fn(async () => directory);
@@ -111,6 +116,7 @@ beforeEach(() => {
   person = {};
   waiting = [];
   directory = { email: 'ada@acme.test', teams: null };
+  areas = requesterAreas;
   serverApi.notificationPreferences.mockReset();
   serverApi.notificationPreferences.mockResolvedValue([{ channel: 'email', enabled: true, digestMode: 'daily', quietHours: { start: '19:00', end: '07:00' } }]);
   serverApi.sessions.mockReset();
@@ -330,6 +336,38 @@ describe('the Profile page', () => {
     expect(section('account').textContent).toContain('Ada Lovelace');
   });
 
+  it('puts Switch area first for someone with another area, as a list of plain links (v3 §3.6)', async () => {
+    areas = buildAreaModel({ app: 'portal', held: ['ticket.update'], session: { kind: 'oidc' }, origins: ORIGINS });
+    await openProfile();
+    expect([...document.querySelectorAll('.app-Profile__navLink')].map((link) => link.getAttribute('href'))[0]).toBe('#areas');
+    const list = section('areas');
+    expect(list.querySelector('h2')?.textContent).toBe('Switch area');
+    const rows = [...list.querySelectorAll('a')];
+    expect(rows.map((row) => row.getAttribute('href'))).toEqual(['/', 'https://desk.example/resume']);
+    expect(rows[0]!.getAttribute('aria-current')).toBe('true');
+    expect(rows.every((row) => !row.getAttribute('rel'))).toBe(true);
+  });
+
+  it('has no Switch area for a requester with one area', async () => {
+    await openProfile();
+    expect(document.getElementById('areas')).toBeNull();
+    expect(text()).not.toContain('Switch area');
+  });
+
+  it('in a demo visit: Switch area with the personas, no Devices, and notifications kept in the bell', async () => {
+    person = {
+      demo: { persona: 'employee', area: 'portal', generation: 41, company: 'Northwind Traders (UK)', disabledFeatures: [], personaUserIds: { employee: 'u1', agent: 'u2', admin: 'u3' }, agentTeamIds: [] },
+    };
+    areas = buildAreaModel({ app: 'portal', held: [], session: { kind: 'demo', persona: 'employee' }, origins: ORIGINS });
+    serverApi.sessions.mockResolvedValue([{ id: 's1', device: 'Firefox', ip: null, lastSeenAt: '2026-10-02T09:00:00Z', expiresAt: '2026-10-02T21:00:00Z' }]);
+    await openProfile();
+    expect(section('areas').textContent).toContain("You'll continue as Alex Morgan, Service Desk team lead");
+    expect(section('areas').textContent).toContain('IT Service Management home');
+    expect(document.getElementById('devices')).toBeNull();
+    expect(serverApi.sessions).not.toHaveBeenCalled();
+    expect(section('notifications').textContent).toContain('In this shared demo, notifications appear in the bell only');
+  });
+
   it('leaves Devices out where the service does not list sessions', async () => {
     serverApi.sessions.mockRejectedValue(new ApiError(404, null, 'no'));
     await openProfile();
@@ -372,7 +410,7 @@ describe('notifications', () => {
 
   it('saves quiet hours only once both ends make a window', async () => {
     await openProfile();
-    const inapp = channel('In the portal');
+    const inapp = channel('In the Help Portal');
     await clickAsync(switchNamed('Quiet hours', inapp));
     await settle();
     expect(browserApi.setNotificationPreference).toHaveBeenLastCalledWith(expect.objectContaining({ channel: 'inapp', quietHours: { start: '18:00', end: '08:00' } }));
