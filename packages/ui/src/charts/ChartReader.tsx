@@ -39,8 +39,14 @@ export interface ChartReaderProps {
   readonly points: readonly ReaderPoint[];
   /** `crosshair` for lines and areas (a hairline and a dot per series); `marks` for bars and segments (the mark lifts). */
   readonly mode: 'crosshair' | 'marks';
-  /** The direction the arrow keys move in: along x (← →) or down the rows (↑ ↓ as well). */
-  readonly axis?: 'x' | 'y';
+  /**
+   * The direction the arrow keys move in: along x (← →), down the rows (↑ ↓
+   * as well), or both ways over a grid of cells (a heat map; the core's 2-D
+   * mode, A8 §5.3).
+   */
+  readonly axis?: 'x' | 'y' | 'grid';
+  /** With `axis="grid"`: the cells in a row. */
+  readonly columns?: number;
   /** Whether a pointer anywhere in the plot reads the nearest position, or only one over a mark. */
   readonly nearest?: boolean;
   /** Where the tooltip sits: beside the anchor (default) or above it. */
@@ -133,7 +139,7 @@ export function ChartReader(props: ChartReaderProps): ReactNode {
       onKeyDown={(event) => {
         if (handlers.current) return handlers.current.key(event);
         // Only the reading keys, and ↑ ↓ only where they read: elsewhere they scroll the page.
-        if (!(event.altKey || event.ctrlKey || event.metaKey) && /^(Arrow(Left|Right|Up|Down)|Home|End)$/.test(event.key) && (axis === 'y' || !/Up|Do/.test(event.key))) {
+        if (!(event.altKey || event.ctrlKey || event.metaKey) && /^(Arrow(Left|Right|Up|Down)|Home|End)$/.test(event.key) && (axis !== 'x' || !/Up|Do/.test(event.key))) {
           event.preventDefault();
           if (queued.current.length < 8) queued.current.push(event.key);
         }
@@ -143,7 +149,7 @@ export function ChartReader(props: ChartReaderProps): ReactNode {
       {children}
       {/* Hidden: it is the group's description, and browse mode should not read it a second time as content. */}
       <span id={hintId} hidden>
-        {hint ?? `Use ${axis === 'y' ? '↑ ↓' : '← →'} to read values`}
+        {hint ?? `Use ${axis === 'x' ? '← →' : axis === 'y' ? '↑ ↓' : 'the arrow keys'} to read values`}
       </span>
       <span className="itsm-visually-hidden" aria-live="polite" aria-atomic="true">
         {readout}

@@ -138,6 +138,16 @@ describe('the island', () => {
     expect(live.textContent).toBe('');
   });
 
+  it('takes a grid axis for the heat maps’ 2-D reading, keeping ↑ ↓ for the core', () => {
+    const { group } = island('marks', { axis: 'grid', columns: 3 });
+    expect(document.getElementById(group.getAttribute('aria-describedby')!)?.textContent).toBe('Use the arrow keys to read values');
+    const up = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    act(() => {
+      group.dispatchEvent(up);
+    });
+    expect(up.defaultPrevented).toBe(true);
+  });
+
   it('starts silent: the live region is empty until someone reads', async () => {
     const { live } = await reader();
     expect(live.textContent).toBe('');
