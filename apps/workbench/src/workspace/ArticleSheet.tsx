@@ -64,9 +64,9 @@ export function useOpenArticle(): string | null {
 
 export const articleKey = (key: string) => ['article', key] as const;
 
-/** What goes into the reply for an article: its title, for the requester to find in the help portal. */
+/** What goes into the reply for an article: its title, for the requester to find in the Help Portal. */
 export function articleInsertText(article: Pick<Article, 'title' | 'key'>, internal: boolean): string {
-  return internal ? `Article: “${article.title}” (${article.key})` : `This article in the help portal should help: “${article.title}”.`;
+  return internal ? `Article: “${article.title}” (${article.key})` : `This article in the Help Portal should help: “${article.title}”.`;
 }
 
 export function ArticleSheet(): ReactNode {

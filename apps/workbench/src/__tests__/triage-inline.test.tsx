@@ -561,7 +561,7 @@ describe('Assist and the article sheet', () => {
     click(buttonNamed('Insert into reply', sheet)!);
     await flush(3);
     expect(document.querySelector<HTMLTextAreaElement>('.app-Composer textarea')?.value).toBe(
-      'This article in the help portal should help: “Resetting the VPN certificate”.',
+      'This article in the Help Portal should help: “Resetting the VPN certificate”.',
     );
     await until(() => expect(posts().find((call) => call.url.endsWith('/knowledge/KB-12/link'))?.body).toEqual({ ticketId: TICKET_ID, relation: 'referenced' }));
   });
