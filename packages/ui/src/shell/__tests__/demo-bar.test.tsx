@@ -994,6 +994,7 @@ describe('the status watch', () => {
     expect(await requestDemoReset('/api/demo/reset', answer(409, { state: 'building' }))).toEqual({ kind: 'running' });
     expect(await requestDemoReset('/api/demo/reset', answer(429, { retryAfterSec: 600 }))).toEqual({ kind: 'refused', retryAfterSec: 600 });
     expect(await requestDemoReset('/api/demo/reset', answer(429, undefined, { 'retry-after': '300' }))).toEqual({ kind: 'refused', retryAfterSec: 300 });
+    expect(await requestDemoReset('/api/demo/reset', answer(503, { type: 'about:blank#demo_unavailable' }))).toEqual({ kind: 'refused', retryAfterSec: null });
     expect(await requestDemoReset('/api/demo/reset', answer(403))).toEqual({ kind: 'unavailable' });
     expect(await requestDemoReset('/api/demo/reset', answer(404))).toEqual({ kind: 'unavailable' });
     expect(await requestDemoReset('/api/demo/reset', answer(500))).toEqual({ kind: 'failed' });

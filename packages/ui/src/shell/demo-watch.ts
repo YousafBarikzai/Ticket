@@ -155,8 +155,9 @@ async function jsonOf(response: Response): Promise<Record<string, unknown>> {
 /**
  * `POST /api/demo/reset` with `{ "confirm": "RESET" }` and what its answer
  * means for the bar (A2 §9.4, A3 §6.4): 202 started; 409 a reset is already
- * running; 429 the cooldown or the backoff; 403 and 404 no reset here (not a
- * demo session, or the demo is off); anything else, or no answer, failed.
+ * running; 429 the cooldown or the backoff, and 503 a pause — both "not now",
+ * explained from a fresh status; 403 and 404 no reset here (not a demo
+ * session, or the demo is off); anything else, or no answer, failed.
  */
 export async function requestDemoReset(endpoint: string, fetcher: FetchLike = pageFetch): Promise<DemoResetOutcome> {
   let response: Response;
@@ -189,6 +190,9 @@ export async function requestDemoReset(endpoint: string, fetcher: FetchLike = pa
       const header = Number(response.headers.get('retry-after'));
       return { kind: 'refused', retryAfterSec: isNumber(body.retryAfterSec) ? body.retryAfterSec : Number.isFinite(header) && header > 0 ? header : null };
     }
+    case 503:
+      // Paused by the operator (step 4) or no live generation: the status read that follows says which.
+      return { kind: 'refused', retryAfterSec: null };
     case 403:
     case 404:
       return { kind: 'unavailable' };

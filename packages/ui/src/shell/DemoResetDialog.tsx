@@ -48,7 +48,8 @@ const serverNow = (): number => Date.now() + demoBarState().skewMs;
  *    "Resetting the demo data. This takes about 2 minutes; you can keep
  *    exploring."; the watch reloads the page when the new data is live. 409
  *    says "A reset is already running." under the bars and shows the busy
- *    state. 429 closes the confirm and shows the cooldown or backoff reason.
+ *    state. 429 (and 503, a pause) closes the confirm and shows the
+ *    cooldown, backoff or pause reason.
  *    403 and 404 take Reset off the bar. Anything else keeps the confirm open
  *    with the failure inline, so the visitor can try again.
  *
