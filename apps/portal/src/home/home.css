@@ -354,6 +354,15 @@
   inline-size: 100%;
 }
 
+/* On a phone the strip's facts take one line (A6 §6.1.4); the title and its link stay whole. */
+@media (max-width: 47.9375rem) {
+  .app-StatusStrip .itsm-Banner__body {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 .app-StatusStrip--quiet {
   display: flex;
   align-items: center;
@@ -509,6 +518,40 @@
 @container app-request-card (max-width: 30rem) {
   .app-RequestCard__steps {
     display: none;
+  }
+}
+
+/*
+ * A phone keeps Home near 1,500 px tall (A6 §6.1.4, against v2's 2,055): the
+ * card is the title over one line of facts — the pill and the number — with
+ * its action beside it when there is room; the type and the time are on the
+ * request's own page.
+ */
+@media (max-width: 47.9375rem) {
+  .app-RequestCard {
+    gap: var(--itsm-space-xs) var(--itsm-space-sm);
+    padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  }
+
+  .app-RequestCard__main {
+    flex: 1 1 12rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--itsm-space-3xs) var(--itsm-space-xs);
+  }
+
+  .app-RequestCard__link {
+    flex: 1 0 100%;
+    order: -1;
+  }
+
+  .app-RequestCard__fact {
+    display: none;
+  }
+
+  .app-HomeAside {
+    padding: var(--itsm-space-md);
   }
 }
 
