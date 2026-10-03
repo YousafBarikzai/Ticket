@@ -25,7 +25,9 @@ export function problemFrom(error: unknown, digest?: string): Problem {
       ...(code && code !== 'about:blank' ? { code } : {}),
       ...(problem?.title ? { title: problem.title } : {}),
       ...(problem?.detail ? { detail: problem.detail } : {}),
-      retryable: error.retryable,
+      // A demo cap (429 demo_limit) does not lift with time, so waiting and
+      // trying again cannot help, though every other 429 may be retried.
+      retryable: code === 'demo_limit' ? false : error.retryable,
       ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
       ...(digest ? { digest } : {}),
     };

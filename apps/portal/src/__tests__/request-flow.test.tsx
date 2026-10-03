@@ -556,6 +556,19 @@ describe('the request, in steps', () => {
     expect(document.querySelector('.app-ServiceDone__title')?.textContent).toBe('Requested · REQ-000046');
   });
 
+  it('offers no Try again when the demo’s cap is reached, which waiting does not lift', async () => {
+    browserApi.submitRequest.mockRejectedValueOnce(
+      new ApiError(429, { type: 'https://docs.itsm.example/problems/demo_limit', title: 'Demo limit reached', status: 429, correlationId: 'c1' }, 'capped'),
+    );
+    await showItem();
+    await answerEverything();
+    await clickAsync(button('Request System access'));
+    expect(notify).toHaveBeenCalledTimes(1);
+    const [title, toast] = notify.mock.calls[0]! as [string, { action?: { label: string } }];
+    expect(title).toBe('Demo limit reached');
+    expect(toast.action).toBeUndefined();
+  });
+
   it('makes one call for a double press', async () => {
     let finish: (value: SubmitResult) => void = () => undefined;
     browserApi.submitRequest.mockImplementation(() => new Promise<SubmitResult>((resolve) => (finish = resolve)));

@@ -62,6 +62,16 @@ describe('a failure, as the console answers it', () => {
     expect(problemFrom(new TypeError('Failed to fetch'))).toEqual({ status: 503, retryable: true });
     expect(respondTo(problemFrom(apiError(400)))).toMatchObject({ kind: 'toast', retry: false });
   });
+
+  it('offers no Retry for a demo limit, which waiting does not lift, though a plain 429 keeps its countdown', () => {
+    const capped = problemFrom(apiError(429, 'https://docs.itsm.example/problems/demo_limit'));
+    expect(capped).toMatchObject({ status: 429, code: 'demo_limit', retryable: false });
+    const response = respondTo(capped, 'Couldn’t publish the rule');
+    expect(response).toMatchObject({ kind: 'toast', title: 'Couldn’t publish the rule', retry: false });
+    expect(response).not.toHaveProperty('retryAt');
+    expect(problemFrom(apiError(429)).retryable).toBe(true);
+    expect(respondTo(problemFrom(apiError(429)))).toMatchObject({ kind: 'toast', retry: true });
+  });
 });
 
 describe('useMutation', () => {

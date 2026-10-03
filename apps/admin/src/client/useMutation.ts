@@ -23,6 +23,7 @@ import { isSessionEnded, problemFrom } from '../problem.js';
  * | 403 | a toast naming what is missing; the page refreshes its permissions |
  * | 402 | "Your organisation has reached a plan limit", with a way to Usage |
  * | 429 | "Try again in 20 s", Retry disabled until then |
+ * | 429 `demo_limit` | the demo's cap sentence, and no Retry: waiting does not lift a cap |
  * | 5xx / no answer | the failure with *Retry* — safe, because SDK writes carry idempotency keys |
  *
  * `run` never throws: it resolves `{ ok: true, value }` or `{ ok: false,
@@ -107,7 +108,7 @@ export function respondTo(problem: Problem, failure?: string, now: number = Date
   if (problem.status === 403 && problem.code === 'tenant_suspended') return { kind: 'suspended' };
   const described = describeProblem(problem);
   if (problem.status === 402) return { kind: 'toast', title: 'Your organisation has reached a plan limit', description: described.body, retry: false, usage: true };
-  if (problem.status === 429) {
+  if (problem.status === 429 && problem.code !== 'demo_limit') {
     const seconds = problem.retryAfterSeconds ?? 20;
     return { kind: 'toast', title: failure ?? described.title, description: `Try again in ${seconds} s.`, retry: true, retryAt: now + seconds * 1000 };
   }

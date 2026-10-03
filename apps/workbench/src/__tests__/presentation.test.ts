@@ -263,4 +263,11 @@ describe('problems', () => {
   it('treats anything else as the network', () => {
     expect(problemOf(new TypeError('Failed to fetch'))).toEqual({ status: 0, retryable: true });
   });
+
+  it('never offers a retry for a demo limit, which waiting does not lift', () => {
+    const capped = new ApiError(429, { type: 'x/problems/demo_limit', title: 'Demo limit reached', status: 429, correlationId: 'c' }, 'capped');
+    expect(problemOf(capped)).toMatchObject({ status: 429, code: 'demo_limit', retryable: false });
+    const limited = new ApiError(429, { type: 'x/problems/rate_limited', title: 'Too many requests', status: 429, correlationId: 'c' }, 'limited');
+    expect(problemOf(limited)).toMatchObject({ status: 429, retryable: true });
+  });
 });
