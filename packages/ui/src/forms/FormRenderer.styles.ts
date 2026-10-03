@@ -180,7 +180,7 @@ ${intentRules}
   flex-direction: column;
   gap: var(--itsm-space-3xs);
   margin: 0 0 var(--itsm-space-md);
-  scroll-margin-block-start: calc(var(--itsm-topbar-height) + var(--itsm-space-md));
+  scroll-margin-block-start: calc(var(--itsm-frame-top) + var(--itsm-space-md));
 }
 
 .itsm-FormRenderer__stepHeading:focus {

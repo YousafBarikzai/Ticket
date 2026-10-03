@@ -1,7 +1,9 @@
 'use client';
 
+import type { AreaModel } from '@itsm/contracts/areas';
 import { useMemo, type ReactNode } from 'react';
 import { Icon } from '../icons/Icon.js';
+import { AreaSwitcher, currentArea } from './AreaSwitcher.js';
 import { BottomDockHost } from './BottomDock.js';
 import type { PageInfo } from './context.js';
 import { ShellMain as Main, type AppShellFrameProps } from './frame.js';
@@ -16,11 +18,14 @@ import { TopBar } from './TopBar.js';
 import { UserMenu } from './UserMenu.js';
 
 /**
- * The top-nav frame (portal): a 52 px glass top bar — brand, centred pills
- * (the current one on an opaque pill), search, *New request*, status, bell,
- * account — and below 768 px a docked tab bar, with "‹ Back" and the page's
- * title where the brand was on inner pages. Drawn by `AppShell
- * variant="topnav"` and by `TopNavShell`.
+ * The top-nav frame (Help Portal, v3 §3.6): a 56 px opaque top bar — the
+ * product mark linking home, "IT Service Management" from 1280 px, the
+ * visible area switcher "Help Portal ⌄" (or the lockup for a requester with
+ * one area), centred pills (the current one on a `surface.selected` pill),
+ * search, *New request*, status, bell, account — and below 768 px a docked
+ * tab bar, with "‹ Back" and the page's title where the mark and the
+ * switcher were on inner pages. Drawn by `AppShell variant="topnav"` and by
+ * `TopNavShell`.
  */
 
 function Pills({ items, currentId }: { readonly items: readonly NavItem[]; readonly currentId: string | null }): ReactNode {
@@ -51,8 +56,19 @@ function PillNav({ nav }: { readonly nav: NavModel }): ReactNode {
   );
 }
 
-export function TopNavFrame({ props, page, mainId }: { readonly props: AppShellFrameProps; readonly page: PageInfo | null; readonly mainId: string }): ReactNode {
+export function TopNavFrame({
+  props,
+  page,
+  mainId,
+  areas,
+}: {
+  readonly props: AppShellFrameProps;
+  readonly page: PageInfo | null;
+  readonly mainId: string;
+  readonly areas: AreaModel;
+}): ReactNode {
   const { brand, nav, search, onOpenSearch, bell, status, user, banner, bottomTabs, topBarAction, children } = props;
+  const area = currentArea(areas);
   return (
     <BottomDockHost tabBar={bottomTabs && bottomTabs.length > 0 ? <TabBar items={bottomTabs} /> : undefined}>
       <TopBar
@@ -66,6 +82,9 @@ export function TopNavFrame({ props, page, mainId }: { readonly props: AppShellF
           ) : null
         }
         brand={brand}
+        product={areas.product}
+        brandLabel={`${areas.product} — ${area.name} home`}
+        area={<AreaSwitcher model={areas} display="compact" className="itsm-AppShell__area" />}
         {...(page?.back ? { title: page.title } : {})}
         center={nav.sections.some((section) => section.items.length > 0) ? <PillNav nav={nav} /> : undefined}
         end={
@@ -74,7 +93,7 @@ export function TopNavFrame({ props, page, mainId }: { readonly props: AppShellF
             {topBarAction ? <div className="itsm-AppShell__action">{topBarAction}</div> : null}
             {status ? <div className="itsm-AppShell__status">{status}</div> : null}
             {bell}
-            <UserMenu {...user} {...(brand.switcher ? { switcher: brand.switcher } : {})} />
+            <UserMenu {...user} areas={user.areas ?? areas} />
           </>
         }
       />

@@ -1,19 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import type { AreaModel } from '@itsm/contracts/areas';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useHotkey } from '../a11y/hotkeys.js';
 import { useStableId } from '../a11y/ids.js';
 import type { SheetProps } from '../overlays/Sheet.js';
 import { useMediaQuery } from '../overlays/media.js';
+import { AppTopBar } from '../shell/AppTopBar.js';
+import { BottomDockHost } from '../shell/BottomDock.js';
+import { frameSidebarAction } from '../shell/compat.js';
 import type { PageInfo } from '../shell/context.js';
 import { FrameRoot, ShellMain as Main, type AppShellFrameProps } from '../shell/frame.js';
 import { fetchModule, lazyModule } from '../shell/lazy.js';
 import { usePathnameSafe } from '../shell/location.js';
-import { SearchTrigger } from '../shell/SearchTrigger.js';
 import { Sidebar } from '../shell/Sidebar.js';
-import { TopBar } from '../shell/TopBar.js';
+import { TabBar } from '../shell/TabBar.js';
 import { TopNavFrame } from '../shell/TopNavFrame.js';
-import { UserMenu } from '../shell/UserMenu.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { IconButton } from './IconButton.js';
 import { cx } from './cx.js';
@@ -22,7 +24,7 @@ import { cx } from './cx.js';
 export type { AppShellFrameProps } from '../shell/frame.js';
 
 /* =========================================================================
- * AppShell v2 — the application frame (SPEC §4.9)
+ * AppShell v3 — the application frame (v3 §3.4–§3.10)
  * ====================================================================== */
 
 /** The legacy frame's navigation entries. */
@@ -57,6 +59,40 @@ export type AppShellProps = AppShellFrameProps | LegacyAppShellProps;
 /** The sidebar's full width begins here (SPEC D9); below it the sidebar is a rail or a sheet. */
 const XL_UP = '(min-width: 80rem)';
 
+/** The navigation sheet's `id`: one frame per page, so a tab's `aria-controls` can name it. */
+export const NAV_SHEET_ID = 'itsm-nav-sheet';
+
+/* -------------------------------------------------------------------------
+ * The navigation sheet, openable from outside the frame
+ * ---------------------------------------------------------------------- */
+
+/*
+ * The Service Desk's More tab (built in its shell, A2 §7.1) opens the same
+ * sheet as ☰, and draws itself current while the sheet is open. One frame per
+ * page, so a module-level switch, like the shortcuts dialog's.
+ */
+let sheetWanted = false;
+const sheetListeners = new Set<() => void>();
+
+function subscribeSheet(listener: () => void): () => void {
+  sheetListeners.add(listener);
+  return () => {
+    sheetListeners.delete(listener);
+  };
+}
+
+/** Opens or closes the sidebar frame's navigation sheet (the More tab, A2 §7.1). */
+export function setNavigationSheetOpen(next: boolean): void {
+  if (sheetWanted === next) return;
+  sheetWanted = next;
+  for (const listener of [...sheetListeners]) listener();
+}
+
+/** Whether the navigation sheet is open: More draws itself current meanwhile. False on the server. */
+export function useNavigationSheetOpen(): boolean {
+  return useSyncExternalStore(subscribeSheet, () => sheetWanted, () => false);
+}
+
 /** The navigation sheet, loaded the first time it is wanted (it is a Radix dialog). */
 const sheetModule = lazyModule(() => import('../overlays/Sheet.js'));
 
@@ -74,108 +110,129 @@ function useLazySheet(): [ComponentType<SheetProps> | null, () => void] {
 }
 
 /* -------------------------------------------------------------------------
- * The sidebar frame (admin, workbench)
+ * The sidebar frame (Administration, the Service Desk)
  * ---------------------------------------------------------------------- */
 
-function SidebarFrame({ props, page, mainId }: { readonly props: AppShellFrameProps; readonly page: PageInfo | null; readonly mainId: string }): ReactNode {
-  const { brand, nav, sidebarHeaderExtra, search, onOpenSearch, bell, status, footerExtra, user, banner, children } = props;
+function SidebarFrame({
+  props,
+  page,
+  mainId,
+  areas,
+}: {
+  readonly props: AppShellFrameProps;
+  readonly page: PageInfo | null;
+  readonly mainId: string;
+  readonly areas: AreaModel;
+}): ReactNode {
+  const { brand, nav, search, onOpenSearch, bell, status, footerExtra, user, banner, bottomTabs, topBarAction, context, help, children } = props;
+  const action = frameSidebarAction(props);
   const { prefs, setPrefs } = useTheme();
   const wide = useMediaQuery(XL_UP, true);
   const rail = prefs.nav === 'rail';
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetOpen = useNavigationSheetOpen();
   const [Sheet, loadSheet] = useLazySheet();
   const pathname = usePathnameSafe();
-  const sheetId = useStableId('itsm-nav-sheet');
+
+  // Whoever asked for the sheet — ☰, More, Collapse below 1280 — it loads first.
+  useEffect(() => {
+    if (sheetOpen) loadSheet();
+  }, [sheetOpen, loadSheet]);
+  // A sheet left open by a page that has gone does not reopen on the next.
+  useEffect(() => () => setNavigationSheetOpen(false), []);
 
   // A link followed inside the sheet closes it: the new page is the answer.
   const lastPath = useRef(pathname);
   useEffect(() => {
     if (lastPath.current === pathname) return;
     lastPath.current = pathname;
-    setSheetOpen(false);
+    setNavigationSheetOpen(false);
   }, [pathname]);
 
   const openSheet = useCallback(() => {
     loadSheet();
-    setSheetOpen(true);
+    setNavigationSheetOpen(true);
   }, [loadSheet]);
 
-  // `[` and the PanelLeft button: at 1280 px and up they collapse the sidebar
-  // to the rail (remembered, D9); narrower, where the rail or the sheet is
-  // the only choice, they show the whole sidebar as a sheet.
+  // `[` and Collapse: at 1280 px and up they collapse the sidebar to the rail
+  // (remembered, D9); narrower, where the rail or the sheet is the only
+  // choice, they show the whole sidebar as a sheet.
   const toggle = useCallback(() => {
     const isWide = typeof window.matchMedia === 'function' ? window.matchMedia(XL_UP).matches : true;
     if (isWide) setPrefs({ nav: rail ? 'auto' : 'rail' });
-    else if (sheetOpen) setSheetOpen(false);
+    else if (sheetOpen) setNavigationSheetOpen(false);
     else openSheet();
-  }, [openSheet, rail, setPrefs, sheetOpen]);
+  }, [openSheet, rail, sheetOpen, setPrefs]);
 
   useHotkey({ keys: '[', handler: toggle, description: 'Collapse or expand the sidebar', group: 'Navigation' });
 
-  const toggleLabel = wide ? (rail ? 'Expand sidebar' : 'Collapse sidebar') : 'Show full navigation';
+  const collapseLabel = wide ? (rail ? 'Expand sidebar' : 'Collapse') : 'Show full navigation';
+  const tabs = bottomTabs && bottomTabs.length > 0 ? bottomTabs : null;
 
   return (
-    <>
-      <TopBar
-        className="itsm-AppShell__compactBar"
-        start={
-          <IconButton
-            icon="menu"
-            label="Open navigation"
-            variant="ghost"
-            aria-haspopup="dialog"
-            aria-expanded={sheetOpen}
-            aria-controls={sheetOpen ? sheetId : undefined}
-            onPointerEnter={loadSheet}
-            onFocus={loadSheet}
-            onClick={openSheet}
+    <BottomDockHost tabBar={tabs ? <TabBar items={tabs} /> : undefined}>
+      <div className="itsm-AppShell__frame">
+        <div className="itsm-AppShell__sidebar">
+          <Sidebar
+            mode="docked"
+            areas={areas}
+            brand={brand}
+            nav={nav}
+            action={action}
+            status={status}
+            footerExtra={footerExtra}
+            user={user}
+            collapse={{ label: collapseLabel, onToggle: toggle }}
           />
-        }
-        title={page?.title ?? brand.name}
-        end={
-          <>
-            {search ? <SearchTrigger display="icon" placeholder={search.placeholder} shortcut={search.shortcut ?? 'mod+k'} bindShortcut={false} onOpen={onOpenSearch} /> : null}
-            {status ? <div className="itsm-AppShell__status">{status}</div> : null}
-            {bell}
-            <UserMenu {...user} />
-          </>
-        }
-      />
-      <div className="itsm-AppShell__sidebar">
-        <Sidebar
-          mode="docked"
-          brand={brand}
-          nav={nav}
-          headerExtra={sidebarHeaderExtra}
-          search={search}
-          onOpenSearch={onOpenSearch}
-          bell={bell}
-          status={status}
-          footerExtra={footerExtra}
-          user={user}
-          toggle={{ label: toggleLabel, onToggle: toggle }}
-        />
-      </div>
-      <div className="itsm-AppShell__panel">
-        {banner ? <div className="itsm-AppShell__banner">{banner}</div> : null}
-        <Main id={mainId}>{children}</Main>
+        </div>
+        <div className="itsm-AppShell__column">
+          <AppTopBar
+            areas={areas}
+            nav={nav}
+            page={page}
+            start={
+              <IconButton
+                className="itsm-AppTopBar__menu"
+                icon="menu"
+                label="Open navigation"
+                variant="ghost"
+                aria-haspopup="dialog"
+                aria-expanded={sheetOpen}
+                aria-controls={sheetOpen ? NAV_SHEET_ID : undefined}
+                onPointerEnter={loadSheet}
+                onFocus={loadSheet}
+                onClick={openSheet}
+              />
+            }
+            context={context}
+            search={search}
+            onOpenSearch={onOpenSearch}
+            bell={bell}
+            help={help}
+            status={status}
+            action={topBarAction}
+            user={user}
+            tabSearch={tabs !== null}
+          />
+          {banner ? <div className="itsm-AppShell__banner">{banner}</div> : null}
+          <Main id={mainId}>{children}</Main>
+        </div>
       </div>
       {Sheet ? (
         <Sheet
           open={sheetOpen}
-          onOpenChange={(next) => setSheetOpen(next)}
+          onOpenChange={(next) => setNavigationSheetOpen(next)}
           side="start"
           size="sm"
-          title={brand.name}
-          {...(brand.tenant ? { description: brand.tenant } : {})}
+          title={areas.product}
+          {...(areas.workspace ? { description: areas.workspace } : {})}
           className="itsm-AppShell__navSheet"
         >
-          <div id={sheetId}>
-            <Sidebar mode="sheet" brand={brand} nav={nav} headerExtra={sidebarHeaderExtra} status={status} footerExtra={footerExtra} user={user} />
+          <div id={NAV_SHEET_ID}>
+            <Sidebar mode="sheet" areas={areas} brand={brand} nav={nav} action={action} status={status} footerExtra={footerExtra} user={user} />
           </div>
         </Sheet>
       ) : null}
-    </>
+    </BottomDockHost>
   );
 }
 
@@ -185,29 +242,32 @@ function SidebarFrame({ props, page, mainId }: { readonly props: AppShellFramePr
 
 /**
  * The application frame every signed-in page sits in: landmarks, skip links,
- * navigation, search, the bell, connection status and the account menu —
- * the same parts in the same places in all three apps.
+ * the system bar, navigation, the top bar, search, the bell, connection
+ * status and the account menu — the same parts in the same places in all
+ * three areas.
  *
- * **`sidebar`** (admin, workbench). At 1280 px and up a 248 px opaque
- * sidebar on the canvas beside an inset content panel; the window scrolls
- * and the sidebar stays put (`sticky`, full height). `[` or the PanelLeft
- * button collapses it to the 64 px rail, remembered on this device
- * (`prefs.nav`); 1024–1279 px is always the rail. Below 1024 px a 52 px
- * compact bar on glass (☰, the page's title, search, status, bell, account)
- * replaces it, and ☰ opens the sidebar as a modal sheet from the start edge,
- * which closes on navigation. The brand, search and bell live in the
- * sidebar's header — there is no global top bar on wide screens (D7).
+ * **`sidebar`** (Administration, the Service Desk; v3 §3.4). A light 256 px
+ * sidebar — brand, Area card, "New ticket", grouped navigation, user card,
+ * Collapse — beside a column holding the 56 px top bar (title and purpose,
+ * chips, search, bell, Help, account), the banners and `main` on the canvas,
+ * centred at 1600 px. The window scrolls; the sidebar and the top bar are
+ * sticky under any system bar. `[` or Collapse folds the sidebar to the
+ * 72 px rail, remembered on this device (`prefs.nav`); 1024–1279 px is
+ * always the rail; below 1024 px ☰ opens the sidebar as a sheet from the
+ * start edge, which closes on navigation. Below 768 px a tab bar can dock
+ * at the bottom (the Service Desk's).
  *
- * **`topnav`** (portal). A 52 px glass top bar: brand, centred pills (the
- * current one on an opaque pill), search, *New request*, status, bell,
- * account. Below 768 px the pills give way to a docked tab bar, and inner
- * pages put "‹ Back" and their title where the brand was.
+ * **`topnav`** (the Help Portal; v3 §3.6). A 56 px opaque top bar: the
+ * product mark, the area switcher, centred pills, search, *New request*,
+ * status, bell, account. Below 768 px the pills give way to a docked tab
+ * bar, and inner pages put "‹ Back" and their title where the mark was.
  *
- * Both: skip links first; `header` (banner), `nav`, `main`; nothing with
- * `role="status"` before `main`; ⌘K bound to `onOpenSearch` (inside fields
- * too); `?` opens the keyboard shortcuts; one hidden sign-out form for the
- * page's account menus. Pages report their title and way back through
- * `PageHeader`, which the compact bars show.
+ * Both: skip links first; the system bar (`systemBar`) next, across the
+ * window; `header` (banner), `nav`, `main`; nothing with `role="status"`
+ * before `main`; ⌘K bound to `onOpenSearch` (inside fields too); `?` opens
+ * the keyboard shortcuts; one hidden sign-out form for the page's account
+ * menus. Pages report their title, purpose, chips and way back through
+ * `PageHeader`.
  *
  * Called without `variant`, it draws the pre-redesign frame for the apps that
  * have not moved yet (deprecated; removed in Stage 5).
@@ -221,8 +281,12 @@ function FrameShell(props: AppShellFrameProps): ReactNode {
   return (
     <FrameRoot
       props={props}
-      frame={(page, mainId) =>
-        props.variant === 'sidebar' ? <SidebarFrame props={props} page={page} mainId={mainId} /> : <TopNavFrame props={props} page={page} mainId={mainId} />
+      frame={(page, mainId, areas) =>
+        props.variant === 'sidebar' ? (
+          <SidebarFrame props={props} page={page} mainId={mainId} areas={areas} />
+        ) : (
+          <TopNavFrame props={props} page={page} mainId={mainId} areas={areas} />
+        )
       }
     />
   );

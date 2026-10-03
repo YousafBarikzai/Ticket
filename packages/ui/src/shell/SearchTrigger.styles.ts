@@ -1,46 +1,50 @@
 import { css, layer, mq } from '../styles/css.js';
 
 /**
- * `SearchTrigger`: a button dressed as Apple's search field — a filled
- * capsule in `fill.secondary`, the magnifier and the label in
- * `text.secondary`, the key caps at the end. No border on glass, where a
- * border's contrast cannot be promised (SPEC §1.3 rule a); in the
- * high-contrast themes, and wherever the person asked for more contrast, a
- * solid border gives it its shape.
+ * `SearchTrigger` v3 (v3 §2.14): a button dressed as a search field on the
+ * opaque top bars — 34 px, 236 px wide by default, radius 8, a 1 px
+ * `border.subtle` edge on `surface.raisedAlt`, the magnifier and the label in
+ * `text.muted` at 500 13/18, and the key caps ("⌘K" / "Ctrl K") at the end.
+ * The top bars set its width where they place it (200 in narrower columns).
  *
- * `--icon`, and every trigger below 768 px, is the magnifier alone, the size
- * of an icon button, keeping its label as its name.
+ * `--icon`, and every trigger below 1024 px, is the magnifier alone, a 34 px
+ * square without the field's edge, keeping its label as its name.
  */
 export const searchTriggerStyles = layer(
   'components',
   css`
 .itsm-SearchTrigger {
+  --_size: calc(var(--itsm-control-height-md) - var(--itsm-space-3xs));
   display: inline-flex;
   align-items: center;
   gap: var(--itsm-space-xs);
   box-sizing: border-box;
+  inline-size: 14.75rem;
+  max-inline-size: 100%;
   min-inline-size: 0;
-  block-size: var(--itsm-control-height-md);
+  block-size: var(--_size);
   margin: 0;
-  padding: 0 var(--itsm-space-2xs) 0 var(--itsm-space-xs);
-  border: 0;
-  border-radius: var(--itsm-radius-lg);
-  background-color: var(--itsm-colour-fill-secondary);
-  color: var(--itsm-colour-text-secondary);
+  padding: 0 var(--itsm-space-2xs) 0 var(--itsm-space-sm);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-md);
+  background-color: var(--itsm-colour-surface-raisedAlt);
+  color: var(--itsm-colour-text-muted);
   font: inherit;
   font-size: var(--itsm-text-callout-size);
-  line-height: var(--itsm-text-callout-line);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
   text-align: start;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard), color var(--itsm-duration-fast) var(--itsm-easing-standard);
+  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard), border-color var(--itsm-duration-fast) var(--itsm-easing-standard), color var(--itsm-duration-fast) var(--itsm-easing-standard);
 }
 .itsm-SearchTrigger:hover {
-  background-image: linear-gradient(var(--itsm-colour-fill-hover), var(--itsm-colour-fill-hover));
+  border-color: var(--itsm-colour-border-soft);
+  background-color: var(--itsm-colour-surface-hover);
   color: var(--itsm-colour-text-primary);
 }
 .itsm-SearchTrigger:active {
-  background-image: linear-gradient(var(--itsm-colour-fill-pressed), var(--itsm-colour-fill-pressed));
+  background-color: var(--itsm-colour-fill-pressed);
 }
 .itsm-SearchTrigger__icon {
   flex: none;
@@ -59,9 +63,9 @@ export const searchTriggerStyles = layer(
 
 .itsm-SearchTrigger--icon {
   justify-content: center;
-  inline-size: var(--itsm-control-height-md);
+  inline-size: var(--_size);
   padding: 0;
-  border-radius: var(--itsm-radius-md);
+  border-color: transparent;
   background-color: transparent;
 }
 .itsm-SearchTrigger--icon .itsm-SearchTrigger__label {
@@ -75,14 +79,20 @@ export const searchTriggerStyles = layer(
 .itsm-SearchTrigger--icon .itsm-SearchTrigger__keys {
   display: none;
 }
+.itsm-SearchTrigger--icon:hover {
+  border-color: transparent;
+}
 
-${mq.belowMd} {
+${mq.belowLg} {
   .itsm-SearchTrigger {
     justify-content: center;
-    inline-size: var(--itsm-control-height-md);
+    inline-size: var(--_size);
     padding: 0;
-    border-radius: var(--itsm-radius-md);
+    border-color: transparent;
     background-color: transparent;
+  }
+  .itsm-SearchTrigger:hover {
+    border-color: transparent;
   }
   .itsm-SearchTrigger .itsm-SearchTrigger__label {
     position: absolute;
@@ -99,11 +109,11 @@ ${mq.belowMd} {
 
 :root[data-itsm-theme="high-contrast"] .itsm-SearchTrigger:not(.itsm-SearchTrigger--icon),
 :root[data-itsm-theme="high-contrast-dark"] .itsm-SearchTrigger:not(.itsm-SearchTrigger--icon) {
-  box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-strong);
+  border-color: var(--itsm-colour-border-strong);
 }
 @media (prefers-contrast: more) {
   .itsm-SearchTrigger:not(.itsm-SearchTrigger--icon) {
-    box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-strong);
+    border-color: var(--itsm-colour-border-strong);
   }
 }
 ${mq.forcedColors} {

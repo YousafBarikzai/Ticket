@@ -1,8 +1,8 @@
 import { css, layer, mq, prefers } from '../styles/css.js';
 
 /**
- * `RouteProgress`: a 2 px accent line across the top of the window, above
- * the top bar. While a slow navigation waits it creeps towards 90 % on the
+ * `RouteProgress`: a 2 px accent line across the top of the top bar — under
+ * any system bar (`--itsm-system-bar-h`), never over the demo bar. While a slow navigation waits it creeps towards 90 % on the
  * entrance curve (over a long, fixed stretch — a behaviour constant, not a
  * design duration: it must outlast most navigations without ever arriving);
  * when the page lands it runs out to the end and fades. `transform` and
@@ -18,7 +18,7 @@ export const routeProgressStyles = layer(
 
 .itsm-RouteProgress {
   position: fixed;
-  inset-block-start: 0;
+  inset-block-start: var(--itsm-system-bar-h);
   inset-inline: 0;
   z-index: var(--itsm-z-tooltip);
   block-size: var(--itsm-border-thick);

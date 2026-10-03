@@ -10,7 +10,7 @@ import type { ActionSpec, Crumb } from '../types.js';
 import { ActionSpecButton } from '../web/ActionSpecButton.js';
 import { cx } from '../web/cx.js';
 import { Breadcrumbs } from './Breadcrumbs.js';
-import { usePublishPage } from './context.js';
+import { usePublishPage, useShellContext } from './context.js';
 import { lazyModule, useIntentLoader } from './lazy.js';
 import { LazyMenuButton } from './LazyMenuButton.js';
 import { ShellLink } from './ShellLink.js';
@@ -19,7 +19,26 @@ import { TabNav, type TabNavItem } from './TabNav.js';
 export interface PageHeaderProps {
   readonly title: string;
   readonly titleId?: string;
-  /** Only on list and hub pages, and only while they have no data. */
+  /**
+   * The page's purpose line: one line, no full stop. The sidebar frame's top
+   * bar shows it under the title (it wins over the nav item's description);
+   * elsewhere it is drawn under the heading.
+   */
+  readonly purpose?: string;
+  /**
+   * Context chips for the sidebar frame's top bar — context the page does not
+   * show itself (never "As at", never the SLA figure, X-M4). Elsewhere they
+   * sit beside the heading.
+   */
+  readonly context?: ReactNode;
+  /**
+   * `page` (default): a hub or list page — in the sidebar frame the top bar
+   * shows this title and the `<h1>` steps back to a visually hidden focus
+   * target. `section`: a record page — the bar shows "‹ {section}" back to
+   * its list, and the record's `<h1>` stays visible here.
+   */
+  readonly barTitle?: 'page' | 'section';
+  /** In-content only, on list and hub pages while they have no data. Not the purpose line. */
   readonly subtitle?: string;
   readonly breadcrumbs?: readonly Crumb[];
   readonly back?: { readonly href: string; readonly label: string };
@@ -75,27 +94,6 @@ function ViewOnlyPill({ label, permission, permissionKey }: { readonly label: st
   );
 }
 
-/** The height of the frame's compact top bar: a heading under it is out of sight. */
-const TOP_BAR_PX = 52;
-
-/**
- * Whether the page's heading is on screen below the top bar, for the compact
- * bar to show the title only once it has scrolled away. `undefined` until
- * known (and where `IntersectionObserver` is missing), which shows the title.
- */
-function useTitleInView(heading: HTMLElement | null): boolean | undefined {
-  const [inView, setInView] = useState<boolean | undefined>(undefined);
-  useEffect(() => {
-    if (!heading || typeof IntersectionObserver !== 'function') return;
-    const observer = new IntersectionObserver(([entry]) => setInView(entry ? entry.isIntersecting : undefined), {
-      rootMargin: `-${TOP_BAR_PX}px 0px 0px 0px`,
-    });
-    observer.observe(heading);
-    return () => observer.disconnect();
-  }, [heading]);
-  return inView;
-}
-
 /** Whether a sticky header has come to rest against the top, for its shadow. */
 function useStuck(enabled: boolean): [(node: HTMLElement | null) => void, boolean] {
   const [sentinel, setSentinel] = useState<HTMLElement | null>(null);
@@ -113,6 +111,16 @@ function useStuck(enabled: boolean): [(node: HTMLElement | null) => void, boolea
  * The top of every page, and its only `<h1>` — which takes focus after a
  * navigation (`tabindex="-1"`, the target of `RouteFocus`).
  *
+ * It publishes the page's title, purpose, context chips and way back to the
+ * frame (v3 §3.4, the title contract). In the sidebar frame the top bar shows
+ * the title and purpose, so on a hub or list page the `<h1>` is
+ * `.itsm-visually-hidden-focusable` — still in `main`, still the focus
+ * target, shown as a band while it holds keyboard focus — and the visible row
+ * holds only the companion, *View only*, the actions and the tabs: "the title
+ * is in the top bar; content starts with a toolbar row". A record page
+ * (`barTitle="section"`) keeps its `<h1>` visible; the bar says "‹ Rules".
+ * The Help Portal keeps its visible `<h1>` everywhere.
+ *
  * One line holds the title and at most one companion — a status pill or a
  * single meta item (X-36) — plus the *View only* pill when the person may
  * look but not change (X-47). The actions sit at the end: secondaries, then
@@ -120,16 +128,17 @@ function useStuck(enabled: boolean): [(node: HTMLElement | null) => void, boolea
  * drawn as secondary), then ⋯ for the rest. Below 768 px the secondaries fold
  * into ⋯. `tabs` draws route tabs underneath; `breadcrumbs` or `back` above.
  *
- * `title1` (28/34 bold) by default; `largeTitle` (34/40) for the few hub pages
- * that open with a greeting. `sticky` keeps it at the top of the scrolling
- * page, opaque, with a shadow once it is resting there.
- *
- * It tells the frame its title and way back, which the compact top bar on a
- * phone shows ("‹ My requests"). No eyebrow, no overline (SPEC §1.7).
+ * `title1` by default; `largeTitle` for the few hub pages that open with a
+ * greeting. `sticky` keeps it at the top of the scrolling page, under the
+ * frame's bars, opaque, with a shadow once it is resting there. No eyebrow,
+ * no overline.
  */
 export function PageHeader({
   title,
   titleId,
+  purpose,
+  context,
+  barTitle = 'page',
   subtitle,
   breadcrumbs,
   back,
@@ -151,13 +160,19 @@ export function PageHeader({
   const wide = useMediaQuery(MD_UP, true);
   const [confirming, setConfirming] = useState<ActionSpec | null>(null);
   const [sentinel, stuck] = useStuck(sticky);
-  const [heading, setHeading] = useState<HTMLHeadingElement | null>(null);
-  const titleInView = useTitleInView(heading);
+  // The sidebar frame's top bar shows a hub page's title and purpose itself.
+  const inBar = useShellContext()?.variant === 'sidebar' && barTitle === 'page';
 
-  // The way back the compact top bar shows: the explicit one, or the
-  // nearest breadcrumb that can be followed.
+  // The way back the bars show: the explicit one, or the nearest breadcrumb
+  // that can be followed.
   const parent = back ?? [...(breadcrumbs ?? []).slice(0, -1)].reverse().find((crumb) => crumb.href);
-  usePublishPage(title, parent?.href ? { href: parent.href, label: parent.label } : undefined, titleInView);
+  usePublishPage({
+    title,
+    ...(parent?.href ? { back: { href: parent.href, label: parent.label } } : {}),
+    ...(purpose ? { purpose } : {}),
+    ...(context !== undefined && context !== null ? { context } : {}),
+    barTitle,
+  });
 
   const secondaries = (secondaryActions ?? []).map((spec) => (spec.variant === 'primary' ? { ...spec, variant: 'secondary' as const } : spec));
 
@@ -207,6 +222,7 @@ export function PageHeader({
         data-stuck={(sticky && stuck) || undefined}
         data-large={largeTitle || undefined}
         data-has-tabs={tabs && tabs.length > 0 ? '' : undefined}
+        data-title-in-bar={inBar || undefined}
       >
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <Breadcrumbs items={breadcrumbs} className="itsm-PageHeader__breadcrumbs" />
@@ -219,10 +235,11 @@ export function PageHeader({
 
         <div className="itsm-PageHeader__row">
           <div className="itsm-PageHeader__heading">
-            <h1 ref={setHeading} id={headingId} tabIndex={-1} className="itsm-PageHeader__title">
+            <h1 id={headingId} tabIndex={-1} className={cx('itsm-PageHeader__title', inBar && 'itsm-visually-hidden-focusable')}>
               {title}
             </h1>
             {companion ? <div className="itsm-PageHeader__companion">{companion}</div> : null}
+            {!inBar && context ? <div className="itsm-PageHeader__context">{context}</div> : null}
             {viewOnly ? (
               <ViewOnlyPill label={viewOnly.label} permission={viewOnly.permission} {...(viewOnly.key ? { permissionKey: viewOnly.key } : {})} />
             ) : null}
@@ -252,6 +269,7 @@ export function PageHeader({
           ) : null}
         </div>
 
+        {purpose && !inBar ? <p className="itsm-PageHeader__purpose">{purpose}</p> : null}
         {subtitle ? <p className="itsm-PageHeader__subtitle">{subtitle}</p> : null}
         {tabs && tabs.length > 0 ? <TabNav label={title} items={tabs} className="itsm-PageHeader__tabs" /> : null}
       </header>

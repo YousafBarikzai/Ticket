@@ -1,56 +1,38 @@
-import { css, layer, mq, prefers } from '../styles/css.js';
+import { css, layer, mq } from '../styles/css.js';
 
 /**
- * `TopBar`: 52 px, sticky, on glass — `material.chrome` at 0.92 with its
- * blur, turned solid by the tokens in the high-contrast themes, under reduced
- * transparency and where `backdrop-filter` is missing (SPEC §1.3). Text on it
- * is `text.primary` or `text.secondary` only.
+ * `TopBar`: the Help Portal's 56 px bar (v3 §3.6). Opaque `surface.raised`
+ * with a 1 px `border.subtle` hairline always drawn — the v2 glass is gone
+ * from top bars (A2 S-3); tab bars keep it — sticky under any system bar at
+ * `--itsm-system-bar-h`, at the header's z-index. The safe areas of a
+ * notched phone are kept clear on every side.
  *
- * A hairline appears along its bottom edge once the page has scrolled under
- * it, where scroll-driven animations exist; elsewhere the hairline is always
- * there. The safe areas of a notched phone are kept clear on every side.
- *
+ * Start: the product mark (32 px) and, from 1280 px, "IT Service
+ * Management" in the `lockup` style, as one link; then the area switcher.
  * With a centre slot (the portal's pills) the bar is a three-column grid so
- * the pills are centred on the window, not on what is left between the brand
- * and the account button.
+ * the pills are centred on the window. `material="canvas"` draws it flat on
+ * the canvas, unstuck, for status screens.
  */
 export const topBarStyles = layer(
   'components',
   css`
-@keyframes itsm-TopBar-edge {
-  from { border-block-end-color: transparent; }
-  to { border-block-end-color: var(--itsm-colour-border-subtle); }
-}
-
 .itsm-TopBar {
   position: sticky;
-  inset-block-start: 0;
+  inset-block-start: var(--itsm-system-bar-h);
   z-index: var(--itsm-z-header);
   box-sizing: border-box;
   padding-block-start: var(--itsm-safe-area-top);
-  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
-  background: var(--itsm-colour-material-chrome);
-  -webkit-backdrop-filter: var(--itsm-material-chrome-filter);
-  backdrop-filter: var(--itsm-material-chrome-filter);
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raised);
   color: var(--itsm-colour-text-primary);
   font-family: var(--itsm-font-family-sans);
   font-size: var(--itsm-text-callout-size);
   line-height: var(--itsm-text-callout-line);
 }
-@supports (animation-timeline: scroll()) {
-  .itsm-TopBar {
-    animation: itsm-TopBar-edge linear both;
-    animation-timeline: scroll(root block);
-    animation-range: 0 var(--itsm-space-xs);
-  }
-}
 .itsm-TopBar[data-material="canvas"] {
   position: static;
   border-block-end-color: transparent;
   background: var(--itsm-colour-surface-canvas);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  animation: none;
 }
 
 .itsm-TopBar__inner {
@@ -90,25 +72,32 @@ export const topBarStyles = layer(
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: var(--itsm-space-xs);
+  gap: 0.6875rem;
   min-inline-size: 0;
-  padding: var(--itsm-space-3xs) var(--itsm-space-2xs);
+  padding: var(--itsm-space-3xs);
   border-radius: var(--itsm-radius-md);
   color: var(--itsm-colour-text-primary);
   text-decoration: none;
   transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
 }
 .itsm-TopBar__brand:hover {
-  background: var(--itsm-colour-fill-hover);
+  background: var(--itsm-colour-surface-hover);
 }
 .itsm-TopBar__brandName {
+  display: none;
   overflow: hidden;
-  font-size: var(--itsm-text-headline-size);
-  line-height: var(--itsm-text-headline-line);
-  font-weight: var(--itsm-text-headline-weight);
-  letter-spacing: var(--itsm-text-headline-tracking);
+  font-family: var(--itsm-text-lockup-family);
+  font-size: var(--itsm-text-lockup-size);
+  line-height: var(--itsm-text-lockup-line);
+  font-weight: var(--itsm-text-lockup-weight);
+  letter-spacing: var(--itsm-text-lockup-tracking);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.itsm-TopBar__area {
+  display: inline-flex;
+  flex: none;
+  min-inline-size: 0;
 }
 .itsm-TopBar__title {
   min-inline-size: 0;
@@ -121,25 +110,21 @@ export const topBarStyles = layer(
   white-space: nowrap;
 }
 
-${mq.belowSm} {
+/* The product's name only where there is room for it beside the pills (A2 §6.2). */
+${mq.xl} {
   .itsm-TopBar__brandName {
-    font-size: var(--itsm-text-body-size);
+    display: inline;
   }
-}
-
-${mq.reducedMotion} {
-  .itsm-TopBar {
-    animation: none;
-  }
-}
-${prefers.reducedMotion} .itsm-TopBar {
-  animation: none;
 }
 
 ${mq.forcedColors} {
   .itsm-TopBar {
     border-block-end-color: CanvasText;
-    animation: none;
+  }
+}
+@media print {
+  .itsm-TopBar {
+    position: static;
   }
 }
 `,
