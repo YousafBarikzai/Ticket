@@ -8,7 +8,6 @@ import {
   VIEWS,
   clearedHref,
   countBadge,
-  deskNavModel,
   deskTopics,
   inboxHref,
   inboxLanding,
@@ -218,32 +217,12 @@ describe('the last view', () => {
 });
 
 describe('the sidebar', () => {
-  it('lists the views, then the teams, with pins and recents', () => {
-    const nav = deskNavModel({ canReadTickets: true, teams: [{ id: TEAM, name: 'Network' }] });
-    expect(nav.sections.map((section) => section.id)).toEqual(['views', 'teams']);
-    expect(nav.sections[0]!.items.map((item) => item.href)).toEqual(VIEWS.map((entry) => `/inbox/${entry.id}`));
-    expect(nav.sections[1]!.items[0]).toMatchObject({ label: 'Network', href: `/inbox/team/${TEAM}` });
-    expect(nav.pinned?.enabled).toBe(true);
-    expect(nav.recent).toEqual({ enabled: true, max: 8 });
-  });
-
-  it('has no team section without teams, and no views without ticket.read', () => {
-    expect(deskNavModel({ canReadTickets: true, teams: [] }).sections.map((section) => section.id)).toEqual(['views']);
-    expect(deskNavModel({ canReadTickets: false, teams: [{ id: TEAM, name: 'Network' }] }).sections).toEqual([]);
-  });
-
-  it('shows known counts only, capped at 99+ and spoken as tickets', () => {
-    const nav = deskNavModel({
-      canReadTickets: true,
-      teams: [{ id: TEAM, name: 'Network' }],
-      counts: { mine: { count: 12, capped: false }, unassigned: { count: 0, capped: false }, all: { count: 1000, capped: true }, [`team:${TEAM}`]: { count: 1, capped: false } },
-    });
-    const byId = Object.fromEntries(nav.sections.flatMap((section) => section.items).map((item) => [item.id, item.badge]));
-    expect(byId.mine).toMatchObject({ value: 12, label: '12 tickets' });
-    expect(byId.unassigned).toBeUndefined();
-    expect(byId.due).toBeUndefined();
-    expect(byId.all).toMatchObject({ value: 1000, capped: true, label: 'more than 99 tickets' });
-    expect(byId[`team:${TEAM}`]).toMatchObject({ value: 1, label: '1 ticket' });
+  it('words known counts, capped at 99+ and spoken as tickets', () => {
+    expect(countBadge({ count: 12, capped: false })).toMatchObject({ value: 12, label: '12 tickets' });
+    expect(countBadge({ count: 0, capped: false })).toBeUndefined();
+    expect(countBadge(undefined)).toBeUndefined();
+    expect(countBadge({ count: 1000, capped: true })).toMatchObject({ value: 1000, capped: true, label: 'more than 99 tickets' });
+    expect(countBadge({ count: 1, capped: false })).toMatchObject({ value: 1, label: '1 ticket' });
     expect(countBadge({ count: 40, capped: true })?.label).toBe('40 or more tickets');
   });
 

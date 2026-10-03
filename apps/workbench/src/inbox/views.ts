@@ -515,10 +515,6 @@ export function countBadge(count: ViewCount | undefined): NavBadge | undefined {
   };
 }
 
-function withBadge(item: NavItem, badge: NavBadge | undefined): NavItem {
-  return badge ? { ...item, badge } : item;
-}
-
 /**
  * The counts the client fetched (`/api/desk/counts`), put on the navigation
  * the server built (`navigation.ts`): views are filed under their id
@@ -542,56 +538,4 @@ export function navWithCounts(nav: NavModel, counts: ViewCounts): NavModel {
 /** Whether any item carries a danger count: the phone's More tab then shows its dot (A2 §7.1). */
 export function hasDangerCount(nav: NavModel): boolean {
   return nav.sections.some((section) => section.items.some((item) => item.badge?.tone === 'danger' && item.badge.value > 0));
-}
-
-/**
- * The v2 sidebar: the six views, then one item per team the agent is in, with
- * the counts that are known.
- *
- * @deprecated The frame reads `deskNavModel` in `navigation.ts` (v3 §3.5),
- * which composes these views with the Overview, the teams and Operations.
- * This copy is kept only because `__tests__/inbox-view.test.ts` still pins
- * it, and that file has no owner in wave 3; WP-54, which owns both in wave 4,
- * deletes the two together. Nothing in the app calls it.
- */
-export function deskNavModel({
-  canReadTickets,
-  teams,
-  counts = {},
-}: {
-  readonly canReadTickets: boolean;
-  readonly teams: readonly TeamSummary[];
-  readonly counts?: ViewCounts;
-}): NavModel {
-  if (!canReadTickets) return { label: 'Views', sections: [], pinned: { enabled: false }, recent: { enabled: false } };
-  const views: NavItem[] = VIEWS.map((view) =>
-    withBadge(
-      {
-        id: view.id,
-        label: view.label,
-        href: viewPath({ kind: 'view', id: view.id }),
-        icon: view.icon,
-        match: 'prefix',
-        shortcut: view.shortcut,
-        keywords: view.keywords,
-      },
-      countBadge(counts[view.id]),
-    ),
-  );
-  const teamItems: NavItem[] = teams.map((team) => {
-    const ref: ViewRef = { kind: 'team', teamId: team.id };
-    return withBadge(
-      { id: viewKey(ref), label: team.name, href: viewPath(ref), icon: TEAM_VIEW.icon, match: 'prefix', keywords: ['team'] },
-      countBadge(counts[viewKey(ref)]),
-    );
-  });
-  return {
-    label: 'Views',
-    sections: [
-      { id: 'views', label: 'Views', items: views },
-      ...(teamItems.length > 0 ? [{ id: 'teams', label: 'Teams', collapsible: true, items: teamItems }] : []),
-    ],
-    pinned: { enabled: true, max: 8 },
-    recent: { enabled: true, max: 8 },
-  };
 }
