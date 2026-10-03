@@ -13,46 +13,69 @@ import {
   type ReactNode,
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { AreaModel } from '@itsm/contracts/areas';
 import { clearLocalData, needsAttention, outboxStore, pendingCount, useOutbox } from '@itsm/pwa';
 import { useLiveState } from '@itsm/pwa/live';
 import { ApiError } from '@itsm/sdk';
 import {
+  Button,
   ConnectionStatus,
   GlobalBanner,
   IconButton,
+  Kbd,
   isDisclosureKey,
   isDismissalKey,
   isRecentsKey,
   useHotkey,
   useItsm,
 } from '@itsm/ui';
-import { AppShell, setShortcutsDialogOpen, type AppSwitcherItem } from '@itsm/ui/shell';
+import type { MenuItemSpec } from '@itsm/ui/overlays';
+import {
+  AppShell,
+  DEMO_RESET_REQUEST_EVENT,
+  NAV_SHEET_ID,
+  setNavigationSheetOpen,
+  setShortcutsDialogOpen,
+  useNavigationSheetOpen,
+  type NavItem,
+  type TabItem,
+} from '@itsm/ui/shell';
 import { useTheme } from '@itsm/ui/theme';
 import { api, fetchDeskCounts } from '../client/api.js';
 import { useCountsFollowLive } from '../client/live.js';
-import type { DeskPaletteDeps } from '../client/palette.js';
+import { AVAILABILITY_CHOICES, type AvailabilityChoice, type DeskPaletteDeps } from '../client/palette.js';
 import { deskKeys, shouldRetry } from '../client/query-client.js';
-import { VIEWS, deskNavModel, viewPath, type TeamSummary, type ViewDefinition } from '../inbox/views.js';
+import { HELP_PORTAL_NAME } from '../inbox/presentation.js';
+import { VIEWS, hasDangerCount, navWithCounts, viewPath, type TeamSummary, type ViewDefinition } from '../inbox/views.js';
+import type { DeskDestination, DeskFrame } from '../navigation.js';
 import { AvailabilityPill, useAvailability } from './AvailabilityPill.js';
 import { DeskNotifications } from './DeskNotifications.js';
 
 /**
- * The workbench frame (SPEC §5.3, D7, D9): the design system's sidebar
- * shell with the views and their counts, the compose button, search (⌘K),
- * the bell, the connection pill, availability and the account menu.
+ * The Service Desk frame (v3 §3.4–§3.8; SPEC §5.3, D7, D9): the design
+ * system's sidebar shell with the Area card, the views and their counts, the
+ * New ticket action, search (⌘K), the bell, Help, the connection pill,
+ * availability, the account menu, the phone's tab bar and, in a demo, the
+ * demo bar.
  *
- * Rendered by the `(desk)` layout with plain data — the person's name, their
- * teams, permission booleans — and nothing else; everything that is a
- * function lives here, on the client side of the boundary.
+ * Rendered by the `(desk)` layout with plain data — the area model, the
+ * frame the server built from `navigation.ts` (the navigation, the tabs, the
+ * palette's places and the links out), the person's name, their teams,
+ * permission booleans — and nothing else; everything that is a function
+ * lives here, on the client side of the boundary. It passes only the v3
+ * frame props (RV1): `areas`, `brand { href, workspace }`, `sidebarAction`.
  *
  * What the frame owns, and pages do not:
- *   - the keyboard map's global keys (`c`, `/`, `g` + a view) — `mod+K`, `?`
- *     and `[` are the design system's own;
+ *   - the keyboard map's global keys (`c`, `/`, `g` + a view, `g o`) —
+ *     `mod+K`, `?` and `[` are the design system's own;
  *   - the palette (loaded on first use) and the new-ticket sheet (likewise);
  *   - "Your session ended": a persistent banner when the live stream or a
- *     background read hears a 401, never a dialog that steals focus (D15);
+ *     background read hears a 401, never a dialog that steals focus (D15) —
+ *     in a demo, "Your demo session ended" and Continue the demo;
  *   - sign-out, which first clears this device's copies of the person's
- *     work (F19) and asks before discarding replies that have not been sent.
+ *     work (F19) and asks before discarding replies that have not been sent;
+ *   - in a demo, clearing those copies again when the data is reset under
+ *     the visitor (S11).
  */
 
 export interface DeskPermissions {
@@ -65,8 +88,16 @@ export interface DeskPermissions {
 }
 
 export interface DeskShellProps {
-  readonly tenantName?: string;
-  readonly switcher: readonly AppSwitcherItem[];
+  /** The person's areas, built on the server (`currentAreas()`): the Area card, Switch area, the demo's persona lines. */
+  readonly areas: AreaModel;
+  /** What `navigation.ts` built for this person on the server. */
+  readonly frame: DeskFrame;
+  /** The workspace's name, under the product's in the brand block. */
+  readonly workspace?: string;
+  /** The demo bar, in a demo session only (v3 §3.8). */
+  readonly systemBar?: ReactNode;
+  /** The frame's context chip: the live major incident (A2 §5.2.4). */
+  readonly context?: ReactNode;
   readonly user: { readonly id: string | null; readonly name: string; readonly detail?: string };
   readonly teams: readonly TeamSummary[];
   readonly can: DeskPermissions;
@@ -76,6 +107,21 @@ export interface DeskShellProps {
 /** The frame's one sign-out form (`AppShell` renders it); every sign-out path submits it. */
 const SIGN_OUT_FORM_ID = 'itsm-signout';
 const SIGN_OUT_ACTION = '/api/session/logout';
+
+/**
+ * Words the frame shows in a demo, as the contracts word them
+ * (`DEMO_COPY.sessionEnded`, `DEMO_COPY.continueDemo`, `SITE.homeLabel`).
+ * Spelt out: this module is in every page's first load and the contracts'
+ * tables would come with an import; `demo-pages.test.tsx` holds them equal.
+ */
+export const DESK_DEMO_COPY = {
+  sessionEnded: 'Your demo session ended',
+  sessionEndedBody: 'Pick up where you left off — the demo data may have been reset since.',
+  continueDemo: 'Continue the demo',
+} as const;
+
+/** "Knowledge base · Help Portal": the Help menu's and the account menu's way to the articles (A2 §5.2.6). */
+export const KNOWLEDGE_LABEL = `Knowledge base · ${HELP_PORTAL_NAME}`;
 
 /* ------------------------------------------------------------- Skip links */
 
@@ -106,32 +152,40 @@ export function DeskSkipLinks({ links }: { readonly links: readonly DeskSkipLink
 
 /* ----------------------------------------------------------------- Hotkeys */
 
-function GoToHotkey({ view, enabled, navigate }: { readonly view: ViewDefinition; readonly enabled: boolean; readonly navigate: (href: string) => void }): null {
-  useHotkey({
-    keys: view.shortcut,
-    handler: () => navigate(viewPath({ kind: 'view', id: view.id })),
-    description: view.label,
-    group: 'Go to',
-    enabled,
-  });
+function GoToHotkey({
+  keys,
+  href,
+  label,
+  enabled,
+  navigate,
+}: {
+  readonly keys: string;
+  readonly href: string;
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly navigate: (href: string) => void;
+}): null {
+  useHotkey({ keys, handler: () => navigate(href), description: label, group: 'Go to', enabled });
   return null;
 }
 
 export interface DeskHotkeysProps {
   readonly canReadTickets: boolean;
   readonly canCreate: boolean;
+  /** The places besides the views: the Overview (`g o`) and, once it ships, the Board (`g b`). */
+  readonly destinations?: readonly DeskDestination[];
   navigate(href: string): void;
   openNewTicket(): void;
   openSearch(): void;
 }
 
 /**
- * The frame's keys (SPEC §5.6). `/` focuses the page's own search field
- * when it has one — a page whose `SearchField` binds `/` itself wins, being
- * the newer binding — and otherwise opens the palette, so the key is never
- * dead (F23).
+ * The frame's keys (SPEC §5.6; D14 with v3's `g o` and `g b`). `/` focuses
+ * the page's own search field when it has one — a page whose `SearchField`
+ * binds `/` itself wins, being the newer binding — and otherwise opens the
+ * palette, so the key is never dead (F23).
  */
-export function DeskHotkeys({ canReadTickets, canCreate, navigate, openNewTicket, openSearch }: DeskHotkeysProps): ReactNode {
+export function DeskHotkeys({ canReadTickets, canCreate, destinations = [], navigate, openNewTicket, openSearch }: DeskHotkeysProps): ReactNode {
   useHotkey({ keys: 'c', handler: () => openNewTicket(), description: 'New ticket', group: 'General', enabled: canCreate });
   useHotkey({
     keys: '/',
@@ -145,11 +199,55 @@ export function DeskHotkeys({ canReadTickets, canCreate, navigate, openNewTicket
   });
   return (
     <>
-      {VIEWS.map((view) => (
-        <GoToHotkey key={view.id} view={view} enabled={canReadTickets} navigate={navigate} />
+      {destinations.map((place) => (
+        <GoToHotkey key={place.id} keys={place.shortcut} href={place.href} label={place.label} enabled navigate={navigate} />
+      ))}
+      {VIEWS.map((view: ViewDefinition) => (
+        <GoToHotkey
+          key={view.id}
+          keys={view.shortcut}
+          href={viewPath({ kind: 'view', id: view.id })}
+          label={view.label}
+          enabled={canReadTickets}
+          navigate={navigate}
+        />
       ))}
     </>
   );
+}
+
+/* ---------------------------------------------------------- Phone tab bar */
+
+export interface DeskTabActions {
+  openSearch(): void;
+  /** The navigation sheet is open: More draws itself current. */
+  readonly sheetOpen: boolean;
+  /** A danger count in the navigation: More shows its dot. */
+  readonly attention: boolean;
+}
+
+/**
+ * The phone's tab bar (A2 §7.1, v3 §3.6): the links the server offered —
+ * Overview, My work and, once `/board` ships, Board — then Search and More,
+ * which are buttons that open the palette and the navigation sheet, so a
+ * phone reaches everything with no ☰ hunt. Four tabs while the Board is
+ * pending, five after.
+ */
+export function deskTabs(links: readonly NavItem[], actions: DeskTabActions): TabItem[] {
+  return [
+    ...links,
+    { id: 'search', label: 'Search', icon: 'search', haspopup: 'dialog', onSelect: actions.openSearch },
+    {
+      id: 'more',
+      label: 'More',
+      icon: 'menu',
+      haspopup: 'dialog',
+      controls: NAV_SHEET_ID,
+      expanded: actions.sheetOpen,
+      onSelect: () => setNavigationSheetOpen(true),
+      ...(actions.attention ? { dot: { label: 'something needs you' } } : {}),
+    },
+  ];
 }
 
 /* ------------------------------------------------------------ Lazy pieces */
@@ -169,14 +267,25 @@ function useWanted(): [boolean, boolean, (open: boolean) => void] {
   return [wanted, open, change];
 }
 
-/** `/api/session/login?redirectTo=<this page>`, kept current as the person moves around. */
-function useSignInHref(): string {
+/**
+ * "Sign in again" for a page: the login route, told to come back here. In a
+ * demo it says so (`demo=1`, the shape of `signInAgainHref` in
+ * `@itsm/contracts/demo`), and the BFF reopens the demo instead of sending
+ * a visitor to an identity provider (A3-S2).
+ */
+export function signInHrefFor(path: string, demo: boolean): string {
+  const query = new URLSearchParams({ redirectTo: path });
+  if (demo) query.set('demo', '1');
+  return `/api/session/login?${query.toString()}`;
+}
+
+/** The sign-in link for this page, kept current as the person moves around. */
+function useSignInHref(demo: boolean): string {
   const pathname = usePathname();
-  const [href, setHref] = useState('/api/session/login');
+  const [href, setHref] = useState(() => signInHrefFor('/', demo));
   useEffect(() => {
-    const here = `${window.location.pathname}${window.location.search}`;
-    setHref(`/api/session/login?redirectTo=${encodeURIComponent(here)}`);
-  }, [pathname]);
+    setHref(signInHrefFor(`${window.location.pathname}${window.location.search}`, demo));
+  }, [pathname, demo]);
   return href;
 }
 
@@ -194,13 +303,40 @@ export function isPersonalKey(key: string): boolean {
   return isRecentsKey(key) || isDismissalKey(key) || isDisclosureKey(key) || key.startsWith('itsm-wb-');
 }
 
+/**
+ * In a demo, forget this device's copies of the visit's work when the data is
+ * reset under it (S11, A3 §6.10): the demo bar announces a new generation,
+ * and the clearing it waits for runs here, where the app's own keys are
+ * known. The listener and the clearing are both fetched only in a demo: the
+ * listener comes from the bar's own module, which a demo page loads anyway.
+ */
+function useDemoResetClearing(demo: boolean): void {
+  useEffect(() => {
+    if (!demo) return undefined;
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    void import(/* webpackExports: ["onDemoGenerationChange"] */ '@itsm/ui/shell').then(({ onDemoGenerationChange }) => {
+      if (cancelled) return;
+      stop = onDemoGenerationChange((generation) =>
+        import('@itsm/pwa/demo').then(({ clearDemoLocalData }) => clearDemoLocalData({ generation, alsoKeys: isPersonalKey })),
+      );
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [demo]);
+}
+
 /* ------------------------------------------------------------------- Frame */
 
-export function DeskShell({ tenantName, switcher, user, teams, can, children }: DeskShellProps): ReactNode {
+export function DeskShell({ areas, frame, workspace, systemBar, context, user, teams, can, children }: DeskShellProps): ReactNode {
   const { router } = useItsm();
   const { prefs, setPrefs } = useTheme();
   const pathname = usePathname();
-  const signInHref = useSignInHref();
+  const demo = areas.demo;
+  const signInHref = useSignInHref(demo);
+  useDemoResetClearing(demo);
 
   /* Counts: on mount, every minute, on focus, and after live ticket changes. */
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
@@ -213,10 +349,7 @@ export function DeskShell({ tenantName, switcher, user, teams, can, children }: 
     retry: shouldRetry,
   });
   useCountsFollowLive();
-  const nav = useMemo(
-    () => deskNavModel({ canReadTickets: can.readTickets, teams, counts: counts.data?.counts ?? {} }),
-    [can.readTickets, teams, counts.data],
-  );
+  const nav = useMemo(() => navWithCounts(frame.nav, counts.data?.counts ?? {}), [frame.nav, counts.data]);
 
   /* The palette, the new-ticket sheet and the sign-out question, each loaded on first use. */
   const [paletteWanted, paletteOpen, setPaletteOpen] = useWanted();
@@ -236,7 +369,7 @@ export function DeskShell({ tenantName, switcher, user, teams, can, children }: 
     openNewTicket();
   }, [pathname, openNewTicket]);
 
-  /* Availability, shared by the pill and the palette. */
+  /* Availability, shared by the pill, the account menu and the palette. */
   const availability = useAvailability({ userId: user.id, canRead: can.readAvailability, canSet: can.setAvailability });
 
   /* Connection: the live stream's state, the outbox's queue, and whether the session has ended. */
@@ -286,6 +419,47 @@ export function DeskShell({ tenantName, switcher, user, teams, can, children }: 
     setDiscarding(null);
   }, []);
 
+  /* The phone's tab bar: the server's links, then Search and More. */
+  const navigationSheetOpen = useNavigationSheetOpen();
+  const attention = hasDangerCount(nav);
+  const bottomTabs = useMemo(
+    () => deskTabs(frame.tabs, { openSearch: openPalette, sheetOpen: navigationSheetOpen, attention }),
+    [frame.tabs, openPalette, navigationSheetOpen, attention],
+  );
+
+  /* Help (A2 §5.2.6): the articles in the Help Portal, the keys, and in a demo the site. */
+  const { links } = frame;
+  const help = useMemo<MenuItemSpec[]>(
+    () => [
+      ...(links.knowledge
+        ? [{ id: 'knowledge', label: KNOWLEDGE_LABEL, icon: 'knowledge' as const, href: links.knowledge, ...(links.knowledgePersona ? { description: links.knowledgePersona } : {}) }]
+        : []),
+      { id: 'shortcuts', label: 'Keyboard shortcuts…', icon: 'keyboard', shortcut: '?', onSelect: () => setShortcutsDialogOpen(true) },
+      ...(links.howItWorks ? [{ id: 'how-it-works', label: 'How the demo works', icon: 'help' as const, href: links.howItWorks }] : []),
+      ...(links.home ? [{ id: 'home', label: links.home.label, icon: 'home' as const, href: links.home.href }] : []),
+    ],
+    [links],
+  );
+
+  /* The account menu's own entry (A2 §8): availability, so a phone can set it too. */
+  const { status: availabilityStatus, set: setAvailability } = availability;
+  const accountItems = useMemo<MenuItemSpec[]>(
+    () =>
+      can.setAvailability
+        ? [
+            {
+              type: 'radio',
+              id: 'availability',
+              label: 'Availability',
+              value: availabilityStatus ?? '',
+              items: AVAILABILITY_CHOICES,
+              onValueChange: (value: string) => setAvailability(value as AvailabilityChoice),
+            },
+          ]
+        : [],
+    [can.setAvailability, availabilityStatus, setAvailability],
+  );
+
   /* The palette's view of all of the above. */
   const paletteDeps = useMemo<DeskPaletteDeps>(
     () => ({
@@ -295,6 +469,8 @@ export function DeskShell({ tenantName, switcher, user, teams, can, children }: 
       canSetAvailability: can.setAvailability,
       canReadPeople: can.readPeople,
       teams,
+      destinations: frame.destinations,
+      switchArea: frame.switchArea,
       prefs,
       setPrefs,
       openNewTicket,
@@ -304,21 +480,30 @@ export function DeskShell({ tenantName, switcher, user, teams, can, children }: 
       searchTickets: async (query) => (await api.tickets({ q: query, limit: 5 })).data,
       searchPeople: async (query) => api.users({ q: query, limit: 5 }),
     }),
-    [can, teams, prefs, setPrefs, openNewTicket, signOut, availability.set],
+    [can, teams, frame.destinations, frame.switchArea, prefs, setPrefs, openNewTicket, signOut, availability.set],
   );
 
   return (
     <SkipLinkRegistry value={registerSkipLinks}>
       <AppShell
         variant="sidebar"
-        brand={{ name: 'Workbench', ...(tenantName ? { tenant: tenantName } : {}), href: '/inbox', app: 'workbench', switcher }}
+        areas={areas}
+        brand={{ href: areas.areas.find((area) => area.current)?.href ?? '/overview', ...(workspace ? { workspace } : {}) }}
         nav={nav}
-        sidebarHeaderExtra={
-          can.createTickets ? <IconButton label="New ticket" icon="compose" shortcut="c" onClick={openNewTicket} /> : undefined
+        {...(systemBar ? { systemBar } : {})}
+        {...(context ? { context } : {})}
+        help={{ items: help }}
+        sidebarAction={
+          can.createTickets ? (
+            <Button variant="primary" iconStart="compose" iconEnd={<Kbd keys="c" size="sm" aria-hidden />} aria-keyshortcuts="C" onClick={openNewTicket}>
+              New ticket
+            </Button>
+          ) : undefined
         }
+        topBarAction={can.createTickets ? <IconButton label="New ticket" icon="compose" shortcut="c" onClick={openNewTicket} /> : undefined}
         search={{ placeholder: 'Search', shortcut: 'mod+k' }}
         onOpenSearch={openPalette}
-        bell={<DeskNotifications />}
+        bell={<DeskNotifications {...(links.notificationSettings ? { settingsHref: links.notificationSettings } : {})} />}
         status={
           <ConnectionStatus
             state={connection}
@@ -338,29 +523,34 @@ export function DeskShell({ tenantName, switcher, user, teams, can, children }: 
         user={{
           name: user.name,
           ...(user.detail ? { detail: user.detail } : {}),
+          items: accountItems,
           appearance: true,
           density: true,
           shortcuts: true,
+          ...(links.knowledge ? { help: { href: links.knowledge, label: KNOWLEDGE_LABEL } } : {}),
           signOut: { action: SIGN_OUT_ACTION, beforeSubmit: beforeSignOut },
+          ...(demo ? { demo: { resetEvent: DEMO_RESET_REQUEST_EVENT } } : {}),
         }}
         banner={
           sessionEnded ? (
             <GlobalBanner
               tone="warning"
               icon="log-in"
-              title="Your session ended"
-              body="Sign in again to carry on. Anything you were writing is kept on this device."
-              action={{ id: 'sign-in', label: 'Sign in again' }}
+              title={demo ? DESK_DEMO_COPY.sessionEnded : 'Your session ended'}
+              body={demo ? DESK_DEMO_COPY.sessionEndedBody : 'Sign in again to carry on. Anything you were writing is kept on this device.'}
+              action={{ id: 'sign-in', label: demo ? DESK_DEMO_COPY.continueDemo : 'Sign in again' }}
               onAction={signIn}
               live="polite"
             />
           ) : undefined
         }
+        bottomTabs={bottomTabs}
         skipLinks={skipLinks}
       >
         <DeskHotkeys
           canReadTickets={can.readTickets}
           canCreate={can.createTickets}
+          destinations={frame.destinations}
           navigate={navigate}
           openNewTicket={openNewTicket}
           openSearch={openPalette}

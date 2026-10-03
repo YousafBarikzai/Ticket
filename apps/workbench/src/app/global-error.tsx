@@ -14,6 +14,9 @@ import { Button, StatusScreen } from '@itsm/ui';
  * page that almost never shows. Should there be none, the bare URL still
  * serves the current sheet.
  */
+/** The document's title, naming the area as `AREAS.workbench.name` does (spelt out for the reason `error.tsx` gives). */
+const GLOBAL_ERROR_TITLE = 'Something went wrong · Service Desk';
+
 function currentStylesheet(): string {
   if (typeof document === 'undefined') return '/itsm-ui.css';
   return document.querySelector('link[rel="stylesheet"][href^="/itsm-ui.css"]')?.getAttribute('href') ?? '/itsm-ui.css';
@@ -29,7 +32,7 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
   return (
     <html lang="en-GB">
       <head>
-        <title>Something went wrong · Workbench</title>
+        <title>{GLOBAL_ERROR_TITLE}</title>
         <link rel="stylesheet" href={stylesheet} precedence="itsm" />
       </head>
       <body>

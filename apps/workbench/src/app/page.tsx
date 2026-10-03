@@ -1,6 +1,11 @@
 import { redirect } from 'next/navigation';
+import { AREAS } from '@itsm/contracts/areas';
 
-/** The workbench opens on the inbox; there is no home page worth the click (SPEC §5.3). */
+/**
+ * The Service Desk opens on its Overview (v3 §3.5, §7.1): `/` answers 307 to
+ * the area's home, which is also where a sign-in lands (`bff.ts`) and where
+ * an installed app starts (`manifest.ts`).
+ */
 export default function Home(): never {
-  redirect('/inbox');
+  redirect(AREAS.workbench.home);
 }

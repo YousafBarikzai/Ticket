@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import { AREAS, PRODUCT_NAME } from '@itsm/contracts/areas';
 import { uiStylesheetVersion } from '@itsm/ui/styles';
 import { themeInitScript } from '@itsm/ui/theme';
+import { colour } from '@itsm/ui/tokens';
 import { interExt, interLatin, jakartaExt, jakartaLatin } from './fonts.js';
 import './globals.css';
 
@@ -23,17 +25,21 @@ import './globals.css';
  *      fallback, so the swap does not move text.
  *
  * No session and no provider here: the providers live in the `(desk)` group
- * layout, so `/offline`, `/sign-in` and `/signed-out` stay static and light
- * (D11). `suppressHydrationWarning` is for the attributes the script adds,
+ * layout, so `/offline`, `/sign-in`, `/signed-out` and `/demo` carry no
+ * frame. `suppressHydrationWarning` is for the attributes the script adds,
  * which the server cannot know.
+ *
+ * Every title names the area, "Service Desk" (D1, v3 §3.1), from `AREAS`.
  */
 
+const AREA = AREAS.workbench.name;
+
 export const metadata: Metadata = {
-  title: { default: 'Workbench', template: '%s · Workbench' },
+  title: { default: AREA, template: `%s · ${AREA}` },
   description: 'Your tickets, your teams’ queues and the work in front of you.',
-  applicationName: 'Workbench',
-  appleWebApp: { capable: true, title: 'Workbench', statusBarStyle: 'default' },
-  // The workbench is behind a session; nothing here belongs in an index.
+  applicationName: `${AREA} — ${PRODUCT_NAME}`,
+  appleWebApp: { capable: true, title: AREA, statusBarStyle: 'default' },
+  // The Service Desk is behind a session; nothing here belongs in an index.
   robots: { index: false, follow: false },
 };
 
@@ -42,10 +48,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   colorScheme: 'light dark',
-  // The canvas colour of each scheme, so the browser's own chrome matches the page.
+  // The canvas of each scheme, from the tokens, so the browser's own chrome matches the page.
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#F5F5F7' },
-    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+    { media: '(prefers-color-scheme: light)', color: colour.apple.surface.canvas },
+    { media: '(prefers-color-scheme: dark)', color: colour['apple-dark'].surface.canvas },
   ],
 };
 

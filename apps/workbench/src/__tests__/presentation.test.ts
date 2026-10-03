@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CANONICAL_STATES } from '@itsm/module-ticket';
+import { AREAS } from '@itsm/contracts/areas';
 import { ApiError, type TimelineEventEntry } from '@itsm/sdk';
 import {
+  HELP_PORTAL_NAME,
   STATE_LABEL,
   ageOf,
   categoryIntent,
@@ -54,10 +56,13 @@ describe('how a ticket reads', () => {
     expect(isWaitingState('in_progress')).toBe(false);
   });
 
-  it('shouts for P1 and nothing else', () => {
+  it('shouts for P1 and nothing else, and draws P2 in high, never amber (D5)', () => {
     expect(priorityIntent('P1')).toBe('danger');
+    expect(priorityIntent('P2')).toBe('high');
+    expect(priorityIntent('p2')).toBe('high');
     expect(priorityEmphasis('P1')).toBe('solid');
     expect(priorityEmphasis('P2')).toBe('subtle');
+    expect(priorityIntent('P3')).toBe('neutral');
     expect(priorityIntent('P4')).toBe('neutral');
     expect(priorityLabel('p2')).toBe('P2 · High');
     expect(priorityLabel('Urgent')).toBe('Urgent');
@@ -65,8 +70,10 @@ describe('how a ticket reads', () => {
     expect(isUrgentPriority('P3')).toBe(false);
   });
 
-  it('colours by category, which is the stable thing', () => {
-    expect(categoryIntent('paused')).toBe('warning');
+  it('colours by category, which is the stable thing; waiting is hold, never amber (D5)', () => {
+    expect(categoryIntent('paused')).toBe('hold');
+    expect(categoryTone('paused')).toBe('hold');
+    expect(categoryIntent('open')).toBe('info');
     expect(categoryIntent('resolved')).toBe('success');
     expect(categoryIntent('something-new')).toBe('neutral');
     expect(categoryTone('open')).toBe('info');
@@ -83,7 +90,20 @@ describe('how a ticket reads', () => {
     expect(channelLabel('voice')).toBe('Phone');
     expect(channelLabel('carrier_pigeon')).toBe('Carrier pigeon');
     expect(replyChannelLine('email')).toBe('Replying by email');
-    expect(replyChannelLine('portal')).toBe('Visible in the portal');
+    expect(replyChannelLine('portal')).toBe('Visible in the Help Portal');
+  });
+
+  it('names the Help Portal as the area model does (D1)', () => {
+    expect(HELP_PORTAL_NAME).toBe(AREAS.portal.name);
+    expect(replyChannelLine('portal')).toBe(`Visible in the ${AREAS.portal.name}`);
+  });
+
+  it('keeps amber for SLA risk alone: no category or priority is drawn in warning', () => {
+    for (const category of ['open', 'paused', 'resolved', 'closed', 'something-new']) {
+      expect(categoryIntent(category), category).not.toBe('warning');
+      expect(categoryTone(category), category).not.toBe('warning');
+    }
+    for (const priority of ['P1', 'P2', 'P3', 'P4', 'Urgent']) expect(priorityIntent(priority), priority).not.toBe('warning');
   });
 
   it('reads an age at a glance', () => {
