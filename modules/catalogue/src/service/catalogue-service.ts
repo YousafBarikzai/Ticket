@@ -431,6 +431,11 @@ export async function submitRequest(
       if (!form) throw new ValidationError('the form for this request is no longer published');
 
       const definition = form.version.document as unknown as FormDefinition;
+      // The body is `z.record(z.unknown())`: an answer of the wrong JSON type
+      // (an object where text was asked for) is refused here, as the import
+      // path refuses it, rather than stored and described as "[object Object]".
+      const misfits = answerTypeErrors(definition, answers, (name) => name.replace(/^answers\./, ''));
+      if (misfits.length > 0) throw new ValidationError('some answers need attention', misfits);
       const outcome = validateSubmission(definition, answers, { user: facts as never });
       if (!outcome.ok) {
         throw new ValidationError(
@@ -767,11 +772,13 @@ async function insertImportedSubmission(
  * Answers whose JSON type is not the one their question holds.
  *
  * `validateSubmission` checks a value's length, pattern and options, but takes
- * its type on trust from the browser that built it. An import has no browser:
+ * its type on trust from the browser that built it. A request body can say
+ * anything, and an import has no browser at all:
  * its answers come from a file or a generator, and an object where text was
  * asked for would be stored as it came and described as "[object Object]" —
  * or, shaped like `{ href }`, be a link in content nobody authored (D23). So
- * the import path checks each answer against its question's type first.
+ * both the live submit and the import check each answer against its
+ * question's type first.
  */
 function answerTypeErrors(
   definition: FormDefinition,

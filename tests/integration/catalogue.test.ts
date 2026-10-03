@@ -223,6 +223,16 @@ describe('the server validates the form, not the browser', () => {
     expect(response.status).toBe(422);
   });
 
+  it('refuses an answer of the wrong type rather than storing "[object Object]"', async () => {
+    const response = await request('/api/v1/catalogue/system-access/submit', {
+      method: 'POST',
+      token: tenant.people.requester!.token,
+      body: { answers: { system: 'crm', accessLevel: { href: 'https://evil.example' } } },
+    });
+    expect(response.status).toBe(422);
+    expect(JSON.stringify(response.body)).toContain('wrong_type');
+  });
+
   it('drops an answer to a field the person could not see', async () => {
     // `justification` is hidden when the level is `read`. A stale value left in
     // the browser must not be stored, and must not fail the submission either.
