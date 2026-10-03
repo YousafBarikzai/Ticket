@@ -52,6 +52,15 @@ export const DEMO_RELOAD_DELAY_MS = 1_200;
 export const DEMO_CLEAR_TIMEOUT_MS = 3_000;
 /** A reset this page started (or was told of) that no poll has seen after this long is forgotten. */
 export const DEMO_PENDING_LIMIT_MS = 6 * 60_000;
+/** A status read that has not answered by now is no answer: the next poll tries again. */
+export const DEMO_STATUS_TIMEOUT_MS = 8_000;
+/** The reset request's own limit; past it the confirm says it failed and can be tried again. */
+export const DEMO_RESET_TIMEOUT_MS = 15_000;
+
+/** An abort signal that fires after `ms`, where the browser has one (all current ones do). */
+function deadline(ms: number): AbortSignal | undefined {
+  return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined;
+}
 
 const STATES: readonly DemoState[] = ['ready', 'building', 'preparing', 'paused'];
 
@@ -111,7 +120,13 @@ export interface DemoStatusRead {
 export async function readDemoStatus(endpoint: string, fetcher: FetchLike = pageFetch): Promise<DemoStatusRead | null> {
   const started = Date.now();
   try {
-    const response = await fetcher(endpoint, { headers: { accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
+    const signal = deadline(DEMO_STATUS_TIMEOUT_MS);
+    const response = await fetcher(endpoint, {
+      headers: { accept: 'application/json' },
+      cache: 'no-store',
+      credentials: 'same-origin',
+      ...(signal ? { signal } : {}),
+    });
     const finished = Date.now();
     if (!response.ok) return null;
     const status = parseDemoStatus(await response.json());
@@ -146,12 +161,14 @@ async function jsonOf(response: Response): Promise<Record<string, unknown>> {
 export async function requestDemoReset(endpoint: string, fetcher: FetchLike = pageFetch): Promise<DemoResetOutcome> {
   let response: Response;
   try {
+    const signal = deadline(DEMO_RESET_TIMEOUT_MS);
     response = await fetcher(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({ confirm: 'RESET' }),
       credentials: 'same-origin',
       cache: 'no-store',
+      ...(signal ? { signal } : {}),
     });
   } catch {
     return { kind: 'failed' };
@@ -183,6 +200,66 @@ export async function requestDemoReset(endpoint: string, fetcher: FetchLike = pa
 /** "about 2 minutes", or "a few minutes" without an estimate (`demoEtaPhrase`, X13). */
 export function etaText(etaSec: number | null | undefined): string {
   return demoEtaPhrase(etaSec);
+}
+
+/**
+ * Why a visitor cannot reset right now, if they cannot (A2 §9.3): a reset
+ * is already running; the demo is paused or still being prepared; the
+ * 30-minute cooldown after any reset (D12, D28); the worker's backoff after
+ * a failed build.
+ *
+ * `now` is the server's clock (client clock + skew). The status is a
+ * snapshot, so its own `resetBlocked` goes stale as the cooldown runs out;
+ * the times decide whenever there are times.
+ */
+export function resetBlock(status: DemoStatusView | null, building: boolean, now: number): ResetBlock | null {
+  if (building || status?.state === 'building') return { kind: 'running' };
+  if (!status) return null;
+  if (status.state === 'paused' || status.state === 'preparing') return { kind: 'paused' };
+  const until = status.manualResetAvailableAt;
+  if (until !== null) {
+    if (until <= now) return null;
+    const since = status.lastResetAt;
+    const cooldownEnds = since === null ? null : since + status.cooldownSeconds * 1000;
+    // The cooldown explains the wait only when it ends when the wait does; a later end is the backoff's.
+    if (since !== null && cooldownEnds !== null && cooldownEnds > now && until <= cooldownEnds + 1000) {
+      return { kind: 'cooldown', since, until };
+    }
+    return { kind: 'backoff', until };
+  }
+  return status.resetBlocked ? { kind: 'backoff', until: null } : null;
+}
+
+const serverNow = (): number => Date.now() + demoBarState().skewMs;
+
+/** The bar's current `ResetBlock`, from the store. */
+export function currentResetBlock(): ResetBlock | null {
+  const state = demoBarState();
+  return resetBlock(state.status, state.building !== null, serverNow());
+}
+
+/** The sentence for the bar's current state, or `null` when Reset is available (the details popover's button). */
+export function currentResetReason(): string | null {
+  const block = currentResetBlock();
+  return block ? resetBlockText(block, serverNow()) : null;
+}
+
+let expiry: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Writes `resetBlocked` to the store for the trigger's `aria-disabled`, and
+ * sets a timer for the moment a cooldown or backoff runs out, so the button
+ * stops saying it is unavailable without waiting for the next poll.
+ */
+export function syncResetBlocked(): ResetBlock | null {
+  const block = currentResetBlock();
+  if (expiry !== undefined) clearTimeout(expiry);
+  expiry = undefined;
+  const until = block && (block.kind === 'cooldown' || block.kind === 'backoff') ? block.until : null;
+  if (until !== null) expiry = setTimeout(syncResetBlocked, Math.max(0, until - serverNow()) + 250);
+  const blocked = block !== null && block.kind !== 'running';
+  if (demoBarState().resetBlocked !== blocked) updateDemoBarState({ resetBlocked: blocked });
+  return block;
 }
 
 /** The sentence for a `ResetBlock` (A2 §9.3; `DEMO_COPY`). `now` is the server's clock. */
@@ -308,6 +385,7 @@ export function noteDemoStatus(read: DemoStatusRead, now = Date.now()): DemoBarS
         ? { etaText: etaText(pending.etaSec) }
         : null;
   updateDemoBarState({ status, skewMs, skewFrom: 'poll', building, pending });
+  syncResetBlocked();
   return demoBarState();
 }
 
@@ -436,9 +514,12 @@ export function startDemoWatch(options: DemoWatchOptions): () => void {
     else schedule();
   };
 
-  // A reset started from this page wants the 5-second pace at once, not after the next minute.
   const unsubscribe = subscribeDemoBarState(() => {
-    if (!stopped && !inFlight && fast() && !scheduledFast) schedule();
+    if (stopped) return;
+    // A reset that started or ended here changes whether Reset is available…
+    syncResetBlocked();
+    // …and one started from this page wants the 5-second pace at once, not after the next minute.
+    if (!inFlight && fast() && !scheduledFast) schedule();
   });
 
   document.addEventListener('visibilitychange', onVisibility);
@@ -447,6 +528,8 @@ export function startDemoWatch(options: DemoWatchOptions): () => void {
   return () => {
     stopped = true;
     if (timer !== undefined) clearTimeout(timer);
+    if (expiry !== undefined) clearTimeout(expiry);
+    expiry = undefined;
     unsubscribe();
     document.removeEventListener('visibilitychange', onVisibility);
   };

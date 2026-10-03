@@ -6,7 +6,7 @@ import { useId, type ReactElement, type ReactNode } from 'react';
 import { Icon } from '../icons/Icon.js';
 import { Popover } from '../overlays/Popover.js';
 import { Button } from '../web/Button.js';
-import { resetBlock, useDemoBarState } from './DemoBarControls.js';
+import { useDemoBarState } from './DemoBarControls.js';
 import { formatCountdown, useResetRemaining, type DemoClock } from './DemoCountdown.js';
 
 export interface DemoDetailsPopoverProps {
@@ -21,8 +21,15 @@ export interface DemoDetailsPopoverProps {
   readonly links: { readonly home?: string; readonly howItWorks?: string };
   /** Reset is offered in this session (a demo session whose route has not refused it). */
   readonly resetOffered: boolean;
-  /** Starts the bar's reset flow: its confirm, or its reason while it is unavailable. */
+  /** Starts the bar's reset flow, which says why when Reset is unavailable. */
   readonly onReset: () => void;
+  /**
+   * Why Reset is unavailable now, or `null` (the status watch's
+   * `currentResetReason`, once it has loaded): with it the button explains
+   * itself in place (X-80); without it a press goes to the bar's flow, which
+   * says the same.
+   */
+  readonly resetReason?: () => string | null;
 }
 
 const LONDON_PARTS = ['weekday', 'day', 'month', 'year', 'hour', 'minute'] as const;
@@ -88,7 +95,7 @@ function exploreLine(link: AreaLink): string {
   return `${who}${link.name}`;
 }
 
-function DetailsBody({ variant, clock, persona, areas, links, resetOffered, onReset }: Omit<DemoDetailsPopoverProps, 'trigger' | 'open' | 'onOpenChange'>): ReactNode {
+function DetailsBody({ variant, clock, persona, areas, links, resetOffered, onReset, resetReason }: Omit<DemoDetailsPopoverProps, 'trigger' | 'open' | 'onOpenChange'>): ReactNode {
   const exploreId = useId();
   const bar = useDemoBarState();
   const { remaining, target } = useResetRemaining(clock);
@@ -96,7 +103,7 @@ function DetailsBody({ variant, clock, persona, areas, links, resetOffered, onRe
   const session = variant === 'session';
   const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const { when, local } = resetWhen(clock, target, localZone);
-  const blocked = resetBlock(bar.status, bar.building !== null, now) !== null;
+  const reason = resetOffered && (bar.resetBlocked || bar.building !== null) ? (resetReason?.() ?? null) : null;
   const footer = bar.status ? lastResetLine(bar.status.lastResetAt, bar.status.lastResetReason, now) : null;
   const explore = session && areas ? areas.areas.filter((link) => link.persona) : [];
 
@@ -148,7 +155,7 @@ function DetailsBody({ variant, clock, persona, areas, links, resetOffered, onRe
       {(session && resetOffered) || links.howItWorks || links.home ? (
         <div className="itsm-DemoDetails__actions">
           {session && resetOffered ? (
-            <Button size="sm" variant="secondary" iconStart="history" aria-disabled={blocked ? 'true' : undefined} onClick={onReset}>
+            <Button size="sm" variant="secondary" iconStart="history" {...(reason ? { disabledReason: reason } : {})} onClick={onReset}>
               {DEMO_COPY.resetConfirm.confirm}
             </Button>
           ) : null}

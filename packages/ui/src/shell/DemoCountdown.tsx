@@ -114,7 +114,9 @@ export function useResetRemaining(clock: DemoClock): { readonly remaining: numbe
       }
       window.clearTimeout(timer);
       if (document.visibilityState === 'hidden') return;
-      timer = window.setTimeout(tick, SECOND - (((now % SECOND) + SECOND) % SECOND) + 5);
+      // The shown second changes when the server's clock passes a whole second (the reset is on one):
+      // tick a few milliseconds after the next one, or straight away when this reading sits on one.
+      timer = window.setTimeout(tick, ((SECOND - (((now % SECOND) + SECOND) % SECOND)) % SECOND) + 5);
     };
     const onVisibility = (): void => {
       window.clearTimeout(timer);
@@ -218,7 +220,7 @@ export function DemoCountdown({ clock }: DemoCountdownProps): ReactNode {
       <span className="itsm-visually-hidden" aria-live="polite" aria-atomic="true">
         {announcement}
       </span>
-      {busy && busyLine && building.etaText ? createPortal(<span className="itsm-DemoBar__eta">{building.etaText}</span>, busyLine) : null}
+      {busy && busyLine && building.etaText ? createPortal(<span className="itsm-DemoBar__eta"> {building.etaText}</span>, busyLine) : null}
     </>
   );
 }

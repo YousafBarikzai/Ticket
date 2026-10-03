@@ -59,18 +59,26 @@ export interface DemoBarState {
   /** A reset is running: the bar shows "Resetting now… {eta}". The words come from the lazy modules. */
   readonly building: { readonly etaText: string } | null;
   readonly pending: DemoPendingReset | null;
+  /**
+   * Reset is unavailable right now — the cooldown, the backoff, a pause —
+   * worked out by the lazy modules (`syncResetBlocked` in `demo-watch.ts`)
+   * from the status, so the trigger can say `aria-disabled` without the
+   * rules in the first load. A running reset counts through `building`.
+   */
+  readonly resetBlocked: boolean;
   /** The reset route answered 403 or 404: this deployment or session cannot reset, so Reset is not offered. */
   readonly resetHidden: boolean;
 }
 
-const INITIAL_STATE: DemoBarState = Object.freeze({
+const INITIAL_STATE: DemoBarState = {
   status: null,
   skewMs: 0,
   skewFrom: 'none',
   building: null,
   pending: null,
+  resetBlocked: false,
   resetHidden: false,
-});
+};
 
 let current: DemoBarState = INITIAL_STATE;
 const listeners = new Set<() => void>();
@@ -112,36 +120,15 @@ export function resetDemoBarStateForTesting(): void {
  * The four reasons a visitor cannot reset (A2 §9.3): a reset is already
  * running; the demo is paused or still being prepared; the 30-minute
  * cooldown after any reset (D12, D28); the worker's backoff after a failed
- * build. Pure numbers — the sentences are the lazy reset module's
- * (`DEMO_COPY`) — so the trigger can say `aria-disabled` from the first load.
- *
- * `now` is the server's clock (client clock + skew). The status is a
- * snapshot, so its own `resetBlocked` goes stale as the cooldown runs out;
- * the times decide whenever there are times.
+ * build. The rules and their sentences live in the lazy `demo-watch.ts`
+ * (`resetBlock`, `resetBlockText`); the type is here so the islands can
+ * pass one along.
  */
 export type ResetBlock =
   | { readonly kind: 'running' }
   | { readonly kind: 'paused' }
   | { readonly kind: 'cooldown'; readonly since: number; readonly until: number }
   | { readonly kind: 'backoff'; readonly until: number | null };
-
-export function resetBlock(status: DemoStatusView | null, building: boolean, now: number): ResetBlock | null {
-  if (building || status?.state === 'building') return { kind: 'running' };
-  if (!status) return null;
-  if (status.state === 'paused' || status.state === 'preparing') return { kind: 'paused' };
-  const until = status.manualResetAvailableAt;
-  if (until !== null) {
-    if (until <= now) return null;
-    const since = status.lastResetAt;
-    const cooldownEnds = since === null ? null : since + status.cooldownSeconds * 1000;
-    // The cooldown explains the wait only when it ends when the wait does; a later end is the backoff's.
-    if (since !== null && cooldownEnds !== null && cooldownEnds > now && until <= cooldownEnds + 1000) {
-      return { kind: 'cooldown', since, until };
-    }
-    return { kind: 'backoff', until };
-  }
-  return status.resetBlocked ? { kind: 'backoff', until: null } : null;
-}
 
 /* -------------------------------------------------------------------------
  * Events
@@ -153,10 +140,10 @@ export function resetBlock(status: DemoStatusView | null, building: boolean, now
  * holds them equal, because importing the menu here would put it in the
  * site's first load).
  */
-export const DEMO_BAR_EVENTS = Object.freeze({
+export const DEMO_BAR_EVENTS = {
   resetRequest: 'itsm:demo-reset-request',
   detailsRequest: 'itsm:demo-details-request',
-} as const);
+} as const;
 
 /**
  * Sent when this browser meets a newer demo generation (A3 §6.9–§6.10): the
@@ -220,7 +207,7 @@ const watchModule = lazyModule(() => import('./demo-watch.js'));
 
 type WatchModule = typeof import('./demo-watch.js');
 
-const DEFAULT_ENDPOINTS = Object.freeze({ status: '/api/demo/status', reset: '/api/demo/reset' } as const);
+const DEFAULT_ENDPOINTS = { status: '/api/demo/status', reset: '/api/demo/reset' } as const;
 
 /** How long the watch waits for an idle moment before it starts anyway (the portal prefetch pattern, A2 §9.6). */
 const WATCH_IDLE_TIMEOUT_MS = 8000;
@@ -277,19 +264,8 @@ export function DemoBarControls({ variant, clock, persona, generation, areas, en
   const bar = useDemoBarState();
   const [notice, setNotice] = useState<DemoNoticeSpec | null>(null);
   const [watch, setWatch] = useState<WatchModule | null>(null);
-  const [, setTick] = useState(0);
-
-  const now = Date.now() + bar.skewMs;
-  const block = session ? resetBlock(bar.status, bar.building !== null, now) : null;
+  const unavailable = bar.resetBlocked || bar.building !== null;
   const resetOffered = session && !bar.resetHidden;
-
-  // A cooldown ends on its own: re-render when it does, so the button stops saying it is unavailable.
-  const until = block && (block.kind === 'cooldown' || block.kind === 'backoff') ? block.until : null;
-  useEffect(() => {
-    if (until === null) return;
-    const handle = window.setTimeout(() => setTick((value) => value + 1), Math.max(0, until - (Date.now() + demoBarState().skewMs)) + 250);
-    return () => window.clearTimeout(handle);
-  }, [until]);
 
   const showNotice = (next: DemoNoticeSpec | null): void => {
     setNotice(next);
@@ -328,6 +304,12 @@ export function DemoBarControls({ variant, clock, persona, generation, areas, en
       stop?.();
     };
   }, [session, endpoints.status, generation]);
+
+  // A page re-rendered on the new generation (the BFF re-minted) no longer needs "Reload to see the fresh data".
+  useEffect(() => {
+    if (generation === undefined) return;
+    setNotice((current) => (current?.kind === 'stale' && current.generation !== undefined && current.generation <= generation ? null : current));
+  }, [generation]);
 
   // The account menu's Demo group: "Reset demo data…" and "Demo details".
   const latest = useRef({ details, reset, resetOffered });
@@ -369,7 +351,7 @@ export function DemoBarControls({ variant, clock, persona, generation, areas, en
       type="button"
       className="itsm-SystemBar__action itsm-DemoBar__reset"
       aria-haspopup="dialog"
-      aria-disabled={block ? 'true' : undefined}
+      aria-disabled={unavailable ? 'true' : undefined}
       {...props}
     >
       <Icon name="history" size={15} />
@@ -396,6 +378,7 @@ export function DemoBarControls({ variant, clock, persona, generation, areas, en
           links={links}
           resetOffered={resetOffered}
           onReset={() => window.dispatchEvent(new CustomEvent(DEMO_BAR_EVENTS.resetRequest))}
+          {...(watch ? { resetReason: watch.currentResetReason } : {})}
         />
       ) : (
         infoTrigger({ ...details.intentProps, 'aria-expanded': false })

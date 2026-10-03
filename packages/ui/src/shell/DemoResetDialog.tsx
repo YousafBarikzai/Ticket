@@ -6,8 +6,8 @@ import { announce } from '../a11y/announcer.js';
 import { ConfirmDialog } from '../overlays/ConfirmDialog.js';
 import { Popover } from '../overlays/Popover.js';
 import type { ConfirmSpec } from '../types.js';
-import { demoBarState, resetBlock, updateDemoBarState, type DemoNoticeSpec } from './DemoBarControls.js';
-import { etaText, readDemoStatus, requestDemoReset, resetBlockText, type FetchLike } from './demo-watch.js';
+import { demoBarState, updateDemoBarState, type DemoNoticeSpec } from './DemoBarControls.js';
+import { etaText, noteDemoStatus, readDemoStatus, requestDemoReset, resetBlock, resetBlockText, syncResetBlocked, type FetchLike } from './demo-watch.js';
 
 export interface DemoResetDialogProps {
   /** The bar's Reset button; the reason popover is anchored to it. */
@@ -76,10 +76,9 @@ export function DemoResetDialog({ trigger, open, onOpenChange, endpoints, onNoti
     void (async () => {
       const read = await readDemoStatus(endpoints.status, fetcher);
       if (id !== run.current) return;
-      const state = demoBarState();
-      const status = read?.status ?? state.status;
-      if (read) updateDemoBarState({ status: read.status, ...(read.status.state === 'building' ? { building: { etaText: etaText(read.status.build?.etaSec) } } : {}) });
-      const block = resetBlock(status, read ? read.status.state === 'building' : state.building !== null, serverNow());
+      // Noted like a poll: the skew, the building state, a reset this page already started.
+      const state = read ? noteDemoStatus(read) : demoBarState();
+      const block = resetBlock(state.status, state.building !== null, serverNow());
       if (block) showReason(resetBlockText(block, serverNow()));
       else setPhase('confirm');
     })();
@@ -93,6 +92,7 @@ export function DemoResetDialog({ trigger, open, onOpenChange, endpoints, onNoti
           building: { etaText: etaText(outcome.etaSec) },
           pending: { generation: outcome.nextGeneration, since: Date.now(), etaSec: outcome.etaSec, mine: true },
         });
+        syncResetBlocked();
         announce(DEMO_COPY.resetStarted(outcome.etaSec));
         return;
       case 'running': {
@@ -102,13 +102,13 @@ export function DemoResetDialog({ trigger, open, onOpenChange, endpoints, onNoti
           building: { etaText: etaText(etaSec) },
           pending: { generation: live && live.generation !== null ? live.generation + 1 : null, since: Date.now(), etaSec, mine: false },
         });
+        syncResetBlocked();
         onNotice({ kind: 'running', text: DEMO_COPY.resetRunning });
         return;
       }
       case 'refused': {
         const read = await readDemoStatus(endpoints.status, fetcher);
-        if (read) updateDemoBarState({ status: read.status });
-        const status = read?.status ?? demoBarState().status;
+        const status = (read ? noteDemoStatus(read) : demoBarState()).status;
         const now = serverNow();
         const block =
           resetBlock(status, false, now) ??
