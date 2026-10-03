@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   assertMethodAllowed,
   assertSameOrigin,
+  codedProblemBody,
+  FORWARDED_REQUEST_HEADERS,
   forwardRequestHeaders,
   forwardResponseHeaders,
+  problemCodeOf,
+  PROBLEM_TYPE_BASE,
   ProxyRefused,
   refusalBody,
   targetPathFor,
@@ -136,5 +140,64 @@ describe('methods and refusals', () => {
   it('refuses in the same shape the API refuses in', () => {
     const body = refusalBody(new ProxyRefused(403, 'nope'), 'corr-3');
     expect(body).toMatchObject({ type: 'about:blank', title: 'Forbidden', status: 403, detail: 'nope', correlationId: 'corr-3' });
+  });
+});
+
+describe('the demo’s rows the proxy rules keep (SPEC §4.5 X6, X7)', () => {
+  it('X6 never proxies the API’s demo routes: /api/demo/v1/… is not /api/v1', () => {
+    expect(() => targetPathFor(['api', 'demo', 'v1', 'reset'])).toThrow(ProxyRefused);
+    expect(() => targetPathFor(['api', 'demo', 'v1', 'status'])).toThrow(/nothing else/);
+  });
+
+  it('X7 forwards no address, no browser string and no cookie: the allow-list names none of them', () => {
+    for (const name of ['x-forwarded-for', 'x-real-ip', 'forwarded', 'user-agent', 'cookie', 'cf-connecting-ip', 'true-client-ip']) {
+      expect(FORWARDED_REQUEST_HEADERS.has(name)).toBe(false);
+    }
+    const out = forwardRequestHeaders(
+      new Headers({
+        'x-forwarded-for': '203.0.113.7, 10.0.0.1',
+        'x-real-ip': '203.0.113.7',
+        forwarded: 'for=203.0.113.7;proto=https',
+        'user-agent': 'Mozilla/5.0',
+        'cf-connecting-ip': '203.0.113.7',
+        cookie: '__Host-session=abc; __Host-itsm-demo=agent.2026-10-03',
+        accept: 'application/json',
+      }),
+      'itsmdemo_token',
+      'corr-x7',
+    );
+    expect([...out.keys()].sort()).toEqual(['accept', 'authorization', 'x-correlation-id']);
+  });
+});
+
+describe('reading an upstream problem’s code', () => {
+  it('takes the last segment of the problem type, as the SDK’s ApiError.code does', () => {
+    expect(problemCodeOf('{"type":"https://docs.itsm.example/problems/demo_reset","status":401}')).toBe('demo_reset');
+    expect(problemCodeOf('{"type":"https://docs.itsm.example/problems/demo_session_ended/"}')).toBe('demo_session_ended');
+    expect(problemCodeOf('{"type":"https://docs.itsm.example/problems/demo_reset?x=1#y"}')).toBe('demo_reset');
+  });
+
+  it.each([
+    ['no body', null],
+    ['an empty body', ''],
+    ['a body that is not JSON', '<html>proxy error</html>'],
+    ['a problem with no type', '{"title":"Unauthorized","status":401}'],
+    ['about:blank', '{"type":"about:blank"}'],
+    ['a type that is not a string', '{"type":42}'],
+    ['a URN with no path', '{"type":"urn:demo_reset"}'],
+    ['a JSON array', '[1,2]'],
+  ])('reads %s as no code at all', (_label, body) => {
+    expect(problemCodeOf(body)).toBeNull();
+  });
+
+  it('builds the BFF’s own coded problems in the API’s shape', () => {
+    expect(codedProblemBody(401, 'demo_session_ended', 'Unauthorized', 'ended', 'corr-1', { demo: true })).toEqual({
+      type: `${PROBLEM_TYPE_BASE}demo_session_ended`,
+      title: 'Unauthorized',
+      status: 401,
+      detail: 'ended',
+      correlationId: 'corr-1',
+      demo: true,
+    });
   });
 });

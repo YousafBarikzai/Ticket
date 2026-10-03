@@ -3,6 +3,7 @@ import { createBff } from '../bff.js';
 import {
   cookieAttributes,
   DEMO_COOKIE,
+  demoCookieValue,
   GENERIC_SIGN_IN_FAILURE,
   isSignInFailureReason,
   readCookie,
@@ -13,10 +14,13 @@ import {
   signInFailureSentence,
   violatesHostPrefix,
 } from '../cookies.js';
+import { DEMO_KEYS } from '@itsm/contracts/demo';
 import { memoryLoginCounter, setLoginCounter } from '../demo/handlers.js';
-import { memoryDemoTokenStore } from '../demo/memory-store.js';
-import { setDemoTokenStore } from '../demo/store.js';
-import { memorySessionStore, type SessionStore } from '../session.js';
+import { memoryDemoTokenStore, type MemoryDemoTokenStore } from '../demo/memory-store.js';
+import { forgetRemints } from '../demo/remint.js';
+import { DEMO_SETTING_DEFAULTS } from '../demo/settings.js';
+import { demoTokenHash, setDemoTokenStore } from '../demo/store.js';
+import { memorySessionStore, type Session, type SessionStore } from '../session.js';
 import { setSessionStore } from '../store.js';
 
 /**
@@ -56,6 +60,7 @@ function token(claims: Record<string, unknown>): string {
 const ACCESS = token({ tenant_id: 't-1', itsm_user_id: 'u-1', name: 'A Person' });
 
 let store: SessionStore;
+let tokens: MemoryDemoTokenStore;
 let upstream: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -64,7 +69,8 @@ beforeEach(() => {
   // Signing in counts against the L0 limiter in every mode, which reads the
   // day's IP salt from the demo store: both in memory, so no test reaches a
   // real Redis.
-  const tokens = memoryDemoTokenStore({ appName: APP.appName, clock: () => Date.now() });
+  tokens = memoryDemoTokenStore({ appName: APP.appName, clock: () => Date.now() });
+  forgetRemints();
   setDemoTokenStore(APP.appName, tokens);
   setLoginCounter(APP.appName, memoryLoginCounter(tokens.keyspace));
   upstream = vi.fn();
@@ -516,6 +522,8 @@ describe('signing in through an identity provider', () => {
         }),
       );
       expect(response.status).toBe(403);
+      // A refused request changes nothing, the re-entry cookie included.
+      expect(setCookies(response)).toEqual([]);
       await expect(store.get(id)).resolves.not.toBeNull();
       expect(endSessionCalls()).toHaveLength(0);
     });
@@ -532,6 +540,8 @@ describe('signing in through an identity provider', () => {
       // get in the way.
       expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out`);
       expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
+      // Every sign-out clears the demo's re-entry cookie too.
+      expect(setCookieFor(response, DEMO_COOKIE)).toContain('Max-Age=0');
       await expect(store.get(id)).resolves.toBeNull();
 
       const calls = endSessionCalls();
@@ -571,6 +581,7 @@ describe('signing in through an identity provider', () => {
       expect(response.status).toBe(303);
       expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out`);
       expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
+      expect(setCookieFor(response, DEMO_COOKIE)).toContain('Max-Age=0');
       expect(endSessionCalls()).toHaveLength(0);
     });
   });
@@ -745,5 +756,335 @@ describe('the reasons the signed-out page explains', () => {
     expect(RETRY_COOKIE).toBe('__Host-itsm-retry');
     expect(RETRY_COOKIE_SECONDS).toBe(60);
     expect(violatesHostPrefix(RETRY_COOKIE, cookieAttributes(RETRY_COOKIE_SECONDS))).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ The demo's rows of the sign-in routes */
+
+/**
+ * The rows the demo adds to the sign-in routes (SPEC §4.5): L0 (the sign-in
+ * limiter, in every mode), L1–L4, the demo's side of C5 and C9, and O2–O3,
+ * with the re-entry cookie `D` cleared by every real sign-in and every
+ * sign-out. The BFF here is a test app that declares itself the Service Desk
+ * (`area`), as an integration test's `it-…` app does.
+ */
+describe('the demo’s rows of the sign-in routes', () => {
+  const ISSUER = 'https://id.example.test/realms/handlers-demo';
+  const DEMO_ENV = {
+    NODE_ENV: 'development',
+    OIDC_ISSUER: ISSUER,
+    OIDC_CLIENT_ID: 'workbench',
+    OIDC_CLIENT_SECRET: 'shhh',
+    DEMO_MODE: 'on',
+  };
+  const TOKEN_ENDPOINT = `${ISSUER}/token`;
+  const LIVE = {
+    v: 1,
+    tenantId: '3f1c2a9e-5b7d-4e8f-9a0b-1c2d3e4f5a6b',
+    slug: 'demo',
+    generation: 1,
+    builtAt: Date.UTC(2026, 9, 2),
+    anchor: Date.UTC(2026, 9, 2),
+    lastResetAt: Date.UTC(2026, 9, 2),
+    lastResetReason: 'scheduled',
+    personas: {
+      employee: { userId: 'a1000000-0000-4000-8000-000000000001' },
+      agent: { userId: 'a1000000-0000-4000-8000-000000000002' },
+      admin: { userId: 'a1000000-0000-4000-8000-000000000003' },
+    },
+    agentTeamIds: [],
+  } as const;
+
+  const demoBff = (env: Record<string, string> = {}) =>
+    createBff({ ...APP, area: 'workbench' }, { TEST_ORIGIN: ORIGIN, API_BASE_URL: API, ...DEMO_ENV, ...env });
+
+  beforeEach(() => {
+    // One keyspace for sessions and tokens, as Redis is: the re-mint swaps
+    // session records in place.
+    setSessionStore(APP.appName, tokens.sessions);
+    store = tokens.sessions;
+    tokens.write(DEMO_KEYS.live, LIVE);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    upstream.mockImplementation(async (input: string) => {
+      const url = String(input);
+      if (url.includes('.well-known')) {
+        return json({ ...DISCOVERY, authorization_endpoint: `${ISSUER}/auth`, token_endpoint: TOKEN_ENDPOINT, end_session_endpoint: `${ISSUER}/logout` });
+      }
+      if (url.endsWith('/api/v1/auth/session')) return json(RECORDED, 201);
+      if (url === `${ISSUER}/logout`) return new Response(null, { status: 204 });
+      return json({ error: 'invalid_grant' }, 400);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  /** A demo session as the mint leaves it, slid by its first page so reading it changes nothing. */
+  async function demoSession(overrides: Partial<Session> = {}, id = 'demo-1'): Promise<Session> {
+    const now = Date.now();
+    const minted = await tokens.mint({ app: 'workbench', persona: 'agent', ipb: 'unknown', settings: DEMO_SETTING_DEFAULTS, now });
+    if (!minted.ok) throw new Error(`mint refused: ${minted.reason}`);
+    await tokens.sessions.put(
+      {
+        id,
+        kind: 'demo',
+        accessToken: minted.token,
+        refreshToken: null,
+        accessExpiresAt: minted.record.exp,
+        tenantId: minted.record.tenantId,
+        userId: minted.record.userId,
+        displayName: 'Alex Morgan',
+        createdAt: now,
+        persona: 'agent',
+        demoGeneration: 1,
+        demoSid: minted.record.sid,
+        lastTouchAt: now,
+        ...overrides,
+      },
+      900,
+    );
+    return (await demoBff().sessionFor(id))!;
+  }
+
+  async function realSession(overrides: Partial<Session> = {}, id = 'real-1'): Promise<Session> {
+    const session: Session = {
+      id,
+      kind: 'oidc',
+      accessToken: ACCESS,
+      refreshToken: 'rt-parked',
+      accessExpiresAt: Date.now() + 300_000,
+      tenantId: 't-1',
+      userId: 'u-1',
+      displayName: 'A Person',
+      createdAt: Date.now(),
+      ...overrides,
+    };
+    await tokens.sessions.put(session, 43_200);
+    return session;
+  }
+
+  function tokenExists(token: string): boolean {
+    return tokens.keyspace.exists(DEMO_KEYS.token(demoTokenHash(token)));
+  }
+
+  const login = (bff: ReturnType<typeof demoBff>, query: string, headers: Record<string, string> = {}) =>
+    bff.login(new Request(`${ORIGIN}/api/session/login?${query}`, { headers }));
+
+  const today = () => `${DEMO_COOKIE}=${demoCookieValue('agent')}`;
+
+  describe('L0, the sign-in limiter', () => {
+    it.each([
+      ['with the demo off', { DEMO_MODE: 'off' }],
+      ['with the demo on', {}],
+    ])('L0 answers the 61st sign-in in a minute from one network with 429, %s', async (_label, env) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.UTC(2026, 9, 3, 9, 15, 10));
+      const bff = demoBff(env);
+      const from = { 'x-forwarded-for': '203.0.113.50' };
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        expect((await login(bff, 'redirectTo=/overview', from)).status).toBe(302);
+      }
+      const refused = await login(bff, 'redirectTo=/overview', from);
+      expect(refused.status).toBe(429);
+      expect(refused.headers.get('retry-after')).toBe('50');
+      await expect(refused.json()).resolves.toMatchObject({
+        type: 'https://docs.itsm.example/problems/rate_limited',
+        status: 429,
+        retryAfterSec: 50,
+      });
+
+      // Another network is not held back by this one.
+      expect((await login(bff, 'redirectTo=/overview', { 'x-forwarded-for': '198.51.100.60' })).status).toBe(302);
+
+      // A BFF key, not a demo one: no `demo:rl:*` key is written, and the
+      // counter names a salted bucket, never the address.
+      const keys = tokens.keyspace.keys();
+      expect(keys.filter((key) => key.startsWith('demo:rl:'))).toEqual([]);
+      const counters = keys.filter((key) => key.startsWith(`bff:${APP.appName}:rl:login:`));
+      expect(counters).toHaveLength(2);
+      for (const key of counters) {
+        expect(key).toMatch(/^bff:test-app:rl:login:[0-9a-f]{16}:m:\d+$/);
+        expect(tokens.keyspace.pttl(key)).toBeLessThanOrEqual(120_000);
+        expect(tokens.keyspace.pttl(key)).toBeGreaterThan(0);
+      }
+      expect(keys.join('\n')).not.toContain('203.0.113.50');
+    });
+
+    it('L0 counts a fresh minute from nothing', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.UTC(2026, 9, 3, 9, 15, 59));
+      const bff = demoBff();
+      for (let attempt = 0; attempt < 61; attempt += 1) await login(bff, '', { 'x-forwarded-for': '203.0.113.51' });
+      vi.setSystemTime(Date.UTC(2026, 9, 3, 9, 16, 0));
+      expect((await login(bff, '', { 'x-forwarded-for': '203.0.113.51' })).status).toBe(302);
+    });
+
+    it('L0 lets the sign-in through when the counter cannot be reached', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      setLoginCounter(APP.appName, { hit: () => Promise.reject(new Error('ECONNREFUSED')) });
+      const response = await login(demoBff(), 'redirectTo=/overview');
+      expect(response.status).toBe(302);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('sign-in limiter could not count'));
+    });
+  });
+
+  it('L1 is a real sign-in asked for by name: it clears the re-entry cookie and goes to the provider, whatever else the link says', async () => {
+    const response = await login(demoBff(), 'account=1&demo=1&redirectTo=/tickets', { cookie: today() });
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get('location')!).origin + new URL(response.headers.get('location')!).pathname).toBe(`${ISSUER}/auth`);
+    expect(setCookieFor(response, DEMO_COOKIE)).toContain('Max-Age=0');
+  });
+
+  it('L2 sends a browser already in today’s demo straight on', async () => {
+    const session = await demoSession();
+    const response = await login(demoBff(), 'demo=1&redirectTo=/tickets/INC-0042', { cookie: `${SESSION_COOKIE}=${session.id}` });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/tickets/INC-0042`);
+  });
+
+  it('L3 sends a demo client to /demo, never to the identity provider', async () => {
+    const response = await login(demoBff(), 'demo=1&redirectTo=/tickets/INC-0042');
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/demo?persona=agent&demo=1&redirectTo=%2Ftickets%2FINC-0042&resumed=1`);
+    expect(upstream.mock.calls.some((call) => String(call[0]).includes('.well-known'))).toBe(false);
+  });
+
+  it('L3 also for a demo session a generation behind: /demo decides, the provider is never asked', async () => {
+    const session = await demoSession();
+    tokens.write(DEMO_KEYS.live, { ...LIVE, generation: 2 });
+    const response = await login(demoBff(), 'demo=1', { cookie: `${SESSION_COOKIE}=${session.id}` });
+    // Reading the session slid nothing (not due) and the generation moved on:
+    // not `S:demo✓`, so L3.
+    expect(new URL(response.headers.get('location')!).pathname).toBe('/demo');
+  });
+
+  it('L4 offers the demo back to a browser that was in it today, through the chooser', async () => {
+    const response = await login(demoBff(), 'redirectTo=/tickets', { cookie: today() });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/sign-in?redirectTo=%2Ftickets`);
+  });
+
+  it('L4 ignores yesterday’s re-entry cookie, and another app’s, and goes to the provider', async () => {
+    for (const cookie of [`${DEMO_COOKIE}=agent.2020-01-01`, `${DEMO_COOKIE}=${demoCookieValue('employee')}`]) {
+      const response = await login(demoBff(), 'redirectTo=/tickets', { cookie });
+      expect(new URL(response.headers.get('location')!).origin).toBe('https://id.example.test');
+    }
+  });
+
+  it('L2–L4 do not apply with the demo off: demo=1 and the cookie are ignored', async () => {
+    const response = await login(demoBff({ DEMO_MODE: 'off' }), 'demo=1&redirectTo=/tickets', { cookie: today() });
+    expect(new URL(response.headers.get('location')!).origin).toBe('https://id.example.test');
+  });
+
+  it('C5 does not count a demo session as a person already signed in: the stale callback restarts (C6)', async () => {
+    const session = await demoSession();
+    const response = await demoBff().callback(
+      new Request(`${ORIGIN}/api/session/callback?code=abc&state=invented`, { headers: { cookie: `${SESSION_COOKIE}=${session.id}` } }),
+    );
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/api/session/login?redirectTo=%2Fqueue`);
+  });
+
+  it('C9 revokes the demo session a real sign-in replaces, and clears the re-entry cookie', async () => {
+    const session = await demoSession();
+    const bff = demoBff();
+    const started = await login(bff, 'account=1&redirectTo=/tickets');
+    const state = new URL(started.headers.get('location')!).searchParams.get('state')!;
+    upstream.mockImplementation(async (input: string) => {
+      const url = String(input);
+      if (url === TOKEN_ENDPOINT) return json({ access_token: ACCESS, refresh_token: 'rt', expires_in: 300 });
+      if (url.endsWith('/api/v1/auth/session')) return json(RECORDED, 201);
+      return json({}, 404);
+    });
+    const response = await bff.callback(
+      new Request(`${ORIGIN}/api/session/callback?code=abc&state=${state}`, { headers: { cookie: `${SESSION_COOKIE}=${session.id}; ${today()}` } }),
+    );
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/tickets`);
+    expect(setCookieFor(response, DEMO_COOKIE)).toContain('Max-Age=0');
+    await expect(tokens.sessions.get(session.id)).resolves.toBeNull();
+    expect(tokenExists(session.accessToken)).toBe(false);
+    const id = readCookie(setCookieFor(response, SESSION_COOKIE)?.split(';')[0], SESSION_COOKIE)!;
+    await expect(tokens.sessions.get(id)).resolves.toMatchObject({ kind: 'oidc' });
+  });
+
+  describe('signing out of a demo', () => {
+    const logout = (bff: ReturnType<typeof demoBff>, cookie: string) =>
+      bff.logout(new Request(`${ORIGIN}/api/session/logout`, { method: 'POST', headers: { 'sec-fetch-site': 'same-origin', cookie } }));
+
+    it('O2 hands back the parked provider session once a refresh proves it still works', async () => {
+      const real = await realSession();
+      const session = await demoSession({ parkedSessionId: real.id });
+      const fresh = token({ tenant_id: 't-1', itsm_user_id: 'u-1', name: 'A Person' });
+      upstream.mockImplementation(async (input: string) => {
+        const url = String(input);
+        if (url === TOKEN_ENDPOINT) return json({ access_token: fresh, refresh_token: 'rt-new', expires_in: 300 });
+        if (url.endsWith('/api/v1/auth/session')) return json(RECORDED, 201);
+        return json({}, 404);
+      });
+
+      const response = await logout(demoBff(), `${SESSION_COOKIE}=${session.id}`);
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out?demo=1&restored=1`);
+      const restored = setCookieFor(response, SESSION_COOKIE)!;
+      expect(restored.split(';')[0]).toBe(`${SESSION_COOKIE}=${real.id}`);
+      expect(restored).toContain('Max-Age=43200');
+      expect(setCookieFor(response, DEMO_COOKIE)).toContain('Max-Age=0');
+
+      await expect(tokens.sessions.get(real.id)).resolves.toMatchObject({ kind: 'oidc', accessToken: fresh, refreshToken: 'rt-new' });
+      await expect(tokens.sessions.get(session.id)).resolves.toBeNull();
+      expect(tokenExists(session.accessToken)).toBe(false);
+      // The demo never asks the provider to end anything.
+      expect(upstream.mock.calls.some((call) => String(call[0]).endsWith('/logout'))).toBe(false);
+    });
+
+    it('O2 says the parked sign-in expired, and links a real sign-in, when its refresh is refused', async () => {
+      const real = await realSession();
+      const session = await demoSession({ parkedSessionId: real.id });
+      const response = await logout(demoBff(), `${SESSION_COOKIE}=${session.id}`);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out?demo=1&reason=parked_expired`);
+      expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
+      expect(setCookieFor(response, DEMO_COOKIE)).toContain('Max-Age=0');
+      await expect(tokens.sessions.get(real.id)).resolves.toBeNull();
+      await expect(tokens.sessions.get(session.id)).resolves.toBeNull();
+      expect(signInFailureSentence('parked_expired')).toBe('Your account’s sign-in expired while you explored; sign in again.');
+    });
+
+    it('O2 hands back a parked development session while its token is good', async () => {
+      const real = await realSession({ kind: 'dev', refreshToken: null });
+      const session = await demoSession({ parkedSessionId: real.id });
+      const response = await logout(demoBff(), `${SESSION_COOKIE}=${session.id}`);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out?demo=1&restored=1`);
+      expect(setCookieFor(response, SESSION_COOKIE)!.split(';')[0]).toBe(`${SESSION_COOKIE}=${real.id}`);
+    });
+
+    it('O2 does not hand back a parked session after twelve hours: that is O3', async () => {
+      const real = await realSession();
+      const session = await demoSession({ parkedSessionId: real.id, createdAt: Date.now() - 12 * 3_600_000 });
+      const response = await logout(demoBff(), `${SESSION_COOKIE}=${session.id}`);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out?demo=1`);
+    });
+
+    it('O3 ends a demo visit: the token is revoked, both cookies cleared, and no provider is asked', async () => {
+      const session = await demoSession();
+      const response = await logout(demoBff(), `${SESSION_COOKIE}=${session.id}`);
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe(`${ORIGIN}/signed-out?demo=1`);
+      expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
+      expect(setCookieFor(response, DEMO_COOKIE)).toContain('Max-Age=0');
+      await expect(tokens.sessions.get(session.id)).resolves.toBeNull();
+      expect(tokenExists(session.accessToken)).toBe(false);
+      expect(upstream.mock.calls.some((call) => String(call[0]).startsWith(ISSUER))).toBe(false);
+    });
+
+    it('O1 refuses a demo sign-out posted from another site and keeps the visit', async () => {
+      const session = await demoSession();
+      const response = await demoBff().logout(
+        new Request(`${ORIGIN}/api/session/logout`, { method: 'POST', headers: { 'sec-fetch-site': 'cross-site', cookie: `${SESSION_COOKIE}=${session.id}` } }),
+      );
+      expect(response.status).toBe(403);
+      expect(setCookies(response)).toEqual([]);
+      expect(tokenExists(session.accessToken)).toBe(true);
+    });
   });
 });
