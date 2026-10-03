@@ -231,6 +231,14 @@ describe('titles and slots', () => {
     }
   });
 
+  it('never names one site in a title and lets the description name another', () => {
+    for (const subcategory of SUBCATEGORY_KEYS) {
+      const text = TITLES[subcategory];
+      if (!text.titles.some((title) => /\b(London|Leeds|Bristol)\b/.test(title))) continue;
+      for (const template of [...text.descriptions, ...(text.phoned ?? [])]) expect(template, subcategory).not.toContain('{site}');
+    }
+  });
+
   it('offers values for every slot the content supplies, unique within each bank', () => {
     for (const [slot, values] of Object.entries(SLOTS)) {
       expect(values.length, slot).toBeGreaterThanOrEqual(3);

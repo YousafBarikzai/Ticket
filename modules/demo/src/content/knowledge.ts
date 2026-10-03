@@ -106,7 +106,7 @@ export const KNOWLEDGE = [
     keywords: ['meeting room', 'screen', 'display', 'teams room', 'hdmi', 'no signal', 'thames', 'severn', 'aire', 'avon'],
     service: 'microsoft-365',
     body: [
-      p('Every bookable room — Thames and Severn in London, Aire in Leeds and Avon in Bristol — has a screen with a Teams Rooms console on the table. You can join the meeting from the console or share straight from your laptop.'),
+      p('Every bookable meeting room — Thames, Severn, Aire and Avon — has a screen with a Teams Rooms console on the table. You can join the meeting from the console or share straight from your laptop.'),
       steps(
         ['Tap ', bold('Join'), ' on the console next to your meeting. It lists the room’s bookings for today.'],
         'To share, plug the USB-C cable on the table into your laptop. The screen switches over by itself within a few seconds.',

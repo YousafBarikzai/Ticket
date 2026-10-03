@@ -18,7 +18,10 @@ import type { SlotBank, TitleLibrary } from '../plan/content-types.js';
  * title and its description, so "New starter: {colleague}" and "{colleague}’s
  * line manager here" name one person. Values are written to fit the sentences
  * they land in: every `since` reads after "It’s been like this", every `site`
- * after "I’m at", every `floor` after "on".
+ * after "I’m at", every `floor` after "on". Where a subcategory's titles name
+ * a site ("Can’t print to PRN-LDS-02 (Leeds goods-in)"), its descriptions do
+ * not, so a ticket never says Leeds in its title and Bristol below it; the
+ * meeting rooms belong to no site for the same reason.
  */
 
 export const SLOTS = {
@@ -58,7 +61,7 @@ export const TITLES = {
       'Keep being asked to sign in to {app} again',
       'Locked out again this morning',
       'Laptop says my password is wrong but it works on my phone',
-      'Can’t sign in on the goods-in PC',
+      'Can’t sign in on a shared PC',
       'Sign-in page just loops back to the start',
       'New password not accepted on the VPN',
       'Please reset my password — back from leave and can’t get in',
@@ -123,7 +126,7 @@ export const TITLES = {
     descriptions: [
       'Hi, I’ve moved roles and need this for my new work. My manager has said it’s fine. Thanks',
       'Could you set this up please? {colleague} already has it, if it helps to copy their access.',
-      'Needed for my day-to-day work. I’m at {site} if you need me.',
+      'Needed for my day-to-day work. I’m around all day if you need me.',
       'As per the title, please. At the moment it says “{error}” when I try to open it.',
       'I’ve joined the team on {floor} and need the same access as everyone else here.',
     ],
@@ -152,12 +155,12 @@ export const TITLES = {
       'Everything you need should be in the form. HR have confirmed the dates; let me know if you need anything else from me.',
       'Raised on behalf of HR. Please make sure the IT side is ready for the date in the form.',
       'I’m {colleague}’s line manager. Please go ahead as per the form, and give me a shout if anything is unclear.',
-      'Details as per the form. They’re based at {site}, so please send or collect kit there.',
+      'Details as per the form. Please send or collect the kit at the site the form gives.',
       'Please see the title and form. Same access as the rest of the team unless the form says otherwise.',
     ],
     phoned: [
       'Called in by the line manager: details as per the title. Asked them to complete the form as well so HR have a record.',
-      'Phoned the desk on behalf of HR, as per the title. They’re based at {site}.',
+      'Phoned the desk on behalf of HR, as per the title. Dates confirmed with the line manager.',
     ],
   },
   'app-access': {
@@ -179,7 +182,7 @@ export const TITLES = {
     descriptions: [
       'I need this for my day-to-day work. My manager has approved it. Thanks!',
       'Hi, could you set this up please? {colleague} has the same access if it helps to copy theirs.',
-      'Just moved into the team at {site} and everyone else here has this. Read-only is fine to start with.',
+      'Just moved into the team and everyone else here has this. Read-only is fine to start with.',
       'As per the title. When I try now it says “{error}”.',
       'Needed for a project starting soon. Happy to answer any questions about it.',
     ],
@@ -406,14 +409,14 @@ export const TITLES = {
       'Label printer in the warehouse not printing',
     ],
     descriptions: [
-      'It’s happening for everyone on our side of {floor}. Others can print fine.',
-      'I’m at {site}. It’s been like this {since}.',
+      'It’s happening for everyone on our side of the office. Others can print fine.',
+      'It’s been like this {since}, and it’s holding up everyone who uses it.',
       'Tried turning the printer off and on, no change. {colleague} has the same problem.',
       'Message on the printer’s screen says “{error}”.',
       'Not urgent, but we need it for this afternoon’s post. Thanks.',
     ],
     phoned: [
-      'Called in: printer problem as per the title, at {site}. Caller has turned it off and on.',
+      'Called in: printer problem as per the title. Caller has turned it off and on.',
       'Phoned the desk: as per the title. Happening {since}.',
     ],
   },
@@ -429,7 +432,7 @@ export const TITLES = {
       'Mobile data not working abroad',
       'Need my SIM moved to a new phone',
       'Phone stuck on the Apple logo',
-      'Work phones for the warehouse supervisors',
+      'Work phones for the shift supervisors',
       'Voicemail not working on my work phone',
       'Company Portal says my phone isn’t compliant',
     ],
@@ -494,7 +497,7 @@ export const TITLES = {
     descriptions: [
       'This is holding up the finance team. It’s been like this {since}.',
       'Hi, as per the title. {colleague} has tried it too and gets the same.',
-      'We need this sorted today if at all possible. I’m at {site}.',
+      'We need this sorted today if at all possible. Thanks.',
       'Could someone in Business Applications have a look please?',
       'Message in Sage Intacct says “{error}”.',
     ],
@@ -548,7 +551,7 @@ export const TITLES = {
       'Goods-in screen won’t accept the delivery note number',
     ],
     descriptions: [
-      'This is holding up picking at {site}. It’s been like this {since}.',
+      'This is holding up picking. It’s been like this {since}.',
       'Happening on several scanners, not just one. {colleague} on the late shift saw it too.',
       'Message on the screen says “{error}”.',
       'We’ve got a lorry waiting, so anything quick would be great.',
@@ -556,7 +559,7 @@ export const TITLES = {
     ],
     phoned: [
       'Called in from the warehouse: WMS, as per the title. Message: “{error}”.',
-      'Phoned the desk from {site}: as per the title, happening {since}.',
+      'Phoned the desk from the warehouse floor: as per the title, happening {since}.',
     ],
   },
 
@@ -607,13 +610,13 @@ export const TITLES = {
     ],
     descriptions: [
       'It’s been like this {since}. Wired connections seem fine.',
-      'Hi, as per the title. I’m at {site} on {floor}.',
+      'Hi, as per the title. It’s the same for anyone who tries there.',
       '{colleague} has the same problem, so it isn’t just my laptop.',
       'Could someone take a look please? It’s affecting a few of us.',
       'Message on the laptop says “{error}”.',
     ],
     phoned: [
-      'Called in: Wi-Fi, as per the title. Caller is at {site}; wired works.',
+      'Called in: Wi-Fi, as per the title. Wired connections work.',
       'Phoned the desk: Wi-Fi problem as per the title, happening {since}.',
     ],
   },
@@ -635,13 +638,13 @@ export const TITLES = {
     ],
     descriptions: [
       'Several of us are affected, not just me. It’s been like this {since}.',
-      'This is stopping work at {site}. Please treat it as urgent.',
+      'This is stopping work here. Please treat it as urgent.',
       'Hi, as per the title. {colleague} checked the cables in the comms cupboard and the lights are on.',
       'Message on screen says “{error}”.',
       'Calls are dropping and systems are crawling. Can someone look urgently?',
     ],
     phoned: [
-      'Called in from {site}: site connectivity, as per the title. Several users affected.',
+      'Called in from the site: as per the title. Several users affected.',
       'Phoned the desk: as per the title, happening {since}. Passed to Network straight away.',
     ],
   },
@@ -722,7 +725,7 @@ export const TITLES = {
     descriptions: [
       'I’ve reported it to lost property. Please lock it so nobody can get into it.',
       'I think the asset tag is {device}. I’ve checked everywhere I’ve been today.',
-      'Really sorry. What do I need to do? I’m at {site} tomorrow.',
+      'Really sorry. What do I need to do? I’m back in the office tomorrow.',
       'It had my email and Teams on it. It is locked with a passcode.',
       'Reporting it straight away as the policy says. {colleague} has my desk number if you need to call.',
     ],
