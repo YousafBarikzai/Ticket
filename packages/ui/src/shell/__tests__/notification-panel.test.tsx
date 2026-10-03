@@ -79,7 +79,9 @@ const ago = (minutes: number): string => new Date(now - minutes * 60_000).toISOS
 const items: NotificationItem[] = [
   { id: 'n1', subject: 'Assigned to you: Printer jammed', eventType: 'ticket.assigned', ticketNumber: 'INC-004101', createdAt: ago(1), readAt: null },
   { id: 'n3', subject: 'Approved: Laptop', eventType: 'approval.decided', createdAt: ago(2), readAt: ago(1) },
-  { id: 'n2', subject: 'SLA breached: VPN down', eventType: 'sla.breached.lead', ticketNumber: 'INC-004102', createdAt: ago(3 * 24 * 60), readAt: null },
+  // A breach notice as the inbox serves it: the notifications module stores
+  // the event's own type, never the key of the rule that sent it.
+  { id: 'n2', subject: 'SLA breached: VPN down', eventType: 'sla.timer.breached', ticketNumber: 'INC-004102', createdAt: ago(3 * 24 * 60), readAt: null },
   { id: 'n4', subject: 'Customer replied on the VPN ticket', eventType: 'ticket.comment.added', createdAt: ago(4 * 24 * 60), readAt: ago(60) },
 ];
 

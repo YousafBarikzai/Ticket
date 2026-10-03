@@ -48,8 +48,17 @@ export interface NotificationCenterProps {
   readonly className?: string;
 }
 
-/** The event that makes a notification an emergency: an SLA breached on a ticket someone leads. */
-export const EMERGENCY_EVENT = 'sla.breached.lead';
+/**
+ * The event that makes a notification an emergency: an SLA breached.
+ *
+ * A notification row keeps the event it was sent for (`eventType` is the
+ * event's own type, `sla.timer.breached`), not the key of the rule that sent
+ * it: `sla.breached.lead` is the default rule, marked `isEmergency`, and no
+ * row ever carries it. Before v3 this constant held the rule key, so neither
+ * the desk's persistent breach toast nor the bells' danger dot ever lit. The
+ * inbox row has no urgency flag of its own, so the event type is the signal.
+ */
+export const EMERGENCY_EVENT = 'sla.timer.breached';
 
 /** The panel, fetched on intent (it is built on the Radix popover and sheet). */
 const panelModule = lazyModule(() => import('./NotificationPanel.js'));

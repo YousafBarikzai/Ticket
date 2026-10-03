@@ -58,7 +58,7 @@ async function loaded(): Promise<void> {
 const now = Date.now();
 const notifications: NotificationItem[] = [
   { id: 'n1', subject: 'Assigned to you: Printer jammed', body: 'Ada raised it from the portal.', eventType: 'ticket.assigned', createdAt: new Date(now - 60_000).toISOString(), readAt: null },
-  { id: 'n2', subject: 'SLA breached: VPN down', eventType: 'sla.breached.lead', createdAt: new Date(now - 90_000).toISOString(), readAt: null },
+  { id: 'n2', subject: 'SLA breached: VPN down', eventType: 'sla.timer.breached', createdAt: new Date(now - 90_000).toISOString(), readAt: null },
   { id: 'n3', subject: 'Approved: Laptop', eventType: 'approval.decided', createdAt: new Date(now - 3 * 86_400_000).toISOString(), readAt: new Date(now).toISOString() },
 ];
 
