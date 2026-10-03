@@ -213,8 +213,11 @@ const SERVER_SAFE = [
   'web/Skeleton.tsx',
   'web/IconSlot.tsx',
   'feedback/Illustration.tsx',
+  'shell/SignInLayout.tsx',
   'shell/SkipLinks.tsx',
   'shell/SystemBar.tsx',
+  'shell/DemoBar.tsx',
+  'shell/AreaList.tsx',
   'charts/ChartFigure.tsx',
   'charts/LineChart.tsx',
   'charts/AreaChart.tsx',
@@ -232,6 +235,10 @@ const SERVER_SAFE = [
   'charts/common.ts',
   'charts/markers.tsx',
   'charts/time.ts',
+  'charts/Bullet.tsx',
+  'charts/ChartCard.tsx',
+  'charts/DistributionBar.tsx',
+  'charts/Gauge.tsx',
   'theme/theme-script.ts',
   // Not the `theme` barrel: it re-exports `ThemeProvider`, a client module.
   // The script and the preference rules are what a server layout imports.

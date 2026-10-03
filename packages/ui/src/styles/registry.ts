@@ -48,8 +48,12 @@ import { toastStyles } from '../web/Toast.styles.js';
 import { tooltipStyles } from '../web/Tooltip.styles.js';
 import { areaChartStyles } from '../charts/AreaChart.styles.js';
 import { barChartStyles } from '../charts/BarChart.styles.js';
+import { bulletStyles } from '../charts/Bullet.styles.js';
+import { chartCardStyles } from '../charts/ChartCard.styles.js';
 import { chartFigureStyles } from '../charts/ChartFigure.styles.js';
+import { distributionBarStyles } from '../charts/DistributionBar.styles.js';
 import { donutChartStyles } from '../charts/DonutChart.styles.js';
+import { gaugeStyles } from '../charts/Gauge.styles.js';
 import { lineChartStyles } from '../charts/LineChart.styles.js';
 import { progressRingStyles } from '../charts/ProgressRing.styles.js';
 import { sparklineStyles } from '../charts/Sparkline.styles.js';
@@ -116,8 +120,11 @@ import { popoverStyles } from '../overlays/Popover.styles.js';
 import { sheetStyles } from '../overlays/Sheet.styles.js';
 import { splitButtonStyles } from '../overlays/SplitButton.styles.js';
 import { toasterStyles } from '../overlays/Toaster.styles.js';
+import { appTopBarStyles } from '../shell/AppTopBar.styles.js';
+import { areaSwitcherStyles } from '../shell/AreaSwitcher.styles.js';
 import { bottomDockStyles } from '../shell/BottomDock.styles.js';
 import { breadcrumbsStyles } from '../shell/Breadcrumbs.styles.js';
+import { demoBarStyles } from '../shell/DemoBar.styles.js';
 import { hierNavStyles } from '../shell/HierNav.styles.js';
 import { notificationCenterStyles } from '../shell/NotificationCenter.styles.js';
 import { pageHeaderStyles } from '../shell/PageHeader.styles.js';
@@ -125,6 +132,7 @@ import { routeFocusStyles } from '../shell/RouteFocus.styles.js';
 import { routeProgressStyles } from '../shell/RouteProgress.styles.js';
 import { searchTriggerStyles } from '../shell/SearchTrigger.styles.js';
 import { shortcutsDialogStyles } from '../shell/ShortcutsDialog.styles.js';
+import { signInLayoutStyles } from '../shell/SignInLayout.styles.js';
 import { skipLinksStyles } from '../shell/SkipLinks.styles.js';
 import { splitViewStyles } from '../shell/SplitView.styles.js';
 import { systemBarStyles } from '../shell/SystemBar.styles.js';
@@ -263,6 +271,10 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'charts/BarChart.styles.ts', css: barChartStyles },
   { module: 'charts/DonutChart.styles.ts', css: donutChartStyles },
   { module: 'charts/ProgressRing.styles.ts', css: progressRingStyles },
+  { module: 'charts/Gauge.styles.ts', css: gaugeStyles },
+  { module: 'charts/Bullet.styles.ts', css: bulletStyles },
+  { module: 'charts/DistributionBar.styles.ts', css: distributionBarStyles },
+  { module: 'charts/ChartCard.styles.ts', css: chartCardStyles },
   { module: 'charts/ChartFigure.styles.ts', css: chartFigureStyles },
   { module: 'shell/TopBar.styles.ts', css: topBarStyles },
   { module: 'shell/TabBar.styles.ts', css: tabBarStyles },
@@ -278,13 +290,17 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'shell/RouteFocus.styles.ts', css: routeFocusStyles },
   { module: 'shell/SkipLinks.styles.ts', css: skipLinksStyles },
   { module: 'shell/SystemBar.styles.ts', css: systemBarStyles },
+  { module: 'shell/DemoBar.styles.ts', css: demoBarStyles },
   { module: 'shell/ShortcutsDialog.styles.ts', css: shortcutsDialogStyles },
+  { module: 'shell/AreaSwitcher.styles.ts', css: areaSwitcherStyles },
+  { module: 'shell/AppTopBar.styles.ts', css: appTopBarStyles },
 
   // Patterns: composites built from the components above.
   { module: 'web/AppShell.styles.ts', css: appShellStyles },
   { module: 'data/FilterBar.styles.ts', css: filterBarStyles },
   { module: 'data/DataTable.styles.ts', css: dataTableStyles },
   { module: 'shell/PageHeader.styles.ts', css: pageHeaderStyles },
+  { module: 'shell/SignInLayout.styles.ts', css: signInLayoutStyles },
 
   { module: 'styles/utilities.styles.ts', css: utilityStyles },
 

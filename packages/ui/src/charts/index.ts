@@ -7,11 +7,16 @@
  */
 export { AreaChart, type AreaChartProps } from './AreaChart.js';
 export { BarChart, type BarChartProps, type BarDatum } from './BarChart.js';
+export { BulletBar, BulletList, measureBullet, type BulletBarProps, type BulletListProps, type BulletMeasure, type BulletRow } from './Bullet.js';
+export { CHART_HEIGHTS, ChartCard, type ChartCardProps, type ChartCardState } from './ChartCard.js';
 export { ChartFigure, type ChartFigureProps, type ChartFigureTable } from './ChartFigure.js';
 export { CHART_TABLE_DEFAULTS, type ChartTableCell, type ChartTableKind } from './ChartFigure.js';
 export type { ChartBand, ChartCommon, ChartEmptyReason, ChartMarker, ChartMarkerKind, ChartTarget, SeriesLook, SeriesStyle, TimeBucket } from './common.js';
+export { DistributionBar, type DistributionBarProps, type DistributionSegment } from './DistributionBar.js';
 export { DonutChart, type DonutChartProps, type DonutSegment } from './DonutChart.js';
+export { Gauge, gaugeArc, gaugeTone, gaugeZones, type GaugeBand, type GaugeProps, type GaugeRelativeBands, type GaugeTone } from './Gauge.js';
 export { LineChart, type ChartSeries, type LineChartProps } from './LineChart.js';
+export type { SeriesFill } from './LineChart.js';
 export { MARKER_TIER_HEIGHT, MarkerBackdrop, MarkerLayer, layoutMarkers, markerTableColumn, resolveBands, resolveMarkers, type MarkerAxis, type MarkerBackdropProps, type MarkerContext, type MarkerLayerProps, type MarkerLayout, type PlacedMarker, type ResolvedBand, type ResolvedMarker } from './markers.js';
 export { CHART_EMPTY_TEXT, ChartEmpty, ChartLegend, type ChartEmptyProps, type LegendItem, type LegendMark } from './parts.js';
 export { ProgressRing, type ProgressRingProps } from './ProgressRing.js';

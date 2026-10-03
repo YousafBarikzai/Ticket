@@ -3995,6 +3995,60 @@ model TenantProvisioningJob {
   @@map("tenant_provisioning_job")
 }
 
+/// The shared demo's generation ledger (D12, D19; A4 §3.4).
+///
+/// One row per attempt to build the demo's next generation: the nightly
+/// rebuild, a visitor's reset, an operator's. A PLATFORM table, like the
+/// tenant directory it describes: the column is `demo_tenant_id`,
+/// deliberately not `tenant_id`, so row-level security leaves the ledger
+/// alone and the query extension does not try to scope it (it is in
+/// `PLATFORM_MODELS`). The platform role writes it; the application role may
+/// only read it (`reassert_role_revokes()`).
+///
+/// No foreign key to `tenant`: a purged generation's tenant row is deleted,
+/// and its ledger row is the record that it existed.
+///
+/// One index Prisma cannot express lives only in the migration
+/// (20261002140000_v3_demo_generation): `demo_generation_succeeded`, unique on
+/// `generation` WHERE `status` IN ('live', 'retired', 'purged'), so two builds
+/// can never both go live as the same generation, while failed attempts at a
+/// number may repeat.
+model DemoGeneration {
+  id               String    @id @db.Uuid
+  /// Strictly increasing across generations that went live; equals the
+  /// tenant's `settings.demo.generation` and `demo:live.generation`.
+  generation       Int
+  demoTenantId     String    @map("demo_tenant_id") @db.Uuid
+  /// building | failed | live | retired | purged
+  status           String
+  /// initial | scheduled | catch-up | manual | operator
+  reason           String
+  /// 1 + the earlier attempts with the same job key, so a retried build gets a
+  /// job id BullMQ has not seen (Y-B3).
+  attempt          Int       @default(1)
+  seed             Int
+  /// T0: the instant the generation's story is told from.
+  anchor           DateTime  @db.Timestamptz(6)
+  scale            Decimal   @db.Decimal(4, 2)
+  generatorVersion String    @map("generator_version")
+  planHash         String?   @map("plan_hash")
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz(6)
+  swappedAt        DateTime? @map("swapped_at") @db.Timestamptz(6)
+  retiredAt        DateTime? @map("retired_at") @db.Timestamptz(6)
+  purgedAt         DateTime? @map("purged_at") @db.Timestamptz(6)
+  buildMs          Int?      @map("build_ms")
+  stepMs           Json      @default("{}") @map("step_ms")
+  checks           Json      @default("{}")
+  /// { step, message, at } for a failed attempt.
+  failure          Json?
+  /// Audit rows the purge left behind (the trail is append-only, D19).
+  auditRetained    Int?      @map("audit_retained")
+
+  @@index([status, startedAt(sort: Desc)], map: "demo_generation_status_idx")
+  @@map("demo_generation")
+}
+
 /// Organisations are a soft boundary INSIDE a tenant: nested, with a
 /// materialised path for subtree queries used by scoped permissions.
 model Organisation {

@@ -15,6 +15,7 @@ export * from './audit.js';
 export * from './events.js';
 export * from './redis.js';
 export * from './jobs.js';
+export * from './quiet.js';
 export * from './manifest.js';
 export * from './settings.js';
 export * from './limits.js';

@@ -77,6 +77,7 @@ const surface: Record<string, readonly string[]> = {
   './charts': [
     'StatCard', 'StatGrid', 'Sparkline', 'LineChart', 'AreaChart', 'BarChart', 'DonutChart', 'ProgressRing',
     'ChartFigure', 'Metric', 'MetricGrid',
+    'ChartCard', 'Gauge', 'BulletBar', 'BulletList', 'DistributionBar',
     'chartToneVar', 'chartToneOutline',
   ],
   './shell': [
@@ -84,6 +85,9 @@ const surface: Record<string, readonly string[]> = {
     'PageHeader', 'Breadcrumbs', 'TabNav', 'HierNav', 'RouteProgress', 'RouteFocus', 'SkipLinks', 'CommandPalette',
     'ShortcutsDialog',
     'SystemBar',
+    'DemoBar', 'onDemoGenerationChange',
+    'SignInLayout',
+    'AppTopBar', 'AreaList', 'AreaSwitcher', 'AreasProvider', 'ContextChip', 'areasFromV2Brand', 'useAreas',
   ],
   './forms': ['FormRenderer'],
   './workbench': ['AiSuggestionCard', 'SlaClock', 'describeRemaining'],
@@ -250,6 +254,11 @@ const stubs: readonly (readonly [string, ReactElement])[] = [
   ['DonutChart', <charts.DonutChart title="By channel" segments={[]} />],
   ['ProgressRing', <charts.ProgressRing value={0.5} label="Half" />],
   ['ChartFigure', <charts.ChartFigure title="Created" summary="Flat" table={{ columns: [], rows: [] }}>x</charts.ChartFigure>],
+  ['ChartCard', <charts.ChartCard title="Raised vs resolved" />],
+  ['Gauge', <charts.Gauge label="SLA met" value={null} />],
+  ['BulletBar', <charts.BulletBar label="Network" value={0.8} />],
+  ['BulletList', <charts.BulletList title="By team" rows={[]} />],
+  ['DistributionBar', <charts.DistributionBar label="Open by priority" segments={[]} />],
   ['TopBar', <shell.TopBar />],
   ['TabBar', <shell.TabBar items={[{ id: 'home', label: 'Home', href: '/' }]} />],
   ['BottomDock', <shell.BottomDock />],
@@ -265,6 +274,13 @@ const stubs: readonly (readonly [string, ReactElement])[] = [
   ['RouteFocus', <shell.RouteFocus />],
   ['SkipLinks', <shell.SkipLinks links={[{ label: 'Skip to content', targetId: 'main' }]} />],
   ['SystemBar', <shell.SystemBar label="Demo environment" />],
+  ['DemoBar', <shell.DemoBar variant="public" clock={{ nextResetAt: 86_400_000, serverNow: 0, periodMs: 86_400_000, resetLabel: '00:00 UK time', timeZone: 'Europe/London' }} />],
+  ['SignInLayout', <shell.SignInLayout>x</shell.SignInLayout>],
+  ['AppTopBar', <shell.AppTopBar areas={{ product: 'IT Service Management', current: 'admin', demo: false, visible: false, areas: [] }} nav={{ label: 'Administration', sections: [] }} />],
+  ['AreaList', <shell.AreaList model={{ product: 'IT Service Management', current: 'portal', demo: false, visible: false, areas: [] }} />],
+  ['AreaSwitcher', <shell.AreaSwitcher model={{ product: 'IT Service Management', current: 'portal', demo: false, visible: false, areas: [] }} display="card" />],
+  ['AreasProvider', <shell.AreasProvider value={null}>x</shell.AreasProvider>],
+  ['ContextChip', <shell.ContextChip label="Last 30 days" />],
   ['ShortcutsDialog', <shell.ShortcutsDialog open={false} onOpenChange={noop} />],
 ];
 

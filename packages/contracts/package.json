@@ -5,7 +5,7 @@
   "type": "module",
   "sideEffects": false,
   "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts", "./areas": "./src/areas.ts", "./demo": "./src/demo.ts", "./demo/schemas": "./src/demo-schemas.ts", "./forms": "./src/forms/index.ts", "./health": "./src/health.ts", "./links": "./src/links.ts", "./links/schemas": "./src/links-schemas.ts" },
+  "exports": { ".": "./src/index.ts", "./areas": "./src/areas.ts", "./demo": "./src/demo.ts", "./demo/schemas": "./src/demo-schemas.ts", "./forms": "./src/forms/index.ts", "./health": "./src/health.ts", "./links": "./src/links.ts", "./links/schemas": "./src/links-schemas.ts", "./marketing": "./src/marketing.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json", "test": "vitest run" },
   "dependencies": { "@itsm/expr": "workspace:*", "zod": "^3.24.1" }
 }

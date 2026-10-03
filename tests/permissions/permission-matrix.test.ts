@@ -503,6 +503,7 @@ const MATRIX: MatrixEntry[] = [
     allowed: ['lead', 'admin'],
     deniedStatus: { requester: 403, agent: 403, otherAgent: 403 },
   },
+  { what: 'batch metric queries (R4: one 403 for a reader with no analytics)', method: 'POST', path: () => '/api/v1/analytics/query/batch', body: () => ({ queries: [{ metricKey: 'tickets.created' }] }), allowed: ['lead', 'admin'], deniedStatus: { requester: 403, agent: 403, otherAgent: 403 } },
   {
     what: 'define a metric',
     method: 'POST',
@@ -712,6 +713,8 @@ const MATRIX: MatrixEntry[] = [
     deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 403 },
   },
   { what: 'read the deployment warnings (D24)', path: () => '/api/platform/v1/deployment-warnings', allowed: [], deniedStatus: { requester: 403, agent: 403, lead: 403, otherAgent: 403, admin: 403 } },
+  { what: 'reset the shared demo, which only a demo session may (§4.6.4: 404 while the demo is off, 403 with it on)', method: 'POST', path: () => '/api/demo/v1/reset', body: () => ({ confirm: 'RESET' }), allowed: [] },
+  // The shared demo's refusals (demo_disabled by feature, its caps and budgets) are not rows here: they live in tests/permissions/demo-strip.test.ts and tests/integration/demo-limits.test.ts (WP-32).
 ];
 
 let tenant: TestTenant;

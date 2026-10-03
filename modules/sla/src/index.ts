@@ -3,6 +3,7 @@ export { slaManifest, TIMER_PARTITIONS, partitionFor } from './manifest.js';
 export * as timerService from './service/timer-service.js';
 export * as slaPolicyService from './service/policy-service.js';
 export { tickPartition, listTimersForTicket, excuseBreach, type TargetType } from './service/timer-service.js';
+export { ReplayRefusedError, replaySteps, replayTimers, replayTimersIn, type ReplayRefusal, type ReplayResult, type ReplaySource, type ReplayStep, type ReplayedTimer } from './service/replay.js';
 export { applyEscalations } from './service/escalation-service.js';
 export {
   createPolicy,
