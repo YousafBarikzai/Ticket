@@ -36,7 +36,12 @@
   gap: var(--itsm-space-xl);
 }
 
-/* The section list only where there is room beside the sections; a phone scrolls one column. */
+/*
+ * The section list only where there is room beside the sections; a phone
+ * scrolls one column. It sticks, and a section scrolled to from it stops,
+ * under the frame's top (`--itsm-frame-top`: the top bar, and in a demo visit
+ * the demo bar above it, v3 §3.4).
+ */
 .app-Profile__nav {
   display: none;
 }
@@ -50,7 +55,7 @@
   .app-Profile__nav {
     display: block;
     position: sticky;
-    inset-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
+    inset-block-start: calc(var(--itsm-frame-top) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
   }
 }
 
@@ -92,7 +97,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-sm);
-  scroll-margin-block-start: calc(var(--itsm-topbar-height) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
+  scroll-margin-block-start: calc(var(--itsm-frame-top) + var(--itsm-safe-area-top) + var(--itsm-space-lg));
 }
 
 .app-Profile__heading {

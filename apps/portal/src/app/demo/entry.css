@@ -1,0 +1,136 @@
+/*
+ * The column of the Help Portal's sign-in surfaces — `/demo`, `/sign-in` and
+ * `/signed-out` — inside the design system's `SignInLayout` (SPEC v3 §4.6,
+ * §6.3). The layout draws the navy panel and the column; this sets out what a
+ * page puts in the column: one heading, a sentence or two, and full-width
+ * actions, primary first. Tokens only.
+ */
+
+.app-Entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  text-align: start;
+}
+
+.app-Entry__title {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-text-title1-family);
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+  text-wrap: balance;
+}
+
+.app-Entry__body {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-Entry__body strong {
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Entry__actions,
+.app-Entry__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+}
+
+.app-Entry__actions {
+  margin-block-start: var(--itsm-space-2xs);
+}
+
+.app-Entry__actions .itsm-Button {
+  inline-size: 100%;
+}
+
+/* "Explore as …" on the demo's signed-out page: one link per area, each naming its persona. */
+.app-Entry__explore {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Entry__exploreLink {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: 1px solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-item);
+  color: var(--itsm-colour-text-primary);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .app-Entry__exploreLink:hover {
+    border-color: var(--itsm-colour-border-softHover);
+    background: var(--itsm-colour-surface-hover);
+  }
+}
+
+.app-Entry__exploreLabel {
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Entry__exploreDetail {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/*
+ * "Open the demo" becomes "Taking a while? Open the demo" after three seconds
+ * (§4.6.2) without a script: both labels share one grid cell, so the button
+ * never changes size, and the one not showing is `visibility: hidden`, which
+ * also takes it out of the button's accessible name. Where the hop card has
+ * only the late label, the button itself waits. A browser that runs no
+ * animations shows the late words at once, which is still true.
+ */
+.app-Entry__labels {
+  display: inline-grid;
+}
+
+.app-Entry__labels > * {
+  grid-area: 1 / 1;
+}
+
+.app-Entry__now {
+  visibility: hidden;
+  animation: app-entry-now 1ms linear 3s both;
+}
+
+.app-Entry__late {
+  animation: app-entry-late 1ms linear 3s both;
+}
+
+@keyframes app-entry-now {
+  from {
+    visibility: visible;
+  }
+  to {
+    visibility: hidden;
+  }
+}
+
+@keyframes app-entry-late {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}

@@ -1,15 +1,21 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { act, forwardRef, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildAreaModel, type AreaModel } from '@itsm/contracts/areas';
+import { DEMO_COPY } from '@itsm/contracts/demo';
 import { ItsmProvider } from '@itsm/ui';
 import { portalFrame, type PortalCan } from '../navigation.js';
 import { cleanupDocument, click, render } from './support/render.js';
 
 /**
- * The portal frame, rendered (SPEC §5.4, WP14 acceptance): the pills and the
- * docked tab bar, Approvals kept out of both and put in the avatar's count,
- * *New request* only where the page does not have it, "How can we help?"
- * from anywhere, and the session-ended and offline states.
+ * The portal frame, rendered (SPEC §5.4, WP14 acceptance; v3 §3.6–§3.8): the
+ * pills and the docked tab bar, Approvals kept out of both and put in the
+ * avatar's count, *New request* only where the page does not have it, "How
+ * can we help?" from anywhere, the session-ended and offline states — and the
+ * v3 frame: the area lockup or switcher from the person's areas, the demo bar
+ * first, and a demo visit's own words when it ends.
  */
 
 /* ---- Next, as the frame sees it ---------------------------------------- */
@@ -52,7 +58,7 @@ vi.mock('../help/HelpSheet.js', () => ({
     ) : null,
 }));
 
-const { PortalShell, useHelpFlow } = await import('../components/PortalShell.js');
+const { DEMO_SESSION_ENDED, PortalShell, signInHrefFor, useHelpFlow } = await import('../components/PortalShell.js');
 const { reportSessionEnded } = await import('../client/useAction.js');
 
 /* ---- A browser jsdom does not quite provide ----------------------------- */
@@ -108,6 +114,14 @@ afterEach(() => {
 
 const everyone: PortalCan = { readCatalogue: true, readKnowledge: true, readApprovals: true, createTickets: true, search: true };
 
+const ORIGINS = { workbench: 'https://desk.example', admin: 'https://admin.example', site: 'https://itsm.example' };
+/** A requester: the Help Portal alone, so a lockup. */
+const requesterAreas = buildAreaModel({ app: 'portal', held: ['ticket.create', 'ticket.read'], session: { kind: 'oidc' }, origins: ORIGINS, workspace: 'Acme' });
+/** A team lead: all three areas, so the switcher. */
+const staffAreas = buildAreaModel({ app: 'portal', held: ['ticket.update', 'audit.read'], session: { kind: 'oidc' }, origins: ORIGINS, workspace: 'Acme' });
+/** Emma Clarke's demo visit. */
+const demoAreas = buildAreaModel({ app: 'portal', held: [], session: { kind: 'demo', persona: 'employee' }, origins: ORIGINS, workspace: 'Northwind Traders (UK)' });
+
 function Link({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }): ReactNode {
   return (
     <a href={href} {...rest}>
@@ -125,7 +139,13 @@ function OpenHelp(): ReactNode {
   );
 }
 
-function mount({ can = everyone, waiting = 0, page }: { can?: PortalCan; waiting?: number; page?: ReactNode } = {}): void {
+function mount({
+  can = everyone,
+  waiting = 0,
+  page,
+  areas = requesterAreas,
+  systemBar,
+}: { can?: PortalCan; waiting?: number; page?: ReactNode; areas?: AreaModel; systemBar?: ReactNode } = {}): void {
   render(
     <ItsmProvider
       app="portal"
@@ -138,10 +158,11 @@ function mount({ can = everyone, waiting = 0, page }: { can?: PortalCan; waiting
     >
       <PortalShell
         user={{ id: 'u1', name: 'Ada Lovelace', detail: 'Finance' }}
-        tenantName="Acme"
+        areas={areas}
+        areaKeywords={{ workbench: ['ticketing'] }}
         frame={portalFrame(can, waiting)}
-        switcher={[]}
         can={can}
+        systemBar={systemBar}
         approvalsWaiting={waiting}
         renderedAt="2026-09-30T09:42:00Z"
       >
@@ -189,10 +210,11 @@ describe('the pills and the tab bar', () => {
     expect(pills.filter((link) => link.getAttribute('aria-current') === 'page').map((link) => link.textContent)).toEqual(['My requests']);
   });
 
-  it('sit in the v3 top bar beside the product mark and the area lockup (one area until the layout passes `areas`)', () => {
+  it('sit in the v3 top bar beside the product mark, which goes Home', () => {
     mount();
-    expect(document.querySelector('.itsm-TopBar__brand')?.getAttribute('aria-label')).toMatch(/^IT Service Management — .+ home$/);
-    expect(document.querySelector('.itsm-TopBar .itsm-AreaSwitcher')?.getAttribute('data-display')).toBe('lockup');
+    const mark = document.querySelector<HTMLAnchorElement>('a.itsm-TopBar__brand')!;
+    expect(mark.getAttribute('aria-label')).toBe('IT Service Management — Help Portal home');
+    expect(mark.getAttribute('href')).toBe('/');
   });
 
   it('dock five tabs with Me last', () => {
@@ -207,6 +229,55 @@ describe('the pills and the tab bar', () => {
     const avatar = document.querySelector('button.itsm-UserMenu')!;
     expect(avatar.textContent).toContain('2 approvals waiting');
     expect(linksIn('Tab bar').at(-1)!.textContent).toContain('2');
+  });
+});
+
+describe('the areas (v3 §3.6, A2 §6.2)', () => {
+  it('shows a requester the "Help Portal" lockup: nothing to press, no Switch area', () => {
+    mount({ areas: requesterAreas });
+    const lockup = document.querySelector('.itsm-TopBar .itsm-AreaSwitcher')!;
+    expect(lockup.getAttribute('data-display')).toBe('lockup');
+    expect(lockup.querySelector('.itsm-AreaSwitcher__name')?.textContent).toBe('Help Portal');
+    expect(lockup.tagName).not.toBe('BUTTON');
+    expect(document.querySelector('.itsm-TopBar button.itsm-AreaSwitcher')).toBeNull();
+  });
+
+  it('gives anyone with another area the visible switcher, named for where they are', () => {
+    mount({ areas: staffAreas });
+    const switcher = document.querySelector<HTMLButtonElement>('.itsm-TopBar button.itsm-AreaSwitcher')!;
+    expect(switcher.getAttribute('aria-haspopup')).toBe('menu');
+    expect(switcher.getAttribute('aria-label')).toBe('Switch area. Current: Help Portal');
+    expect(switcher.textContent).toContain('Help Portal');
+  });
+
+  it('gives every demo visit the switcher too, Employee included (D7)', () => {
+    mount({ areas: demoAreas });
+    expect(document.querySelector('.itsm-TopBar button.itsm-AreaSwitcher')).not.toBeNull();
+  });
+
+  it('draws the demo bar first, straight after the skip links, above the top bar', () => {
+    mount({ areas: demoAreas, systemBar: <div className="stub-DemoBar" role="region" aria-label="Demo environment" /> });
+    const root = document.querySelector('.itsm-AppShell')!;
+    const children = [...root.children];
+    const bar = children.findIndex((child) => child.classList.contains('stub-DemoBar'));
+    expect(bar).toBeGreaterThan(-1);
+    expect(children.slice(0, bar).every((child) => child.matches('.itsm-SkipLinks, nav, [class*="SkipLink"]'))).toBe(true);
+    expect(children.findIndex((child) => child.querySelector('.itsm-TopBar') !== null || child.classList.contains('itsm-TopBar'))).toBeGreaterThan(bar);
+    expect(root.getAttribute('data-system-bar')).toBe('');
+  });
+
+  it('draws no bar, and leaves no trace of one, outside a demo visit', () => {
+    mount({ areas: staffAreas });
+    expect(document.querySelector('.itsm-AppShell')!.hasAttribute('data-system-bar')).toBe(false);
+    expect(document.querySelector('.itsm-SystemBar')).toBeNull();
+  });
+
+  it('passes the frame only the v3 props (RV1: the wave-3 alias guard)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../components/PortalShell.tsx', import.meta.url)), 'utf8');
+    expect(source).not.toMatch(/\bswitcher\b|sidebarHeaderExtra|tenantName|AppSwitcherItem/);
+    const brand = /brand=\{\{([^}]*)\}\}/.exec(source)?.[1] ?? '';
+    expect(brand).toContain('href');
+    expect(brand).not.toMatch(/\b(name|tenant|app)\s*:/);
   });
 });
 
@@ -301,6 +372,29 @@ describe('the frame’s states', () => {
     expect(document.activeElement).toBe(save);
     await until(() => document.querySelector('.itsm-GlobalBanner') !== null);
     expect(document.querySelector('.itsm-GlobalBanner')?.textContent).toContain('Your session ended');
+  });
+
+  it('says a demo visit ended in the demo’s words, and continues the demo rather than signing in (§4.6.2, A3-S2)', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign, pathname: '/tickets/INC-000123', search: '?tab=details' });
+    pathname = '/tickets/INC-000123';
+    mount({ areas: demoAreas });
+    await settle();
+    act(() => reportSessionEnded('action'));
+    await until(() => document.querySelector('[role="alertdialog"]') !== null);
+    await settle();
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain('Your demo session ended');
+    expect(dialog.textContent).toContain('Pick up where you left off');
+    click([...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Continue the demo')!);
+    expect(assign).toHaveBeenCalledWith('/api/session/login?redirectTo=%2Ftickets%2FINC-000123%3Ftab%3Ddetails&demo=1');
+  });
+
+  it('words a demo visit’s ending exactly as the contract does', () => {
+    expect(DEMO_SESSION_ENDED.title).toBe(DEMO_COPY.sessionEnded);
+    expect(DEMO_SESSION_ENDED.action).toBe(DEMO_COPY.continueDemo);
+    expect(signInHrefFor('/tickets?x=1', false)).toBe('/api/session/login?redirectTo=%2Ftickets%3Fx%3D1');
+    expect(signInHrefFor('/tickets?x=1', true)).toBe('/api/session/login?redirectTo=%2Ftickets%3Fx%3D1&demo=1');
   });
 
   it('says a page shown offline is a copy, and from when', async () => {

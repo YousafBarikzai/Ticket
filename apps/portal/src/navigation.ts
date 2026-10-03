@@ -1,6 +1,6 @@
 import type { IconName } from '@itsm/ui';
 import type { MenuItemSpec } from '@itsm/ui/overlays';
-import type { AppSwitcherItem, NavBadge, NavItem, NavModel } from '@itsm/ui/shell';
+import type { NavBadge, NavItem, NavModel } from '@itsm/ui/shell';
 
 /**
  * The portal's map (SPEC §5.1, §5.4): one description of its pages that the
@@ -10,7 +10,9 @@ import type { AppSwitcherItem, NavBadge, NavItem, NavModel } from '@itsm/ui/shel
  *
  * Pure and serialisable. The `(portal)` layout builds the frame's model on
  * the server from the person's permissions; the lazy palette reads the same
- * items on the client.
+ * items on the client. Who may use the other areas is not decided here: the
+ * gates and the switcher's rows are `@itsm/contracts/areas`' (v3 §3.2), built
+ * per request by `currentAreas()`.
  *
  * Three rules this file exists to hold:
  *
@@ -255,46 +257,4 @@ export function showsNewRequest(pathname: string, can: Pick<PortalCan, 'createTi
   if (path === '/' || path === '/tickets' || path === '/report') return false;
   const segments = path.split('/').filter(Boolean);
   return !(segments.length === 2 && (segments[0] === 'tickets' || segments[0] === 'catalogue'));
-}
-
-/* ------------------------------------------------------------ App switcher */
-
-/** Anyone holding one of these works the desk: the workbench is theirs. */
-const WORKBENCH_PERMISSIONS = ['ticket.update', 'ticket.assign', 'ticket.comment.internal'];
-
-/** Anyone holding one of these can use the admin console for something. */
-const ADMIN_PERMISSIONS = [
-  'admin.setting.read',
-  'admin.setting.manage',
-  'admin.flag.manage',
-  'identity.user.manage',
-  'rules.rule.read',
-  'workflow.manage',
-  'sla.policy.read',
-  'analytics.read',
-  'audit.read',
-  'integration.action.read',
-  'catalogue.manage',
-  'ticket.config.manage',
-  'platform.tenant.read',
-];
-
-export interface Origins {
-  readonly workbench?: string | undefined;
-  readonly admin?: string | undefined;
-}
-
-/**
- * The other applications this person can use, same tab (X-83) — staff only;
- * a requester's avatar menu has no "Switch to". An application whose origin
- * the deployment has not set is left out rather than linked to nowhere.
- */
-export function switcherFor(held: ReadonlySet<string>, origins: Origins): AppSwitcherItem[] {
-  const workbench = origins.workbench?.trim();
-  const admin = origins.admin?.trim();
-  const others: AppSwitcherItem[] = [
-    ...(workbench && WORKBENCH_PERMISSIONS.some((key) => held.has(key)) ? [{ app: 'workbench' as const, label: 'Workbench', href: workbench }] : []),
-    ...(admin && ADMIN_PERMISSIONS.some((key) => held.has(key)) ? [{ app: 'admin' as const, label: 'Administration', href: admin }] : []),
-  ];
-  return others.length === 0 ? [] : [{ app: 'portal', label: 'Help', href: '/' }, ...others];
 }

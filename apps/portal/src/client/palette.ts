@@ -1,3 +1,4 @@
+import type { AreaId, AreaModel } from '@itsm/contracts/areas';
 import type { CatalogueItem, SearchHit, Ticket } from '@itsm/sdk';
 import type { CommandItem, CommandProvider } from '@itsm/ui';
 import type { NavItem } from '@itsm/ui/shell';
@@ -14,7 +15,10 @@ import { requesterState, typeLabel } from '../tickets/presentation.js';
  * answers, services and their own requests as they type, and always, last,
  * "Report 'vpn' as an issue" — plus the handful of things somebody opens the
  * portal to do: a new request, their requests, approvals, their profile,
- * appearance, sign out.
+ * appearance, sign out — and the other areas (v3 §3.9), which the palette's
+ * own module adds (`PortalPalette.tsx`): this module is also read by Home's
+ * search and the help flow, so what it carries is in every page's first
+ * load, and the Switch area group is weight only the palette needs.
  *
  * A request number ("INC-123", "req 46") is pinned first as "Open INC-000123".
  * Nothing here is a single-key shortcut: the portal has none apart from `/` on
@@ -28,6 +32,10 @@ export interface PortalPaletteDeps {
   readonly can: PortalCan;
   /** The frame's pills (Home, My requests, Services, Knowledge), as the navigation built them. */
   readonly nav: readonly NavItem[];
+  /** The person's areas (`currentAreas()`): the Switch area group and, in a demo visit, *End demo* (`PortalPalette.tsx`). */
+  readonly areas?: AreaModel;
+  /** Each area's search words (`AREAS[…].keywords`), handed over by the layout so no contracts table reaches the browser. */
+  readonly areaKeywords?: Readonly<Partial<Record<AreaId, readonly string[]>>>;
   readonly approvalsWaiting: number;
   readonly prefs: Prefs;
   setPrefs(patch: Partial<Prefs>): void;
