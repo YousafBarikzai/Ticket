@@ -70,6 +70,20 @@ export const declareSchema = z.object({
 export type DeclareInput = z.input<typeof declareSchema>;
 
 /**
+ * When a step on the incident happened, for a history written after the fact
+ * (A4 §2.3, W2): the shared demo's past major incidents and the live one's
+ * first hour. The timeline is append-only, so the instant has to be right at
+ * insert — there is no going back to correct it.
+ *
+ * Omitted, every write is exactly what it was: the database dates the
+ * timeline and the row, and the promised next update counts from now.
+ */
+export interface IncidentClock {
+  /** When it happened. Never in the future, and never before the incident's latest timeline entry. */
+  at?: Date;
+}
+
+/**
  * Declares one.
  *
  * At most one open major incident per ticket, enforced by a partial unique
@@ -77,9 +91,10 @@ export type DeclareInput = z.input<typeof declareSchema>;
  * within the same second is not a rare case, it is the normal case, and the
  * symptom is two bridges with half the responders on each.
  */
-export async function declare(ctx: TenantContext, input: DeclareInput) {
+export async function declare(ctx: TenantContext, input: DeclareInput, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.major.declare');
   const parsed = declareSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   const intervals = await getSetting<Record<string, number>>(ctx, 'incident.updateIntervalMinutes');
   const interval =
@@ -87,13 +102,18 @@ export async function declare(ctx: TenantContext, input: DeclareInput) {
 
   return transaction(ctx, async (tx) => {
     if (parsed.ticketId) {
-      const ticket = await tx.ticket.findFirst({ where: { id: parsed.ticketId }, select: { id: true } });
+      const ticket = await tx.ticket.findFirst({ where: { id: parsed.ticketId }, select: { id: true, createdAt: true } });
       if (!ticket) throw new NotFoundError('ticket', parsed.ticketId);
+      if (at && at < ticket.createdAt) {
+        throw new ValidationError('a major incident cannot be declared from a ticket before the ticket was raised', [
+          { field: 'at', code: 'before_ticket', message: 'must not be earlier than the ticket it was declared from' },
+        ]);
+      }
     }
 
     const id = newId();
     const number = await nextNumber(tx, ctx, 'major_incident', 'MI', 4);
-    const declaredAt = new Date();
+    const declaredAt = at ?? new Date();
 
     let incident;
     try {
@@ -117,6 +137,9 @@ export async function declare(ctx: TenantContext, input: DeclareInput) {
           nextUpdateDueAt: new Date(declaredAt.getTime() + interval * 60_000),
           declaredAt,
           declaredBy: ctx.actor.id,
+          // The row was last touched when it was declared, not when a
+          // history was written into it.
+          ...(at ? { updatedAt: at } : {}),
         },
       });
     } catch (error) {
@@ -134,6 +157,7 @@ export async function declare(ctx: TenantContext, input: DeclareInput) {
       body: `Declared ${parsed.severity}: ${parsed.title}`,
       statusFrom: null,
       statusTo: 'declared',
+      occurredAt: at,
     });
 
     await recordAudit(tx, ctx, {
@@ -176,20 +200,26 @@ export const updateEntrySchema = z.object({
  * talk busily among itself for two hours while everybody outside heard nothing
  * and the platform reported the promise as kept.
  */
-export async function postUpdate(ctx: TenantContext, number: string, input: z.input<typeof updateEntrySchema>) {
+export async function postUpdate(ctx: TenantContext, number: string, input: z.input<typeof updateEntrySchema>, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.major.command');
   const parsed = updateEntrySchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const incident = await loadByNumber(tx, number);
     assertAudienceAllowed(incident, parsed.audience);
+    if (at) await assertInOrder(tx, incident, at);
 
-    const entry = await addUpdate(tx, ctx, incident.id, { ...parsed, statusFrom: null, statusTo: null });
+    const entry = await addUpdate(tx, ctx, incident.id, { ...parsed, statusFrom: null, statusTo: null, occurredAt: at });
 
     if (parsed.kind === 'comms' && STATES[stateOf(incident)].communicating) {
       await tx.majorIncident.update({
         where: { id: incident.id },
-        data: { nextUpdateDueAt: new Date(Date.now() + incident.updateIntervalMinutes * 60_000) },
+        data: {
+          // The promise counts from the update that kept it.
+          nextUpdateDueAt: new Date((at ? at.getTime() : Date.now()) + incident.updateIntervalMinutes * 60_000),
+          ...(at ? { updatedAt: at } : {}),
+        },
       });
     }
 
@@ -207,9 +237,10 @@ export const transitionSchema = z.object({
 });
 
 /** Moves the incident, and says so on the timeline in the same transaction. */
-export async function transition(ctx: TenantContext, number: string, input: z.input<typeof transitionSchema>) {
+export async function transition(ctx: TenantContext, number: string, input: z.input<typeof transitionSchema>, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.major.command');
   const parsed = transitionSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
   if (!isIncidentState(parsed.to)) throw new ValidationError(`unknown major incident state: ${parsed.to}`);
   // Bound to a const: narrowing on a property is lost inside the transaction
   // callback, because nothing stops the object being mutated in between.
@@ -226,10 +257,12 @@ export async function transition(ctx: TenantContext, number: string, input: z.in
     assertTransition(from, to);
     assertAudienceAllowed(incident, parsed.audience);
     if (from === to) throw new ValidationError(`this incident is already ${from}`);
+    if (at) await assertInOrder(tx, incident, at);
 
     const stamps = effectsOf(to);
     const data: Record<string, unknown> = { status: to, version: { increment: 1 } };
-    const now = new Date();
+    const now = at ?? new Date();
+    if (at) data.updatedAt = at;
     if (stamps.identifiedAt === 'now' && !incident.identifiedAt) data.identifiedAt = now;
     if (stamps.mitigatedAt === 'now' && !incident.mitigatedAt) data.mitigatedAt = now;
     if (stamps.resolvedAt === 'now') data.resolvedAt = now;
@@ -249,6 +282,7 @@ export async function transition(ctx: TenantContext, number: string, input: z.in
       body: parsed.note,
       statusFrom: from,
       statusTo: to,
+      occurredAt: at,
     });
 
     await recordAudit(tx, ctx, {
@@ -277,7 +311,7 @@ export async function transition(ctx: TenantContext, number: string, input: z.in
           durationMinutes,
         },
       });
-      await openReview(tx, ctx, moved, durationMinutes);
+      await openReview(tx, ctx, moved, durationMinutes, at);
       metrics.observe('incident_major_duration_minutes', durationMinutes, { severity: incident.severity });
     }
 
@@ -310,12 +344,14 @@ export const rolesSchema = z.object({
  * cannot answer. The commander may be replaced but never removed: an incident
  * with nobody in charge is the state this module exists to prevent.
  */
-export async function setRoles(ctx: TenantContext, number: string, input: z.input<typeof rolesSchema>) {
+export async function setRoles(ctx: TenantContext, number: string, input: z.input<typeof rolesSchema>, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.major.command');
   const parsed = rolesSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const incident = await loadByNumber(tx, number);
+    if (at) await assertInOrder(tx, incident, at);
     const changed: string[] = [];
     const data: Record<string, unknown> = {};
     if (parsed.commanderId && parsed.commanderId !== incident.commanderId) {
@@ -331,6 +367,7 @@ export async function setRoles(ctx: TenantContext, number: string, input: z.inpu
       changed.push('scribe');
     }
     if (changed.length === 0) return incident;
+    if (at) data.updatedAt = at;
 
     const updated = await tx.majorIncident.update({ where: { id: incident.id }, data });
     await addUpdate(tx, ctx, incident.id, {
@@ -339,6 +376,7 @@ export async function setRoles(ctx: TenantContext, number: string, input: z.inpu
       body: parsed.note ?? `Handed over: ${changed.join(', ')}.`,
       statusFrom: null,
       statusTo: null,
+      occurredAt: at,
     });
     await recordAudit(tx, ctx, {
       action: 'incident.major.roles.changed',
@@ -428,7 +466,7 @@ async function addUpdate(
   tx: Tx,
   ctx: TenantContext,
   incidentId: string,
-  entry: { kind: string; audience: string; body: string; statusFrom: string | null; statusTo: string | null },
+  entry: { kind: string; audience: string; body: string; statusFrom: string | null; statusTo: string | null; occurredAt?: Date | undefined },
 ) {
   return tx.majorIncidentUpdate.create({
     data: {
@@ -441,8 +479,49 @@ async function addUpdate(
       statusFrom: entry.statusFrom,
       statusTo: entry.statusTo,
       authorId: ctx.actor.id,
+      // Append-only: a history's entry is dated when it happened, at insert,
+      // or never. Without a clock the database dates it, as always.
+      ...(entry.occurredAt ? { occurredAt: entry.occurredAt } : {}),
     },
   });
+}
+
+/**
+ * A supplied clock, once it is known to be a real instant that has already
+ * happened. A history records the past; an update dated after now would be a
+ * promise kept before anybody made it.
+ */
+function pastInstant(at: Date): Date {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) {
+    throw new ValidationError('the time given is not a date', [{ field: 'at', code: 'invalid', message: 'not a date' }]);
+  }
+  if (at.getTime() > Date.now()) {
+    throw new ValidationError('a major incident cannot be dated in the future', [
+      { field: 'at', code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+  return at;
+}
+
+/**
+ * Refuses a step dated before the incident's latest timeline entry, or before
+ * it was declared. The timeline is the evidence a review is written from and
+ * it cannot be edited afterwards, so a history must be written oldest first;
+ * a step slotted in behind a later one would also leave the stamps and the
+ * promised next update computed from the wrong moment.
+ */
+async function assertInOrder(tx: Tx, incident: { id: string; declaredAt: Date }, at: Date): Promise<void> {
+  const latest = await tx.majorIncidentUpdate.findFirst({
+    where: { incidentId: incident.id },
+    orderBy: { occurredAt: 'desc' },
+    select: { occurredAt: true },
+  });
+  const floor = latest && latest.occurredAt > incident.declaredAt ? latest.occurredAt : incident.declaredAt;
+  if (at < floor) {
+    throw new ValidationError('the timeline only runs forwards', [
+      { field: 'at', code: 'out_of_order', message: `must not be earlier than ${floor.toISOString()}, the incident's latest entry` },
+    ]);
+  }
 }
 
 async function publishUpdate(
@@ -480,12 +559,13 @@ async function openReview(
   ctx: TenantContext,
   incident: { id: string; severity: string },
   durationMinutes: number,
+  at?: Date,
 ): Promise<void> {
   const existing = await tx.postIncidentReview.findFirst({ where: { incidentId: incident.id } });
   if (existing) {
     // Reopened and resolved again: keep the review and its actions, refresh the
     // duration, which is now measured to the later resolution.
-    await tx.postIncidentReview.update({ where: { id: existing.id }, data: { durationMinutes } });
+    await tx.postIncidentReview.update({ where: { id: existing.id }, data: { durationMinutes, ...(at ? { updatedAt: at } : {}) } });
     return;
   }
 
@@ -497,7 +577,10 @@ async function openReview(
       incidentId: incident.id,
       status: 'draft',
       durationMinutes,
-      dueOn: new Date(Date.now() + dueDays * 86_400_000),
+      // Due so many days after the resolution, which in a history is when it
+      // happened rather than when the history was written.
+      dueOn: new Date((at ? at.getTime() : Date.now()) + dueDays * 86_400_000),
+      ...(at ? { createdAt: at, updatedAt: at } : {}),
     },
   });
 }

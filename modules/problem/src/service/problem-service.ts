@@ -32,6 +32,17 @@ import {
 
 export const RAISED_FROM = ['major_incident', 'ticket_trend', 'manual'] as const;
 
+/**
+ * When a step on the problem happened, for a history written after the fact
+ * (A4 §2.3, W2): the shared demo's eight problems were raised weeks before
+ * the build, linked to incidents as they arrived, given workarounds and
+ * fixed. Omitted, every write is exactly what it was, dated now.
+ */
+export interface ProblemClock {
+  /** When it happened. Never in the future, and never before the problem was raised. */
+  at?: Date;
+}
+
 export const createProblemSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(20_000).optional(),
@@ -45,10 +56,10 @@ export const createProblemSchema = z.object({
   ticketIds: z.array(z.string().uuid()).max(200).default([]),
 });
 
-export async function createProblem(ctx: TenantContext, input: z.input<typeof createProblemSchema>) {
+export async function createProblem(ctx: TenantContext, input: z.input<typeof createProblemSchema>, clock: ProblemClock = {}) {
   authz.require(ctx, 'problem.manage');
   const parsed = createProblemSchema.parse(input);
-  return transaction(ctx, (tx) => createProblemIn(ctx, tx, parsed));
+  return transaction(ctx, (tx) => createProblemIn(ctx, tx, parsed, clock));
 }
 
 /**
@@ -63,8 +74,10 @@ export async function createProblemIn(
   ctx: TenantContext,
   tx: Tx,
   input: z.input<typeof createProblemSchema>,
+  clock: ProblemClock = {},
 ) {
   const parsed = createProblemSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
   {
     const id = newId();
     const number = await nextNumber(tx, ctx, 'problem', 'PRB', 4);
@@ -84,10 +97,11 @@ export async function createProblemIn(
         raisedFrom: parsed.raisedFrom,
         majorIncidentId: parsed.majorIncidentId ?? null,
         createdBy: ctx.actor.id,
+        ...(at ? { createdAt: at, updatedAt: at } : {}),
       },
     });
 
-    for (const ticketId of parsed.ticketIds) await linkOne(tx, ctx, id, ticketId);
+    for (const ticketId of parsed.ticketIds) await linkOne(tx, ctx, id, ticketId, false, at);
 
     await recordAudit(tx, ctx, {
       action: 'problem.created',
@@ -154,15 +168,17 @@ export const linkSchema = z.object({
  * happens when two agents notice the same thing, and a duplicate would inflate
  * the only number anybody uses to argue for the fix.
  */
-export async function linkTickets(ctx: TenantContext, number: string, input: z.input<typeof linkSchema>) {
+export async function linkTickets(ctx: TenantContext, number: string, input: z.input<typeof linkSchema>, clock: ProblemClock = {}) {
   authz.require(ctx, 'problem.manage');
   const parsed = linkSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const problem = await loadByNumber(tx, number);
+    if (at) assertNotBeforeRaised(at, problem);
     let linked = 0;
     for (const ticketId of parsed.ticketIds) {
-      if (await linkOne(tx, ctx, problem.id, ticketId, parsed.workaroundApplied)) linked += 1;
+      if (await linkOne(tx, ctx, problem.id, ticketId, parsed.workaroundApplied, at)) linked += 1;
     }
     const total = await tx.problemTicket.count({ where: { problemId: problem.id } });
     return { linked, total };
@@ -194,17 +210,19 @@ export const transitionSchema = z.object({
  * exists — losing the time twice, once following it and once working out why it
  * did not help. Done here, in the same transaction, so it cannot be forgotten.
  */
-export async function transition(ctx: TenantContext, number: string, input: z.input<typeof transitionSchema>) {
+export async function transition(ctx: TenantContext, number: string, input: z.input<typeof transitionSchema>, clock: ProblemClock = {}) {
   authz.require(ctx, 'problem.manage');
   const parsed = transitionSchema.parse(input);
   if (!isProblemState(parsed.to)) throw new ValidationError(`unknown problem state: ${parsed.to}`);
   const to: ProblemState = parsed.to;
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const problem = await loadByNumber(tx, number);
     const from = stateOf(problem);
     assertTransition(from, to);
     if (from === to) return problem;
+    if (at) assertNotBeforeRaised(at, problem);
 
     if (to === 'known_error') {
       const knownError = await tx.knownError.findFirst({ where: { problemId: problem.id, status: 'published' } });
@@ -215,8 +233,9 @@ export async function transition(ctx: TenantContext, number: string, input: z.in
       }
     }
 
-    const now = new Date();
+    const now = at ?? new Date();
     const data: Record<string, unknown> = { status: to, version: { increment: 1 } };
+    if (at) data.updatedAt = at;
     if (parsed.rootCause !== undefined) data.rootCause = parsed.rootCause;
     if (to === 'resolved') data.resolvedAt = now;
     // Reopening: it came back, so it is not resolved, and every figure measured
@@ -233,6 +252,7 @@ export async function transition(ctx: TenantContext, number: string, input: z.in
         ctx,
         problem.id,
         parsed.note ?? `The problem is ${to}, so this workaround no longer applies.`,
+        at,
       );
     }
 
@@ -266,6 +286,113 @@ export async function transition(ctx: TenantContext, number: string, input: z.in
   });
 }
 
+/** The workaround as published: the same three fields `knownErrorService.publishKnownError` takes. */
+const knownErrorInputSchema = z.object({
+  symptom: z.string().min(1).max(2000),
+  workaround: z.string().min(1).max(20_000),
+  articleKey: z.string().max(200).optional(),
+});
+
+/**
+ * Publishes the workaround and makes the problem a known error, with the
+ * history clock (A4 §2.3): the shared demo's known errors were published
+ * weeks ago, and an agent reading "workaround published today" on a problem
+ * that has had one since August would be misled.
+ *
+ * The same write as `knownErrorService.publishKnownError`, which carries no
+ * clock: its file has no owner in this wave, so the clocked version lives
+ * here, and a unit test pins the two to identical rows, audit and event when
+ * no clock is given. That one should come to call this one; until it does, a
+ * change to either is a change to both.
+ */
+export async function publishKnownError(
+  ctx: TenantContext,
+  number: string,
+  input: z.input<typeof knownErrorInputSchema>,
+  clock: ProblemClock = {},
+) {
+  authz.require(ctx, 'problem.publish');
+  const parsed = knownErrorInputSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
+
+  return transaction(ctx, async (tx) => {
+    const problem = await tx.problem.findFirst({ where: { number } });
+    if (!problem) throw new NotFoundError('problem', number);
+
+    const status = isProblemState(problem.status) ? problem.status : 'investigating';
+    if (status === 'resolved' || status === 'closed') {
+      // Publishing a workaround for something already fixed is the trap this
+      // module exists to close, arriving from the other direction.
+      throw new ValidationError(
+        `this problem is ${status}; a workaround for something already fixed costs the reader their time twice`,
+      );
+    }
+    if (at) assertNotBeforeRaised(at, problem);
+
+    const existing = await tx.knownError.findFirst({ where: { problemId: problem.id } });
+    const knownError = existing
+      ? await tx.knownError.update({
+          where: { id: existing.id },
+          data: {
+            symptom: parsed.symptom,
+            workaround: parsed.workaround,
+            articleKey: parsed.articleKey ?? null,
+            status: 'published',
+            publishedAt: at ?? new Date(),
+            publishedBy: ctx.actor.id,
+            retiredAt: null,
+            retiredReason: null,
+          },
+        })
+      : await tx.knownError.create({
+          data: {
+            id: newId(),
+            tenantId: ctx.tenantId,
+            problemId: problem.id,
+            symptom: parsed.symptom,
+            workaround: parsed.workaround,
+            articleKey: parsed.articleKey ?? null,
+            status: 'published',
+            publishedBy: ctx.actor.id,
+            ...(at ? { publishedAt: at } : {}),
+          },
+        });
+
+    // Publishing and becoming a known error are the same event: there is no
+    // useful moment at which a workaround exists and the problem is not one.
+    if (status === 'investigating') {
+      await tx.problem.update({
+        where: { id: problem.id },
+        data: { status: 'known_error', version: { increment: 1 }, ...(at ? { updatedAt: at } : {}) },
+      });
+    }
+
+    const linkedTickets = await tx.problemTicket.count({ where: { problemId: problem.id } });
+
+    await recordAudit(tx, ctx, {
+      action: 'knownerror.published',
+      targetType: 'problem',
+      targetId: problem.id,
+      after: { symptom: parsed.symptom, articleKey: parsed.articleKey ?? null },
+    });
+    await publish(tx, ctx, {
+      definition: events.knownErrorPublished,
+      aggregateId: problem.id,
+      payload: {
+        problemId: problem.id,
+        number: problem.number,
+        symptom: parsed.symptom,
+        workaround: parsed.workaround,
+        articleKey: parsed.articleKey ?? null,
+        linkedTickets,
+      },
+    });
+
+    metrics.increment('known_error_published_total');
+    return knownError;
+  });
+}
+
 /**
  * Withdraws a published workaround, if there is one.
  *
@@ -278,13 +405,14 @@ export async function retireWorkaround(
   ctx: TenantContext,
   problemId: string,
   reason: string,
+  at: Date = new Date(),
 ): Promise<string | null> {
   const knownError = await tx.knownError.findFirst({ where: { problemId, status: 'published' } });
   if (!knownError) return null;
 
   await tx.knownError.update({
     where: { id: knownError.id },
-    data: { status: 'retired', retiredAt: new Date(), retiredReason: reason },
+    data: { status: 'retired', retiredAt: at, retiredReason: reason },
   });
 
   const problem = await tx.problem.findFirst({ where: { id: problemId }, select: { number: true } });
@@ -310,9 +438,15 @@ async function linkOne(
   problemId: string,
   ticketId: string,
   workaroundApplied = false,
+  at?: Date,
 ): Promise<boolean> {
-  const ticket = await tx.ticket.findFirst({ where: { id: ticketId }, select: { id: true } });
+  const ticket = await tx.ticket.findFirst({ where: { id: ticketId }, select: { id: true, createdAt: true } });
   if (!ticket) throw new NotFoundError('ticket', ticketId);
+  if (at && at < ticket.createdAt) {
+    throw new ValidationError('a ticket cannot be linked before it was raised', [
+      { field: 'at', code: 'before_ticket', message: `must not be earlier than ${ticket.createdAt.toISOString()}, when ${ticketId} was raised` },
+    ]);
+  }
 
   const existing = await tx.problemTicket.findFirst({ where: { problemId, ticketId } });
   if (existing) {
@@ -332,6 +466,7 @@ async function linkOne(
       ticketId,
       workaroundApplied,
       linkedBy: ctx.actor.id,
+      ...(at ? { linkedAt: at } : {}),
     },
   });
   return true;
@@ -341,6 +476,32 @@ async function loadByNumber(tx: Tx, number: string) {
   const problem = await tx.problem.findFirst({ where: { number } });
   if (!problem) throw new NotFoundError('problem', number);
   return problem;
+}
+
+/**
+ * A supplied clock, once it is known to be a real instant that has already
+ * happened. A history records the past; a problem resolved "tomorrow" would
+ * retire a workaround people still need today.
+ */
+function pastInstant(at: Date): Date {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) {
+    throw new ValidationError('the time given is not a date', [{ field: 'at', code: 'invalid', message: 'not a date' }]);
+  }
+  if (at.getTime() > Date.now()) {
+    throw new ValidationError('a problem cannot be dated in the future', [
+      { field: 'at', code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+  return at;
+}
+
+/** Refuses a step dated before the problem it belongs to was raised. */
+function assertNotBeforeRaised(at: Date, problem: { createdAt: Date }): void {
+  if (at < problem.createdAt) {
+    throw new ValidationError('nothing can happen to a problem before it was raised', [
+      { field: 'at', code: 'before_problem', message: `must not be earlier than ${problem.createdAt.toISOString()}` },
+    ]);
+  }
 }
 
 function stateOf(problem: { status: string }): ProblemState {
