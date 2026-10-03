@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { uiStylesheet } from '@itsm/ui/styles';
 import { structuralVariables, themeVariables } from '@itsm/ui/tokens';
@@ -38,16 +39,43 @@ describe('the app stylesheet and the token pipeline agree', () => {
  * taken of — every browser would keep it for a year.
  */
 describe('the stylesheet route', () => {
+  const request = (acceptEncoding?: string) =>
+    new Request('http://admin.test/itsm-ui.css?v=1', acceptEncoding === undefined ? {} : { headers: { 'accept-encoding': acceptEncoding } });
+
   it('serves exactly the design system sheet, as CSS, cacheable for a year', async () => {
-    const response = GET();
+    const response = await GET(request());
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8');
     expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(response.headers.get('content-encoding')).toBeNull();
     expect(await response.text()).toBe(uiStylesheet());
   });
 
-  it('is rendered once, at build time', () => {
-    expect(dynamic).toBe('force-static');
+  // Next's own compression skips a route handler's response, so the route
+  // compresses the sheet itself; every encoding must still decode to the sheet.
+  it.each([
+    ['gzip, deflate, br, zstd', 'br', brotliDecompressSync],
+    ['gzip, deflate', 'gzip', gunzipSync],
+    ['br;q=0, gzip;q=0.8', 'gzip', gunzipSync],
+    ['*', 'br', brotliDecompressSync],
+  ] as const)('answers accept-encoding "%s" in %s, which decodes to the sheet', async (accept, encoding, decode) => {
+    const response = await GET(request(accept));
+    expect(response.headers.get('content-encoding')).toBe(encoding);
+    expect(response.headers.get('vary')).toBe('accept-encoding');
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    const body = Buffer.from(await response.arrayBuffer());
+    expect(body.length).toBeLessThan(Buffer.byteLength(uiStylesheet()) / 5);
+    expect(decode(body).toString('utf8')).toBe(uiStylesheet());
+  });
+
+  it.each(['identity', 'br;q=0, gzip;q=0', 'deflate'])('sends the plain sheet for accept-encoding "%s"', async (accept) => {
+    const response = await GET(request(accept));
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(await response.text()).toBe(uiStylesheet());
+  });
+
+  it('reads the request, so it is rendered per request rather than once at build time', () => {
+    expect(dynamic).toBe('force-dynamic');
   });
 });
 
