@@ -1,6 +1,16 @@
 import type { Client, RequestOptions } from '../client.js';
 import type { FieldRow } from './admin.js';
-import type { AvailabilityRow } from './operations.js';
+import type { ServiceRow } from './builders.js';
+import { metricQueries } from './insights.js';
+import type { AvailabilityRow, OnCallRow, RotationRow } from './operations.js';
+import {
+  majorIncidentsApi,
+  onCallApi,
+  type MajorIncidentAudience,
+  type MajorIncidentDetail,
+  type MajorIncidentFilter,
+  type MajorIncidentRow,
+} from './service-management.js';
 import {
   getUser,
   listTeamMembers,
@@ -26,12 +36,15 @@ import type {
   RunningTimer,
   SearchOptions,
   SearchResults,
+  RecordCiRow,
   SlaTimers,
   Suggestion,
   TeamListRow,
   TeamMemberRow,
   Ticket,
   TicketCount,
+  TicketCountDimension,
+  TicketCountsBy,
   TicketLinkRow,
   TicketLinkType,
   TicketPatch,
@@ -70,11 +83,49 @@ export interface TicketFilter {
   requester?: string;
   group?: string;
   service?: string;
+  /**
+   * Time windows (R2), each half-open: `…After` includes its instant and
+   * `…Before` does not, so consecutive windows never count a ticket twice.
+   * An ISO instant with `Z` or an offset, or a `Date`. "Due today" is the
+   * reader's own local midnight sent as an instant: the server has no viewer
+   * zone and never guesses one. Any `due…` bound also means "has a due time".
+   */
+  createdAfter?: string | Date;
+  createdBefore?: string | Date;
+  dueAfter?: string | Date;
+  dueBefore?: string | Date;
+  resolvedAfter?: string | Date;
+  resolvedBefore?: string | Date;
+  /**
+   * Open work past its due time (`breached`), or due within the hour
+   * (`due_soon`), judged on the server's clock so a saved link never goes
+   * stale. Paused work is neither.
+   */
+  sla?: 'breached' | 'due_soon';
   q?: string;
   limit?: number;
   cursor?: string;
   sort?: 'createdAt' | '-createdAt' | 'dueAt' | '-dueAt';
 }
+
+/** The filter keys that are sent bracketed, `filter[key]=…`: every one but paging, sorting and `q`. */
+const BRACKETED = [
+  'status',
+  'statusCategory',
+  'type',
+  'priority',
+  'assignee',
+  'requester',
+  'group',
+  'service',
+  'createdAfter',
+  'createdBefore',
+  'dueAfter',
+  'dueBefore',
+  'resolvedAfter',
+  'resolvedBefore',
+  'sla',
+] as const;
 
 /**
  * The list grammar, spelled the way the API reads it.
@@ -86,16 +137,19 @@ export interface TicketFilter {
  * with a test, rather than spelled at each call site.
  */
 export function ticketQuery(filter: TicketFilter): Record<string, string | number | undefined> {
-  const bracketed = ['status', 'statusCategory', 'type', 'priority', 'assignee', 'requester', 'group', 'service'] as const;
   const query: Record<string, string | number | undefined> = {
     limit: filter.limit ?? 50,
     ...(filter.cursor ? { cursor: filter.cursor } : {}),
     ...(filter.sort ? { sort: filter.sort } : {}),
     ...(filter.q ? { q: filter.q } : {}),
   };
-  for (const key of bracketed) {
+  for (const key of BRACKETED) {
     const value = filter[key];
-    if (value !== undefined && value !== '') query[`filter[${key}]`] = value;
+    // A `Date` goes as an ISO instant. `String(date)` would send the local
+    // "Fri Oct 02 2026 …" form, which the API refuses — and an invalid date
+    // asks nothing rather than throwing from inside a page's loader.
+    const text = value instanceof Date ? (Number.isNaN(value.getTime()) ? undefined : value.toISOString()) : value;
+    if (text !== undefined && text !== '') query[`filter[${key}]`] = text;
   }
   return query;
 }
@@ -113,9 +167,22 @@ export function ticketCountQuery(filter: TicketFilter): Record<string, string | 
   return query;
 }
 
+/**
+ * The grouped count's query (R2g): the count grammar plus `groupBy`.
+ *
+ * A separate route rather than `groupBy` on `/tickets/count`, because an API
+ * without grouped counts would drop the unknown key and answer one total,
+ * which a reader of groups would misread; a new route answers 404 instead.
+ */
+export function ticketCountsQuery(groupBy: TicketCountDimension, filter: TicketFilter): Record<string, string | number | undefined> {
+  return { ...ticketCountQuery(filter), groupBy };
+}
+
 const unwrap = <T>(body: { data: T }): T => body.data;
 
 export function workbench(client: Client) {
+  const incidents = majorIncidentsApi(client);
+  const onCall = onCallApi(client);
   return {
     me: (): Promise<Me> => client.request<Me>('/api/v1/me'),
 
@@ -129,6 +196,14 @@ export function workbench(client: Client) {
      */
     ticketCount: (filter: TicketFilter = {}): Promise<TicketCount> =>
       client.request<TicketCount>('/api/v1/tickets/count', { query: ticketCountQuery(filter) }),
+
+    /**
+     * The same set broken down by one dimension (R2g): a distribution bar,
+     * the age of a backlog, the SLA picture of a queue. The groups sum to
+     * `total`, which is what `ticketCount` answers for the same filter.
+     */
+    ticketCounts: (groupBy: TicketCountDimension, filter: TicketFilter = {}): Promise<TicketCountsBy> =>
+      client.request<TicketCountsBy>('/api/v1/tickets/counts', { query: ticketCountsQuery(groupBy, filter) }),
 
     ticket: (idOrNumber: string): Promise<Ticket> =>
       client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}`),
@@ -260,6 +335,41 @@ export function workbench(client: Client) {
 
     categories: (options: { includeInactive?: boolean } = {}): Promise<CategoryRow[]> =>
       client.request<{ data: CategoryRow[] }>('/api/v1/categories', { query: { includeInactive: options.includeInactive } }).then(unwrap),
+
+    /** The configuration items this ticket (or another record) touched. Needs `cmdb.read`. */
+    recordCis: (entityType: 'ticket' | 'major_incident' | 'problem' | 'change', entityId: string): Promise<RecordCiRow[]> =>
+      client
+        .request<{ data: RecordCiRow[] }>(`/api/v1/records/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/cis`)
+        .then(unwrap),
+
+    // ---- The desk's numbers, its incidents and who is on call ------------------
+
+    /**
+     * The metric questions (MOD-12): `query`, `forecast` and `queryBatch`.
+     * Needs `analytics.read`, which the agent role does not hold (D9): decide
+     * with `permissionScope(me, 'analytics.read')` before asking.
+     */
+    insights: metricQueries(client),
+
+    /** `open: true` for the ones still running: the frame's chip and the Overview's banner. */
+    majorIncidents: (filter: MajorIncidentFilter = {}): Promise<MajorIncidentRow[]> => incidents.majorIncidents(filter),
+
+    /** One incident by number; `ticketId` is the way to its ticket until the incident pages ship. */
+    majorIncident: (number: string, audience?: MajorIncidentAudience): Promise<MajorIncidentDetail> =>
+      incidents.majorIncident(number, audience),
+
+    /** A team's rotations, or every one the reader may see (`workload.read`). */
+    rotations: (teamId?: string): Promise<RotationRow[]> => onCall.rotations(teamId),
+
+    /** Who is on call for one rotation, now or at `at`, through any cover somebody agreed to. */
+    onCall: (rotationKey: string, at?: string): Promise<OnCallRow> => onCall.onCall(rotationKey, at),
+
+    /**
+     * The service catalogue's services, for naming a grouped count's keys.
+     * Behind `catalogue.manage` today, so most agents get a 403: a page treats
+     * the names as optional rather than failing without them.
+     */
+    services: (): Promise<ServiceRow[]> => client.request<{ data: ServiceRow[] }>('/api/v1/services').then(unwrap),
 
     // ---- People and teams ----------------------------------------------------
 

@@ -1,6 +1,16 @@
 import type { Client } from '../client.js';
-import type { AvailabilityInput, Page, SlaTimers, Ticket } from './types.js';
-import { ticketQuery, type TicketFilter } from './workbench.js';
+import { insights, type Insights } from './insights.js';
+import type { ApprovalDetail, ApprovalRequest } from './portal.js';
+import {
+  majorIncidentsApi,
+  onCallApi,
+  type MajorIncidentAudience,
+  type MajorIncidentDetail,
+  type MajorIncidentFilter,
+  type MajorIncidentRow,
+} from './service-management.js';
+import type { AvailabilityInput, Page, SlaTimers, Ticket, TicketCount, TicketCountDimension, TicketCountsBy } from './types.js';
+import { ticketCountQuery, ticketCountsQuery, ticketQuery, type TicketFilter } from './workbench.js';
 
 /**
  * What the desk is doing, as opposed to how it is set up.
@@ -371,182 +381,31 @@ export interface Estate {
 
 // ---------------------------------------------------------------------------
 // Insights: metrics, dashboards, reports (MOD-12)
+//
+// Moved to `insights.ts`, which the Service Desk shares. Re-exported here
+// under the names this file always had, so every import of them still works.
 // ---------------------------------------------------------------------------
 
-export interface MetricRow {
-  key: string;
-  name: string;
-  description: string;
-  fact: string;
-  aggregate: string;
-  field?: string;
-  unit: string;
-  /** Shipped with the platform, so it cannot be edited or deleted. */
-  builtin: boolean;
-}
-
-export interface DashboardRow {
-  id: string;
-  key: string;
-  name: string;
-  description: string | null;
-  /** True where it belongs to one person rather than the desk. */
-  personal: boolean;
-  seeded: boolean;
-  version: number;
-  updatedAt: string;
-  widgetCount: number;
-}
-
-export interface ReportRow {
-  id: string;
-  key: string;
-  name: string;
-  description: string | null;
-  sections: unknown;
-  schedules: number;
-  runs: number;
-  version: number;
-}
-
-export type MetricRange = '7d' | '30d' | '90d' | '12m' | 'ytd' | 'custom';
-
-export interface MetricFilter {
-  field: string;
-  op: 'eq' | 'neq' | 'in' | 'not_in' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_null' | 'not_null';
-  value?: string | number | boolean | (string | number)[] | null;
-}
-
-/** One question: a number, or with `series` a line over time, or with `groupBy` a breakdown. */
-export interface MetricQuery {
-  metricKey: string;
-  filters?: MetricFilter[];
-  range?: MetricRange;
-  /** For `range: 'custom'`: ISO instants. */
-  from?: string;
-  to?: string;
-  groupBy?: string;
-  series?: boolean;
-  /** Chosen from the range when left out. */
-  bucket?: 'day' | 'week' | 'month';
-}
-
-export interface MetricResult {
-  metric: { key: string; name: string; unit: 'count' | 'minutes' | 'percent' | 'money'; aggregate: string; fact: string };
-  period: { from: string; to: string };
-  bucket?: 'day' | 'week' | 'month';
-  value?: number | null;
-  series?: { at: string; value: number | null }[];
-  groups?: { key: string | null; value: number | null; label: string | null }[];
-  /** Which path answered: the fact tables or the rollup. */
-  source: 'facts' | 'rollup';
-}
-
-/** A straight line through the series, extended. A trend, not a prediction. */
-export interface MetricTrend {
-  slopePerDay: number;
-  intercept: number;
-  /** 0: the line explains nothing; 1: every point sits on it. */
-  rSquared: number;
-  fitted: { at: string; value: number }[];
-  projected: { at: string; value: number }[];
-}
-
-export type WidgetType = 'number' | 'timeseries' | 'bar' | 'table' | 'trend';
-
-export interface WidgetInput {
-  title: string;
-  type: WidgetType;
-  metricKey: string;
-  filters?: MetricFilter[];
-  groupBy?: string;
-  range?: Exclude<MetricRange, 'custom'>;
-  /** Columns out of twelve. */
-  width?: number;
-  options?: Record<string, unknown>;
-}
-
-export interface DashboardInput {
-  key?: string;
-  name: string;
-  description?: string;
-  /** Personal dashboards belong to the caller; anything else is shared. */
-  personal?: boolean;
-  widgets?: WidgetInput[];
-}
-
-export interface WidgetRow {
-  id: string;
-  position: number;
-  title: string;
-  type: WidgetType;
-  metricKey: string;
-  filters: MetricFilter[];
-  groupBy: string | null;
-  range: string;
-  width: number;
-  options: Record<string, unknown>;
-}
-
-/** A widget evaluated. One widget failing reports `error` on that widget, not on the dashboard. */
-export interface RenderedWidget {
-  id: string;
-  title: string;
-  type: WidgetType;
-  width: number;
-  metricKey: string;
-  result?: MetricResult;
-  error?: string;
-}
-
-export type DashboardSummary = Omit<DashboardRow, 'widgetCount'>;
-
-export interface DashboardDetail extends DashboardSummary {
-  widgets: WidgetRow[];
-}
-
-export interface RenderedDashboard extends DashboardSummary {
-  widgets: RenderedWidget[];
-}
-
-export interface ReportRunRow {
-  id: string;
-  status: string;
-  startedAt: string;
-  finishedAt: string | null;
-  periodFrom: string;
-  periodTo: string;
-  rowCount: number;
-  summary: string | null;
-  error: string | null;
-  scheduleId: string | null;
-}
-
-export interface Insights {
-  /** `facts` is the vocabulary a metric may be built from, served alongside the list. */
-  metrics(): Promise<{ data: MetricRow[]; facts: unknown }>;
-  query(query: MetricQuery): Promise<MetricResult>;
-  /** The daily series and a straight line through it, `horizonDays` (default 14) further on. */
-  forecast(query: Omit<MetricQuery, 'groupBy' | 'series' | 'bucket'> & { horizonDays?: number }): Promise<{
-    result: MetricResult;
-    trend: MetricTrend | null;
-  }>;
-  dashboards(): Promise<DashboardRow[]>;
-  dashboard(id: string): Promise<DashboardDetail>;
-  /** Every widget evaluated: what a page draws. */
-  render(id: string): Promise<RenderedDashboard>;
-  createDashboard(input: DashboardInput): Promise<DashboardSummary>;
-  /** `widgets`, when sent, replaces the whole set. */
-  updateDashboard(id: string, patch: Partial<DashboardInput>): Promise<DashboardSummary>;
-  deleteDashboard(id: string): Promise<void>;
-  reports(): Promise<ReportRow[]>;
-  reportRuns(reportId: string, limit?: number): Promise<ReportRunRow[]>;
-  /** Runs now, over `period` or the last 30 days. The CSV is at `/analytics/report-runs/<id>/csv`. */
-  runReport(
-    reportId: string,
-    period?: { from: string; to: string },
-  ): Promise<{ id: string; status: string; period: { from: string; to: string }; summary: string | null; rowCount: number; sections: unknown }>;
-}
+export type {
+  DashboardDetail,
+  DashboardInput,
+  DashboardRow,
+  DashboardSummary,
+  Insights,
+  MetricFilter,
+  MetricQuery,
+  MetricRange,
+  MetricResult,
+  MetricRow,
+  MetricTrend,
+  RenderedDashboard,
+  RenderedWidget,
+  ReportRow,
+  ReportRunRow,
+  WidgetInput,
+  WidgetRow,
+  WidgetType,
+} from './insights.js';
 
 // ---------------------------------------------------------------------------
 // Integrations: actions, credentials, the error queue (MOD-14)
@@ -754,17 +613,8 @@ export interface AiDecisions {
   setBudget(input: { limitPence: number | null; warnPence: number | null }): Promise<Omit<AiBudget, 'spentMicros'>>;
 }
 
-export interface MajorIncidentRow {
-  number: string;
-  title: string;
-  severity: string;
-  status: string;
-  commanderId: string | null;
-  customerFacing: boolean;
-  declaredAt: string;
-  resolvedAt: string | null;
-  nextUpdateDueAt: string | null;
-}
+/** Moved to `service-management.ts`, which the Service Desk shares; re-exported under its old home. */
+export type { MajorIncidentRow } from './service-management.js';
 
 export interface Operations {
   readonly queues: Queues;
@@ -786,15 +636,38 @@ export interface Operations {
    * reason.
    */
   tickets(filter?: TicketFilter): Promise<Page<Ticket>>;
+  /**
+   * How many tickets a filter holds, at the reader's own scope: the same
+   * grammar and visibility as `tickets`, so a KPI never promises a row the
+   * register will not show. `capped` means "at least this many".
+   */
+  ticketCount(filter?: TicketFilter): Promise<TicketCount>;
+  /** The same set broken down by one dimension (R2g); see `TicketCountDimension` for what it needs. */
+  ticketCounts(groupBy: TicketCountDimension, filter?: TicketFilter): Promise<TicketCountsBy>;
   ticket(idOrNumber: string): Promise<Ticket>;
   ticketSla(idOrNumber: string): Promise<SlaTimers>;
   /** `open: true` for the ones still running, which is what a banner wants. */
-  majorIncidents(filter?: { open?: boolean; status?: string; severity?: string }): Promise<MajorIncidentRow[]>;
+  majorIncidents(filter?: MajorIncidentFilter): Promise<MajorIncidentRow[]>;
+  /** One incident by number, with its timeline for `audience` (`internal` by default) and its review. */
+  majorIncident(number: string, audience?: MajorIncidentAudience): Promise<MajorIncidentDetail>;
+
+  /**
+   * Approval requests waiting on the reader; with `includeDecided`, the ones
+   * they have decided as well; with `ticketId`, how far one ticket's have
+   * got. What is being approved (`subject`) is filled in for its approvers
+   * only, so the console shows an administrator what they were asked, never
+   * somebody else's request.
+   */
+  approvals(options?: { includeDecided?: boolean; ticketId?: string }): Promise<ApprovalRequest[]>;
+  /** One request with its steps, and the catalogue answers when the reader is one of its approvers. */
+  approval(id: string): Promise<ApprovalDetail>;
 }
 
 const unwrap = <T>(body: { data: T }): T => body.data;
 
 export function operations(client: Client): Operations {
+  const onCall = onCallApi(client);
+  const incidents = majorIncidentsApi(client);
   return {
     queues: {
       availability: () => client.request<{ data: AvailabilityRow[] }>('/api/v1/workload/availability').then(unwrap),
@@ -808,13 +681,11 @@ export function operations(client: Client): Operations {
         client.request(`/api/v1/workload/shifts/${encodeURIComponent(shiftKey)}/assignments`, { method: 'POST', body: input }),
       unassignShift: (assignmentId) =>
         client.request<void>(`/api/v1/workload/shift-assignments/${encodeURIComponent(assignmentId)}`, { method: 'DELETE' }),
-      rotations: (teamId) =>
-        client.request<{ data: RotationRow[] }>('/api/v1/workload/rotations', { query: { teamId } }).then(unwrap),
+      rotations: onCall.rotations,
       createRotation: (input) => client.request('/api/v1/workload/rotations', { method: 'POST', body: input }),
       updateRotation: (key, patch) =>
         client.request(`/api/v1/workload/rotations/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch }),
-      onCall: (rotationKey, at) =>
-        client.request<OnCallRow>(`/api/v1/workload/rotations/${encodeURIComponent(rotationKey)}/on-call`, { query: { at } }),
+      onCall: onCall.onCall,
       addOverride: (rotationKey, input) =>
         client.request(`/api/v1/workload/rotations/${encodeURIComponent(rotationKey)}/overrides`, { method: 'POST', body: input }),
       removeOverride: (id) =>
@@ -892,28 +763,7 @@ export function operations(client: Client): Operations {
           .then(unwrap),
     },
 
-    insights: {
-      metrics: () => client.request<{ data: MetricRow[]; facts: unknown }>('/api/v1/analytics/metrics'),
-      // A POST that writes nothing: a query carries filters that do not fit a URL.
-      query: (query) => client.request<MetricResult>('/api/v1/analytics/query', { method: 'POST', body: query }),
-      forecast: (query) => client.request('/api/v1/analytics/forecast', { method: 'POST', body: query }),
-      dashboards: () => client.request<{ data: DashboardRow[] }>('/api/v1/analytics/dashboards').then(unwrap),
-      dashboard: (id) => client.request<DashboardDetail>(`/api/v1/analytics/dashboards/${encodeURIComponent(id)}`),
-      render: (id) => client.request<RenderedDashboard>(`/api/v1/analytics/dashboards/${encodeURIComponent(id)}/render`),
-      createDashboard: (input) =>
-        client.request<DashboardSummary>('/api/v1/analytics/dashboards', { method: 'POST', body: input }),
-      updateDashboard: (id, patch) =>
-        client.request<DashboardSummary>(`/api/v1/analytics/dashboards/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
-      deleteDashboard: (id) =>
-        client.request<void>(`/api/v1/analytics/dashboards/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-      reports: () => client.request<{ data: ReportRow[] }>('/api/v1/analytics/reports').then(unwrap),
-      reportRuns: (reportId, limit) =>
-        client
-          .request<{ data: ReportRunRow[] }>(`/api/v1/analytics/reports/${encodeURIComponent(reportId)}/runs`, { query: { limit } })
-          .then(unwrap),
-      runReport: (reportId, period) =>
-        client.request(`/api/v1/analytics/reports/${encodeURIComponent(reportId)}/run`, { method: 'POST', body: period ?? {} }),
-    },
+    insights: insights(client),
 
     integrations: {
       actions: () => client.request<{ data: ActionRow[] }>('/api/v1/actions').then(unwrap),
@@ -953,23 +803,29 @@ export function operations(client: Client): Operations {
 
     tickets: (filter = {}) => client.request<Page<Ticket>>('/api/v1/tickets', { query: ticketQuery(filter) }),
 
+    ticketCount: (filter = {}) => client.request<TicketCount>('/api/v1/tickets/count', { query: ticketCountQuery(filter) }),
+
+    ticketCounts: (groupBy, filter = {}) =>
+      client.request<TicketCountsBy>('/api/v1/tickets/counts', { query: ticketCountsQuery(groupBy, filter) }),
+
     ticket: (idOrNumber) => client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}`),
 
     ticketSla: (idOrNumber) => client.request<SlaTimers>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}/sla`),
 
-    // `open` is sent as a word either way. It is the one boolean filter whose
-    // `false` means something — closed ones only — rather than "no filter",
-    // so it cannot go through the rule that drops `false` from a query.
-    majorIncidents: (filter = {}) =>
+    majorIncidents: incidents.majorIncidents,
+
+    majorIncident: incidents.majorIncident,
+
+    // `false` is never sent (see `queryString`): the route used to read
+    // `includeDecided=false` as true.
+    approvals: (options = {}) =>
       client
-        .request<{ data: MajorIncidentRow[] }>('/api/v1/major-incidents', {
-          query: {
-            open: filter.open === undefined ? undefined : String(filter.open),
-            status: filter.status,
-            severity: filter.severity,
-          },
+        .request<{ data: ApprovalRequest[] }>('/api/v1/approvals', {
+          query: { includeDecided: options.includeDecided, ticketId: options.ticketId },
         })
         .then(unwrap),
+
+    approval: (id) => client.request<ApprovalDetail>(`/api/v1/approvals/${encodeURIComponent(id)}`),
   };
 }
 

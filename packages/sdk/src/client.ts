@@ -48,6 +48,27 @@ export class ApiError extends Error {
   get retryable(): boolean {
     return this.status === 429 || this.status >= 500;
   }
+
+  /**
+   * What went wrong, as a word a program can switch on: the last segment of
+   * the problem's `type` (`…/problems/demo_disabled` → `demo_disabled`).
+   *
+   * The status alone cannot tell a page what to say. A 403 is a missing
+   * permission or a feature the shared demo turns off; a 401 is a session
+   * that has ended or a demo that was rebuilt underneath it; a 429 is a rate
+   * limit or a demo's per-visit cap — and each of those has its own sentence
+   * and its own remedy. The `title` is prose and may change; the `type` is
+   * the contract. Null when there is no problem body, or when the type is
+   * `about:blank` (RFC 9457's "nothing more specific than the status").
+   */
+  get code(): string | null {
+    const type = this.problem?.type;
+    if (typeof type !== 'string' || type === '' || type === 'about:blank') return null;
+    const path = type.split(/[?#]/, 1)[0]!.replace(/\/+$/, '');
+    const segment = path.slice(path.lastIndexOf('/') + 1);
+    // A scheme with no path (`urn:…`, `tag:…`) names no code a page knows.
+    return segment === '' || segment.includes(':') ? null : segment;
+  }
 }
 
 export interface RequestOptions {

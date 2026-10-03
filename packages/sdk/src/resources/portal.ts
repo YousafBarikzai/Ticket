@@ -1,7 +1,7 @@
 import type { FormDefinition, FormValues } from '@itsm/contracts';
 import { ApiError, type Client } from '../client.js';
 import { markNotificationRead, notificationInbox, search, transitionBody } from './common.js';
-import { ticketQuery, type TicketFilter } from './workbench.js';
+import { ticketCountQuery, ticketCountsQuery, ticketQuery, type TicketFilter } from './workbench.js';
 import type {
   Article,
   ArticleSummary,
@@ -13,6 +13,9 @@ import type {
   SessionRow,
   SlaTimers,
   Ticket,
+  TicketCount,
+  TicketCountDimension,
+  TicketCountsBy,
   Timeline,
 } from './types.js';
 
@@ -368,6 +371,20 @@ export function portal(client: Client) {
      */
     myTickets: (filter: Omit<TicketFilter, 'requester'> = {}): Promise<Page<Ticket>> =>
       client.request<Page<Ticket>>('/api/v1/tickets', { query: ticketQuery({ ...filter, requester: 'me' }) }),
+
+    /**
+     * How many of my own tickets a filter holds: My requests' summary tiles.
+     * `requester` is forced to `me` here too, after anything the caller
+     * passed, so a count can never describe somebody else's tickets.
+     */
+    myTicketCount: (filter: Omit<TicketFilter, 'requester'> = {}): Promise<TicketCount> =>
+      client.request<TicketCount>('/api/v1/tickets/count', { query: ticketCountQuery({ ...filter, requester: 'me' }) }),
+
+    /** My own tickets broken down by one dimension (R2g), with the same forced `requester`. */
+    myTicketCounts: (groupBy: TicketCountDimension, filter: Omit<TicketFilter, 'requester'> = {}): Promise<TicketCountsBy> =>
+      client.request<TicketCountsBy>('/api/v1/tickets/counts', {
+        query: ticketCountsQuery(groupBy, { ...filter, requester: 'me' }),
+      }),
 
     ticket: (idOrNumber: string): Promise<Ticket> =>
       client.request<Ticket>(`/api/v1/tickets/${encodeURIComponent(idOrNumber)}`),
