@@ -773,15 +773,15 @@ describe('breachDue and the live tick share one body', () => {
     vi.setSystemTime(ELSEWHERE);
 
     const result = await breachDue(ctx, db.tx, TICKET, at('2026-10-14T08:40:00.000Z'));
-    // Response (15 min) and update (30 min) breached, each after its 50 %
-    // warning; the 75 % warning is scheduled past each deadline, as live.
-    expect(result).toEqual({ breaches: 2, warnings: 2 });
+    // Response (15 min) and update (30 min) breached, each after its 50, 75
+    // and 90 % warnings, as live.
+    expect(result).toEqual({ breaches: 2, warnings: 6 });
     expect(sorted(db.table('breachRecord'), { breachedAt: 'asc' }).map((row) => row.breachedAt)).toEqual([
       at('2026-10-14T08:15:00.000Z'),
       at('2026-10-14T08:30:00.000Z'),
     ]);
     const response = db.table('slaTimer').find((timer) => timer.targetType === 'response')!;
-    expect(response).toMatchObject({ state: 'breached', breachedAt: at('2026-10-14T08:15:00.000Z'), warningsFired: [50] });
+    expect(response).toMatchObject({ state: 'breached', breachedAt: at('2026-10-14T08:15:00.000Z'), warningsFired: [50, 75, 90] });
     expect(escalations).not.toHaveBeenCalled();
     // Nothing more is due, so a second call does nothing.
     expect(await breachDue(ctx, db.tx, TICKET, at('2026-10-14T08:40:00.000Z'))).toEqual({ breaches: 0, warnings: 0 });
@@ -807,5 +807,112 @@ describe('breachDue and the live tick share one body', () => {
     const update = db.table('slaTimer').find((timer) => timer.targetType === 'update')!;
     expect(update).toMatchObject({ state: 'breached', breachedAt: at('2026-10-14T08:30:00.000Z'), cycle: 2 });
     expect(db.table('breachRecord').filter((row) => row.timerId === update.id)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MOD-07: a warning threshold is a share of the target's business-time budget
+// (of the current cycle, for an update timer). Before v3 each later threshold
+// was scheduled from the instant the previous one fired, against the whole
+// target again, so on a clock nobody paused only the 50 % warning ever fired:
+// the 75 % one fell at 125 % of the target, after the breach, and escalations
+// registered on `warning:75` or `warning:90` never ran.
+// ---------------------------------------------------------------------------
+
+describe('warnings fall at their share of the target, before the deadline', () => {
+  /** The warnings one target announced, as [threshold, instant], in the order they fired. */
+  function warnings(db: ReturnType<typeof memoryDb>, targetType: string) {
+    return db
+      .table('outboxEvent')
+      .map((event) => event.envelope as { type: string; occurredAt: string; payload: { targetType: string; threshold: number } })
+      .filter((envelope) => envelope.type === 'sla.timer.warning' && envelope.payload.targetType === targetType)
+      .map((envelope) => [envelope.payload.threshold, envelope.occurredAt]);
+  }
+
+  it('an uninterrupted clock warns at 50, 75 and 90 per cent of its target, live and replayed', async () => {
+    // A P1 nobody answers, on the round-the-clock calendar: response 15 min,
+    // update 30, resolution 240.
+    const life: Life = { priority: 'P1', groupId: NETWORK, createdAt: at('2026-10-14T08:00:00.000Z'), steps: [], upTo: at('2026-10-14T12:30:00.000Z') };
+    const db = await live(life);
+
+    expect(warnings(db, 'response')).toEqual([
+      [50, '2026-10-14T08:07:30.000Z'],
+      [75, '2026-10-14T08:11:15.000Z'],
+      [90, '2026-10-14T08:13:30.000Z'],
+    ]);
+    expect(warnings(db, 'update')).toEqual([
+      [50, '2026-10-14T08:15:00.000Z'],
+      [75, '2026-10-14T08:22:30.000Z'],
+      [90, '2026-10-14T08:27:00.000Z'],
+    ]);
+    expect(warnings(db, 'resolution')).toEqual([
+      [50, '2026-10-14T10:00:00.000Z'],
+      [75, '2026-10-14T11:00:00.000Z'],
+      [90, '2026-10-14T11:36:00.000Z'],
+    ]);
+    // Every warning before its breach, and the breaches where they always were.
+    expect(clocks(db).breaches).toEqual([
+      { target: 'response', breachedAt: at('2026-10-14T08:15:00.000Z') },
+      { target: 'update', breachedAt: at('2026-10-14T08:30:00.000Z') },
+      { target: 'resolution', breachedAt: at('2026-10-14T12:00:00.000Z') },
+    ]);
+    for (const timer of clocks(db).timers) expect(timer.warningsFired).toEqual([50, 75, 90]);
+
+    // The replay shares the body, so it writes the same.
+    expect(clocks((await replayed(life)).db)).toEqual(clocks(db));
+  });
+
+  it('a clock that waited counts only the business time it ran: the pause moves its warnings, not their share', async () => {
+    // A P2 on the round-the-clock calendar (resolution 8 h): one hour used,
+    // three hours waiting on the requester, then running again from 12:00.
+    const life: Life = {
+      priority: 'P2',
+      groupId: NETWORK,
+      createdAt: at('2026-10-14T08:00:00.000Z'),
+      steps: [
+        { at: at('2026-10-14T08:10:00.000Z'), reply: AGENT },
+        { at: at('2026-10-14T09:00:00.000Z'), status: 'pending_requester' },
+        { at: at('2026-10-14T12:00:00.000Z'), status: 'in_progress' },
+      ],
+      upTo: at('2026-10-14T19:30:00.000Z'),
+    };
+    const db = await live(life);
+
+    // 240, 360 and 432 of the 480 minutes used: 60 before the pause, the rest after 12:00.
+    expect(warnings(db, 'resolution')).toEqual([
+      [50, '2026-10-14T15:00:00.000Z'],
+      [75, '2026-10-14T17:00:00.000Z'],
+      [90, '2026-10-14T18:12:00.000Z'],
+    ]);
+    // The update cycle the 08:10 reply started (240 min) had used 50 minutes
+    // when the ticket began to wait.
+    expect(warnings(db, 'update')).toEqual([
+      [50, '2026-10-14T13:10:00.000Z'],
+      [75, '2026-10-14T14:10:00.000Z'],
+      [90, '2026-10-14T14:46:00.000Z'],
+    ]);
+    expect(clocks(db).breaches).toEqual([
+      { target: 'update', breachedAt: at('2026-10-14T15:10:00.000Z') },
+      { target: 'resolution', breachedAt: at('2026-10-14T19:00:00.000Z') },
+    ]);
+
+    expect(clocks((await replayed(life)).db)).toEqual(clocks(db));
+  });
+
+  it('a tick that runs late moves no later warning', async () => {
+    const db = memoryDb();
+    platform.tx = db.tx;
+    seedTenant(db);
+    const createdAt = at('2026-10-14T08:00:00.000Z');
+    db.table('ticket').push(ticketRow({ priority: 'P1', groupId: NETWORK, createdAt, steps: [], upTo: createdAt }, 'new'));
+    await startTimersForTicket(ctx, db.tx, TICKET, createdAt);
+
+    // The response's 50 % warning fell due at 08:07:30; the tick runs 40 s late.
+    vi.setSystemTime(at('2026-10-14T08:08:10.000Z'));
+    await tickPartition(ctx, partitionFor(TICKET));
+    expect(db.table('slaTimer').find((timer) => timer.targetType === 'response')).toMatchObject({
+      warningsFired: [50],
+      nextWarningAt: at('2026-10-14T08:11:15.000Z'),
+    });
   });
 });

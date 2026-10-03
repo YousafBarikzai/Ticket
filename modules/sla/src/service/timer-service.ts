@@ -156,7 +156,7 @@ export async function startTimersForTicket(ctx: TenantContext, tx: Tx, ticketId:
         dueAt,
         remainingMs: targetMs,
         state: 'running',
-        nextWarningAt: nextWarningInstant(startedAt, targetMs, target.warningThresholds, [], calendar),
+        nextWarningAt: nextWarningInstant(startedAt, targetMs, targetMs, target.warningThresholds, [], calendar),
         partition: partitionFor(ticketId),
       },
     });
@@ -267,7 +267,7 @@ export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketI
           dueAt,
           remainingMs: targetMs,
           state: 'running',
-          nextWarningAt: nextWarningInstant(startedAt, targetMs, target.warningThresholds, [], calendar),
+          nextWarningAt: nextWarningInstant(startedAt, targetMs, targetMs, target.warningThresholds, [], calendar),
           partition: partitionFor(ticketId),
         },
       });
@@ -318,7 +318,7 @@ export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketI
               // against what is left of the new target.
               lastResumedAt: now,
               dueAt: addBusinessMs(now, remainingMs, calendar),
-              nextWarningAt: nextWarningInstant(now, remainingMs, target.warningThresholds, timer.warningsFired, calendar),
+              nextWarningAt: nextWarningInstant(now, remainingMs, targetMs, target.warningThresholds, timer.warningsFired, calendar),
             }
           : {}),
         version: { increment: 1 },
@@ -360,10 +360,28 @@ export async function rematchTimersForTicket(ctx: TenantContext, tx: Tx, ticketI
   return result;
 }
 
-/** The instant at which the next unfired warning threshold is reached. */
+/**
+ * The instant at which the next unfired warning threshold is reached.
+ *
+ * A threshold is a share of the target's business-time budget (of the
+ * current cycle, for an `update` timer): the 75 % warning falls when three
+ * quarters of the target has been used, however the time was split by
+ * pauses. `from` is the instant the clock last started running and
+ * `remainingMs` what was left of the target then, so `targetMs − remainingMs`
+ * was used before `from` and the threshold falls `targetMs × t − used` of
+ * business time after it; a threshold already passed (a stricter policy
+ * matched late) is due at once.
+ *
+ * Anchored on the run's start, never on the instant a previous warning
+ * fired, the answer is the same whichever tick asks, late or not, and the
+ * SLA replay asks the same question. Before v3 each later threshold was
+ * scheduled from the moment the previous one fired against the whole target
+ * again, so 75 % and 90 % fell after the deadline and never fired (MOD-07).
+ */
 function nextWarningInstant(
   from: Date,
   remainingMs: number,
+  targetMs: number,
   thresholds: number[],
   fired: number[],
   calendar: BusinessCalendar,
@@ -371,10 +389,8 @@ function nextWarningInstant(
   const pending = thresholds.filter((t) => !fired.includes(t)).sort((a, b) => a - b);
   const next = pending[0];
   if (next === undefined) return null;
-  // Thresholds are a percentage of the ORIGINAL target, measured from now
-  // against what is left, which is what keeps them meaningful after a pause.
-  const elapsedFraction = next / 100;
-  const offset = Math.max(0, remainingMs * elapsedFraction);
+  const used = Math.max(0, targetMs - remainingMs);
+  const offset = Math.max(0, (targetMs * next) / 100 - used);
   return addBusinessMs(from, offset, calendar);
 }
 
@@ -447,7 +463,7 @@ export async function resumeTimers(ctx: TenantContext, tx: Tx, ticketId: string,
         pausedAt: null,
         lastResumedAt: now,
         dueAt,
-        nextWarningAt: nextWarningInstant(now, timer.remainingMs, target?.warningThresholds ?? [], timer.warningsFired, calendar),
+        nextWarningAt: nextWarningInstant(now, timer.remainingMs, timer.targetMs, target?.warningThresholds ?? [], timer.warningsFired, calendar),
         version: { increment: 1 },
       },
     });
@@ -560,7 +576,7 @@ export function nextUpdateCycle(
       lastResumedAt: at,
       pausedAt: null,
       dueAt: addBusinessMs(at, timer.targetMs, calendar),
-      nextWarningAt: nextWarningInstant(at, timer.targetMs, thresholds, [], calendar),
+      nextWarningAt: nextWarningInstant(at, timer.targetMs, timer.targetMs, thresholds, [], calendar),
       opensPause: false,
     };
   }
@@ -756,6 +772,9 @@ interface DueTimer {
   dueAt: Date | null;
   nextWarningAt: Date | null;
   breachedAt: Date | null;
+  targetMs: number;
+  startedAt: Date;
+  lastResumedAt: Date | null;
   remainingMs: number;
   warningsFired: number[];
 }
@@ -888,7 +907,9 @@ async function fireDue(
       where: { id: timer.id },
       data: {
         warningsFired,
-        nextWarningAt: nextWarningInstant(now, timer.remainingMs, thresholds, warningsFired, calendar),
+        // From the start of the current run, against what was left then: the
+        // instant this tick ran (up to a minute late) moves nothing.
+        nextWarningAt: nextWarningInstant(timer.lastResumedAt ?? timer.startedAt, timer.remainingMs, timer.targetMs, thresholds, warningsFired, calendar),
         version: { increment: 1 },
       },
     });
