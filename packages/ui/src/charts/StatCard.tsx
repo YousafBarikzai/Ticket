@@ -132,10 +132,10 @@ const STATUS: Readonly<Record<'attention' | 'critical', { icon: IconName; label:
 };
 
 /**
- * The spark row's line. A fixed 96 × 40 until the kit's `width="fill"` is
- * wired in (WP-29); `inline` keeps v2's 88 × 28 at the end of its row.
+ * The spark row's line: the full width of a tile's row, 40 tall (A8 §4.2);
+ * `inline` keeps v2's 88 × 28 at the end of its row.
  */
-const SPARK_SIZE = { tile: { width: 96, height: 40 }, inline: { width: 88, height: 28 } } as const;
+const SPARK_SIZE = { tile: { width: 'fill', height: 40 }, inline: { width: 88, height: 28 } } as const;
 
 /**
  * One number that matters, with its change and trend: the KPI tile (v3

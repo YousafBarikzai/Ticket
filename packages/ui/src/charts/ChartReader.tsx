@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useId, useRef, useState, type ComponentType, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { cx } from '../web/cx.js';
+import type { SeriesStyle } from './common.js';
 import type { SeriesSlot } from './scale.js';
+import type { ChartTone } from './types.js';
 
 /** One value in a reading: a series at one position, already formatted. */
 export interface ReaderRow {
@@ -11,6 +13,10 @@ export interface ReaderRow {
   readonly label: string;
   readonly value: string;
   readonly slot?: SeriesSlot;
+  /** A state's colour for the key (a P1 part, a breached series); wins over `slot`, as on the mark. */
+  readonly tone?: ChartTone;
+  /** A comparison or forecast series is keyed as its line is drawn. */
+  readonly style?: SeriesStyle;
   /** For the crosshair: where the series' marker sits, 0 at the top of the plot and 1 at the bottom. */
   readonly y?: number;
 }
@@ -23,6 +29,8 @@ export interface ReaderPoint {
   /** Where its tooltip points, as fractions of the plot (x from the left, y from the top). */
   readonly at: readonly [number, number];
   readonly rows: readonly ReaderRow[];
+  /** Where Enter goes from this position: the tickets behind a day, a bar or a row. */
+  readonly href?: string;
 }
 
 export interface ChartReaderProps {
@@ -43,130 +51,69 @@ export interface ChartReaderProps {
   readonly children: ReactNode;
 }
 
-/** The sentence a reading is spoken as: "Tue 3 Sep 2026: Raised 12, Resolved 9". */
-export function readingSentence(point: ReaderPoint): string {
-  const values = point.rows.map((row) => (row.label ? `${row.label} ${row.value}` : row.value));
-  return `${point.title}: ${values.join(', ')}`;
+/** What the group forwards to the core once it has arrived. */
+export interface ReaderHandlers {
+  key(event: KeyboardEvent<HTMLDivElement>): void;
+  pointer(event: PointerEvent<HTMLDivElement>): void;
+  leave(): void;
+  blur(event: FocusEvent<HTMLDivElement>): void;
 }
 
+/** What the core is handed by the island it lives in. */
+export interface ReaderCoreProps extends ChartReaderProps {
+  /** The focusable group: the core reads its box and marks its marks. */
+  readonly root: RefObject<HTMLDivElement | null>;
+  /** The core puts its handlers here; the group calls them from then on. */
+  readonly handlers: { current: ReaderHandlers | null };
+  /** Keys pressed before the core arrived, oldest first, for it to replay. */
+  readonly queued: string[];
+  /** Writes the polite readout, which the island holds so it exists before anything is said. */
+  readonly say: (words: string) => void;
+}
+
+/** The core's module, fetched once for every chart on the page. A failed fetch is forgotten, so the next intent tries again. */
+let core: Promise<{ readonly ReaderCore: ComponentType<ReaderCoreProps> }> | undefined;
+
 /**
- * The client layer over a static chart: a pointer or the arrow keys pick a
- * position, a tooltip shows every series' value there, and a polite live
- * region reads it to a screen reader (SPEC §4.8, X-69).
+ * The client layer over a static chart (A8 §5, v2 X-69), split in two so a
+ * page pays for hover only when someone hovers.
  *
- * The chart itself stays the server-rendered SVG it was; this wraps it and
- * adds only what needs a browser. The wrapper is one tab stop, a `group` with
- * `aria-roledescription="chart"` and the hint "Use ← → to read values", so a
- * screen-reader user who lands on it is told how to use it. Browse mode has
- * the table under "View as table" as well.
+ * This island is what ships with the page (≤ 800 B): the one tab stop — a
+ * `group` named by the chart, `aria-roledescription="chart"`, described by
+ * "Use ← → to read values" — and the polite live region, empty until someone
+ * reads. On the first sign of intent (the pointer arriving, focus, a key) it
+ * fetches `reader-core.tsx`, which does the reading: hit-testing, the
+ * crosshair, the tooltip, the arrow keys, Enter to follow a position's link.
+ * Until it lands the chart is complete without it (the caption and the
+ * "View as table" twin carry every value), and the keys pressed meanwhile
+ * are kept, up to eight, and replayed in order, so a keyboard user hears the
+ * first reading without pressing again.
  *
- * - **Tooltips enhance, never gate**: every value is in the table, and the
- *   keyboard gets exactly what the pointer gets.
- * - The pointer finds the nearest position rather than asking anybody to land
- *   on a 2 px line; bars and segments are their own (full-band) hit targets.
- * - Only keyboard moves are announced. A pointer sweeping across thirty days
- *   would queue thirty sentences.
- * - Tooltip text is React text, never markup: series and category names come
- *   from data.
+ * `data-reader` says where it is: `idle`, `loading`, `ready`.
  */
-export function ChartReader({
-  label,
-  points,
-  mode,
-  axis = 'x',
-  nearest = mode === 'crosshair',
-  placement = 'beside',
-  hint,
-  className,
-  children,
-}: ChartReaderProps): ReactNode {
+export function ChartReader(props: ChartReaderProps): ReactNode {
+  const { label, axis = 'x', hint, className, children } = props;
   const hintId = useId();
   const root = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState<number | null>(null);
-  const [source, setSource] = useState<'pointer' | 'keyboard' | null>(null);
+  const handlers = useRef<ReaderHandlers | null>(null);
+  const queued = useRef<string[]>([]);
+  // `null` until there is intent, then `0` while the core is on its way, then the core.
+  const [Core, setCore] = useState<ComponentType<ReaderCoreProps> | 0 | null>(null);
   const [readout, setReadout] = useState('');
-  const point = active === null ? undefined : points[active];
 
-  // The marks are server-rendered and outside React's reach from here, so the
-  // active one is marked by attribute; CSS lifts it and quietens the rest.
-  useEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    for (const mark of element.querySelectorAll('[data-point]')) {
-      mark.toggleAttribute('data-active', active !== null && mark.getAttribute('data-point') === String(active));
-    }
-  }, [active, points]);
-
-  // A shorter data set can leave the reading pointing past its end.
-  useEffect(() => {
-    if (active !== null && active >= points.length) setActive(null);
-  }, [active, points.length]);
-
-  const clear = useCallback(() => {
-    setActive(null);
-    setSource(null);
-    setReadout('');
-  }, []);
-
-  const moveTo = (index: number): void => {
-    if (points.length === 0) return;
-    const next = Math.min(points.length - 1, Math.max(0, index));
-    setActive(next);
-    setSource('keyboard');
-    setReadout(readingSentence(points[next]!));
+  const load = (): void => {
+    if (Core !== null) return;
+    setCore(0);
+    (core ??= import('./reader-core.js')).then(
+      (module) => setCore(() => module.ReaderCore),
+      () => {
+        core = undefined;
+        setCore(null);
+      },
+    );
   };
+  const pointer = (event: PointerEvent<HTMLDivElement>): void => (handlers.current ? handlers.current.pointer(event) : load());
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const forward = event.key === 'ArrowRight' || (axis === 'y' && event.key === 'ArrowDown');
-    const backward = event.key === 'ArrowLeft' || (axis === 'y' && event.key === 'ArrowUp');
-    if (forward) moveTo(active === null ? 0 : active + 1);
-    else if (backward) moveTo(active === null ? points.length - 1 : active - 1);
-    else if (event.key === 'Home') moveTo(0);
-    else if (event.key === 'End') moveTo(points.length - 1);
-    else if (event.key === 'Escape' && active !== null) {
-      // Only when there was something to clear: otherwise Escape belongs to
-      // whatever the chart sits in (a sheet, a dialog).
-      event.stopPropagation();
-      clear();
-    } else return;
-    event.preventDefault();
-  };
-
-  const hit = (event: PointerEvent<HTMLDivElement>): number | null => {
-    const element = root.current;
-    if (!element) return null;
-    const mark = (event.target as Element | null)?.closest?.('[data-point]');
-    if (mark && element.contains(mark)) {
-      const index = Number(mark.getAttribute('data-point'));
-      if (Number.isInteger(index) && index >= 0 && index < points.length) return index;
-    }
-    if (!nearest || points.length === 0) return null;
-    const box = element.getBoundingClientRect();
-    const extent = axis === 'x' ? box.width : box.height;
-    if (extent <= 0) return null;
-    const along = axis === 'x' ? (event.clientX - box.left) / extent : (event.clientY - box.top) / extent;
-    const coordinate = axis === 'x' ? 0 : 1;
-    let best = 0;
-    for (let index = 1; index < points.length; index++) {
-      if (Math.abs(points[index]!.at[coordinate] - along) < Math.abs(points[best]!.at[coordinate] - along)) best = index;
-    }
-    return best;
-  };
-
-  const onPointer = (event: PointerEvent<HTMLDivElement>): void => {
-    const index = hit(event);
-    if (index === null) {
-      if (source === 'pointer') clear();
-      return;
-    }
-    if (index !== active || source !== 'pointer') {
-      setActive(index);
-      setSource('pointer');
-    }
-  };
-
-  const side = point && point.at[0] > 0.6 ? 'start' : 'end';
   return (
     <div
       ref={root}
@@ -176,66 +123,32 @@ export function ChartReader({
       aria-label={label}
       aria-describedby={hintId}
       tabIndex={0}
-      data-mode={mode}
-      data-reading={point ? '' : undefined}
-      onKeyDown={onKeyDown}
-      onPointerMove={onPointer}
-      onPointerDown={onPointer}
-      onPointerLeave={() => {
-        if (source === 'pointer') clear();
-      }}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clear();
+      data-reader={Core ? 'ready' : Core === 0 ? 'loading' : 'idle'}
+      onFocus={load}
+      onPointerEnter={load}
+      onPointerMove={pointer}
+      onPointerDown={pointer}
+      onPointerLeave={() => handlers.current?.leave()}
+      onBlur={(event) => handlers.current?.blur(event)}
+      onKeyDown={(event) => {
+        if (handlers.current) return handlers.current.key(event);
+        // Only the reading keys, and ↑ ↓ only where they read: elsewhere they scroll the page.
+        if (!(event.altKey || event.ctrlKey || event.metaKey) && /^(Arrow(Left|Right|Up|Down)|Home|End)$/.test(event.key) && (axis === 'y' || !/Up|Do/.test(event.key))) {
+          event.preventDefault();
+          if (queued.current.length < 8) queued.current.push(event.key);
+        }
+        load();
       }}
     >
       {children}
       {/* Hidden: it is the group's description, and browse mode should not read it a second time as content. */}
       <span id={hintId} hidden>
-        {hint ?? (axis === 'y' ? 'Use ↑ ↓ to read values' : 'Use ← → to read values')}
+        {hint ?? `Use ${axis === 'y' ? '↑ ↓' : '← →'} to read values`}
       </span>
       <span className="itsm-visually-hidden" aria-live="polite" aria-atomic="true">
         {readout}
       </span>
-      {point ? (
-        <div className="itsm-ChartReader__overlay" aria-hidden="true">
-          {mode === 'crosshair' ? (
-            <>
-              <span className="itsm-ChartReader__crosshair" style={{ left: `${point.at[0] * 100}%` }} />
-              {point.rows.map((row) =>
-                row.y === undefined ? null : (
-                  <span
-                    key={row.id}
-                    className="itsm-ChartReader__dot"
-                    data-slot={row.slot ?? 1}
-                    style={{ left: `${point.at[0] * 100}%`, top: `${row.y * 100}%` }}
-                  />
-                ),
-              )}
-            </>
-          ) : null}
-          <div
-            className="itsm-ChartReader__tip"
-            data-side={side}
-            data-placement={placement}
-            style={{ left: `${point.at[0] * 100}%`, top: `${point.at[1] * 100}%` }}
-          >
-            <p className="itsm-ChartReader__tipTitle">{point.title}</p>
-            <ul className="itsm-ChartReader__tipRows">
-              {point.rows.map((row) => (
-                <li key={row.id} className="itsm-ChartReader__tipRow">
-                  {row.slot === undefined ? (
-                    <span className="itsm-ChartReader__key" data-empty="" />
-                  ) : (
-                    <span className="itsm-ChartReader__key" data-slot={row.slot} />
-                  )}
-                  <span className="itsm-ChartReader__tipValue">{row.value}</span>
-                  {row.label ? <span className="itsm-ChartReader__tipLabel">{row.label}</span> : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ) : null}
+      {Core ? <Core {...props} root={root} handlers={handlers} queued={queued.current} say={setReadout} /> : null}
     </div>
   );
 }

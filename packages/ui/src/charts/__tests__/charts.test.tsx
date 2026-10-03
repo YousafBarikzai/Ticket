@@ -241,11 +241,13 @@ describe('line and area charts', () => {
     expect(markup).toMatch(/itsm-XYChart__endName">Resolved</);
   });
 
-  it('gives way to the legend alone when end labels would collide, rather than nudging them off their lines', () => {
+  it('nudges end labels that would collide to 14 px apart rather than dropping them (A8-S5)', () => {
     const close: ChartSeries = { id: 'close', label: 'Close', points: days.map((x, index) => ({ x, y: [10, 14, 11, 18.5][index]! })) };
     const markup = html(<LineChart title="Volume" series={[raised, close]} xType="time" />);
     expect(markup).toContain('itsm-ChartLegend');
-    expect(markup).not.toContain('itsm-XYChart__ends');
+    const tops = [...markup.matchAll(/class="itsm-XYChart__endLabel" style="top:([\d.]+)px"/g)].map((match) => Number(match[1]));
+    expect(tops).toHaveLength(2);
+    expect(Math.abs(tops[0]! - tops[1]!)).toBeGreaterThanOrEqual(14);
   });
 
   it('labels no ends past four series', () => {

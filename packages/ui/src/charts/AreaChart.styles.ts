@@ -2,33 +2,72 @@ import { moreContrast } from '../feedback/tone.js';
 import { css, layer, mq } from '../styles/css.js';
 
 /**
- * `AreaChart`: the wash under each line. The frame, lines and markers are
- * the line chart's (`LineChart.styles.ts`).
+ * The washes under `actual` lines (`charts/xy.tsx`). The frame, lines and
+ * markers are the line chart's (`LineChart.styles.ts`).
  *
- * The wash is the series colour at a tenth of its strength — a tint, never a
- * saturated block — so overlapping areas stay readable and the line on top
- * carries the identity. Stacked bands, which do not overlap, take a little
- * more so adjacent bands read as separate. With more contrast the wash is
- * stronger; in forced colours there is no wash, only the lines.
+ * A wash is a tint of the series colour, never a saturated block (A8 §3.3):
+ * 10 % for one washed series, 8 % when several overlap (`data-washes`), and
+ * four points more in the dark themes, where a tenth of a colour on a dark
+ * card does not read — chosen by `light-dark()`, so a theme switch needs no
+ * re-render. A `gradient` wash fades from 20 % at the line to nothing at the
+ * baseline. Stacked bands, which do not overlap, take 22 % so neighbours read
+ * as separate. With more contrast a translucent fill is the first thing to
+ * go: the wash becomes a 1 px outline. In forced colours there is no wash,
+ * only the lines.
  */
 export const areaChartStyles = layer(
   'components',
   css`
+.itsm-XYChart {
+  --_itsm-wash: 10%;
+}
+
+.itsm-XYChart[data-washes="several"] {
+  --_itsm-wash: 8%;
+}
+
 .itsm-XYChart__area {
-  fill: var(--_itsm-series);
-  fill-opacity: 0.1;
   stroke: none;
 }
 
-.itsm-XYChart__area[data-stacked] {
-  fill-opacity: 0.18;
+.itsm-XYChart__area[data-fill="wash"] {
+  fill: color-mix(in srgb, var(--_itsm-series) var(--_itsm-wash), transparent);
 }
 
-${moreContrast((scope) => `${scope} .itsm-XYChart__area { fill-opacity: 0.22; }`)}
+.itsm-XYChart__area[data-stacked] {
+  --_itsm-wash: 22%;
+}
+
+.itsm-XYChart__stop {
+  stop-color: var(--_itsm-series);
+  stop-opacity: 0.2;
+}
+
+.itsm-XYChart__stop[data-end] {
+  stop-opacity: 0;
+}
+
+@supports (color: light-dark(currentColor, currentColor)) {
+  .itsm-XYChart__area[data-fill="wash"] {
+    fill: light-dark(
+      color-mix(in srgb, var(--_itsm-series) var(--_itsm-wash), transparent),
+      color-mix(in srgb, var(--_itsm-series) calc(var(--_itsm-wash) + 4%), transparent)
+    );
+  }
+  .itsm-XYChart__stop:not([data-end]) {
+    stop-opacity: 1;
+    stop-color: light-dark(color-mix(in srgb, var(--_itsm-series) 20%, transparent), color-mix(in srgb, var(--_itsm-series) 24%, transparent));
+  }
+}
+
+${moreContrast(
+  (scope) => `${scope} .itsm-XYChart__area:not([data-stacked]) { fill: none; stroke: var(--_itsm-series); stroke-width: 1; vector-effect: non-scaling-stroke; }`,
+)}
 
 ${mq.forcedColors} {
   .itsm-XYChart__area {
     fill: none;
+    stroke: none;
   }
 }
 `,
