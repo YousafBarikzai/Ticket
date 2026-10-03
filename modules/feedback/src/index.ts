@@ -3,6 +3,7 @@ export { feedbackManifest } from './manifest.js';
 export * as surveyService from './service/survey-service.js';
 export * as invitationService from './service/invitation-service.js';
 export * as responseService from './service/response-service.js';
+export { IMPORT_SURVEYS_MAX, importInvitationSchema, importInvitations, importResponseSchema, importResponses, type ImportInvitationInput, type ImportResponseInput, type ImportSurveysOptions, type ImportedResponse } from './service/import-service.js';
 export { createSurveySchema, triggerSchema, TRIGGER_KINDS, type CreateSurveyInput, type TriggerInput, type TriggerKind } from './service/survey-service.js';
 export {
   surveyDocumentSchema,
