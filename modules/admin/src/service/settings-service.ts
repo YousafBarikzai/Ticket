@@ -5,11 +5,13 @@ import {
   invalidateFlags,
   invalidatePermissions,
   invalidateSettings,
+  isTenantModule,
   modules,
   newId,
   NotFoundError,
   publish,
   recordAudit,
+  tenantModules,
   transaction,
   ValidationError,
   writeSettingVersion,
@@ -300,13 +302,19 @@ export async function setFlag(
   return result;
 }
 
-/** Reconciles the modules recorded for a tenant with the manifests in the image. */
+/**
+ * Reconciles the modules recorded for a tenant with the manifests in the image.
+ *
+ * Only tenant-facing modules: the platform's own (`audience: 'platform'`, the
+ * shared demo's rebuild among them) are never recorded, so no tenant's module
+ * list or toggle ever names them (A4 §2.3).
+ */
 export async function syncInstalledModules(ctx: TenantContext): Promise<{ added: number; updated: number }> {
   let added = 0;
   let updated = 0;
 
   await transaction(ctx, async (tx) => {
-    for (const module of modules()) {
+    for (const module of tenantModules()) {
       const existing = await tx.installedModule.findFirst({ where: { moduleId: module.id } });
       if (!existing) {
         await tx.installedModule.create({
@@ -331,7 +339,9 @@ export async function syncInstalledModules(ctx: TenantContext): Promise<{ added:
 
 export async function setModuleEnabled(ctx: TenantContext, moduleId: string, enabled: boolean) {
   authz.require(ctx, 'admin.module.manage');
-  const manifest = modules().find((m) => m.id === moduleId);
+  // A platform module is no tenant's to switch: it reads as absent, as it
+  // does in the tenant's module list.
+  const manifest = tenantModules().find((m) => m.id === moduleId);
   if (!manifest) throw new NotFoundError('module', moduleId);
   if (!manifest.optional && !enabled) {
     throw new ValidationError(`${moduleId} is a foundation module and cannot be disabled`);
@@ -339,7 +349,9 @@ export async function setModuleEnabled(ctx: TenantContext, moduleId: string, ena
 
   // A module cannot be turned off while another enabled module depends on it.
   if (!enabled) {
-    const dependents = modules().filter((m) => m.dependsOn.includes(moduleId));
+    // Tenant modules only: a platform module's needs are the deployment's to
+    // meet, and naming it here would show a tenant the platform's machinery.
+    const dependents = tenantModules().filter((m) => m.dependsOn.includes(moduleId));
     if (dependents.length > 0) {
       throw new ValidationError(`${moduleId} is required by ${dependents.map((d) => d.id).join(', ')}`);
     }
@@ -380,7 +392,10 @@ export async function listInstalledModules(ctx: TenantContext) {
   authz.require(ctx, 'admin.setting.read');
   return transaction(ctx, async (tx) => {
     const installed = await tx.installedModule.findMany({ orderBy: { moduleId: 'asc' } });
-    return installed.map((record) => {
+    // A row recorded before its module became a platform one stays out of
+    // sight too; the manifest, not the row, decides who a module is for.
+    const platformOnly = new Set(modules().filter((m) => !isTenantModule(m)).map((m) => m.id));
+    return installed.filter((record) => !platformOnly.has(record.moduleId)).map((record) => {
       const manifest = modules().find((m) => m.id === record.moduleId);
       return {
         ...record,

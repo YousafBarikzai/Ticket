@@ -6,6 +6,7 @@ import { buildPermissionSet, type PermissionSet } from './authz.js';
 import { SYSTEM_PERMISSIONS } from './context.js';
 import { logger, metrics } from './telemetry.js';
 import { newCorrelationId } from './ids.js';
+import { assertNotQuiet } from './quiet.js';
 
 /**
  * Background work (docs/architecture/05 §5).
@@ -78,6 +79,9 @@ export async function enqueue<T>(
   payload: T,
   options: EnqueueOptions = {},
 ): Promise<string | undefined> {
+  // A tenant being built for the shared demo must set nothing off. Refused
+  // before the queue is touched, so not even a delayed job exists (A4 §2.4 Q2).
+  assertNotQuiet(ctx.tenantId, name, jobName);
   const { idempotencyKey, ...jobOptions } = options;
   const envelope: JobEnvelope<T> = {
     tenantId: ctx.tenantId,

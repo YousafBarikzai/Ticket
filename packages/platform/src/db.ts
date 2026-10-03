@@ -40,6 +40,11 @@ export const PLATFORM_MODELS = new Set([
   'AiEvalDataset',
   'AiEvalCase',
   'AiEvalRun',
+  // The shared demo's generation ledger: one row per nightly build, about
+  // tenants rather than in one. Its column is `demo_tenant_id`, deliberately
+  // not `tenant_id`, so neither row-level security nor this extension tries
+  // to scope it to the tenant it describes (A4 §3.4).
+  'DemoGeneration',
 ]);
 
 /** Models that carry tenant_id but are readable by the platform role pre-context. */

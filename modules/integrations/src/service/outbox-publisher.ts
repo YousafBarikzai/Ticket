@@ -1,6 +1,7 @@
 import type { Actor, EventEnvelope } from '@itsm/contracts';
 import {
   type TenantContext,
+  ConflictError,
   claimEvent,
   consumersFor,
   createContext,
@@ -9,6 +10,7 @@ import {
   logger,
   metrics,
   platformDb,
+  platformTransaction,
   registeredHandlers,
   SYSTEM_PERMISSIONS,
   systemContext,
@@ -227,6 +229,45 @@ export async function reconcileUnacknowledged(olderThanMs = 120_000, limit = 200
     metrics.increment('outbox_reconciled_total', {}, requeued);
   }
   return requeued;
+}
+
+/**
+ * Deletes a demo build's unpublished events, just before the swap makes the
+ * tenant live (S11; A4 §2.4 Q3). Returns how many were deleted.
+ *
+ * A history import writes through the same services a live tenant uses, so
+ * four months of tickets leave tens of thousands of events in the outbox.
+ * Nothing has published them — the publisher and the reconciler scan only
+ * `active` and `provisioning` tenants, and the build's tenant is `seeding`
+ * from its first row (Q1) — but the moment the swap turns it `active`, the
+ * publisher would deliver every one: four months of "ticket created" to the
+ * analytics projector that has already rebuilt from the source rows, and to
+ * every webhook and notification rule besides. The projections were rebuilt
+ * from the rows themselves (S8, S9), so the events carry nothing still owed.
+ *
+ * Refuses (throws) unless the tenant is a demo tenant that is still
+ * `seeding`, checked under a row lock in the same transaction as the delete,
+ * so this can never empty a real tenant's outbox — not by a wrong id, and not
+ * by a swap that slipped in between the check and the delete.
+ */
+export async function discardForSeedingTenant(ctx: TenantContext): Promise<number> {
+  const discarded = await platformTransaction(ctx, async (tx) => {
+    const [tenant] = await tx.$queryRaw<{ kind: string; status: string }[]>`
+      SELECT kind, status FROM tenant WHERE id = ${ctx.tenantId}::uuid FOR UPDATE`;
+    if (!tenant) throw new ConflictError(`tenant ${ctx.tenantId} does not exist, so it has no outbox to discard`);
+    if (tenant.kind !== 'demo' || tenant.status !== 'seeding') {
+      throw new ConflictError(
+        `refused to discard the outbox of tenant ${ctx.tenantId}: only a demo build that is still seeding may (it is ${tenant.kind}, ${tenant.status})`,
+      );
+    }
+    // The tenant predicate as well as row-level security, so the statement
+    // says what it means in the query log.
+    return tx.$executeRaw`
+      DELETE FROM outbox_event WHERE tenant_id = ${ctx.tenantId}::uuid AND published_at IS NULL`;
+  });
+  metrics.increment('outbox_discarded_total', {}, discarded);
+  logger.info('discarded the unpublished events of a demo build', { tenantId: ctx.tenantId, discarded });
+  return discarded;
 }
 
 /** Keeps the consumer registry in the database in step with the code. */
