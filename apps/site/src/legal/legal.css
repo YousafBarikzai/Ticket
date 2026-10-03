@@ -1,0 +1,72 @@
+/*
+ * The legal pages (A5 §11.1): a reduced header, the article in prose style
+ * (16/26, 68ch) and, on wide screens, a sticky "On this page" column.
+ * Tokens only.
+ */
+.app-Legal { min-block-size: 100dvh; background: var(--itsm-colour-surface-canvas); color: var(--itsm-colour-text-primary); }
+.app-Legal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-md);
+  padding: var(--itsm-space-sm) var(--itsm-page-gutter, 16px);
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raised);
+}
+.app-Legal__lockup,
+.app-Legal__signIn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  min-block-size: 44px;
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-decoration: none;
+}
+.app-Legal__signIn { color: var(--itsm-colour-text-link); }
+.app-Legal__main {
+  display: grid;
+  gap: var(--itsm-space-2xl);
+  max-inline-size: 1120px;
+  margin: 0 auto;
+  padding: var(--itsm-space-2xl) var(--itsm-page-gutter, 16px);
+}
+.app-Legal__article { max-inline-size: 68ch; font-size: 16px; line-height: 26px; overflow-wrap: anywhere; }
+.app-Legal__eyebrow { margin: 0; font-size: 13px; font-weight: var(--itsm-font-weight-semibold); color: var(--itsm-colour-brand-subtleText); }
+.app-Legal__title { margin: var(--itsm-space-2xs, 4px) 0 var(--itsm-space-sm); font-size: clamp(28px, 2vw + 18px, 36px); line-height: 1.15; }
+.app-Legal__lede { margin: 0 0 var(--itsm-space-xs); font-size: 18px; line-height: 28px; color: var(--itsm-colour-text-secondary); }
+.app-Legal__meta,
+.app-Legal__note { margin: 0; font-size: 13px; line-height: 18px; color: var(--itsm-colour-text-muted); }
+.app-Legal__note { margin-block-start: var(--itsm-space-xs); }
+.app-Legal__section { scroll-margin-block-start: var(--itsm-space-lg); }
+.app-Legal__section h2 { margin: var(--itsm-space-xl) 0 var(--itsm-space-xs); font-size: 20px; line-height: 28px; }
+.app-Legal__section a { color: var(--itsm-colour-text-link); }
+.app-Legal__tableWrap { overflow-x: auto; }
+.app-Legal__table { inline-size: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+.app-Legal__table caption { text-align: start; font-weight: var(--itsm-font-weight-semibold); padding-block-end: var(--itsm-space-xs); }
+.app-Legal__table th,
+.app-Legal__table td { padding: var(--itsm-space-xs); border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle); text-align: start; vertical-align: top; }
+.app-Legal__table th[scope='row'] { font-family: var(--itsm-font-mono, monospace); font-weight: var(--itsm-font-weight-medium); }
+.app-Legal__toc { display: none; font-size: 14px; line-height: 20px; }
+.app-Legal__toc ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--itsm-space-2xs, 4px); }
+.app-Legal__toc a { color: var(--itsm-colour-text-secondary); text-decoration: none; }
+.app-Legal__toc a:hover { color: var(--itsm-colour-text-primary); }
+.app-Legal__tocTitle { margin: 0 0 var(--itsm-space-xs); font-weight: var(--itsm-font-weight-semibold); }
+@media (min-width: 1024px) {
+  .app-Legal__main { grid-template-columns: minmax(0, 1fr) 240px; }
+  .app-Legal__toc { display: block; position: sticky; inset-block-start: var(--itsm-space-lg); align-self: start; }
+}
+.app-Legal__footer {
+  display: grid;
+  justify-items: center;
+  gap: var(--itsm-space-2xs, 4px);
+  padding: var(--itsm-space-xl) var(--itsm-page-gutter, 16px);
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--itsm-colour-text-secondary);
+}
+.app-Legal__footer p { margin: 0; }
+@media print {
+  .app-Legal__header,
+  .app-Legal__toc { display: none; }
+}

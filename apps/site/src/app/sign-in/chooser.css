@@ -1,0 +1,140 @@
+/*
+ * The sign-in chooser and the role pages (SPEC v3 §6.3; A5 §6.3–§6.8).
+ * Tokens only: every colour is a design-system variable, so dark, high
+ * contrast and forced colours follow the token sheet.
+ */
+.app-Chooser__title {
+  margin: 0 0 var(--itsm-space-xs);
+  font-family: var(--itsm-text-hero-family, inherit);
+  font-size: clamp(26px, 2.2vw + 14px, 32px);
+  line-height: 1.15;
+  font-weight: var(--itsm-font-weight-bold);
+  color: var(--itsm-colour-text-primary);
+}
+.app-Chooser__intro {
+  margin: 0 0 var(--itsm-space-lg);
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--itsm-colour-text-secondary);
+}
+.app-Chooser__section { display: grid; gap: var(--itsm-space-sm); }
+.app-Chooser__heading {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: var(--itsm-font-weight-semibold);
+  color: var(--itsm-colour-text-primary);
+}
+.app-Chooser__lead,
+.app-Chooser__help {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--itsm-colour-text-secondary);
+}
+.app-Chooser__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--itsm-space-xs); }
+.app-Chooser__continue:empty { display: none; }
+.app-Chooser__divider {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  margin: var(--itsm-space-lg) 0;
+  font-size: 13px;
+  color: var(--itsm-colour-text-muted);
+}
+.app-Chooser__divider::before,
+.app-Chooser__divider::after {
+  content: '';
+  flex: 1;
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+.app-PersonaCard,
+.app-AreaRow {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raised);
+  color: var(--itsm-colour-text-primary);
+  text-decoration: none;
+}
+.app-PersonaCard { grid-template-columns: 44px 1fr 16px; min-block-size: 76px; padding: 14px 16px; }
+.app-AreaRow { grid-template-columns: 40px 1fr 16px; min-block-size: 64px; padding: 12px 14px; }
+a.app-PersonaCard:hover,
+a.app-AreaRow:hover {
+  border-color: var(--itsm-colour-border-softHover, var(--itsm-colour-border-soft));
+  box-shadow: var(--itsm-elevation-sm);
+}
+.app-PersonaCard__text,
+.app-AreaRow__text { display: flex; flex-direction: column; min-inline-size: 0; }
+.app-PersonaCard__role { font-size: 12px; line-height: 16px; font-weight: var(--itsm-font-weight-semibold); color: var(--itsm-colour-brand-subtleText); }
+.app-PersonaCard__name,
+.app-AreaRow__name { font-size: 15px; line-height: 20px; font-weight: var(--itsm-font-weight-semibold); color: var(--itsm-colour-text-primary); }
+.app-PersonaCard__meta,
+.app-AreaRow__description { font-size: 13px; line-height: 18px; color: var(--itsm-colour-text-secondary); }
+.app-PersonaCard__try { font-size: 13px; line-height: 18px; color: var(--itsm-colour-text-muted); }
+.app-PersonaCard__chevron,
+.app-AreaRow__chevron { color: var(--itsm-colour-text-muted); }
+@media (max-width: 479px) {
+  .app-PersonaCard__try { display: none; }
+  .app-PersonaCard[data-unavailable] .app-PersonaCard__try { display: inline; }
+}
+
+.app-ContinueCard {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  margin-block-end: var(--itsm-space-xs);
+  padding: 12px 14px;
+  border: var(--itsm-border-hair) solid color-mix(in srgb, var(--itsm-colour-accent) 24%, transparent);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-brand-subtle);
+}
+.app-ContinueCard[hidden] { display: none; }
+.app-ContinueCard__link {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  color: var(--itsm-colour-text-primary);
+  text-decoration: none;
+}
+.app-ContinueCard__text { display: flex; flex-direction: column; }
+.app-ContinueCard__title { font-size: 15px; line-height: 20px; font-weight: var(--itsm-font-weight-semibold); }
+.app-ContinueCard__line { font-size: 13px; line-height: 18px; color: var(--itsm-colour-text-secondary); }
+.app-ContinueCard__icon { color: var(--itsm-colour-brand-subtleText); }
+.app-ContinueCard__forget {
+  min-block-size: 36px;
+  padding: 0 var(--itsm-space-sm);
+  border: 0;
+  border-radius: var(--itsm-radius-md);
+  background: transparent;
+  color: var(--itsm-colour-text-link);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.app-ContinueCard__forget:hover { background: var(--itsm-colour-surface-hover); }
+
+.app-DemoNotes {
+  display: flex;
+  gap: var(--itsm-space-xs);
+  align-items: flex-start;
+  margin: var(--itsm-space-sm) 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--itsm-colour-text-secondary);
+}
+.app-DemoNotes__icon { flex: none; margin-block-start: 1px; }
+
+.app-RolePage__actions { display: flex; flex-wrap: wrap; gap: var(--itsm-space-sm); margin: var(--itsm-space-lg) 0 var(--itsm-space-sm); }
+.app-RolePage__unavailable { margin: 0; color: var(--itsm-colour-text-secondary); }
+
+.app-LegalLinks a { color: inherit; }
+
+@media (pointer: coarse) {
+  .app-ContinueCard__forget,
+  .app-LegalLinks a { min-block-size: 44px; display: inline-flex; align-items: center; }
+}
