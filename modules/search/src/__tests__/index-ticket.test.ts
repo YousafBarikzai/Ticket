@@ -209,6 +209,11 @@ describe('reprojectTickets', () => {
     expect(platform.transactions).toBe(3);
   });
 
+  it('refuses a batch it could not walk', async () => {
+    await expect(reprojectTickets(ctx, { batch: 0 })).rejects.toMatchObject({ status: 422 });
+    expect(platform.transactions).toBe(0);
+  });
+
   it('writes the document the handler writes', async () => {
     seed(ticket(1));
     await reprojectTickets(ctx);

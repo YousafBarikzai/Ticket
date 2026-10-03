@@ -1,6 +1,7 @@
 import {
   type TenantContext,
   type Tx,
+  ValidationError,
   authz,
   logger,
   metrics,
@@ -138,6 +139,9 @@ const REPROJECT_BATCH = 200;
  */
 export async function reprojectTickets(ctx: TenantContext, options: { batch?: number } = {}): Promise<number> {
   const batch = options.batch ?? REPROJECT_BATCH;
+  if (!Number.isInteger(batch) || batch < 1 || batch > 1_000) {
+    throw new ValidationError('a batch is 1 to 1,000 tickets', [{ field: 'batch', code: 'out_of_range', message: '1 to 1,000' }]);
+  }
   let indexed = 0;
   let cursor: string | undefined;
 

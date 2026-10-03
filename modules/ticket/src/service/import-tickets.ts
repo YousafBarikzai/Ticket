@@ -148,8 +148,9 @@ export interface ImportTicketsOptions {
    * `row` (the default): one `ticket.imported` audit row per ticket, as every
    * MOD-24 import has written. `batch`: one `ticket.imported.batch` row for
    * the whole call, in the same transaction (D19) — four months of history
-   * is a few thousand tickets, and a trail of a few thousand identical rows
-   * says less than eighty that each name the fifty tickets they brought in.
+   * is a couple of thousand tickets, and a trail of that many identical rows
+   * says less than a few dozen that each name the fifty tickets they brought
+   * in.
    */
   audit?: 'row' | 'batch';
   /** What the batch row calls the chunk, e.g. "demo g42 tickets 0401-0450". */
@@ -196,7 +197,7 @@ function assertHistory(parsed: ParsedImport, prefix: string): void {
       for (const key of ['from', 'to'] as const) {
         const value = event.payload[key];
         if (value === undefined && key === 'from') continue;
-        if (typeof value !== 'string' || !(value in STATES)) {
+        if (typeof value !== 'string' || !Object.hasOwn(STATES, value)) {
           problems.push({ field: `${prefix}events.${index}.payload.${key}`, code: 'unknown_state', message: `not a ticket state: ${String(value)}` });
         }
       }
