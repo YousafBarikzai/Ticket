@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
-import type { ReactElement } from 'react';
-import { afterEach, describe, it } from 'vitest';
+import { act, type ReactElement } from 'react';
+import { afterEach, describe, it, vi } from 'vitest';
 import { TestProvider } from '../../provider/__tests__/support/provider.js';
 import { expectNoViolations } from '../../web/__tests__/support/audit.js';
 import { cleanupDocument, press, render } from '../../web/__tests__/support/render.js';
 import { Metric, MetricGrid } from '../../web/Metric.js';
 import { AreaChart } from '../AreaChart.js';
 import { BarChart } from '../BarChart.js';
+import { BulletBar, BulletList } from '../Bullet.js';
+import { ChartCard } from '../ChartCard.js';
 import { ChartFigure } from '../ChartFigure.js';
+import { DistributionBar } from '../DistributionBar.js';
 import { DonutChart } from '../DonutChart.js';
+import { Gauge } from '../Gauge.js';
 import { LineChart, type ChartSeries } from '../LineChart.js';
 import { MarkerBackdrop, MarkerLayer, layoutMarkers, resolveBands, resolveMarkers } from '../markers.js';
 import { ChartEmpty, ChartLegend } from '../parts.js';
@@ -28,8 +32,16 @@ afterEach(() => cleanupDocument());
 
 async function audit(element: ReactElement, keys: readonly string[] = []): Promise<void> {
   const { container } = render(<TestProvider>{element}</TestProvider>);
-  for (const group of container.querySelectorAll<HTMLElement>('[aria-roledescription="chart"]')) {
+  const groups = [...container.querySelectorAll<HTMLElement>('[aria-roledescription="chart"]')];
+  for (const group of groups) {
     for (const key of keys) press(group, key);
+  }
+  if (keys.length > 0 && groups.length > 0) {
+    // The reading core arrives on the first key and replays it: wait for it, so the reading is audited.
+    await act(async () => {
+      await vi.dynamicImportSettled();
+      await Promise.resolve();
+    });
   }
   for (const details of container.querySelectorAll('details')) details.open = true;
   await expectNoViolations(container);
@@ -167,6 +179,70 @@ describe('charts audit', () => {
             </div>
           </ChartFigure>
         </div>,
+      );
+    });
+
+    it('chart cards around XY v3: comparison, forecast, a gradient wash, markers, a target, a band, end labels and a reading', async () => {
+      const xs = [...days, '2026-10-02'];
+      await audit(
+        <div data-itsm-theme={theme}>
+          <ChartCard title="Raised vs resolved" headline="Resolved kept pace with raised" caption="Daily, in UTC days" footerLink={{ href: '/team', label: 'Open team performance' }} info="Tickets raised and resolved each day." span={8}>
+            <AreaChart
+              title="Raised and resolved"
+              xType="time"
+              fill="gradient"
+              interactive
+              asAt="2026-10-01T23:30:00Z"
+              timeZone="Europe/London"
+              markers={[{ kind: 'today' }, { kind: 'deadline', x: '2026-09-30', label: 'Freeze starts' }, { kind: 'milestone', x: '2026-09-29', label: 'SG4', reached: true }]}
+              target={{ value: 25, label: 'Target 25' }}
+              bands={[{ from: '2026-09-30', to: '2026-10-01', label: 'Freeze' }]}
+              series={[
+                { id: 'raised', label: 'Raised', style: 'comparison', points: xs.map((x, index) => ({ x, y: [12, 30, 18, null][index]! })) },
+                { id: 'resolved', label: 'Resolved', points: xs.map((x, index) => ({ x, y: [4, 9, 20, null][index]! })) },
+                { id: 'next', label: 'Next', style: 'forecast', points: xs.map((x, index) => ({ x, y: [null, null, null, 22][index]! })) },
+                { id: 'plan', label: 'Plan', style: 'baseline', points: xs.map((x) => ({ x, y: 15 })) },
+              ]}
+              table="visible"
+            />
+          </ChartCard>
+          <ChartCard title="Empty" state="empty" emptyText="No tickets in this period" />
+          <ChartCard title="Failed" state="error" problem={{ status: 503 }} retryHref="/overview" />
+        </div>,
+        ['ArrowRight'],
+      );
+    });
+
+    it('gauges, bullets, distribution strips and rings with targets', async () => {
+      await audit(
+        <div data-itsm-theme={theme}>
+          <Gauge label="SLA met · last 30 days" value={0.884} target={0.9} caption="1,284 targets" />
+          <Gauge label="Spend against budget" value={1.05} target={1} goodDirection="down" size="lg" />
+          <Gauge label="CSAT" value={null} />
+          <BulletList
+            title="SLA met by team"
+            interactive
+            rows={[
+              { id: 'desk', label: 'Service desk', value: 0.92, target: 0.9, format: { style: 'percent' } },
+              { id: 'net', label: 'Network', value: 0.79, target: 0.9, format: { style: 'percent' }, href: '/team/network', tone: 'auto' },
+              { id: 'time', label: 'Time used', value: 72, target: 60, max: 60, cap: true, detail: 'Breached 12 min' },
+            ]}
+          />
+          <BulletBar label="Response" value={0.84} target={0.9} format={{ style: 'percent' }} compact />
+          <DistributionBar
+            label="Open tickets by SLA state"
+            total={{ label: 'Total' }}
+            segments={[
+              { id: 'ok', label: 'On track', value: 41, tone: 'success', href: '/inbox/all?sla=on_track' },
+              { id: 'risk', label: 'At risk', value: 7, tone: 'warning' },
+              { id: 'late', label: 'Breached', value: 3, tone: 'danger' },
+              { id: 'p4', label: 'P4', value: 2, tone: 'neutralSoft' },
+            ]}
+          />
+          <DistributionBar label="Budget" segments={[{ id: 's', label: 'Spent', value: 120 }]} max={100} marker={{ value: 100, label: 'Approved' }} height={28} />
+          <ProgressRing value={0.15} target={0.17} size={140} label="Updates on time" centerText="15%" />
+        </div>,
+        ['ArrowDown'],
       );
     });
 

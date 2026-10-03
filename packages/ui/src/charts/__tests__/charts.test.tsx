@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
+import { transformSync } from 'esbuild';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -9,13 +11,20 @@ import { themeVariables } from '../../tokens/css.js';
 import { themeNames } from '../../tokens/tokens.js';
 import { AreaChart } from '../AreaChart.js';
 import { BarChart, type BarDatum } from '../BarChart.js';
+import { BulletList } from '../Bullet.js';
+import { ChartCard } from '../ChartCard.js';
 import { CHART_TABLE_DEFAULTS, ChartFigure } from '../ChartFigure.js';
 import { chartFigureStyles } from '../ChartFigure.styles.js';
+import { DistributionBar } from '../DistributionBar.js';
 import { DonutChart } from '../DonutChart.js';
+import { Gauge } from '../Gauge.js';
 import { LineChart, type ChartSeries } from '../LineChart.js';
 import { CHART_EMPTY_TEXT, ChartEmpty, ChartLegend } from '../parts.js';
 import { ProgressRing } from '../ProgressRing.js';
+import { READER_CORE_MARK } from '../reader-core.js';
 import { Sparkline } from '../Sparkline.js';
+import { TEXTURE_TONES, TexturePatterns, textureId } from '../texture.js';
+import { textureRules, toneTextureImages, toneTextureRules } from '../texture-css.js';
 
 /**
  * The charts as a server renders them: static markup, no provider, no
@@ -38,15 +47,17 @@ describe('static SVG from a server component', () => {
   it('keeps every static chart module free of the client directive, so the server-safety guard reads it', () => {
     const files = [
       'ChartFigure.tsx', 'LineChart.tsx', 'AreaChart.tsx', 'xy.tsx', 'BarChart.tsx', 'DonutChart.tsx', 'ProgressRing.tsx',
-      'Sparkline.tsx', 'StatGrid.tsx', 'parts.tsx', 'texture.tsx', 'markers.tsx', 'common.ts', 'time.ts', 'scale.ts',
+      'Sparkline.tsx', 'StatGrid.tsx', 'parts.tsx', 'texture.tsx', 'texture-css.ts', 'markers.tsx', 'common.ts', 'time.ts', 'scale.ts',
+      'ChartCard.tsx', 'Gauge.tsx', 'Bullet.tsx', 'DistributionBar.tsx',
     ];
     for (const file of files) {
       const source = readFileSync(join(here, '..', file), 'utf8');
       expect(source.trimStart().startsWith("'use client'"), file).toBe(false);
     }
-    // The client leaves are client modules. (`StatCard` is server-safe in v3,
-    // RV2; its own test, `stat-card.test.tsx`, holds it to that.)
-    for (const file of ['ChartReader', 'ChartLink']) {
+    // The client leaves are client modules: the reader island, its lazy core
+    // and the link leaf. (`StatCard` is server-safe in v3, RV2; its own test,
+    // `stat-card.test.tsx`, holds it to that.)
+    for (const file of ['ChartReader', 'reader-core', 'ChartLink']) {
       expect(readFileSync(join(here, '..', `${file}.tsx`), 'utf8').trimStart().startsWith("'use client'"), file).toBe(true);
     }
   });
@@ -74,11 +85,64 @@ describe('static SVG from a server component', () => {
     expect(html(<BarChart title="By team" data={[{ id: 'a', label: 'Desk', value: 3 }]} />)).toContain('itsm-BarChart__bar');
   });
 
+  it('renders the v3 pieces without a provider or a browser', () => {
+    expect(html(<Gauge label="SLA met" value={0.9} target={0.9} />)).toContain('itsm-Gauge__svg');
+    expect(html(<DistributionBar label="Open" segments={[{ id: 'a', label: 'P1', value: 2, tone: 'danger' }]} />)).toContain('itsm-DistributionBar__segment');
+    expect(html(<BulletList title="By team" rows={[{ id: 'a', label: 'Desk', value: 0.8, target: 0.9 }]} />)).toContain('itsm-Bullet__track');
+    expect(html(<ChartCard title="Volume" headline="Rose"><LineChart title="Volume" series={[raised]} xType="time" /></ChartCard>)).toContain('itsm-ChartCard__headline');
+  });
+
   it('keeps the plot out of the accessibility tree: the caption and the table carry it', () => {
     const markup = html(<LineChart title="Volume" series={[raised, resolved]} xType="time" />);
     expect(markup).toMatch(/<svg[^>]*aria-hidden="true"/);
     expect(markup).toMatch(/class="itsm-XYChart__y" aria-hidden="true"/);
     expect(markup).toMatch(/class="itsm-XYChart__x" aria-hidden="true"/);
+  });
+});
+
+describe('the reader island and its lazy core (A8 §5.2, §8.2)', () => {
+  /** A module's own cost: minified and gzipped at level 9, as `check-bundles` measures a chunk. */
+  const gz = (file: string): number =>
+    gzipSync(transformSync(readFileSync(join(here, '..', file), 'utf8'), { loader: 'tsx', jsx: 'automatic', minify: true, format: 'esm', target: 'es2022' }).code, { level: 9 }).length;
+
+  it('keeps the island within 800 B and the core within 3,000 B', () => {
+    expect(gz('ChartReader.tsx')).toBeLessThanOrEqual(800);
+    expect(gz('reader-core.tsx')).toBeLessThanOrEqual(3000);
+  });
+
+  it('reaches the core only through import(), so it is its own chunk, found by its marker', () => {
+    const island = readFileSync(join(here, '..', 'ChartReader.tsx'), 'utf8');
+    expect(island).toContain("import('./reader-core.js')");
+    // The marker in the island would put it in every first load, where the bundle check fails it.
+    expect(island).not.toContain(READER_CORE_MARK);
+    expect(READER_CORE_MARK).toBe('itsm-reader-core');
+    expect(readFileSync(join(here, '..', 'reader-core.tsx'), 'utf8')).toContain(`'${READER_CORE_MARK}'`);
+    const statically = /^\s*(?:import|export)\b[^;]*?\bfrom\s+['"]\.\/reader-core(?:\.js)?['"]/m;
+    for (const file of readdirSync(join(here, '..')).filter((name) => /\.tsx?$/.test(name))) {
+      expect(readFileSync(join(here, '..', file), 'utf8').match(statically)?.[0], file).toBeUndefined();
+    }
+  });
+});
+
+describe('textures by tone (A8 §6.3)', () => {
+  it('gives every tone but success a hatch, in SVG and in CSS alike', () => {
+    expect(TEXTURE_TONES).toEqual(['danger', 'high', 'warning', 'info', 'hold', 'neutral', 'neutralSoft']);
+    const markup = html(
+      <svg>
+        <TexturePatterns id="c" slots={[2]} tones={['danger', 'success', 'info']} />
+      </svg>,
+    );
+    expect(count(markup, /<pattern /g)).toBe(3);
+    expect(markup).toContain(`id="${textureId('c', 'danger')}"`);
+    expect(markup).toContain(`id="${textureId('c', 2)}"`);
+    expect(markup).not.toContain(textureId('c', 'success'));
+    expect(Object.keys(toneTextureImages('ink'))).toEqual(TEXTURE_TONES.map(String));
+  });
+
+  it('matches each tone’s CSS texture to a slot’s, so keys and marks agree', () => {
+    expect(toneTextureImages('ink').danger).toBe(textureRules('', '.x', 'ink').match(/\[data-slot="4"\] \{ background: (.*), var\(--_itsm-series\); \}/)![1]);
+    expect(toneTextureRules('.s', '.m', 'ink')).toContain('.s .m[data-tone="hold"] { background: ');
+    expect(toneTextureRules('.s', '.m', 'ink')).not.toContain('success');
   });
 });
 
@@ -469,6 +533,10 @@ describe('progress ring and sparkline', () => {
     expect(html(<ProgressRing value={0.5} label="x" tone="auto" />)).toContain('data-tone="accent"');
     expect(html(<ProgressRing value={0.8} label="x" tone="auto" />)).toContain('data-tone="warning"');
     expect(html(<ProgressRing value={0.95} label="x" tone="auto" />)).toContain('data-tone="danger"');
+  });
+
+  it('ticks and names a target, and comes in a 140 size', () => {
+    expect(html(<ProgressRing value={0.15} target={0.17} size={140} label="Updates on time" />)).toMatch(/aria-label="Updates on time: 15%, target 17%"[\s\S]*itsm-ProgressRing__target/);
   });
 
   it('clamps and draws no arc for nothing', () => {

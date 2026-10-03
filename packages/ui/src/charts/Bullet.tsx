@@ -123,10 +123,11 @@ export function measureBullet({
     rest = `, limit ${write(goal)}${known > goal ? `, ${difference(known - goal)} over` : ''}`;
   } else if (goal !== undefined) {
     const short = goal - known;
-    const zone = short <= 0 ? 'success' : short / limit >= dangerGap ? 'danger' : 'warning';
+    // Rounded, so 0.9 − 0.8 is a gap of exactly a tenth, as a reader would say, not 0.0999….
+    const zone = short <= 0 ? 'success' : Math.round((short / limit) * 1e9) / 1e9 >= dangerGap ? 'danger' : 'warning';
     if (zone !== 'success') gap = { from: share(known, scale), to: share(goal, scale), tone: zone };
     if (tone === 'auto') fillTone = zone;
-    rest = `, target ${write(goal)}, ${short === 0 ? 'on target' : `${difference(Math.abs(short))} ${short > 0 ? 'below' : 'above'}`}`;
+    rest = `, target ${write(goal)}, ${Math.abs(short) < 1e-9 ? 'on target' : `${difference(Math.abs(short))} ${short > 0 ? 'below' : 'above'}`}`;
   }
   const over = max !== undefined && known > limit ? { from: share(limit, scale), to: 1 } : null;
   return {

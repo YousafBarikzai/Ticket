@@ -109,14 +109,18 @@ export function gaugeZones(target: number | undefined, bands: GaugeProps['bands'
             { to: 1, tone: 'success' },
           ];
   }
-  // A zone with no width draws nothing and holds no reading.
-  return zones.filter((zone, index) => zone.to > (index === 0 ? 0 : zones[index - 1]!.to));
+  // A zone with no width is kept: it draws nothing, but a reading past the end of the dial is in it
+  // (spend at 105 % of a budget of 100 % is over budget, not on it).
+  return zones;
 }
 
-/** The zone a reading falls in. A reading on a boundary belongs to the better side. */
+/**
+ * The zone a reading falls in, read before it is clamped to the dial, so a
+ * reading past either end is in the zone at that end. A reading on a
+ * boundary belongs to the better side.
+ */
 export function gaugeTone(value: number, zones: readonly GaugeBand[], goodDirection: 'up' | 'down' = 'up'): GaugeTone | undefined {
-  const at = clamp(value);
-  for (const zone of zones) if (goodDirection === 'down' ? at <= zone.to : at < zone.to) return zone.tone;
+  for (const zone of zones) if (goodDirection === 'down' ? value <= zone.to : value < zone.to) return zone.tone;
   return zones[zones.length - 1]?.tone;
 }
 
@@ -154,6 +158,11 @@ export function Gauge({
   const known = value !== null && Number.isFinite(value);
   const hasTarget = target !== undefined && Number.isFinite(target);
   const zones = gaugeZones(hasTarget ? target : undefined, bands, goodDirection);
+  // Only the zones with width are drawn; their ends round off the dial.
+  const drawnZones = zones.flatMap((zone, index) => {
+    const from = index === 0 ? 0 : zones[index - 1]!.to;
+    return zone.to > from ? [{ ...zone, from }] : [];
+  });
   const tone = known ? gaugeTone(value, zones, goodDirection) : undefined;
   const drawn = known ? clamp(value) : 0;
 
@@ -165,7 +174,7 @@ export function Gauge({
       const percent = format.style === 'percent';
       const points = Math.round(Math.abs(gap) * 1000) / 10;
       const amount = percent ? `${formatNumber(points, { locale, maximumFractionDigits: 1 })} ${points === 1 ? 'point' : 'points'}` : write(Math.abs(gap));
-      sentence += `, target ${write(target)}, ${(percent ? points : Math.abs(gap)) === 0 ? 'on target' : `${amount} ${gap > 0 ? 'above' : 'below'} target`}`;
+      sentence += `, target ${write(target)}, ${(percent ? points : Math.abs(gap)) < 1e-9 ? 'on target' : `${amount} ${gap > 0 ? 'above' : 'below'} target`}`;
     }
     if (caption) sentence += `. ${caption}`;
   }
@@ -177,14 +186,14 @@ export function Gauge({
     <div role="img" aria-label={description ?? sentence} className={cx('itsm-Gauge', className)} data-size={size} data-tone={tone}>
       <div className="itsm-Gauge__dial">
         <svg className="itsm-Gauge__svg" viewBox="0 0 200 128" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
-          {zones.length > 0 ? (
+          {drawnZones.length > 0 ? (
             <>
-              {zones.map((zone, index) => (
-                <path key={zone.tone + index} className="itsm-Gauge__zone" data-tone={zone.tone} d={gaugeArc(index === 0 ? 0 : zones[index - 1]!.to, zone.to)} />
+              {drawnZones.map((zone) => (
+                <path key={`${zone.tone}-${zone.from}`} className="itsm-Gauge__zone" data-tone={zone.tone} d={gaugeArc(zone.from, zone.to)} />
               ))}
               {/* The round ends, each in its zone's tint: the zones meet square, the dial's ends are round. */}
-              <path className="itsm-Gauge__cap" data-tone={zones[0]!.tone} d={`M${startX} ${startY}h0`} />
-              <path className="itsm-Gauge__cap" data-tone={zones[zones.length - 1]!.tone} d={`M${endX} ${endY}h0`} />
+              <path className="itsm-Gauge__cap" data-tone={drawnZones[0]!.tone} d={`M${startX} ${startY}h0`} />
+              <path className="itsm-Gauge__cap" data-tone={drawnZones[drawnZones.length - 1]!.tone} d={`M${endX} ${endY}h0`} />
             </>
           ) : (
             <path className="itsm-Gauge__track" d={gaugeArc(0, 1)} />
