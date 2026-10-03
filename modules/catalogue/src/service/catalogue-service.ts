@@ -724,9 +724,12 @@ async function insertImportedSubmission(
     ]);
   }
 
+  const definition = form.version.document as unknown as FormDefinition;
+  const misfits = answerTypeErrors(definition, input.answers, field);
+  if (misfits.length > 0) throw new ValidationError(`the answers for ${ticket.number} need attention`, misfits);
+
   // The requester's own facts, and the moment it was submitted as "now", so a
   // condition reads what it read then.
-  const definition = form.version.document as unknown as FormDefinition;
   const facts = await requesterFacts(tx, input.submittedBy, null);
   const outcome = validateSubmission(definition, input.answers as FormValues, { user: facts as never, now: input.at.toISOString() });
   if (!outcome.ok) {
@@ -759,6 +762,50 @@ async function insertImportedSubmission(
     description: describeAnswers(definition, outcome.accepted, await displayNames(tx, userAnswerIds(definition, outcome.accepted))),
   };
 }
+
+/**
+ * Answers whose JSON type is not the one their question holds.
+ *
+ * `validateSubmission` checks a value's length, pattern and options, but takes
+ * its type on trust from the browser that built it. An import has no browser:
+ * its answers come from a file or a generator, and an object where text was
+ * asked for would be stored as it came and described as "[object Object]" —
+ * or, shaped like `{ href }`, be a link in content nobody authored (D23). So
+ * the import path checks each answer against its question's type first.
+ */
+function answerTypeErrors(
+  definition: FormDefinition,
+  answers: Readonly<Record<string, unknown>>,
+  field: (name: string) => string,
+): { field: string; code: string; message: string }[] {
+  const problems: { field: string; code: string; message: string }[] = [];
+  for (const [name, value] of Object.entries(answers)) {
+    const property = definition.schema.properties[name];
+    if (!property || value === null || value === undefined) continue;
+    const fits =
+      property.type === 'string'
+        ? typeof value === 'string'
+        : property.type === 'number'
+          ? typeof value === 'number' && Number.isFinite(value)
+          : property.type === 'integer'
+            ? Number.isInteger(value)
+            : property.type === 'boolean'
+              ? typeof value === 'boolean'
+              : Array.isArray(value) && value.every((each) => typeof each === 'string');
+    if (!fits) {
+      problems.push({ field: field(`answers.${name}`), code: 'wrong_type', message: `the question holds ${ANSWER_TYPES[property.type]}` });
+    }
+  }
+  return problems;
+}
+
+const ANSWER_TYPES: Record<string, string> = {
+  string: 'text',
+  number: 'a number',
+  integer: 'a whole number',
+  boolean: 'yes or no',
+  array: 'a list of choices',
+};
 
 /**
  * The display names of the people a request's `user` questions were answered
