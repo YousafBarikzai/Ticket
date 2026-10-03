@@ -9,7 +9,7 @@ import {
   type DemoArea,
   type DemoStatusRecords,
 } from '@itsm/contracts/demo';
-import type { BffConfig, Environment } from '../config.js';
+import { developmentSignInAvailable, type BffConfig, type Environment } from '../config.js';
 import { demoCookie, demoReentryFromValue, readCookie, SESSION_COOKIE } from '../cookies.js';
 import { createSession } from '../create-session.js';
 import { assertSameOrigin, codedProblemBody, forwardResponseHeaders, ProxyRefused } from '../proxy.js';
@@ -172,9 +172,9 @@ export function createDemoHandlers(ctx: DemoHandlerContext): DemoHandlers {
       const confirmed = form.get('confirm') === 'replace';
       if (isRealSession(current) && !confirmed) return back('confirm');
 
-      const ipb = await requestIpBucket(request.headers, { mode: config.clientIpHeader, salts: tokens, kind: 'mint', now });
       let minted;
       try {
+        const ipb = await requestIpBucket(request.headers, { mode: config.clientIpHeader, salts: tokens, kind: 'mint', now });
         minted = await tokens.mint({ app: area, persona, ipb, settings, now });
       } catch (error) {
         // A store that cannot be reached is an outage, not a refusal: the
@@ -343,7 +343,7 @@ export function createDemoHandlers(ctx: DemoHandlerContext): DemoHandlers {
       return decideSignIn({
         app: ctx.area ?? config.appName,
         mode: config.demo !== null && ctx.area !== null,
-        development: !config.production && config.oidc === null,
+        development: developmentSignInAvailable(config),
         reentry,
         redirectTo: input.redirectTo,
         defaultLanding: config.defaultLanding,
