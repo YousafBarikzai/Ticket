@@ -157,7 +157,7 @@ export const TITLES = {
     ],
     phoned: [
       'Called in by the line manager: details as per the title. Asked them to complete the form as well so HR have a record.',
-      'Phoned the desk on behalf of HR: as per the title. Site: {site}.',
+      'Phoned the desk on behalf of HR, as per the title. They’re based at {site}.',
     ],
   },
   'app-access': {

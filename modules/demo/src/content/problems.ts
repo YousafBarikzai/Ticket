@@ -137,7 +137,7 @@ export const PROBLEMS = [
     number: 418,
     title: 'Intermittent VPN authentication failures after certificate rotation',
     description:
-      'Remote staff see “Authentication failed” from the VPN client after the gateway certificates were rotated. Two similar reports came in nine days ago, before the rotation reached both gateways. Linked to the live major incident MI-0004.',
+      'Remote staff see “Authentication failed” from the VPN client after the gateway certificates were rotated. Two similar reports from nine days ago look like the same fault and are linked too. Raised from the live major incident MI-0004.',
     state: 'investigating',
     priority: 'P2',
     owner: 'daniel-hughes',

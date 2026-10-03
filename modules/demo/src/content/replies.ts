@@ -7,8 +7,9 @@ import type { ReplyLibrary } from '../plan/content-types.js';
  * The planner draws a reply by kind and subcategory only, never by title, so
  * every line here has to read true for any ticket it can land on:
  *
- * - The general banks never name a product or a fault: "I’ve narrowed it
- *   down and I’m testing a fix" is true of a printer and of Sage Intacct.
+ * - The general banks never name a product, a fault or a fix: "I know
+ *   what’s needed now and I’m working on it" is true of a broken printer and
+ *   of a request for Sage Intacct access.
  * - Each subcategory has its own first answers, updates, internal notes and
  *   resolution notes, which the planner prefers when present. They name the
  *   subcategory's tools and teams ("the print server", "Business
@@ -37,20 +38,20 @@ export const REPLIES = {
   ],
   update: [
     'Quick update: still working on this. I’ll update you again before the end of the day.',
-    'Still on this — I’ve ruled out the obvious causes and I’m trying the next thing now.',
-    'An update for you: I’ve narrowed it down and I’m testing a fix. I’ll let you know how it goes.',
+    'Still on this — I’m working through it and will let you know as soon as there’s news.',
+    'An update for you: good progress so far. I’ll let you know how it goes.',
     'Just to keep you posted: I’m waiting for a colleague to check something on our side, then I’ll be back in touch.',
     'Still looking at this. Nothing for you to do yet — I’ll update you again later today.',
-    'Progress update: I think I know what’s causing it, and I’m working on the fix now.',
+    'Progress update: I know what’s needed now and I’m working on it.',
     'A quick note to say this hasn’t been forgotten. I’m still on it and will update you soon.',
-    'Still in hand. I’ll let you know as soon as there’s something for you to try.',
+    'Still in hand. I’ll let you know as soon as there’s something for you to try or check.',
   ],
   clarifying: [
     'Could you try that when you get a moment and let me know how you get on? I’ll keep this open until I hear back.',
-    'Have you had a chance to try that? Let me know either way and I’ll take it from there.',
-    'When you’re next at your laptop, could you check whether it’s still happening and reply here?',
-    'Could you give it another go and tell me exactly what you see? Then I can take it further.',
-    'Could you let me know a good time to connect to your laptop remotely? I’ll pick it up from there.',
+    'Have you had a chance to look at my last message? Let me know either way and I’ll take it from there.',
+    'Could you reply here to confirm, and I’ll carry on from there?',
+    'When you’re next at your desk, could you check and reply here? I’ll keep this open until I hear from you.',
+    'Could you let me know a good time to call you or connect to your laptop? I’ll pick it up from there.',
   ],
   thirdParty: [
     'I’ve raised this with the supplier and they’re looking at it. I’ll update you as soon as they come back to us.',
@@ -73,6 +74,8 @@ export const REPLIES = {
     'It seems to be every time. Happy for you to take a look remotely.',
     'The message just says “Something went wrong”. I can copy the full text into a reply if that helps.',
     'I’m in the office all day today if it’s easier to come and see it.',
+    'Yes, that’s right — thanks for checking.',
+    'Confirmed. Let me know if you need anything else from me.',
   ],
   requesterFrustrated: [
     'This is the third time this week — can someone come and look?',
@@ -87,6 +90,7 @@ export const REPLIES = {
     'Spoke to them on Teams; they’re happy for us to connect remotely.',
     'Needs a second pair of eyes — asked in the team channel.',
     'Confirmed with the user on the phone; nothing else affected.',
+    'Checked the request against the usual checklist; nothing missing.',
   ],
   resolution: [
     'That’s all sorted now — let us know if anything else crops up.',

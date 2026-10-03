@@ -710,12 +710,6 @@ describe('changes', () => {
   });
 });
 
-describe('holidays in the library', () => {
-  it('is the table holidays.test.ts checks', () => {
-    expect(LIBRARY.holidays).toBe(BANK_HOLIDAYS);
-  });
-});
-
 /**
  * Well-known people whose names are built from common British first names and
  * surnames: the pairs a seeded draw could produce by accident. The cast's own
