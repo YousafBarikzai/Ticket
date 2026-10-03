@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { brandMarkSvg } from '@itsm/ui/icons';
 import { uiStylesheet } from '@itsm/ui/styles';
@@ -25,12 +26,33 @@ describe('/api/health', () => {
 });
 
 describe('/itsm-ui.css', () => {
-  it('serves the design system\'s sheet, built once and cached as immutable', async () => {
-    expect(stylesheet.dynamic).toBe('force-static');
-    const response = stylesheet.GET();
+  const request = (acceptEncoding?: string) =>
+    new Request('https://www.example.test/itsm-ui.css?v=1', acceptEncoding === undefined ? {} : { headers: { 'accept-encoding': acceptEncoding } });
+
+  it('serves the design system\'s sheet, cached as immutable', async () => {
+    const response = await stylesheet.GET(request());
     expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8');
     expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(response.headers.get('content-encoding')).toBeNull();
     expect(await response.text()).toBe(uiStylesheet());
+  });
+
+  // Next's own compression skips a route handler's response, so the route
+  // compresses the sheet itself and has to read the request to choose how.
+  it('answers in Brotli, else gzip, else plain, and every answer decodes to the sheet', async () => {
+    expect(stylesheet.dynamic).toBe('force-dynamic');
+    for (const [accept, encoding, decode] of [
+      ['gzip, deflate, br, zstd', 'br', brotliDecompressSync],
+      ['br;q=0, gzip', 'gzip', gunzipSync],
+    ] as const) {
+      const response = await stylesheet.GET(request(accept));
+      expect(response.headers.get('content-encoding')).toBe(encoding);
+      expect(response.headers.get('vary')).toBe('accept-encoding');
+      expect(decode(Buffer.from(await response.arrayBuffer())).toString('utf8')).toBe(uiStylesheet());
+    }
+    const plain = await stylesheet.GET(request('identity'));
+    expect(plain.headers.get('content-encoding')).toBeNull();
+    expect(await plain.text()).toBe(uiStylesheet());
   });
 });
 
