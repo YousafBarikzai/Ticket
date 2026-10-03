@@ -79,6 +79,19 @@ describe('the other headers', () => {
   });
 });
 
+describe('the build', () => {
+  it('rewrites the design system’s barrels to their modules, so a route ships only the client code it renders', async () => {
+    vi.resetModules();
+    const { default: config, ROOT_MEMBERS } = await import('../../next.config.js');
+    expect(config.experimental?.optimizePackageImports).toEqual(expect.arrayContaining(['@itsm/ui/shell', '@itsm/ui/charts']));
+    const transform = config.modularizeImports?.['@itsm/ui']?.transform as Record<string, string>;
+    expect(Object.keys(transform).at(-1)).toBe('.*');
+    for (const [folder, names] of Object.entries(ROOT_MEMBERS)) {
+      expect(transform[`^(${names.join('|')})$`]).toBe(`@itsm/ui-source/${folder}/{{member}}.js`);
+    }
+  });
+});
+
 function filesUnder(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name);

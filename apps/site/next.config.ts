@@ -53,6 +53,36 @@ export const securityHeaders: readonly { readonly key: string; readonly value: s
   { key: 'x-frame-options', value: 'DENY' },
 ];
 
+/**
+ * Every name the site imports from `@itsm/ui`'s root entry, by the folder of
+ * its defining module, so the build imports each from that module.
+ *
+ * Why not Next's barrel optimisation for the root, as the applications do:
+ * the root re-exports the display primitives through a second barrel
+ * (`display/index.ts`), and the optimisation rewrites an import of the root
+ * to that barrel but not through it. `import { IconTile } from '@itsm/ui'`
+ * therefore reached every module `display/index.ts` names, and each client
+ * component among them — the activity feed, the attention-row actions, the
+ * hero card's "Why?" — was added to every route's client references with the
+ * provider and message tables they read: 19.5 kB gzip of the 31 kB the site
+ * had grown by, on a site whose own pages ship no client code. A member map
+ * removes them, with no change to any import in the source (TypeScript still
+ * checks each one against the package's types).
+ *
+ * A name not listed falls through to the whole root entry, so
+ * `guards.test.ts` fails when the site imports one that is not here; each
+ * listed name must be the file name of its module in that folder.
+ */
+export const ROOT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
+  display: ['DeltaPill', 'IconTile', 'StatusPill'],
+  feedback: ['Banner', 'StatusScreen'],
+  icons: ['BrandMark', 'Icon'],
+  web: ['Avatar', 'VisuallyHidden'],
+};
+
+/** A build-only specifier for the design system's sources, used by the rewrite above and nowhere in the code. */
+const UI_SOURCE_ALIAS = '@itsm/ui-source';
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   /**
@@ -69,18 +99,35 @@ const nextConfig: NextConfig = {
   // optimiser there is no `sharp` in the image for a scanner to find.
   images: { unoptimized: true },
   experimental: {
-    // Server components import the design system from its root entry; this
-    // makes Next rewrite each import to the defining module, so a route ships
-    // the client components it renders and none of the others.
-    optimizePackageImports: ['@itsm/ui'],
+    // The subpath barrels the site imports from (`/shell` for the demo strip,
+    // `/charts` for the hero's preview, `/icons`): Next rewrites each import to
+    // the defining module, so a route ships the client components it renders
+    // and none of the others — without it, importing `DemoBar` from `/shell`
+    // would carry every client component the shell barrel re-exports. The
+    // root entry is handled by `modularizeImports` below (`ROOT_MEMBERS`).
+    optimizePackageImports: ['@itsm/ui/shell', '@itsm/ui/charts', '@itsm/ui/icons'],
+  },
+  /** Each root-entry name from its defining module (`ROOT_MEMBERS`); anything else keeps `@itsm/ui`. */
+  modularizeImports: {
+    '@itsm/ui': {
+      transform: Object.fromEntries([
+        ...Object.entries(ROOT_MEMBERS).map(([folder, names]) => [`^(${names.join('|')})$`, `${UI_SOURCE_ALIAS}/${folder}/{{member}}.js`]),
+        ['.*', '@itsm/ui'],
+      ]),
+      skipDefaultConversion: true,
+    },
   },
   /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension; webpack has to be told that means the `.ts` beside it,
    * and that rule is why the site builds with webpack rather than Turbopack.
+   * `UI_SOURCE_ALIAS` points the member map's targets at the design system's
+   * sources, which the package's `exports` would not otherwise let a build
+   * reach by path.
    */
   webpack(config) {
     config.resolve ??= {};
+    config.resolve.alias = { ...(config.resolve.alias ?? {}), [UI_SOURCE_ALIAS]: join(import.meta.dirname, '..', '..', 'packages', 'ui', 'src') };
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),
       '.js': ['.ts', '.tsx', '.js'],

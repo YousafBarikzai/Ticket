@@ -3,6 +3,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { uiStylesheet } from '@itsm/ui/styles';
+import { ROOT_MEMBERS } from '../../next.config.js';
 
 /**
  * What the public site may not become (SPEC v3 §6.1; A5 §3.1, §3.10, §13.1).
@@ -65,6 +66,37 @@ describe('imports', () => {
   });
 });
 
+describe('the client code', () => {
+  it('has one client component, the global error page Next requires', () => {
+    const client = sources.filter((path) => /^\s*['"]use client['"]/.test(readFileSync(path, 'utf8'))).map((path) => relative(SRC, path));
+    expect(client).toEqual(['app/global-error.tsx']);
+  });
+
+  it('imports from the design system’s root only names the build maps to their own modules (next.config.ts ROOT_MEMBERS)', () => {
+    // A name missing from the map would bring the whole root entry, and every
+    // client component it re-exports, into every route's first load.
+    const mapped = new Set(Object.values(ROOT_MEMBERS).flat());
+    const imported = sources.flatMap((path) =>
+      [...readFileSync(path, 'utf8').matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]@itsm\/ui['"]/g)].flatMap((match) =>
+        match[1]!
+          .split(',')
+          .map((part) => part.trim())
+          .filter((part) => part && !part.startsWith('type '))
+          .map((name) => ({ name: name.split(/\s+as\s+/)[0]!, file: relative(SRC, path) })),
+      ),
+    );
+    expect(imported.length).toBeGreaterThan(0);
+    expect(imported.filter(({ name }) => !mapped.has(name))).toEqual([]);
+  });
+
+  it('maps each name to a module of that name in that folder', () => {
+    const ui = join(SRC, '..', '..', '..', 'packages', 'ui', 'src');
+    for (const [folder, names] of Object.entries(ROOT_MEMBERS)) {
+      for (const name of names) expect(statSync(join(ui, folder, `${name}.tsx`)).isFile(), `${folder}/${name}`).toBe(true);
+    }
+  });
+});
+
 describe('site.css', () => {
   const css = readFileSync(join(SRC, 'app', 'site.css'), 'utf8')
     // Comments may mention a colour; only declarations are paint.
@@ -72,9 +104,13 @@ describe('site.css', () => {
 
   it('paints only with design-system tokens: no hex and no rgb() colour', () => {
     // A1: the site copies no colour value, so dark mode, Increase contrast and
-    // a token change reach it without an edit. (The landing page's grid masks
-    // will add documented exceptions for mask stops, which are not paint.)
-    expect(css.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
+    // a token change reach it without an edit. The one exception is the `#000`
+    // stop of the two grid masks (A5 §4.3, §4.7): a mask says where a layer
+    // is opaque and is never painted.
+    const masks = css.match(/mask-image:[^;]*;/g) ?? [];
+    expect(masks).toHaveLength(2);
+    for (const mask of masks) expect(mask.match(/#[0-9a-f]{3,8}\b/gi)).toEqual(['#000']);
+    expect(css.replace(/mask-image:[^;]*;/g, '').match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(css.match(/\brgba?\(/gi) ?? []).toEqual([]);
     expect(css.match(/\bhsla?\(/gi) ?? []).toEqual([]);
   });
@@ -88,9 +124,21 @@ describe('site.css', () => {
     expect(used.filter((name) => !sheet.includes(`${name}:`))).toEqual([]);
   });
 
-  it('keeps to the app- prefix, leaving itsm- to the design system', () => {
-    const classes = [...css.matchAll(/\.([A-Za-z][\w-]*)/g)].map((match) => match[1]!);
-    expect(classes.length).toBeGreaterThan(0);
-    expect(classes.filter((name) => !name.startsWith('app-'))).toEqual([]);
+  it('keeps to the app- prefix: every rule starts at an app- class, and a design-system class appears only inside one', () => {
+    // Selectors: everything before a `{` that is not an at-rule or a keyframe step.
+    const selectors = [...css.matchAll(/([^{};]+)\{/g)]
+      .map((match) => match[1]!.trim())
+      .filter((selector) => selector && !selector.startsWith('@') && !/^(from|to|[\d%,\s]+)$/.test(selector))
+      .flatMap((selector) => selector.split(',').map((part) => part.trim()));
+    expect(selectors.length).toBeGreaterThan(50);
+    const offenders = selectors.filter((selector) => {
+      const first = /\.([A-Za-z][\w-]*)/.exec(selector)?.[1];
+      return first === undefined || !first.startsWith('app-') || /\.(?!app-|itsm-)[A-Za-z]/.test(selector);
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it('uppercases nothing: the role words use the design system’s kicker style', () => {
+    expect(css).not.toMatch(/text-transform\s*:\s*uppercase/i);
   });
 });
