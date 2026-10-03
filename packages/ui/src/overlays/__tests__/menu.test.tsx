@@ -128,6 +128,28 @@ describe('Menu', () => {
     expect(item('Delete ticket')!.className).toContain('itsm-Menu__item--danger');
   });
 
+  it('draws an item’s detail as a third line of its description, and marks the current item with a check and aria-current', async () => {
+    render(
+      <Menu
+        trigger={<button type="button">Areas</button>}
+        items={[
+          { id: 'portal', label: 'Help Portal', description: 'Get help, request things and follow your requests', detail: "You'll continue as Emma Clarke, Finance Manager", href: '/portal' },
+          { id: 'desk', label: 'Service Desk', description: 'Work tickets, queues and SLAs', current: true, href: '/desk' },
+        ]}
+      />,
+    );
+    await openWithKeyboard(document.querySelector<HTMLButtonElement>('button')!);
+    const portal = item('Help Portal')!;
+    const described = (portal.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent);
+    expect(described).toEqual(['Get help, request things and follow your requests', "You'll continue as Emma Clarke, Finance Manager"]);
+    expect(portal.querySelector('.itsm-Menu__detail')).not.toBeNull();
+    expect(portal.getAttribute('aria-current')).toBeNull();
+    expect(portal.querySelector('.itsm-Menu__current')).toBeNull();
+    const desk = item('Service Desk')!;
+    expect(desk.getAttribute('aria-current')).toBe('true');
+    expect(desk.querySelector('.itsm-Menu__current')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('navigates through the app’s Link for items with an href', async () => {
     render(
       <TestProvider>

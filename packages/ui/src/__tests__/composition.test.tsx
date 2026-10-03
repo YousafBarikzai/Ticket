@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { crossAreaHref } from '@itsm/contracts/areas';
 import { act, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { announcerText, destroyAnnouncer, installAnnouncer } from '../a11y/announcer.js';
@@ -12,11 +13,12 @@ import { navigation, noun, resetLocation, ruleColumns, rules, UrlProvider, type 
 import { TestProvider } from '../provider/__tests__/support/provider.js';
 import { notify, resetNotifications } from '../provider/notify.js';
 import { resetRecentsForTesting } from '../provider/recents.js';
+import { useAreas } from '../shell/areas-context.js';
 import { PageHeader } from '../shell/PageHeader.js';
 import { resetShortcutsDialog } from '../shell/shortcuts.js';
 import { resetSidebarMemoryForTesting } from '../shell/Sidebar.js';
 import { TabNav } from '../shell/TabNav.js';
-import { createLocation, setViewport, sidebarProps } from '../shell/__tests__/support.js';
+import { adminAreas, createLocation, setViewport, sidebarProps } from '../shell/__tests__/support.js';
 import { componentStylesheet } from '../styles/index.js';
 import type { ActionSpec } from '../types.js';
 import { AppShell } from '../web/AppShell.js';
@@ -334,6 +336,46 @@ describe('the bottom edge', () => {
     // Adding the two floats a bar a home indicator's height above a tab bar.
     expect(componentStylesheet).not.toMatch(/bottom-dock-height[^;]*\+\s*var\(--itsm-safe-area-bottom\)/);
     expect(componentStylesheet).not.toMatch(/safe-area-bottom\)[^;]*\+\s*var\(--itsm-bottom-dock-height/);
+  });
+});
+
+describe('frame ↔ page header ↔ sidebar', () => {
+  it('agree on the page: the sidebar’s current item, the top bar’s title and purpose, and the page’s hidden h1', async () => {
+    setViewport(1440);
+    const location = createLocation('/rules');
+    render(
+      <location.Provider>
+        <AppShell {...sidebarProps()}>
+          <PageHeader title="Rules" purpose="Route and update tickets as they arrive" primaryAction={{ id: 'new', label: 'New rule', href: '/rules/new' }} />
+        </AppShell>
+      </location.Provider>,
+    );
+    await settle();
+    expect(document.querySelector('.itsm-Sidebar [aria-current="page"]')?.textContent).toBe('Rules3, 3 drafts');
+    expect(document.querySelector('.itsm-AppTopBar__title')?.textContent).toBe('Rules');
+    expect(document.querySelector('.itsm-AppTopBar__purpose')?.textContent).toBe('Route and update tickets as they arrive');
+    const h1 = document.querySelector('main h1')!;
+    expect(h1.className).toContain('itsm-visually-hidden-focusable');
+    // The visible row keeps the page's action: "the title is in the top bar; content starts with a toolbar row".
+    expect(document.querySelector('main .itsm-PageHeader__actions [data-action="new"]')).not.toBeNull();
+  });
+
+  it('lets a page reach the other areas through the frame’s model, never an origin of its own', async () => {
+    function OpenInDesk(): ReactNode {
+      const areas = useAreas();
+      const href = areas ? crossAreaHref(areas, 'workbench', '/tickets/INC-000004') : null;
+      return href ? <a href={href}>Open in Service Desk</a> : null;
+    }
+    setViewport(1440);
+    const location = createLocation('/tickets');
+    render(
+      <location.Provider>
+        <AppShell {...sidebarProps({ areas: adminAreas })}>
+          <OpenInDesk />
+        </AppShell>
+      </location.Provider>,
+    );
+    expect(document.querySelector('main a')?.getAttribute('href')).toBe('https://desk.example/tickets/INC-000004');
   });
 });
 

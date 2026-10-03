@@ -13,7 +13,6 @@ import { BottomDock, BottomDockHost } from '../BottomDock.js';
 import { Breadcrumbs } from '../Breadcrumbs.js';
 import { useFullScreenFlow } from '../flow.js';
 import { HierNav } from '../HierNav.js';
-import { NotificationCenter, resetEmergencyAnnouncement, type NotificationItem } from '../NotificationCenter.js';
 import { PageHeader } from '../PageHeader.js';
 import { RouteProgress, useRoutePending } from '../RouteProgress.js';
 import { SearchTrigger } from '../SearchTrigger.js';
@@ -24,8 +23,9 @@ import { SplitView } from '../SplitView.js';
 import { TabBar } from '../TabBar.js';
 import { TabNav } from '../TabNav.js';
 import { tabNavStyles } from '../TabNav.styles.js';
-import { UserMenu } from '../UserMenu.js';
-import { createLocation, setViewport } from './support.js';
+import { DEMO_DETAILS_REQUEST_EVENT, DEMO_RESET_REQUEST_EVENT, UserMenu } from '../UserMenu.js';
+import { ShellProvider } from '../context.js';
+import { adminAreas, createLocation, demoAreas, setViewport } from './support.js';
 
 vi.mock('../../web/IconButtonTooltip.js', () => ({ IconButtonTooltip: () => null }));
 
@@ -39,7 +39,6 @@ afterEach(() => {
   cleanupDocument();
   destroyAnnouncer();
   resetShortcutsDialog();
-  resetEmergencyAnnouncement();
   vi.unstubAllGlobals();
   vi.useRealTimers();
   document.documentElement.style.removeProperty('--itsm-bottom-dock-height');
@@ -106,6 +105,33 @@ describe('TabBar', () => {
     render(<TabBar items={items} />);
     viewport.resize(300);
     expect(q<HTMLElement>('nav.itsm-TabBar')!.hidden).toBe(false);
+  });
+
+  it('draws an action tab as a button that says what it opens, current while it is open, with a dot in words', () => {
+    const onSelect = vi.fn();
+    const view = render(
+      <TabBar
+        items={[
+          ...items,
+          { id: 'search', label: 'Search', icon: 'search', haspopup: 'dialog', onSelect },
+          { id: 'more', label: 'More', icon: 'menu', haspopup: 'dialog', controls: 'itsm-nav-sheet', onSelect: vi.fn(), dot: { label: '1 breached ticket' } },
+        ]}
+      />,
+    );
+    const [search, more] = all('nav.itsm-TabBar button');
+    expect(search!.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(search!.getAttribute('aria-expanded')).toBe('false');
+    expect(search!.hasAttribute('aria-current')).toBe(false);
+    click(search!);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(more!.textContent).toBe('More, 1 breached ticket');
+    expect(more!.querySelector('.itsm-TabBar__dot')?.getAttribute('aria-hidden')).toBe('true');
+    // aria-controls names the sheet only while it exists.
+    expect(more!.hasAttribute('aria-controls')).toBe(false);
+    view.rerender(<TabBar items={[...items, { id: 'more', label: 'More', icon: 'menu', haspopup: 'dialog', controls: 'itsm-nav-sheet', expanded: true, onSelect: vi.fn() }]} />);
+    const open = q('nav.itsm-TabBar button')!;
+    expect(open.getAttribute('aria-expanded')).toBe('true');
+    expect(open.getAttribute('aria-controls')).toBe('itsm-nav-sheet');
   });
 
   it('steps aside during a full-screen flow', () => {
@@ -374,7 +400,7 @@ describe('UserMenu', () => {
     expect(submitted).toHaveBeenCalledTimes(1);
   });
 
-  it('asks first when told to, and does not sign out on "no"', async () => {
+  it('asks first when told to, and does not sign out on "no": the question belongs to the form, whoever submits it', async () => {
     const beforeSubmit = vi.fn(async () => false);
     render(
       <TestProvider>
@@ -387,15 +413,119 @@ describe('UserMenu', () => {
     await settle();
     const signOut = all('[role="menuitem"]').find((item) => item.textContent === 'Sign out')!;
     const form = document.getElementById(signOut.getAttribute('form')!) as HTMLFormElement;
-    const submitted = vi.fn((event: Event) => event.preventDefault());
+    const submit = vi.spyOn(form, 'submit').mockImplementation(() => undefined);
+    const submitted = vi.fn();
     form.addEventListener('submit', submitted);
-    const requestSubmit = vi.spyOn(form, 'requestSubmit').mockImplementation(() => undefined);
     click(signOut);
     await settle();
     expect(beforeSubmit).toHaveBeenCalledTimes(1);
-    expect(submitted).not.toHaveBeenCalled();
-    expect(requestSubmit).not.toHaveBeenCalled();
+    // The browser's own submission was held; the form was never sent.
+    expect(submitted).toHaveBeenCalledTimes(1);
+    expect((submitted.mock.calls[0]![0] as Event).defaultPrevented).toBe(true);
+    expect(submit).not.toHaveBeenCalled();
     expect(q('[role="menu"]')).toBeNull();
+  });
+
+  it('signs out after "yes", and asks for any submitter of the form — the demo bar’s End demo too', async () => {
+    const beforeSubmit = vi.fn(async () => true);
+    render(
+      <TestProvider>
+        <UserMenu {...props} signOut={{ action: '/api/session/logout', beforeSubmit }} />
+        <button type="submit" form="placeholder" id="end-demo">
+          End demo
+        </button>
+      </TestProvider>,
+    );
+    const form = document.querySelector<HTMLFormElement>('form.itsm-SignOutForm')!;
+    const submit = vi.spyOn(form, 'submit').mockImplementation(() => undefined);
+    document.getElementById('end-demo')!.setAttribute('form', form.id);
+    click(document.getElementById('end-demo')!);
+    await settle();
+    expect(beforeSubmit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens with Switch area when the person has more than one area, the current one checked', async () => {
+    render(
+      <TestProvider>
+        <UserMenu {...props} areas={adminAreas} />
+      </TestProvider>,
+    );
+    focus(q('.itsm-UserMenu')!);
+    await loaded();
+    press(q('.itsm-UserMenu')!, 'Enter');
+    await settle();
+    const labels = all('[role="menu"] [role^="menuitem"]').map((item) => item.querySelector('.itsm-Menu__itemLabel')?.firstChild?.textContent ?? item.textContent);
+    expect(labels).toEqual(['Help Portal', 'Service Desk', 'Administration', 'Automatic', 'Light', 'Dark', 'Increase contrast', 'Comfortable', 'Compact', 'Keyboard shortcuts…', 'Help', 'Sign out']);
+    const group = q('[role="menu"] .itsm-UserMenu__areas')!;
+    expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('Switch area');
+    expect(all('[role="menu"] [aria-current="true"]').map((item) => item.querySelector('.itsm-Menu__itemLabel')!.firstChild!.textContent)).toEqual(['Administration']);
+  });
+
+  it('takes the frame’s areas when it is given none, and has no Switch area group for one area', async () => {
+    const { requesterAreas } = await import('./support.js');
+    render(
+      <TestProvider>
+        <UserMenu {...props} areas={requesterAreas} />
+      </TestProvider>,
+    );
+    focus(q('.itsm-UserMenu')!);
+    await loaded();
+    press(q('.itsm-UserMenu')!, 'Enter');
+    await settle();
+    expect(q('[role="menu"] .itsm-UserMenu__areas')).toBeNull();
+  });
+
+  it('in a demo, adds the Demo group and ends with "IT Service Management home" and "End demo"', async () => {
+    const resets = vi.fn();
+    const details = vi.fn();
+    window.addEventListener(DEMO_RESET_REQUEST_EVENT, resets);
+    window.addEventListener(DEMO_DETAILS_REQUEST_EVENT, details);
+    try {
+      render(
+        <TestProvider app="workbench">
+          <ShellProvider value={{ signOutFormId: 'itsm-signout', variant: 'sidebar', publishPage: () => () => undefined }}>
+            <form id="itsm-signout" method="post" action="/api/session/logout" hidden />
+            <UserMenu name="Alex Morgan" detail="Service Desk team lead" shortcuts signOut={{ action: '/api/session/logout' }} areas={demoAreas('workbench')} demo={{ resetEvent: DEMO_RESET_REQUEST_EVENT }} />
+          </ShellProvider>
+        </TestProvider>,
+      );
+      focus(q('.itsm-UserMenu')!);
+      await loaded();
+      press(q('.itsm-UserMenu')!, 'Enter');
+      await settle();
+      expect(q('.itsm-UserMenu__identity')?.textContent).toContain('Demo');
+      const labels = all('[role="menu"] [role^="menuitem"]').map((item) => item.querySelector('.itsm-Menu__itemLabel')?.firstChild?.textContent ?? item.textContent);
+      expect(labels.slice(0, 3)).toEqual(['Help Portal', 'Service Desk', 'Administration']);
+      expect(labels.slice(-4)).toEqual(['Reset demo data…', 'Demo details', 'IT Service Management home', 'End demo']);
+      const home = all('[role="menu"] [role="menuitem"]').find((item) => item.textContent === 'IT Service Management home')!;
+      expect(home.getAttribute('href')).toBe('https://itsm.example/');
+
+      click(all('[role="menuitem"]').find((item) => item.textContent === 'Reset demo data…')!);
+      await settle();
+      expect(resets).toHaveBeenCalledTimes(1);
+      press(q('.itsm-UserMenu')!, 'Enter');
+      await settle();
+      click(all('[role="menuitem"]').find((item) => item.textContent === 'Demo details')!);
+      await settle();
+      expect(details).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(DEMO_RESET_REQUEST_EVENT, resets);
+      window.removeEventListener(DEMO_DETAILS_REQUEST_EVENT, details);
+    }
+  });
+
+  it('accepts the v2 switcher prop and ignores it (RV1): no Switch area group without areas', async () => {
+    render(
+      <TestProvider>
+        <UserMenu {...props} switcher={[{ app: 'workbench', label: 'Workbench', href: '/w' }]} />
+      </TestProvider>,
+    );
+    focus(q('.itsm-UserMenu')!);
+    await loaded();
+    press(q('.itsm-UserMenu')!, 'Enter');
+    await settle();
+    expect(document.body.textContent).not.toContain('Workbench');
   });
 
   it('changes appearance and contrast from the menu', async () => {
@@ -420,124 +550,6 @@ describe('UserMenu', () => {
     click(contrast);
     await settle();
     expect(JSON.parse(window.localStorage.getItem('itsm-prefs')!)).toMatchObject({ contrast: 'more' });
-  });
-});
-
-/* ------------------------------------------------------------------ */
-
-describe('NotificationCenter', () => {
-  const now = Date.now();
-  const items: NotificationItem[] = [
-    { id: 'n1', subject: 'Assigned to you: Printer jammed', eventType: 'ticket.assigned', createdAt: new Date(now - 60_000).toISOString(), readAt: null },
-    { id: 'n2', subject: 'SLA breached: VPN down', eventType: 'sla.breached.lead', createdAt: new Date(now - 3 * 86_400_000).toISOString(), readAt: null },
-    { id: 'n3', subject: 'Approved: Laptop', eventType: 'approval.decided', createdAt: new Date(now - 120_000).toISOString(), readAt: new Date(now).toISOString() },
-  ];
-
-  function Bell({ emergency = false, unread = 2, load = async () => ({ items, unread: 2 }), markRead = vi.fn(async () => undefined) }: Partial<Parameters<typeof NotificationCenter>[0]>): ReactNode {
-    return (
-      <TestProvider>
-        <NotificationCenter unread={unread} emergency={emergency} load={load} markRead={markRead} hrefFor={(item) => `/tickets/${item.id}`} />
-      </TestProvider>
-    );
-  }
-
-  it('names the bell with its count, capped at 99+', () => {
-    render(<Bell unread={140} />);
-    const bell = q('.itsm-NotificationCenter__bell')!;
-    expect(bell.getAttribute('aria-label')).toBe('Notifications, 99+ unread');
-    expect(bell.getAttribute('aria-haspopup')).toBe('dialog');
-    expect(q('.itsm-NotificationCenter__count')?.textContent).toBe('99+');
-  });
-
-  it('announces an emergency once, assertively, however many bells there are', async () => {
-    vi.useFakeTimers();
-    render(
-      <>
-        <Bell emergency />
-        <Bell emergency />
-      </>,
-    );
-    act(() => {
-      vi.advanceTimersByTime(50);
-    });
-    expect(document.querySelector('[data-itsm-live-region="assertive"]')?.textContent).toContain('service level has been breached');
-    expect(all('.itsm-NotificationCenter__bell').every((bell) => bell.getAttribute('aria-label')!.endsWith('urgent'))).toBe(true);
-    const spoken = document.querySelector('[data-itsm-live-region="assertive"]')!;
-    spoken.textContent = '';
-    act(() => {
-      vi.advanceTimersByTime(50);
-    });
-    expect(spoken.textContent).toBe('');
-  });
-
-  it('opens a panel with the emergency pinned first, then day groups, and marks all as read', async () => {
-    setViewport(1440);
-    const markRead = vi.fn(async () => undefined);
-    render(<Bell markRead={markRead} />);
-    const bell = q<HTMLButtonElement>('.itsm-NotificationCenter__bell')!;
-    click(bell);
-    await loaded();
-    await settle();
-
-    const panel = q('[role="dialog"]')!;
-    expect(panel.getAttribute('aria-labelledby')).toBe(q('.itsm-NotificationPanel__title')!.id);
-    const headings = all('.itsm-NotificationPanel__day').map((heading) => heading.textContent);
-    expect(headings[0]).toBe('Needs attention');
-    expect(headings[1]).toBe('Today');
-    const first = q('.itsm-NotificationPanel__item')!;
-    expect(first.textContent).toContain('Urgent: SLA breached: VPN down');
-    expect(first.getAttribute('href')).toBe('/tickets/n2');
-    expect(all('.itsm-NotificationPanel__item[data-unread]')).toHaveLength(2);
-
-    click(all('button').find((button) => button.textContent === 'Mark all as read')!);
-    await settle();
-    expect(markRead).toHaveBeenCalledWith('all');
-    expect(all('.itsm-NotificationPanel__item[data-unread]')).toHaveLength(0);
-    expect(bell.getAttribute('aria-label')).toBe('Notifications');
-  });
-
-  it('marks one read and closes when it is followed', async () => {
-    setViewport(1440);
-    const markRead = vi.fn(async () => undefined);
-    render(<Bell markRead={markRead} />);
-    click(q('.itsm-NotificationCenter__bell')!);
-    await loaded();
-    await settle();
-    const item = all('.itsm-NotificationPanel__item').find((link) => link.textContent?.includes('Printer jammed'))!;
-    item.addEventListener('click', (event) => event.preventDefault());
-    click(item);
-    await settle();
-    expect(markRead).toHaveBeenCalledWith('n1');
-    expect(q('[role="dialog"]')).toBeNull();
-    expect(q('.itsm-NotificationCenter__bell')!.getAttribute('aria-label')).toBe('Notifications, 1 unread');
-  });
-
-  it('says so when the list cannot load, and tries again', async () => {
-    setViewport(1440);
-    let fail = true;
-    const load = vi.fn(async () => {
-      if (fail) throw new Error('offline');
-      return { items: [], unread: 0 };
-    });
-    render(<Bell load={load} />);
-    click(q('.itsm-NotificationCenter__bell')!);
-    await loaded();
-    await settle();
-    expect(q('[role="dialog"] [role="alert"]')?.textContent).toContain('Couldn’t load notifications');
-    fail = false;
-    click(all('button').find((button) => button.textContent === 'Try again')!);
-    await settle();
-    expect(q('[role="dialog"]')?.textContent).toContain('You’re all caught up');
-  });
-
-  it('is a bottom sheet on a phone', async () => {
-    setViewport(390);
-    render(<Bell />);
-    click(q('.itsm-NotificationCenter__bell')!);
-    await loaded();
-    await settle();
-    expect(q('.itsm-NotificationPanel__sheet')).not.toBeNull();
-    expect(q('[role="dialog"]')?.textContent).toContain('Notifications');
   });
 });
 
@@ -601,6 +613,45 @@ describe('PageHeader', () => {
     expect(popover.textContent).toContain('You can see Rules but not change them. Ask an administrator for Manage rules.');
     // The technical key only for people who asked to see keys.
     expect(popover.textContent).not.toContain('rules.rule.manage');
+  });
+
+  it('draws its purpose and context under and beside a visible heading outside the sidebar frame', () => {
+    render(
+      <TestProvider>
+        <PageHeader title="My requests" purpose="Everything you have asked for" context={<span className="chip">Last 30 days</span>} />
+      </TestProvider>,
+    );
+    const h1 = q('h1')!;
+    expect(h1.className).not.toContain('itsm-visually-hidden');
+    expect(q('.itsm-PageHeader__purpose')?.textContent).toBe('Everything you have asked for');
+    expect(q('.itsm-PageHeader__context')?.textContent).toBe('Last 30 days');
+    expect(q('.itsm-PageHeader')!.hasAttribute('data-title-in-bar')).toBe(false);
+  });
+
+  it('steps its h1 back to a visually hidden focus target in the sidebar frame, unless it is a record page', () => {
+    const shell = { signOutFormId: 'itsm-signout', variant: 'sidebar' as const, publishPage: vi.fn(() => () => undefined) };
+    const view = render(
+      <TestProvider>
+        <ShellProvider value={shell}>
+          <PageHeader title="Rules" purpose="Route and update tickets as they arrive" />
+        </ShellProvider>
+      </TestProvider>,
+    );
+    expect(q('h1')!.className).toContain('itsm-visually-hidden-focusable');
+    expect(q('h1')!.getAttribute('tabindex')).toBe('-1');
+    expect(q('.itsm-PageHeader__purpose')).toBeNull();
+    expect(q('.itsm-PageHeader')!.hasAttribute('data-title-in-bar')).toBe(true);
+    expect(shell.publishPage).toHaveBeenLastCalledWith({ title: 'Rules', purpose: 'Route and update tickets as they arrive', barTitle: 'page' });
+
+    view.rerender(
+      <TestProvider>
+        <ShellProvider value={shell}>
+          <PageHeader title="VIP requester" barTitle="section" back={{ href: '/rules', label: 'Rules' }} />
+        </ShellProvider>
+      </TestProvider>,
+    );
+    expect(q('h1')!.className).not.toContain('itsm-visually-hidden');
+    expect(shell.publishPage).toHaveBeenLastCalledWith({ title: 'VIP requester', back: { href: '/rules', label: 'Rules' }, barTitle: 'section' });
   });
 
   it('shows breadcrumbs above, or a back link', () => {

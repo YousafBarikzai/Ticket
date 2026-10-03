@@ -50,7 +50,7 @@ const portalBrand: ShellBrand = { name: 'Help', tenant: 'Acme', href: '/', app: 
 const adminBrand: ShellBrand = { name: 'Administration', tenant: 'Acme', href: '/', app: 'admin', switcher: [...switcher] };
 
 function frame(node: ReactNode, app: 'portal' | 'workbench' | 'admin'): void {
-  render(createElement(TestProvider, { app, usePathname: () => '/' }, node));
+  render(createElement(TestProvider, { app, usePathname: () => '/', children: node }));
 }
 
 describe('the v2 frame props (RV1)', () => {

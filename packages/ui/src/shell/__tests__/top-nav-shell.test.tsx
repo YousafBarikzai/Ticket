@@ -13,7 +13,8 @@ import { createLocation, setViewport, topnavProps } from './support.js';
 /**
  * `TopNavShell` is `AppShell variant="topnav"` without the other variants in
  * its module graph (the portal's first load is budgeted, SPEC §3.7): the same
- * frame, drawn the same way, carrying no sidebar.
+ * frame, drawn the same way, carrying no sidebar, no sidebar top bar, and no
+ * module the portal only loads on intent.
  */
 
 vi.mock('../../web/IconButtonTooltip.js', () => ({ IconButtonTooltip: () => null }));
@@ -49,7 +50,9 @@ describe('TopNavShell', () => {
       const actual = markup(<TopNavShell {...props}>{children}</TopNavShell>, '/tickets/42');
       expect(actual, `${width} px`).toBe(expected);
       expect(actual).toContain('itsm-TabBar');
+      expect(actual).toContain('itsm-AreaSwitcher');
       expect(actual).not.toContain('itsm-Sidebar');
+      expect(actual).not.toContain('itsm-AppTopBar');
     }
   });
 
@@ -76,7 +79,14 @@ describe('TopNavShell', () => {
     }
     const reached = [...seen].map((file) => file.slice(root.length));
     expect(reached).toContain('shell/TopNavFrame.tsx');
+    expect(reached).toContain('shell/AreaSwitcher.tsx');
     expect(reached).not.toContain('shell/Sidebar.tsx');
     expect(reached).not.toContain('web/AppShell.tsx');
+    // The sidebar frame's top bar, and every module the portal loads only on
+    // intent or when idle (the area menu, the demo bar's popover, dialog and
+    // watcher), stay out of its first load (A2 §13.3).
+    for (const lazy of ['shell/AppTopBar.tsx', 'shell/AreaMenuPanel.tsx', 'shell/UserMenuPanel.tsx', 'shell/DemoDetailsPopover.tsx', 'shell/DemoResetDialog.tsx', 'shell/demo-watch.ts']) {
+      expect(reached, lazy).not.toContain(lazy);
+    }
   });
 });

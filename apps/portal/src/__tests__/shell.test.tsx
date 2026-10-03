@@ -189,6 +189,12 @@ describe('the pills and the tab bar', () => {
     expect(pills.filter((link) => link.getAttribute('aria-current') === 'page').map((link) => link.textContent)).toEqual(['My requests']);
   });
 
+  it('sit in the v3 top bar beside the product mark and the area lockup (one area until the layout passes `areas`)', () => {
+    mount();
+    expect(document.querySelector('.itsm-TopBar__brand')?.getAttribute('aria-label')).toMatch(/^IT Service Management — .+ home$/);
+    expect(document.querySelector('.itsm-TopBar .itsm-AreaSwitcher')?.getAttribute('data-display')).toBe('lockup');
+  });
+
   it('dock five tabs with Me last', () => {
     mount();
     expect(linksIn('Tab bar').map((link) => link.getAttribute('href'))).toEqual(['/', '/tickets', '/catalogue', '/knowledge', '/profile']);
@@ -197,7 +203,8 @@ describe('the pills and the tab bar', () => {
   it('never carry Approvals, even with decisions waiting; the avatar and Me carry the count', () => {
     mount({ waiting: 2 });
     for (const label of ['Main', 'Tab bar']) expect(linksIn(label).map((link) => link.getAttribute('href'))).not.toContain('/approvals');
-    const avatar = document.querySelector('button[aria-haspopup="menu"]')!;
+    // The account button by its class: a person with more than one area also has the switcher's menu button (v3 §3.6).
+    const avatar = document.querySelector('button.itsm-UserMenu')!;
     expect(avatar.textContent).toContain('2 approvals waiting');
     expect(linksIn('Tab bar').at(-1)!.textContent).toContain('2');
   });

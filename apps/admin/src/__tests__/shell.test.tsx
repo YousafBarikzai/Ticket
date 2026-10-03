@@ -102,6 +102,15 @@ describe('the frame', () => {
     expect(nav.querySelector('a[aria-current="page"]')?.getAttribute('href')).toBe('/rules');
   });
 
+  it('titles the page in the v3 top bar from the current nav item, with the area lockup in the sidebar', async () => {
+    const { container } = render(<Frame permissions={grants('rules.rule.read')} />);
+    await settle();
+    expect(container.querySelectorAll('header.itsm-AppTopBar')).toHaveLength(1);
+    expect(container.querySelector('.itsm-AppTopBar__title')?.textContent).toBe('Rules');
+    expect(container.querySelector('.itsm-Sidebar .itsm-AreaSwitcher')?.getAttribute('data-display')).toBe('lockup');
+    expect(container.querySelector('a.itsm-Sidebar__home')?.getAttribute('href')).toBe('/');
+  });
+
   it('shows the platform group to an operator only', async () => {
     const { container } = render(<Frame permissions={grants('platform.tenant.manage')} />);
     await settle();
