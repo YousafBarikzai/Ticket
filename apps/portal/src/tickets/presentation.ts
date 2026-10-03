@@ -33,7 +33,14 @@ export interface RequesterState {
   readonly detail: string;
   /** The legacy `Badge` intent, for pages that still draw one. */
   readonly intent: IntentName;
-  /** The `StatusPill` tone. Info is indigo, never the accent blue (SPEC §1.2). */
+  /**
+   * The `StatusPill` tone: the design system's `TICKET_STATE_LOOK[state].tone`
+   * (D5, v3 §2.4), so a request reads in the same colour here as in the
+   * Service Desk — waiting is `hold`, never the amber that means an SLA at
+   * risk. Spelt here rather than imported: this module is in every route's
+   * first load (the palette reads it), and `presentation.test.ts` holds each
+   * tone equal to the map's.
+   */
   readonly tone: Tone;
   /** The pill's glyph, so the state reads without its colour (SC 1.4.1). */
   readonly icon: IconName;
@@ -45,8 +52,8 @@ const STATES: Record<string, RequesterState> = {
   new: {
     label: 'Received',
     detail: 'We have it. Somebody will pick it up shortly.',
-    intent: 'info',
-    tone: 'info',
+    intent: 'neutral',
+    tone: 'neutral',
     icon: 'inbox',
     needsYou: false,
   },
@@ -61,24 +68,24 @@ const STATES: Record<string, RequesterState> = {
   pending_requester: {
     label: 'Waiting for you',
     detail: 'We have asked you something. Nothing moves until you reply.',
-    intent: 'warning',
-    tone: 'warning',
+    intent: 'hold',
+    tone: 'hold',
     icon: 'reply',
     needsYou: true,
   },
   pending_third_party: {
     label: 'Waiting on a supplier',
     detail: 'We are waiting on somebody outside the service desk.',
-    intent: 'neutral',
-    tone: 'neutral',
+    intent: 'hold',
+    tone: 'hold',
     icon: 'hourglass',
     needsYou: false,
   },
   pending_approval: {
     label: 'Waiting for approval',
     detail: 'Somebody has to approve this before it can start.',
-    intent: 'neutral',
-    tone: 'neutral',
+    intent: 'hold',
+    tone: 'hold',
     icon: 'approvals',
     needsYou: false,
   },
@@ -151,7 +158,7 @@ export interface NextAction {
   readonly yours: boolean;
 }
 
-const REPLY: NextAction = { kind: 'reply', label: 'Reply needed', tone: 'warning', yours: true };
+const REPLY: NextAction = { kind: 'reply', label: 'Reply needed', tone: 'hold', yours: true };
 const CONFIRM: NextAction = { kind: 'confirm', label: 'Confirm it’s fixed', tone: 'success', yours: true };
 const NOTHING: NextAction = { kind: 'none', label: 'No action needed', tone: 'neutral', yours: false };
 const FINISHED: NextAction = { kind: 'none', label: null, tone: 'neutral', yours: false };

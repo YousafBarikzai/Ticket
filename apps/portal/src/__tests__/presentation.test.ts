@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CANONICAL_STATES } from '@itsm/module-ticket';
 import type { CatalogueItem } from '@itsm/sdk';
+import { TICKET_STATE_LOOK } from '@itsm/ui';
 import { groupByService, UNGROUPED } from '../catalogue/group.js';
 import { DEFAULT_SERVICE_ICON, SERVICE_TOPICS, serviceIcon, topicFor, topicHref } from '../catalogue/icons.js';
 import {
@@ -114,22 +115,38 @@ describe('how a state is drawn', () => {
     for (const state of CANONICAL_STATES) {
       const shown = requesterState(state);
       expect(shown.icon, state).not.toBe('dot');
-      expect(['neutral', 'info', 'success', 'warning', 'danger']).toContain(shown.tone);
+      expect(['neutral', 'info', 'success', 'hold', 'danger']).toContain(shown.tone);
     }
+  });
+
+  it('takes every tone from the design system’s state map, keeping the requester’s own words (D5)', () => {
+    for (const state of CANONICAL_STATES) {
+      const look = TICKET_STATE_LOOK[state as keyof typeof TICKET_STATE_LOOK];
+      expect(look, state).toBeDefined();
+      expect(requesterState(state).tone, state).toBe(look.tone);
+      expect(requesterState(state).intent, state).toBe(look.tone);
+    }
+    // The words stay the requester's: never the agent's "Waiting on requester".
+    expect(requesterState('pending_requester').label).not.toBe(TICKET_STATE_LOOK.pending_requester.label);
+  });
+
+  it('never draws a state in amber, which means an SLA at risk and nothing else', () => {
+    for (const state of [...CANONICAL_STATES, 'awaiting_parts_l3']) expect(requesterState(state).tone, state).not.toBe('warning');
+    for (const state of [...CANONICAL_STATES, 'awaiting_parts_l3']) expect(nextAction(state).tone, state).not.toBe('warning');
   });
 
   it('keeps the accent blue for things that can be pressed: no state is drawn in it', () => {
     for (const state of [...CANONICAL_STATES, 'awaiting_parts_l3']) expect(requesterState(state).tone).not.toBe('accent');
   });
 
-  it('draws the one state that is the requester’s to answer in warning', () => {
-    expect(requesterState('pending_requester').tone).toBe('warning');
+  it('draws the one state that is the requester’s to answer in hold, like every wait', () => {
+    expect(requesterState('pending_requester').tone).toBe('hold');
   });
 });
 
 describe('what happens next (nextAction)', () => {
   it('asks for a reply when the desk asked something', () => {
-    expect(nextAction('pending_requester')).toEqual({ kind: 'reply', label: 'Reply needed', tone: 'warning', yours: true });
+    expect(nextAction('pending_requester')).toEqual({ kind: 'reply', label: 'Reply needed', tone: 'hold', yours: true });
   });
 
   it('asks for a word on a fix, because "Yes, it’s fixed" closes it', () => {

@@ -336,11 +336,11 @@ describe('the rules', () => {
       const hero = model.heroFor(status);
       return [hero.title, hero.primary, hero.more.join('+'), hero.tone];
     };
-    expect(summary('new')).toEqual(['Received', null, 'withdraw', 'info']);
+    expect(summary('new')).toEqual(['Received', null, 'withdraw', 'neutral']);
     expect(summary('in_progress')).toEqual(['Being worked on', null, 'sorted', 'info']);
-    expect(summary('pending_requester')).toEqual(['Waiting for you', 'reply', 'withdraw+sorted', 'warning']);
-    expect(summary('pending_approval')).toEqual(['Waiting for approval', null, 'sorted', 'neutral']);
-    expect(summary('pending_third_party')).toEqual(['Waiting on a supplier', null, 'sorted', 'neutral']);
+    expect(summary('pending_requester')).toEqual(['Waiting for you', 'reply', 'withdraw+sorted', 'hold']);
+    expect(summary('pending_approval')).toEqual(['Waiting for approval', null, 'sorted', 'hold']);
+    expect(summary('pending_third_party')).toEqual(['Waiting on a supplier', null, 'sorted', 'hold']);
     expect(summary('resolved')).toEqual(['Is it fixed?', 'confirm', '', 'success']);
     expect(summary('closed')).toEqual(['Closed', 'report-again', '', 'neutral']);
     expect(summary('cancelled')).toEqual(['Withdrawn', 'report-again', '', 'neutral']);

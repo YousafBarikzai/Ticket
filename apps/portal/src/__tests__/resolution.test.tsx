@@ -508,7 +508,7 @@ describe('the hero card, other states', () => {
     const opened = vi.fn();
     window.addEventListener('app:open-composer', opened);
     show('pending_requester');
-    expect(document.querySelector('.app-RequestHero')?.getAttribute('data-tone')).toBe('warning');
+    expect(document.querySelector('.app-RequestHero')?.getAttribute('data-tone')).toBe('hold');
     button('Reply').click();
     window.removeEventListener('app:open-composer', opened);
     expect(opened).toHaveBeenCalledTimes(1);
