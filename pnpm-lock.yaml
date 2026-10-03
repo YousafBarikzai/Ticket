@@ -1111,6 +1111,10 @@ importers:
         version: 3.25.76
 
   packages/pwa:
+    dependencies:
+      '@itsm/contracts':
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       '@types/react':
         specifier: ^19.3.0

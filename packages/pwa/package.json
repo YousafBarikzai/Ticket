@@ -17,6 +17,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. --project unit packages/pwa"
   },
+  "dependencies": {
+    "@itsm/contracts": "workspace:*"
+  },
   "peerDependencies": {
     "react": "^19"
   },
