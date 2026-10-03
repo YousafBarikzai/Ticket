@@ -112,11 +112,7 @@ interface ChipProps {
   readonly field: ChipMenu;
 }
 
-/**
- * The chip's question ("Status: "), for the ear: the v3 chips show their
- * values alone, as the benchmark's do. None for priority, whose chip already
- * says "Priority 3, medium".
- */
+/** The chip's question ("Status: "), for the ear: the v3 chips show their values alone, as the benchmark's do. */
 function ChipLabel({ label }: { readonly label: string }): ReactNode {
   if (!label) return null;
   return <VisuallyHidden className="app-Chip__label">{`${label}: `}</VisuallyHidden>;
@@ -254,7 +250,8 @@ export function PropertyChips({
   }
 
   /* Priority */
-  const priorityValue = <PriorityChip priority={ticket.priority.toUpperCase()} words size="md" className="app-Chip__priority" />;
+  // The chip's own words follow the chip's question ("Priority: 3, medium"), so it does not say "priority" twice.
+  const priorityValue = <PriorityChip priority={ticket.priority.toUpperCase()} words size="md" srPrefix="" className="app-Chip__priority" />;
   const priority = can.update ? (
     <Menu
       {...menuProps('priority')}
@@ -273,13 +270,13 @@ export function PropertyChips({
         },
       ]}
       trigger={
-        <ChipTrigger label="" field="priority" flash={flash?.has('priority')} aria-keyshortcuts="P">
+        <ChipTrigger label="Priority" field="priority" flash={flash?.has('priority')} aria-keyshortcuts="P">
           {priorityValue}
         </ChipTrigger>
       }
     />
   ) : (
-    <StaticChip label="" field="priority" flash={flash?.has('priority')}>
+    <StaticChip label="Priority" field="priority" flash={flash?.has('priority')}>
       {priorityValue}
     </StaticChip>
   );

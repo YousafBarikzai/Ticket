@@ -331,7 +331,7 @@ describe('the hero on the page', () => {
     expect(status?.getAttribute('data-tone')).toBe('info');
     const priority = hero().querySelector('[data-field="priority"] .itsm-PriorityChip');
     expect(priority?.getAttribute('data-priority')).toBe('P3');
-    expect(priority?.textContent).toContain('Priority 3, medium');
+    expect(hero().querySelector('[data-field="priority"]')?.textContent).toMatch(/^Priority: P3 · Medium\s*3, medium$/);
     expect(hero().querySelector('[data-field="team"] .itsm-StatusPill')).toBeNull();
     // A wait is `hold`, never amber (D5).
     cleanupDocument();
