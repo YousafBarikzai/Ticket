@@ -28,6 +28,7 @@ export { ShortcutsDialog, type ShortcutsDialogProps } from './ShortcutsDialog.js
 export { setShortcutsDialogOpen } from './shortcuts.js';
 export { SkipLinks, type SkipLinksProps } from './SkipLinks.js';
 export { SplitView, type SplitPane, type SplitViewProps } from './SplitView.js';
+export { SYSTEM_BAR_BUSY_LABEL, SystemBar, SystemBarBadge, type SystemBarBadgeProps, type SystemBarBadgeSpec, type SystemBarProps, type SystemBarState } from './SystemBar.js';
 export { TabBar, type TabBarProps } from './TabBar.js';
 export { TabNav, type TabNavItem, type TabNavProps } from './TabNav.js';
 export { TopBar, type TopBarProps } from './TopBar.js';

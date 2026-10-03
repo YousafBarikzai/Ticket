@@ -52,6 +52,7 @@ const MATRIX: MatrixEntry[] = [
     allowed: ['requester', 'otherAgent', 'admin'],
     deniedStatus: { agent: 404, lead: 404 },
   },
+  { what: 'count tickets by priority (R2g)', path: () => '/api/v1/tickets/counts?groupBy=priority&filter[statusCategory]=open,paused', allowed: ALL_PERSONAS },
   {
     what: 'create a ticket',
     method: 'POST',

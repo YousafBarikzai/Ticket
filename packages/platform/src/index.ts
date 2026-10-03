@@ -10,6 +10,7 @@ export * from './config-warnings.js';
 export * from './context.js';
 export * from './authz.js';
 export * from './db.js';
+export * from './demo.js';
 export * from './audit.js';
 export * from './events.js';
 export * from './redis.js';

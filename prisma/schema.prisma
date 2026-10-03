@@ -548,6 +548,9 @@ model FactTicket {
   @@index([tenantId, teamId, createdDate])
   @@index([tenantId, serviceId, createdDate])
   @@index([tenantId, status, createdDate])
+  // Instant-bounded windows (drift checks, arrivals) read `created_at`, which
+  // the `created_date` indexes above cannot serve.
+  @@index([tenantId, createdAt])
   @@map("fact_ticket")
 }
 
@@ -4165,6 +4168,11 @@ model Ticket {
 
   @@unique([tenantId, number])
   @@index([tenantId, statusCategory, priority, dueAt])
+  // "Breached" and "due soon" (R2 `filter[sla]`, `filter[due…]`) are open
+  // work by due time; the index above needs a priority to reach `due_at`.
+  @@index([tenantId, statusCategory, dueAt])
+  // `filter[resolvedAfter|resolvedBefore]` windows (R2).
+  @@index([tenantId, resolvedAt])
   @@index([tenantId, assigneeId, statusCategory])
   @@index([tenantId, groupId, statusCategory, createdAt(sort: Desc)])
   @@index([tenantId, requesterId, createdAt(sort: Desc)])
