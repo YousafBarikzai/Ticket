@@ -276,16 +276,24 @@ describe('what each service is actually given', () => {
     expect(variables.OTEL_SERVICE_NAME).toBe('itsm-site');
   });
 
-  it('turns the demo on for exactly the six services that read DEMO_MODE', () => {
+  it('sets DEMO_MODE, all to one value, on exactly the six services that read it', () => {
     // SPEC v3 §4.9: the API (verification and policy), worker-data (the
     // nightly build), the three applications (minting) and the site (the
     // role buttons). Anywhere else it would be a variable nothing reads, and
     // a kill switch with one more place to forget.
-    const on = catalogue.services.filter((service) => service.variables?.DEMO_MODE === 'on').map((service) => service.name);
-    expect(on.sort()).toEqual(['admin', 'api', 'portal', 'site', 'workbench', 'worker-data']);
-    // And `off` nowhere else: the six are the only services that mention it.
     const mentioned = catalogue.services.filter((service) => service.variables && 'DEMO_MODE' in service.variables).map((service) => service.name);
-    expect(mentioned.sort()).toEqual(on);
+    expect(mentioned.sort()).toEqual(['admin', 'api', 'portal', 'site', 'workbench', 'worker-data']);
+    // One switch: a half-on demo (minting with no API policy, or role buttons
+    // with nothing to mint) is worse than either state.
+    const values = new Set(catalogue.services.filter((service) => service.variables && 'DEMO_MODE' in service.variables).map((service) => service.variables?.DEMO_MODE));
+    expect(values.size).toBe(1);
+  });
+
+  it('ships the v3 release with the one-click demo switched off', () => {
+    // The owner's release decision: the demo generator lands in a later wave,
+    // so no service may mint a demo session or show a role button yet.
+    const on = catalogue.services.filter((service) => service.variables?.DEMO_MODE === 'on').map((service) => service.name);
+    expect(on).toEqual([]);
   });
 
   it('turns the metric answer cache on for the API, and for nothing else', () => {
