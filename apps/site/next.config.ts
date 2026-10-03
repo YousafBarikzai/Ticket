@@ -75,7 +75,7 @@ export const securityHeaders: readonly { readonly key: string; readonly value: s
  */
 export const ROOT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   display: ['DeltaPill', 'IconTile', 'StatusPill'],
-  feedback: ['Banner', 'StatusScreen'],
+  feedback: ['InlineAlert', 'StatusScreen'],
   icons: ['BrandMark', 'Icon'],
   web: ['Avatar', 'VisuallyHidden'],
 };
