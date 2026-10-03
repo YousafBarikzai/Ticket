@@ -131,11 +131,17 @@ export const importTicketSchema = z.object({
 export type ImportTicketInput = z.input<typeof importTicketSchema>;
 type ParsedImport = z.infer<typeof importTicketSchema>;
 
-/** The most tickets one call takes: the audit row names every one of them. */
+/** The most tickets one call takes. */
 export const IMPORT_CHUNK_MAX = 200;
 
-/** How many external references one batch audit row lists (A4 §2.9). */
-const AUDIT_REFS_MAX = 200;
+/**
+ * The most tickets a chunk audited as one batch may hold, and so the most
+ * references its row lists. The audit trail keeps at most 50 entries of any
+ * list (`redact` in `@itsm/platform`), and the point of the batch row is that
+ * every imported ticket is still named in the trail (A4 §2.9): the demo build
+ * sends chunks of exactly 50.
+ */
+export const BATCH_AUDIT_MAX = 50;
 
 export interface ImportTicketsOptions {
   /**
@@ -416,7 +422,7 @@ async function importParsed(ctx: TenantContext, parsed: ParsedImport[], options:
             count: tickets.length,
             first: tickets[0]!.number,
             last: tickets.at(-1)!.number,
-            externalRefs: refs.slice(0, AUDIT_REFS_MAX),
+            externalRefs: refs,
             importJobId: jobs.size === 1 ? [...jobs][0]! : null,
           },
           ...(reason ? { reason } : {}),
@@ -443,6 +449,9 @@ export async function importTickets(ctx: TenantContext, inputs: ImportTicketInpu
   const parsed = z.array(importTicketSchema).max(IMPORT_CHUNK_MAX).parse(inputs);
   const settings = importOptionsSchema.parse(options);
   requireImporter(ctx);
+  if (settings.audit === 'batch' && parsed.length > BATCH_AUDIT_MAX) {
+    throw new ValidationError(`a chunk audited as one batch holds at most ${BATCH_AUDIT_MAX} tickets, so its audit row can name each one`);
+  }
   assertChunk(parsed, true);
   return importParsed(ctx, parsed, settings);
 }
@@ -573,7 +582,8 @@ export async function importLinks(ctx: TenantContext, links: ImportLinkInput[], 
           { occurredAt: link.at },
         );
         added += 1;
-        if (pairs.length < AUDIT_REFS_MAX) pairs.push({ from: source.number, to: target.number, linkType: link.linkType });
+        // The trail keeps 50 entries of a list; `count` says how many there were.
+        if (pairs.length < BATCH_AUDIT_MAX) pairs.push({ from: source.number, to: target.number, linkType: link.linkType });
       }
 
       if (added > 0) {

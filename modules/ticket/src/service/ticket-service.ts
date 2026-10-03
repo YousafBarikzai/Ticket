@@ -1692,6 +1692,7 @@ export async function createRequestFromCatalogue(
 // ---------------------------------------------------------------------------
 
 export {
+  BATCH_AUDIT_MAX,
   IMPORT_CHUNK_MAX,
   importCommentSchema,
   importComments,
