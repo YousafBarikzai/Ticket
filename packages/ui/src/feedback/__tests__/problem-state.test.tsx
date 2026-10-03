@@ -406,6 +406,11 @@ describe('ProblemState', () => {
     expect(container.firstElementChild?.getAttribute('data-kind')).toBe('demoSessionEnded');
     expect(text(container.querySelector('h2'))).toBe('Your demo session ended');
     expect(container.querySelector('a')?.getAttribute('href')).toBe('/api/session/login?redirectTo=%2Foverview&demo=1');
+    // The remedy's own words, not the plain session end's "Sign in again".
+    expect(text(container.querySelector('a'))).toBe('Continue the demo');
+    const unlinked = render(<ProblemState problem={{ status: 401, code: 'demo_session_ended' }} />);
+    expect(buttonNamed(unlinked.container, 'Continue the demo')).toBeDefined();
+    expect(buttonNamed(unlinked.container, 'Sign in again')).toBeUndefined();
   });
 
   it('demo_limit and demo_disabled: the sentence, and no Try again that could not work', () => {
