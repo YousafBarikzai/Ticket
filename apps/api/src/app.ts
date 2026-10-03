@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import {
+  checkDemoInterlock,
   configWarnings,
   disconnectDb,
   disconnectRedis,
@@ -13,6 +14,7 @@ import {
 import { bootstrapModules } from '@itsm/runtime';
 import { outboxPublisher } from '@itsm/module-integrations';
 import { contextPlugin } from './plugins/context.js';
+import { demoPlugin } from './plugins/demo.js';
 import { errorsPlugin } from './plugins/errors.js';
 import { guardsPlugin } from './plugins/guards.js';
 import { rawBodyPlugin } from './plugins/raw-body.js';
@@ -125,6 +127,10 @@ export function healthRoutes(app: FastifyInstance, probes: ReadinessProbes): voi
 export async function buildApp(): Promise<FastifyInstance> {
   const config = loadConfig();
   bootstrapModules();
+  // A demo switched on with a tenant slug that fails the boot interlock is
+  // said at boot, not on the first visitor's request; the API starts either
+  // way and only the demo is refused (§4.9).
+  checkDemoInterlock(config);
 
   const app = Fastify({
     // A survey link carries a signed token in the path, around 300 characters;
@@ -146,6 +152,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(errorsPlugin);
   await app.register(contextPlugin);
   await app.register(guardsPlugin);
+  // After the rate limiter, and before any route, so its route table (what
+  // `demo-policy.test.ts` checks the policy against) sees every one of them.
+  // It does nothing for a standard tenant (SPEC v3 §4.7.7).
+  await app.register(demoPlugin);
 
   app.addHook('onResponse', async (request, reply) => {
     metrics.observe('http_request_ms', reply.elapsedTime, {
@@ -176,6 +186,50 @@ export async function buildApp(): Promise<FastifyInstance> {
   return app;
 }
 
+/**
+ * The addresses to listen on, in order of preference.
+ *
+ * `::` first, and the difference from `0.0.0.0` is not cosmetic: `0.0.0.0`
+ * binds IPv4 only, and Railway's private network — which its edge proxy and
+ * its health checks both reach a container over — is IPv6. A process bound
+ * to `0.0.0.0` there is a process nothing can connect to, on any port. Node
+ * binds `::` dual-stack, so it accepts IPv4 as well.
+ *
+ * `0.0.0.0` second, for a host with no IPv6 at all, where binding `::` fails
+ * with `EAFNOSUPPORT` before anything listens — a container with IPv6
+ * switched off, which is where the demo harness and the integrators' live
+ * checks run. Only that error falls through: a port in use is still a
+ * failure to start.
+ *
+ * `API_HOST` names one address and replaces both, for a deployment that must
+ * listen on exactly one interface. It is read here rather than through the
+ * validated configuration because nothing else needs it and it changes
+ * nothing about how the API behaves once it is listening.
+ */
+export function listenHosts(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  const configured = env.API_HOST?.trim();
+  return configured ? [configured] : ['::', '0.0.0.0'];
+}
+
+/** Listens on the first of `hosts` this machine supports, and returns which one. */
+export async function listenOnFirstHost(
+  app: Pick<FastifyInstance, 'listen'>,
+  port: number,
+  hosts: readonly string[],
+): Promise<string> {
+  for (const [index, host] of hosts.entries()) {
+    try {
+      await app.listen({ port, host });
+      return host;
+    } catch (error) {
+      const unsupported = (error as NodeJS.ErrnoException).code === 'EAFNOSUPPORT';
+      if (!unsupported || index === hosts.length - 1) throw error;
+      logger.warn('this host has no IPv6; listening on IPv4 only', { port, tried: host, next: hosts[index + 1] });
+    }
+  }
+  throw new Error('no address to listen on');
+}
+
 export async function startApp(): Promise<FastifyInstance> {
   const config = loadConfig();
   const app = await buildApp();
@@ -184,16 +238,8 @@ export async function startApp(): Promise<FastifyInstance> {
   // are required before the first event arrives.
   await outboxPublisher.syncConsumerRegistry();
 
-  // `::` rather than `0.0.0.0`, and the difference is not cosmetic: `0.0.0.0`
-  // binds IPv4 only, and Railway's private network — which its edge proxy and
-  // its health checks both reach a container over — is IPv6. A process bound
-  // to `0.0.0.0` there is a process nothing can connect to, on any port.
-  //
-  // Node binds dual-stack by default, so `::` accepts IPv4 as well and every
-  // other way this runs (docker compose, a laptop, the walking skeleton on
-  // 127.0.0.1) is unaffected.
-  await app.listen({ port: config.API_PORT, host: '::' });
-  logger.info('api listening', { port: config.API_PORT });
+  const host = await listenOnFirstHost(app, config.API_PORT, listenHosts());
+  logger.info('api listening', { port: config.API_PORT, host });
 
   // D24: warn, never refuse. After `listen`, so a slow or absent Redis delays
   // nothing a health check waits for; the report never throws.
