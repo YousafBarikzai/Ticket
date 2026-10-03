@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+import { createRequire } from 'node:module';
 import { act, forwardRef, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type Ticket } from '@itsm/sdk';
+import { buildAreaModel, CROSS_AREA_DEMO_TEAM_NOTE, type AreaModel } from '@itsm/contracts/areas';
 
 vi.mock('server-only', () => ({}));
 
@@ -63,11 +65,36 @@ const { TicketsView } = await import('../components/tickets/TicketsView.js');
 const presentation = await import('../components/tickets/presentation.js');
 const { cleanupDocument, clickAsync, render } = await import('./support/render.js');
 
+/** axe-core through `@itsm/ui`, as `deployment-warnings.test.tsx` explains (this app declares no copy of its own). */
+interface AxeRule {
+  readonly id: string;
+  readonly nodes: readonly { readonly html: string }[];
+}
+const axe = createRequire(createRequire(import.meta.url).resolve('@itsm/ui'))('axe-core') as {
+  run(context: Element, options: Record<string, unknown>): Promise<{ violations: AxeRule[] }>;
+};
+const AXE_OFF = ['region', 'page-has-heading-one', 'html-has-lang', 'landmark-one-main', 'bypass', 'document-title', 'html-lang-valid', 'color-contrast', 'color-contrast-enhanced', 'target-size'];
+async function axeViolations(container: Element): Promise<string[]> {
+  const results = await axe.run(container, {
+    runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] },
+    rules: Object.fromEntries(AXE_OFF.map((rule) => [rule, { enabled: false }])),
+  });
+  return results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.html).join(' | ')}`);
+}
+
+/** The areas fixtures (A2 §3.3): a real agent-administrator, the same person without the Service Desk, and Jordan Lee in the demo. */
+const ORIGINS = { portal: 'https://help.example', workbench: 'https://desk.example', admin: 'https://admin.example', site: 'https://itsm.example' };
+const SERVICE_DESK_TEAM = '00000000-0000-4000-8000-0000000000cc';
+const realAreas: AreaModel = buildAreaModel({ app: 'admin', held: ['ticket.update', 'admin.setting.read'], session: { kind: 'oidc' }, origins: ORIGINS });
+const adminOnlyAreas: AreaModel = buildAreaModel({ app: 'admin', held: ['admin.setting.read'], session: { kind: 'oidc' }, origins: ORIGINS });
+const demoAreas = (teams: readonly string[]): AreaModel =>
+  buildAreaModel({ app: 'admin', held: [], session: { kind: 'demo', persona: 'admin' }, origins: ORIGINS, agentTeamIds: teams });
+
 /**
  * Tickets (SPEC §6.1, X-13): the query string it answers to — including the
  * legacy `?status=…&assignee=none` links — the filter it sends the API, rows
  * with names instead of ids, and the read-only drawer whose one action opens
- * the workbench.
+ * the Service Desk through the area model (A2 §3.7; X-B2 in the demo).
  */
 
 const Link = forwardRef<HTMLAnchorElement, AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; prefetch?: boolean | null }>(function Link(
@@ -227,40 +254,103 @@ describe('the finder', () => {
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
-  it('opens a read-only summary with Open in Workbench, loading the ticket and naming its people', async () => {
+  it('opens a read-only summary with Open in Service Desk, loading the ticket and naming its people', async () => {
     search = 'open=ticket:INC-000042';
     await act(async () => {
       render(
         <Frame>
-          <TicketsView rows={rows} nextCursor={null} query={query} scopes={scopes} people={{}} filtered={false} workbenchOrigin="https://desk.example" />
+          <TicketsView rows={rows} nextCursor={null} query={query} scopes={scopes} people={{}} filtered={false} areas={realAreas} />
         </Frame>,
       );
     });
     const drawer = document.querySelector('[role="dialog"]')!;
     expect(ticket).toHaveBeenCalledWith('INC-000042');
     expect(ticketSla).toHaveBeenCalledWith('INC-000042');
-    const open = [...drawer.querySelectorAll('a')].find((link) => text(link) === 'Open in Workbench')!;
+    const open = [...drawer.querySelectorAll('a')].find((link) => text(link) === 'Open in Service Desk')!;
+    // `crossAreaHref`'s real-session link: the sibling's deep link, which its proxy keeps through a sign-in.
     expect(open.getAttribute('href')).toBe('https://desk.example/tickets/INC-000042');
-    // Same tab: not an external link.
+    // Same tab: not an external link; and no demo persona line outside a demo.
     expect(open.getAttribute('target')).toBeNull();
+    expect(open.getAttribute('title')).toBeNull();
+    expect(open.hasAttribute('aria-description')).toBe(false);
     expect(text(drawer)).toContain('Ada Requester');
     expect(text(drawer)).toContain('P2 · High (high impact, medium urgency)');
     expect(text(drawer)).toContain('Smoke & flames');
     expect(drawer.querySelectorAll('input, textarea, select')).toHaveLength(0);
   });
 
-  it('gives the number to copy when there is no workbench to open', async () => {
+  it('gives the number to copy when the Service Desk is not listed for this person', async () => {
+    for (const areas of [undefined, adminOnlyAreas]) {
+      search = 'open=ticket:INC-000042';
+      await act(async () => {
+        render(
+          <Frame>
+            <TicketsView rows={rows} nextCursor={null} query={query} scopes={scopes} people={{}} filtered={false} {...(areas ? { areas } : {})} />
+          </Frame>,
+        );
+      });
+      const drawer = document.querySelector('[role="dialog"]')!;
+      expect([...drawer.querySelectorAll('a, button')].some((control) => text(control) === 'Open in Service Desk')).toBe(false);
+      expect(drawer.querySelector('button[aria-label="Copy INC-000042"]')).not.toBeNull();
+      expect(text(drawer)).toContain('Work it in the Service Desk: INC-000042');
+      cleanupDocument();
+    }
+  });
+
+  it('in the demo, opens a ticket of Alex Morgan’s teams in the Service Desk as Alex, through its /demo page', async () => {
     search = 'open=ticket:INC-000042';
     await act(async () => {
       render(
         <Frame>
-          <TicketsView rows={rows} nextCursor={null} query={query} scopes={scopes} people={{}} filtered={false} />
+          <TicketsView rows={rows} nextCursor={null} query={query} scopes={scopes} people={{}} filtered={false} areas={demoAreas([SERVICE_DESK_TEAM])} />
         </Frame>,
       );
     });
     const drawer = document.querySelector('[role="dialog"]')!;
-    expect([...drawer.querySelectorAll('a')].some((link) => text(link) === 'Open in Workbench')).toBe(false);
-    expect(drawer.querySelector('button[aria-label="Copy INC-000042"]')).not.toBeNull();
+    const open = [...drawer.querySelectorAll('a')].find((link) => text(link) === 'Open in Service Desk')!;
+    expect(open.getAttribute('href')).toBe('https://desk.example/demo?persona=agent&demo=1&redirectTo=%2Ftickets%2FINC-000042');
+    expect(open.getAttribute('title')).toBe('Opens the Service Desk as Alex Morgan');
+    expect(open.getAttribute('aria-description')).toBe('Opens the Service Desk as Alex Morgan');
+    expect(await axeViolations(drawer)).toEqual([]);
+  });
+
+  it('in the demo, keeps the control for a ticket outside Alex Morgan’s teams, disabled, saying why', async () => {
+    search = 'open=ticket:INC-000042';
+    await act(async () => {
+      render(
+        <Frame>
+          <TicketsView rows={rows} nextCursor={null} query={query} scopes={scopes} people={{}} filtered={false} areas={demoAreas(['another-team'])} />
+        </Frame>,
+      );
+    });
+    const drawer = document.querySelector('[role="dialog"]')!;
+    expect([...drawer.querySelectorAll('a')].some((link) => text(link) === 'Open in Service Desk')).toBe(false);
+    const control = [...drawer.querySelectorAll('button')].find((button) => text(button) === 'Open in Service Desk')!;
+    // Focusable, so the reason can be reached (X-80), and described by the canonical sentence.
+    expect(control.getAttribute('aria-disabled')).toBe('true');
+    expect(control.hasAttribute('disabled')).toBe(false);
+    const reason = document.getElementById(control.getAttribute('aria-describedby')!.split(' ').pop()!);
+    expect(text(reason)).toBe(CROSS_AREA_DEMO_TEAM_NOTE);
+    expect(await axeViolations(drawer)).toEqual([]);
+  });
+
+  it('in the demo, waits for the ticket’s team before linking, rather than guess', async () => {
+    let resolve: (value: Ticket) => void = () => undefined;
+    ticket.mockImplementationOnce(() => new Promise<Ticket>((done) => (resolve = done)));
+    search = 'open=ticket:INC-000042';
+    await act(async () => {
+      render(
+        <Frame>
+          <TicketsView rows={rows} nextCursor={null} query={query} scopes={scopes} people={{}} filtered={false} areas={demoAreas([SERVICE_DESK_TEAM])} />
+        </Frame>,
+      );
+    });
+    let drawer = document.querySelector('[role="dialog"]')!;
+    const waiting = [...drawer.querySelectorAll('button')].find((button) => text(button) === 'Open in Service Desk')!;
+    expect(waiting.hasAttribute('disabled')).toBe(true);
+    await act(async () => resolve(ticketFixture()));
+    drawer = document.querySelector('[role="dialog"]')!;
+    expect([...drawer.querySelectorAll('a')].find((link) => text(link) === 'Open in Service Desk')?.getAttribute('href')).toContain('/demo?persona=agent');
   });
 
   it('says a ticket that has gone is gone', async () => {

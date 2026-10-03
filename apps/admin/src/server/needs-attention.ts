@@ -1,6 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import type { Admin, Me, UsageMeter } from '@itsm/sdk';
+import { crossAreaHref, crossAreaTicketHref, type AreaModel } from '@itsm/contracts/areas';
 import type { IconName, Problem } from '@itsm/ui';
 import { formatBytes, formatNumber } from '@itsm/ui/format';
 import { isPending, mayOpen, routeFor } from '../navigation.js';
@@ -106,8 +107,13 @@ export interface NeedsAttention {
 }
 
 export interface NeedsAttentionOptions {
-  /** The workbench's origin, when tickets should open there (C1). */
-  readonly workbenchOrigin?: string;
+  /**
+   * The person's areas (`currentAreas()`): tickets and queues open in the
+   * Service Desk when it is listed for them, through `crossAreaHref`, so a
+   * demo visitor arrives as Alex Morgan rather than at a sign-in (A2 §3.7).
+   * Without it, or without the Service Desk, rows open in the console.
+   */
+  readonly areas?: AreaModel;
   readonly now?: Date;
 }
 
@@ -154,14 +160,19 @@ export function reachable(me: Grants, ...hrefs: readonly string[]): string | und
   return undefined;
 }
 
-/** Whether this person works tickets in the workbench (the same test as the app switcher). */
-function usesWorkbench(me: Grants): boolean {
-  return holdsAny(me, ['ticket.update', 'ticket.comment.internal']);
+/**
+ * A ticket's link: its Service Desk page when the Service Desk is listed for
+ * this person (the area gate replaces v2's own "works tickets" test), or the
+ * console's read-only drawer. In a demo, a ticket outside Alex Morgan's teams
+ * would 404 in the Service Desk (X-B2), so it opens in the console instead.
+ */
+function ticketHref(me: Grants, ticket: { readonly number: string; readonly groupId: string | null }, areas: AreaModel | undefined): string | undefined {
+  return (areas ? crossAreaTicketHref(areas, ticket) : null) ?? reachable(me, `/tickets?open=ticket:${encodeURIComponent(ticket.number)}`);
 }
 
-function ticketHref(me: Grants, number: string, workbench: string | undefined): string | undefined {
-  if (workbench && usesWorkbench(me)) return `${workbench}/tickets/${encodeURIComponent(number)}`;
-  return reachable(me, `/tickets?open=ticket:${encodeURIComponent(number)}`);
+/** A Service Desk queue when the Service Desk is listed, otherwise the console's own filtered register. */
+function queueHref(me: Grants, areas: AreaModel | undefined, deskPath: string, consolePath: string): string | undefined {
+  return (areas ? crossAreaHref(areas, 'workbench', deskPath) : null) ?? reachable(me, consolePath);
 }
 
 function latest(dates: readonly (string | null | undefined)[]): string | undefined {
@@ -220,7 +231,7 @@ interface Source<T> {
 interface Context {
   readonly me: Grants;
   readonly now: number;
-  readonly workbench: string | undefined;
+  readonly areas: AreaModel | undefined;
 }
 
 function source<T>(definition: Source<T>): Source<unknown> {
@@ -286,11 +297,10 @@ export const SOURCES: readonly Source<unknown>[] = [
     label: 'urgent tickets',
     needs: ['ticket.read'],
     load: (api) => api.observe.tickets({ statusCategory: 'open', assignee: 'none', priority: 'P1,P2', limit: 5 }),
-    toItem: (page, { me, workbench }) => {
+    toItem: (page, { me, areas }) => {
       if (page.data.length === 0) return null;
       const capped = page.nextCursor !== null;
-      const href =
-        workbench && usesWorkbench(me) ? `${workbench}/inbox/unassigned` : reachable(me, '/tickets?status=open&assignee=none');
+      const href = queueHref(me, areas, '/inbox/unassigned', '/tickets?status=open&assignee=none');
       return {
         id: 'urgent-unowned',
         tone: page.data.some((ticket) => ticket.priority === 'P1') ? 'danger' : 'warning',
@@ -302,7 +312,7 @@ export const SOURCES: readonly Source<unknown>[] = [
           meta: ticket.priority,
           at: ticket.createdAt,
           when: 'Raised',
-          ...optional('href', ticketHref(me, ticket.number, workbench)),
+          ...optional('href', ticketHref(me, ticket, areas)),
         })),
         ...(href ? { action: { label: 'Open', href } } : {}),
       };
@@ -313,14 +323,14 @@ export const SOURCES: readonly Source<unknown>[] = [
     label: 'tickets close to their deadline',
     needs: ['ticket.read'],
     load: (api) => api.observe.tickets({ statusCategory: 'open', sort: 'dueAt', limit: 5 }),
-    toItem: (page, { me, now, workbench }) => {
+    toItem: (page, { me, now, areas }) => {
       const atRisk = page.data.filter((ticket) => ticket.dueAt !== null && Date.parse(ticket.dueAt) <= now + RISK_WINDOW_MS);
       if (atRisk.length === 0) return null;
       const overdue = atRisk.filter((ticket) => Date.parse(ticket.dueAt!) < now).length;
       // Five were asked for; five at risk may mean more.
       const capped = atRisk.length === page.data.length && page.nextCursor !== null;
       const first = atRisk[0]!;
-      const href = workbench && usesWorkbench(me) ? `${workbench}/inbox/due` : reachable(me, '/tickets?status=open&sort=dueAt');
+      const href = queueHref(me, areas, '/inbox/due', '/tickets?status=open&sort=dueAt');
       const title =
         atRisk.length === 1 && !capped
           ? overdue === 1
@@ -341,7 +351,7 @@ export const SOURCES: readonly Source<unknown>[] = [
           meta: ticket.priority,
           at: ticket.dueAt!,
           when: 'Due',
-          ...optional('href', ticketHref(me, ticket.number, workbench)),
+          ...optional('href', ticketHref(me, ticket, areas)),
         })),
         ...(href ? { action: { label: 'Open', href } } : {}),
       };
@@ -557,7 +567,7 @@ export function prioritise(items: readonly AttentionItem[]): AttentionItem[] {
  */
 export async function collectNeedsAttention(me: Me | Grants, api: Admin, options: NeedsAttentionOptions = {}): Promise<NeedsAttention> {
   const now = options.now ?? new Date();
-  const context: Context = { me, now: now.getTime(), workbench: options.workbenchOrigin?.replace(/\/+$/, '') || undefined };
+  const context: Context = { me, now: now.getTime(), areas: options.areas };
   const consulted = sourcesFor(me);
 
   const [settled, incidents] = await Promise.all([
@@ -613,8 +623,14 @@ export async function openMajorIncidents(me: Grants, api: Admin): Promise<MajorI
  * result (`cache()` lasts for one server request, keyed by these arguments).
  */
 export const needsAttention = cache(
-  (me: Me, api: Admin, workbenchOrigin: string | undefined): Promise<NeedsAttention> =>
-    collectNeedsAttention(me, api, workbenchOrigin ? { workbenchOrigin } : {}),
+  // The third argument is the v2 origin the Command centre's cards still pass
+  // (`command-centre/Cards.tsx`, rebuilt by WP-55); it is ignored. The areas
+  // come from the request's own `currentAreas()`, loaded lazily so the pure
+  // collector above stays importable without the session's server modules.
+  async (me: Me, api: Admin, _origin?: string): Promise<NeedsAttention> => {
+    const { currentAreas } = await import('./session.js');
+    return collectNeedsAttention(me, api, { areas: await currentAreas() });
+  },
 );
 
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {

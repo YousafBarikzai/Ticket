@@ -1,7 +1,1 @@
-[
-  "apps/admin/src/app/(console)/(admin)/page.tsx",
-  "apps/admin/src/app/(console)/(admin)/ai-triage/decisions/page.tsx",
-  "apps/admin/src/app/(console)/(admin)/catalogue/page.tsx",
-  "apps/admin/src/app/(console)/(admin)/rules/data.ts",
-  "apps/admin/src/app/(console)/(admin)/tickets/page.tsx"
-]
+[]

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, type Admin, type Ticket } from '@itsm/sdk';
+import { buildAreaModel } from '@itsm/contracts/areas';
 import type { Grants } from '../permissions.js';
 
 // The module guards itself against client bundles; everything in it is plain code over an SDK passed in.
@@ -221,14 +222,56 @@ describe('rows', () => {
     expect(item?.action).toEqual({ label: 'Open', href: '/tickets?status=open&assignee=none' });
   });
 
-  it('opens tickets in the workbench for someone who works them there', async () => {
+  it('opens tickets in the Service Desk when it is listed for the person (A2 §3.7)', async () => {
     const { api } = fakeApi({ urgent: { data: [ticket('INC-000004', { priority: 'P2' })], nextCursor: 'more' } });
     const agent = person('ticket.read', 'ticket.update');
-    const [item] = (await collectNeedsAttention(agent, api, { now: NOW, workbenchOrigin: 'https://desk.example/' })).items;
+    const areas = buildAreaModel({ app: 'admin', held: ['ticket.read', 'ticket.update'], session: { kind: 'oidc' }, origins: { workbench: 'https://desk.example/' } });
+    const [item] = (await collectNeedsAttention(agent, api, { now: NOW, areas })).items;
     expect(item?.title).toBe('1+ urgent tickets have no owner');
     expect(item?.tone).toBe('warning');
     expect(item?.rows?.[0]?.href).toBe('https://desk.example/tickets/INC-000004');
     expect(item?.action?.href).toBe('https://desk.example/inbox/unassigned');
+  });
+
+  it('keeps tickets in the console when the Service Desk is not listed, or its origin is unknown', async () => {
+    const { api } = fakeApi({ urgent: { data: [ticket('INC-000004', { priority: 'P2' })], nextCursor: null } });
+    const reader = person('ticket.read');
+    for (const areas of [
+      // Reads tickets but does not work them: the Service Desk's gate is not held.
+      buildAreaModel({ app: 'admin', held: ['ticket.read'], session: { kind: 'oidc' }, origins: { workbench: 'https://desk.example' } }),
+      // Works them, but the Service Desk's origin is not configured: never a link to nowhere.
+      buildAreaModel({ app: 'admin', held: ['ticket.read', 'ticket.update'], session: { kind: 'oidc' }, origins: {} }),
+    ]) {
+      const [item] = (await collectNeedsAttention(reader, api, { now: NOW, areas })).items;
+      expect(item?.rows?.[0]?.href).toBe('/tickets?open=ticket:INC-000004');
+      expect(item?.action?.href).toBe('/tickets?status=open&assignee=none');
+    }
+  });
+
+  it('in the demo, opens the Service Desk as Alex Morgan through its /demo page, and only for his teams’ tickets (X-B2)', async () => {
+    const { api } = fakeApi({
+      urgent: { data: [ticket('INC-000004', { priority: 'P1', groupId: 'team-desk' }), ticket('INC-000005', { priority: 'P2', groupId: 'team-network' })], nextCursor: null },
+      due: { data: [ticket('INC-000004', { groupId: 'team-desk', dueAt: minutes(30) })], nextCursor: null },
+    });
+    const jordan = person('ticket.read', 'admin.setting.read');
+    const areas = buildAreaModel({
+      app: 'admin',
+      held: ['ticket.read', 'admin.setting.read'],
+      session: { kind: 'demo', persona: 'admin' },
+      origins: { portal: 'https://help.example', workbench: 'https://desk.example', site: 'https://itsm.example' },
+      agentTeamIds: ['team-desk'],
+    });
+    const { items } = await collectNeedsAttention(jordan, api, { now: NOW, areas });
+    const urgent = items.find((item) => item.id === 'urgent-unowned');
+    expect(urgent?.rows?.map((row) => row.href)).toEqual([
+      'https://desk.example/demo?persona=agent&demo=1&redirectTo=%2Ftickets%2FINC-000004',
+      // Outside Alex's teams the Service Desk would 404: the console's drawer instead.
+      '/tickets?open=ticket:INC-000005',
+    ]);
+    expect(urgent?.action?.href).toBe('https://desk.example/demo?persona=agent&demo=1&redirectTo=%2Finbox%2Funassigned');
+    const due = items.find((item) => item.id === 'sla-risk');
+    expect(due?.action?.href).toBe('https://desk.example/demo?persona=agent&demo=1&redirectTo=%2Finbox%2Fdue');
+    expect(due?.rows?.[0]?.href).toBe('https://desk.example/demo?persona=agent&demo=1&redirectTo=%2Ftickets%2FINC-000004');
   });
 
   it('counts SLA risk only for tickets due within two hours, danger once one is overdue', async () => {

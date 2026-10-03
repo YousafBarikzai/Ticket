@@ -3,6 +3,7 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Badge, Button, InlineAlert, SkeletonList, describeProblem, type Problem } from '@itsm/ui';
 import type { RuleTestResult } from '@itsm/sdk';
+import { CROSS_AREA_DEMO_TEAM_NOTE, crossAreaTicketHref, type AreaModel } from '@itsm/contracts/areas';
 import { effectChips, testSummary } from './presentation.js';
 import type { RuleNames } from './types.js';
 
@@ -11,7 +12,10 @@ import type { RuleNames } from './types.js';
  * canvas — saved or not — replayed against the desk's most recent tickets,
  * with nothing written. It says what would change ("Would change 7 of the
  * last 100 tickets"), ticket by ticket with the effects as chips; each
- * number opens the ticket in the workbench (same tab). A test that finds
+ * number opens the ticket in the Service Desk (same tab) when it is listed.
+ * A replay does not say which team has each ticket, so in a demo — where the
+ * Service Desk opens only Alex Morgan's teams' tickets (X-B2) — the numbers
+ * stay text, and the list says why once. A test that finds
  * nothing is neutral, not an error. A condition the engine could not
  * evaluate is named, and the builder marks the *If* card.
  *
@@ -40,18 +44,21 @@ export interface TryItPanelProps {
   /** A state gate (offline, a live rule without A8). */
   readonly disabledReason?: string;
   readonly names: RuleNames;
-  readonly workbenchOrigin?: string;
+  /** The person's areas (`currentAreas()`): ticket numbers open in the Service Desk when it is listed (A2 §3.7). */
+  readonly areas?: AreaModel;
   /** The heading's level: 2 on the page, 3 inside a sheet whose title is the 2. */
   readonly headingLevel?: 2 | 3;
 }
 
 const SHOWN = 20;
 
-export function TryItPanel({ state, stale, sampleSize, onRun, runLabel, disabledReason, names, workbenchOrigin, headingLevel = 2 }: TryItPanelProps): ReactNode {
+export function TryItPanel({ state, stale, sampleSize, onRun, runLabel, disabledReason, names, areas, headingLevel = 2 }: TryItPanelProps): ReactNode {
   const [showAll, setShowAll] = useState(false);
   const size = sampleSize ?? 100;
   const Heading = headingLevel === 2 ? 'h2' : 'h3';
   const headingId = useId();
+  const deskHref = (number: string): string | null => (areas ? crossAreaTicketHref(areas, { number, groupId: null }) : null);
+  const demoDesk = areas?.demo === true && areas.areas.some((row) => row.id === 'workbench');
 
   return (
     <section className="app-TryIt" aria-labelledby={headingId} aria-busy={state.kind === 'running' ? true : undefined}>
@@ -96,23 +103,25 @@ export function TryItPanel({ state, stale, sampleSize, onRun, runLabel, disabled
             ) : null}
             {state.result.wouldChange.length > 0 ? (
               <ol className="app-TryIt__tickets" aria-label="Tickets it would change">
-                {(showAll ? state.result.wouldChange : state.result.wouldChange.slice(0, SHOWN)).map((ticket) => (
-                  <li key={ticket.ticketId} className="app-TryIt__ticket">
-                    <span className="app-TryIt__number">
-                      {workbenchOrigin ? <a href={`${workbenchOrigin}/tickets/${encodeURIComponent(ticket.number)}`}>{ticket.number}</a> : ticket.number}
-                    </span>
-                    <span className="app-TryIt__ticketTitle">{ticket.title}</span>
-                    <span className="app-TryIt__effects">
-                      {effectChips(ticket.effects, names).map((chip) => (
-                        <Badge key={chip} size="sm" tone="neutral">
-                          {chip}
-                        </Badge>
-                      ))}
-                    </span>
-                  </li>
-                ))}
+                {(showAll ? state.result.wouldChange : state.result.wouldChange.slice(0, SHOWN)).map((ticket) => {
+                  const href = deskHref(ticket.number);
+                  return (
+                    <li key={ticket.ticketId} className="app-TryIt__ticket">
+                      <span className="app-TryIt__number">{href ? <a href={href}>{ticket.number}</a> : ticket.number}</span>
+                      <span className="app-TryIt__ticketTitle">{ticket.title}</span>
+                      <span className="app-TryIt__effects">
+                        {effectChips(ticket.effects, names).map((chip) => (
+                          <Badge key={chip} size="sm" tone="neutral">
+                            {chip}
+                          </Badge>
+                        ))}
+                      </span>
+                    </li>
+                  );
+                })}
               </ol>
             ) : null}
+            {demoDesk && state.result.wouldChange.length > 0 ? <p className="app-TryIt__lede">{CROSS_AREA_DEMO_TEAM_NOTE}</p> : null}
             {!showAll && state.result.wouldChange.length > SHOWN ? (
               <Button variant="ghost" size="sm" onClick={() => setShowAll(true)}>
                 Show all {state.result.wouldChange.length}

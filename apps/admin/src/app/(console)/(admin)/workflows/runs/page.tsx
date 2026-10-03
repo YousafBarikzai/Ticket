@@ -7,8 +7,7 @@ import { RunsView } from '../../../../../components/workflows/RunsView.js';
 import { RUN_SCOPES, runScope } from '../../../../../components/workflows/presentation.js';
 import type { RunScope } from '../../../../../components/workflows/types.js';
 import { read } from '../../../../../server/read.js';
-import { pageAccess } from '../../../../../server/session.js';
-import { workbenchOrigin } from '../../rules/data.js';
+import { currentAreas, pageAccess } from '../../../../../server/session.js';
 import { graphsFrom, loadDetails, loadRuleNames, loadTicketNumbers, runView, workflowAbilities, workflowIndex, workflowTabs } from '../data.js';
 import '../../../../../components/workflows/workflows.css';
 
@@ -79,7 +78,8 @@ export default async function RunsPage({ searchParams }: { readonly searchParams
   const workflows = workflowIndex(rows);
   const involved = new Set((runs?.value ?? []).map((run) => run.definitionId));
   const graphs = graphsFrom(await loadDetails(api, rows.filter((row) => involved.has(row.id))));
-  const origin = workbenchOrigin(me);
+  // Ticket links open in the Service Desk when it is listed for this person (A2 §3.7).
+  const areas = await currentAreas();
 
   return (
     <RunsView
@@ -97,7 +97,7 @@ export default async function RunsPage({ searchParams }: { readonly searchParams
       ticketNumbers={ticketNumbers}
       tabs={tabs}
       renderedAt={new Date().toISOString()}
-      {...(origin ? { workbenchOrigin: origin } : {})}
+      areas={areas}
       {...(can.viewOnly ? { viewOnly: can.viewOnly } : {})}
     />
   );

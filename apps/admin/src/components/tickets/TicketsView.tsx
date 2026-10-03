@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useRef, type ReactNode } from 'react';
+import type { AreaModel } from '@itsm/contracts/areas';
 import type { Ticket } from '@itsm/sdk';
 import { Icon, RelativeTime, useNow, type EmptySpec, type Problem } from '@itsm/ui';
 import { DataTable, type ColumnSpec, type FilterSpec } from '@itsm/ui/data';
@@ -43,7 +44,8 @@ export interface TicketsViewProps {
   readonly assigneeOption?: NamedOption;
   /** Names the server already resolved, by person id, so appended pages rarely ask again. */
   readonly people: Readonly<Record<string, string | null>>;
-  readonly workbenchOrigin?: string;
+  /** The person's areas (`currentAreas()`), for the drawer's *Open in Service Desk*. */
+  readonly areas?: AreaModel;
   /** The drawer's ticket on a hard load of `?open=ticket:<number>`. */
   readonly initialDetail?: TicketDetail;
   readonly filtered: boolean;
@@ -57,21 +59,21 @@ const ASSIGNEE_WORDS = [
 
 const PRIORITY_OPTIONS = [
   { value: 'P1', label: 'P1 · Critical', tone: 'danger' as const },
-  { value: 'P2', label: 'P2 · High', tone: 'warning' as const },
+  { value: 'P2', label: 'P2 · High', tone: 'high' as const },
   { value: 'P3', label: 'P3 · Medium', tone: 'info' as const },
   { value: 'P4', label: 'P4 · Low', tone: 'neutral' as const },
 ];
 
 /**
  * Tickets (SPEC §6.1, X-13): a tenant-wide, read-only finder that hands off
- * to the workbench. Search, scope and filters live in the URL and are asked
+ * to the Service Desk. Search, scope and filters live in the URL and are asked
  * of the API (D12); the table appends fifty at a time (D13); a row opens a
  * summary drawer (`?open=ticket:<number>`) whose one action is *Open in
- * Workbench*. Nothing here writes — changing a ticket belongs where its
+ * Service Desk*. Nothing here writes — changing a ticket belongs where its
  * conversation and clocks are.
  */
 export function TicketsView(props: TicketsViewProps): ReactNode {
-  const { query, teams, services, workbenchOrigin, filtered } = props;
+  const { query, teams, services, areas, filtered } = props;
   const drawer = useDrawer('ticket');
   // Names learnt while appending pages, beside the server's.
   const known = useRef(new Map<string, string | null>(Object.entries(props.people)));
@@ -223,7 +225,7 @@ export function TicketsView(props: TicketsViewProps): ReactNode {
             teamNames={teamNames}
             serviceNames={new Map((services ?? []).map((service) => [service.value, service.label]))}
             known={known.current}
-            {...(workbenchOrigin ? { workbenchOrigin } : {})}
+            {...(areas ? { areas } : {})}
           />
         ) : null}
       </Sheet>

@@ -17,6 +17,7 @@ import {
   type Problem,
 } from '@itsm/ui';
 import { formatDateTime } from '@itsm/ui/format';
+import { crossAreaTicketHref, type AreaId, type AreaModel } from '@itsm/contracts/areas';
 import { ConfirmDialog, Sheet } from '@itsm/ui/overlays';
 import { api } from '../../client/api.js';
 import { useOnline } from '../../client/live.js';
@@ -53,18 +54,30 @@ export interface RunDrawerProps {
   readonly ruleNames: Readonly<Record<string, string>>;
   readonly canOperate: boolean;
   readonly canReadTickets: boolean;
-  readonly workbenchOrigin?: string;
+  /** The person's areas (`currentAreas()`): ticket links open in the Service Desk when it is listed (A2 §3.7). */
+  readonly areas?: AreaModel;
   /** Client only. */
   readonly onClose: () => void;
+}
+
+/** The run's ticket, once read: its number and title to name it, and its team for the demo's Service Desk check. */
+type RunTicket = { readonly number: string; readonly title: string; readonly groupId: string | null };
+
+/** In a demo, who the visitor becomes in `area` ("Opens the Service Desk as Alex Morgan", A2 §3.7, D11). */
+function demoHint(areas: AreaModel | undefined, area: AreaId): { readonly title?: string; readonly 'aria-description'?: string } {
+  const row = areas?.demo ? areas.areas.find((one) => one.id === area && !one.current) : undefined;
+  if (!row?.persona) return {};
+  const text = `Opens the ${row.name} as ${row.persona.name}`;
+  return { title: text, 'aria-description': text };
 }
 
 type Loaded = { readonly kind: 'loading' } | { readonly kind: 'ready'; readonly run: RunView; readonly steps: readonly StepRunView[] } | { readonly kind: 'failed'; readonly problem: Problem };
 
 type Ask = 'skip' | 'abandon' | null;
 
-export function RunDrawer({ runId, row, graphs, workflows, ruleNames, canOperate, canReadTickets, workbenchOrigin, onClose }: RunDrawerProps): ReactNode {
+export function RunDrawer({ runId, row, graphs, workflows, ruleNames, canOperate, canReadTickets, areas, onClose }: RunDrawerProps): ReactNode {
   const [loaded, setLoaded] = useState<Loaded>({ kind: 'loading' });
-  const [ticket, setTicket] = useState<{ readonly number: string; readonly title: string } | null>(null);
+  const [ticket, setTicket] = useState<RunTicket | null>(null);
   const [ask, setAsk] = useState<Ask>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -95,7 +108,7 @@ export function RunDrawer({ runId, row, graphs, workflows, ruleNames, canOperate
     let live = true;
     api.observe.ticket(ticketId).then(
       (value) => {
-        if (live) setTicket({ number: value.number, title: value.title });
+        if (live) setTicket({ number: value.number, title: value.title, groupId: value.groupId ?? null });
       },
       () => undefined,
     );
@@ -135,7 +148,8 @@ export function RunDrawer({ runId, row, graphs, workflows, ruleNames, canOperate
           ticket={ticket}
           ruleNames={ruleNames}
           onRetry={reload}
-          {...(workbenchOrigin ? { workbenchOrigin } : {})}
+          {...(areas ? { areas } : {})}
+          canReadTickets={canReadTickets}
         />
       ) : (
         <SkeletonList rows={5} label="Loading the run…" />
@@ -153,16 +167,18 @@ function RunDetail({
   graph,
   ticket,
   ruleNames,
-  workbenchOrigin,
+  areas,
+  canReadTickets,
   onRetry,
 }: {
   readonly run: RunView;
   readonly steps: readonly StepRunView[] | null;
   readonly stepsProblem: Problem | null;
   readonly graph: FlowGraph | undefined;
-  readonly ticket: { readonly number: string; readonly title: string } | null;
+  readonly ticket: RunTicket | null;
   readonly ruleNames: Readonly<Record<string, string>>;
-  readonly workbenchOrigin?: string;
+  readonly areas?: AreaModel;
+  readonly canReadTickets: boolean;
   readonly onRetry: () => void;
 }): ReactNode {
   const { locale, timeZone } = useItsm();
@@ -170,7 +186,13 @@ function RunDetail({
   const took = durationText(run, now, locale);
   const titles = graph ? new Map(graph.nodes.map((node) => [node.key, nodeTitle(node)])) : new Map<string, string>();
   const nameOf = (key: string): string => titles.get(key) ?? 'A step no longer in the workflow';
-  const ticketHref = run.ticketId && workbenchOrigin ? `${workbenchOrigin}/tickets/${encodeURIComponent(ticket?.number ?? run.ticketId)}` : undefined;
+  // The Service Desk when it is listed — in a demo only once the ticket's team is known to be one
+  // of Alex Morgan's (X-B2) — else, for someone who reads tickets, this console's Tickets drawer.
+  const deskHref =
+    run.ticketId && areas && (!areas.demo || ticket)
+      ? crossAreaTicketHref(areas, { number: ticket?.number ?? run.ticketId, groupId: ticket?.groupId ?? null })
+      : null;
+  const ticketHref = deskHref ?? (ticket && canReadTickets ? `/tickets?open=ticket:${encodeURIComponent(ticket.number)}` : undefined);
 
   const done = (steps ?? []).filter((step) => step.status === 'done' || step.status === 'skipped').map((step) => step.key);
   const failed = run.status === 'failed' ? [...run.currentKeys] : [];
@@ -201,7 +223,9 @@ function RunDetail({
             label: 'Ticket',
             value: run.ticketId ? (
               ticketHref ? (
-                <a href={ticketHref}>{ticket ? `${ticket.number} · ${ticket.title}` : 'Open the ticket'}</a>
+                <a href={ticketHref} {...(deskHref ? demoHint(areas, 'workbench') : {})}>
+                  {ticket ? `${ticket.number} · ${ticket.title}` : 'Open the ticket'}
+                </a>
               ) : ticket ? (
                 `${ticket.number} · ${ticket.title}`
               ) : (

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import type { AreaModel } from '@itsm/contracts/areas';
 import type { RuleRow } from '@itsm/sdk';
 import {
   Banner,
@@ -96,7 +97,8 @@ export interface RuleBuilderProps {
   readonly canManage: boolean;
   readonly canPublish: boolean;
   readonly sampleSize: number | null;
-  readonly workbenchOrigin?: string;
+  /** The person's areas (`currentAreas()`): ticket numbers open in the Service Desk when it is listed (A2 §3.7). */
+  readonly areas?: AreaModel;
   readonly breadcrumbs: readonly Crumb[];
   readonly viewOnly?: { readonly label: string; readonly permission: string; readonly key: string };
   readonly initialTab?: 'rule' | 'history';
@@ -132,7 +134,7 @@ function withParam(name: string, value: string | null): string {
 }
 
 export function RuleBuilder(props: RuleBuilderProps): ReactNode {
-  const { versions, siblings, facts, events, names, workflows, teams, canManage, canPublish, sampleSize, workbenchOrigin, breadcrumbs, viewOnly } = props;
+  const { versions, siblings, facts, events, names, workflows, teams, canManage, canPublish, sampleSize, areas, breadcrumbs, viewOnly } = props;
   const router = useRouter();
   const online = useOnline();
   const narrow = useNarrow();
@@ -625,7 +627,7 @@ export function RuleBuilder(props: RuleBuilderProps): ReactNode {
       runLabel={dryRunAvailable ? 'Run test' : 'Save draft & test'}
       {...(testDisabledReason ? { disabledReason: testDisabledReason } : {})}
       names={names}
-      {...(workbenchOrigin ? { workbenchOrigin } : {})}
+      {...(areas ? { areas } : {})}
       headingLevel={headingLevel}
     />
   );

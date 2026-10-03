@@ -6,8 +6,8 @@ import { Forbidden } from '../../../../../components/Forbidden.js';
 import { RuleBuilder } from '../../../../../components/rules/RuleBuilder.js';
 import { toRuleView } from '../../../../../components/rules/presentation.js';
 import { breadcrumbsFor } from '../../../../../navigation.js';
-import { pageAccess } from '../../../../../server/session.js';
-import { abilities, loadBuilderContext, loadRule, workbenchOrigin } from '../data.js';
+import { currentAreas, pageAccess } from '../../../../../server/session.js';
+import { abilities, loadBuilderContext, loadRule } from '../data.js';
 import '../../../../../components/rules/rules.css';
 
 export const metadata: Metadata = { title: 'New rule · Rules' };
@@ -51,7 +51,8 @@ export default async function NewRulePage({ searchParams }: { readonly searchPar
       </div>
     );
   }
-  const origin = workbenchOrigin(me);
+  // Ticket links open in the Service Desk when it is listed for this person (A2 §3.7).
+  const areas = await currentAreas();
 
   return (
     <RuleBuilder
@@ -68,7 +69,7 @@ export default async function NewRulePage({ searchParams }: { readonly searchPar
       canPublish={can.canPublish}
       sampleSize={context.value.sampleSize}
       breadcrumbs={crumbs}
-      {...(origin ? { workbenchOrigin: origin } : {})}
+      areas={areas}
     />
   );
 }

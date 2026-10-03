@@ -2,6 +2,7 @@
 import { act, forwardRef, useState, type AnchorHTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type RuleRow } from '@itsm/sdk';
+import { buildAreaModel, CROSS_AREA_DEMO_TEAM_NOTE, type AreaModel } from '@itsm/contracts/areas';
 
 vi.mock('server-only', () => ({}));
 
@@ -116,6 +117,11 @@ const row = (view: View): RuleRow => ({ ...view, actions: [...view.actions], org
 
 const names = { teams: { 'team-1': 'Service desk' }, workflows: { joiner: { name: 'Set up a joiner', live: true } } };
 
+/** The areas fixtures (A2 §3.3): someone who works tickets in the Service Desk, and Jordan Lee in the demo. */
+const ORIGINS = { portal: 'https://help.test', workbench: 'https://desk.test', admin: 'https://admin.test' };
+const deskAreas: AreaModel = buildAreaModel({ app: 'admin', held: ['ticket.update', 'rules.rule.manage'], session: { kind: 'oidc' }, origins: ORIGINS });
+const demoAreas: AreaModel = buildAreaModel({ app: 'admin', held: [], session: { kind: 'demo', persona: 'admin' }, origins: ORIGINS, agentTeamIds: ['team-1'] });
+
 function builder(props: Partial<Parameters<typeof RuleBuilder>[0]> = {}): ReactElement {
   return (
     <Frame>
@@ -132,7 +138,7 @@ function builder(props: Partial<Parameters<typeof RuleBuilder>[0]> = {}): ReactE
         canPublish
         sampleSize={null}
         breadcrumbs={[{ label: 'Rules', href: '/rules' }]}
-        workbenchOrigin="https://desk.test"
+        areas={deskAreas}
         {...props}
       />
     </Frame>
@@ -365,9 +371,41 @@ describe('the builder', () => {
     expect(panel.querySelector('a')?.getAttribute('href')).toBe('https://desk.test/tickets/INC-000042');
     expect(text(panel)).toContain('Tag “vip-2”');
 
+    expect(text(panel)).not.toContain(CROSS_AREA_DEMO_TEAM_NOTE);
+
     // Changing the canvas makes the answer stale rather than passing it off as current.
     type(document.querySelector('[data-row="stored-0"] input') as HTMLInputElement, 'vip-3');
     expect(text(panel)).toContain('The rule has changed since this test.');
+  });
+
+  it('in the demo, leaves the tried tickets’ numbers as text and says why once (X-B2)', async () => {
+    dryRun.mockResolvedValue({
+      sampled: 100,
+      wouldChange: [
+        { ticketId: 't1', number: 'INC-000042', title: 'VPN down', matched: ['vip-requester'], effects: { patch: {}, tags: ['vip'], watchers: [], notifications: [], links: [], workflows: [] } },
+        { ticketId: 't2', number: 'INC-000043', title: 'Laptop slow', matched: ['vip-requester'], effects: { patch: {}, tags: ['vip'], watchers: [], notifications: [], links: [], workflows: [] } },
+      ],
+      errors: [],
+    });
+    render(builder({ areas: demoAreas }));
+    await clickAsync(buttonNamed(document, 'Run test')!);
+    const panel = document.querySelector('.app-TryIt')!;
+    expect(text(panel)).toContain('INC-000042');
+    expect(panel.querySelector('ol a')).toBeNull();
+    expect(text(panel).split(CROSS_AREA_DEMO_TEAM_NOTE)).toHaveLength(2);
+  });
+
+  it('without the Service Desk, leaves the tried tickets’ numbers as text, with no demo note', async () => {
+    dryRun.mockResolvedValue({
+      sampled: 100,
+      wouldChange: [{ ticketId: 't1', number: 'INC-000042', title: 'VPN down', matched: ['vip-requester'], effects: { patch: {}, tags: ['vip'], watchers: [], notifications: [], links: [], workflows: [] } }],
+      errors: [],
+    });
+    render(builder({ areas: undefined }));
+    await clickAsync(buttonNamed(document, 'Run test')!);
+    const panel = document.querySelector('.app-TryIt')!;
+    expect(panel.querySelector('ol a')).toBeNull();
+    expect(text(panel)).not.toContain(CROSS_AREA_DEMO_TEAM_NOTE);
   });
 
   it('marks the action card the dry run refused', async () => {
