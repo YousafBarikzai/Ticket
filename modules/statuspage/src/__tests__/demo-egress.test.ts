@@ -98,6 +98,8 @@ function link(tenantId: string, kind: 'status_confirm' | 'status_unsubscribe'): 
 const PAGE = { id: 'page-1', name: 'Northwind Traders', description: null, supportUrl: null, isPublic: true };
 
 beforeEach(() => {
+  // Sign the forged links with a test secret, so the case needs no environment.
+  vi.stubEnv('DEV_TOKEN_SECRET', 'demo-egress-unit-test-secret');
   db.calls = [];
   db.writes = [];
   db.rows = {
@@ -119,6 +121,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   setTenantKindReader(null);
 });
 
