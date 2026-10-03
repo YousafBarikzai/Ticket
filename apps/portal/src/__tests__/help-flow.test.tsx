@@ -1,14 +1,20 @@
 // @vitest-environment jsdom
-import { act, forwardRef, type AnchorHTMLAttributes, type ReactNode } from 'react';
+import { createRequire } from 'node:module';
+import { act, forwardRef, isValidElement, type AnchorHTMLAttributes, type ReactElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ItsmProvider } from '@itsm/ui';
 import { cleanupDocument, click, clickAsync, render, submit, type } from './support/render.js';
 
 /**
- * "How can we help?" (SPEC D17, §6.3, WP26 acceptance): one flow, two steps;
- * suggestions 300 ms after typing pauses; the same idempotency key online,
- * queued and on retry; the draft kept and restored; a clear ending with or
- * without the reply time; never a priority, an impact or a category.
+ * "How can we help?" (SPEC D17, §6.3, WP26 acceptance; v3 §7.2, X-M12,
+ * WP-49): one flow, three steps under a small Stepper (Describe · Details ·
+ * Review); suggestions 300 ms after typing pauses; urgency as cards with a
+ * tile and what the choice means; the same idempotency key online, queued and
+ * on retry; the draft kept and restored; an ending drawn on the server (a
+ * light HeroCard with the reply time) or, without it, in the flow's own
+ * words; keyboard and axe on every step; never a priority, an impact or a
+ * category, and never an attach control.
  */
 
 /* ---- The world around the flow ------------------------------------------ */
@@ -40,6 +46,28 @@ const api = {
   slaTimers: vi.fn(async (_number: string) => ({ ticketId: 't1', timers: [] as unknown[] })),
 };
 vi.mock('../client/api.js', () => ({ api }));
+
+/*
+ * The success panel's action. The flows get a stand-in (the browser half);
+ * the action itself is tested at the end of this file through
+ * `vi.importActual`, against a mocked session.
+ */
+vi.mock('server-only', () => ({}));
+const sentPanel = vi.fn(
+  async (input: { number: string }): Promise<ReactNode> => (
+    <section aria-labelledby="sent-test" data-sent="">
+      <h2 id="sent-test">Request sent: {input.number}</h2>
+    </section>
+  ),
+);
+vi.mock('../help/actions.js', () => ({ renderSentPanel: (input: { number: string }) => sentPanel(input) }));
+let session: { id: string } | null = { id: 's1' };
+const serverApi = {
+  ticket: vi.fn(async (number: string) => ({ number, status: 'new' }) as { number: string; status: string }),
+  me: vi.fn(async () => ({ locale: 'en-GB', timeZone: 'Europe/London' })),
+  slaTimers: vi.fn(async (_number: string) => ({ ticketId: 't1', timers: [] as { targetType: string; state: string; dueAt: string | null }[] })),
+};
+vi.mock('../server/session.js', () => ({ currentSession: async () => session, apiFor: () => serverApi }));
 
 const notify = vi.fn();
 vi.mock('@itsm/ui', async (importOriginal) => {
@@ -108,6 +136,7 @@ beforeEach(() => {
   api.catalogue.mockResolvedValue({ data: [] });
   api.myTickets.mockResolvedValue({ data: [], nextCursor: null });
   api.slaTimers.mockResolvedValue({ ticketId: 't1', timers: [] });
+  sentPanel.mockClear();
   notify.mockClear();
   router.push.mockClear();
   forgetCatalogue();
@@ -213,10 +242,24 @@ async function toDetails(text = 'Printer on floor 3 is jammed'): Promise<void> {
   await clickAsync(button('Continue — report this as an issue'));
 }
 
+/** The form a footer button submits (the footer sits outside the step's form, as in the sheet). */
+function formOf(name: string): HTMLFormElement {
+  const form = document.querySelector('form#' + CSS_ID(button(name).getAttribute('form') ?? ''));
+  if (!(form instanceof HTMLFormElement)) throw new Error(`no form for “${name}”`);
+  return form;
+}
+
+/** Details → review, through the details form's own submit (Continue). */
+async function toReview(): Promise<void> {
+  await submit(formOf('Continue'));
+  await settle();
+}
+
+/** From the details or the review: on to the review if need be, then Send report. */
 async function send(): Promise<void> {
-  const form = document.querySelector('form#' + CSS_ID(button('Send report').getAttribute('form') ?? ''));
-  if (!(form instanceof HTMLFormElement)) throw new Error('no report form');
-  await submit(form);
+  if (phase() === 'details') await toReview();
+  if (phase() !== 'review') return;
+  await submit(formOf('Send report'));
   await settle();
 }
 
@@ -238,7 +281,7 @@ describe('step 1 · describe', () => {
     mount();
 
     expect(phase()).toBe('describe');
-    expect(document.querySelector('[data-step]')?.textContent).toBe('Step 1 of 2 · Describe it');
+    expect(document.querySelector('[data-step]')?.textContent).toBe('Step 1 of 3 · Describe it');
     type(field('What do you need help with?') as HTMLInputElement, 'vpn');
     await flush(SUGGEST_DELAY_MS - 1);
     expect(api.search).not.toHaveBeenCalled();
@@ -327,7 +370,7 @@ describe('step 1 · describe', () => {
 
     await toDetails('Printer on floor 3 is jammed');
     expect(phase()).toBe('details');
-    expect(document.querySelector('[data-step]')?.textContent).toBe('Step 2 of 2 · Add the details');
+    expect(document.querySelector('[data-step]')?.textContent).toBe('Step 2 of 3 · Add the details');
     expect((field('Title') as HTMLInputElement).value).toBe('Printer on floor 3 is jammed');
     expect(document.activeElement).toBe(field('Title'));
   });
@@ -354,9 +397,53 @@ describe('step 2 · details', () => {
     expect(checked?.textContent).toContain('It is slowing me down');
   });
 
-  it('sends the report, then says what happens next and when we aim to reply', async () => {
-    const due = new Date(Date.now() + 2 * 3_600_000).toISOString();
-    api.slaTimers.mockResolvedValue({ ticketId: 't1', timers: [{ id: 's1', targetType: 'response', state: 'running', startedAt: new Date().toISOString(), dueAt: due, remainingMs: 1, elapsedMs: 0, warningsFired: 0, metAt: null, breachedAt: null }] });
+  it('shows each urgency as a card with a tile and one line on what the choice means', async () => {
+    mount();
+    await toDetails();
+    const cards = [...document.querySelectorAll('[role="radio"]')];
+    expect(cards).toHaveLength(3);
+    expect(cards.map((card) => card.querySelector('.itsm-IconTile')?.getAttribute('data-tone'))).toEqual(['neutral', 'neutral', 'high']);
+    expect(cards.map((card) => card.querySelector('.itsm-Choice__description')?.textContent)).toEqual([
+      'We’ll fit it in around more urgent work.',
+      'We’ll pick it up in the usual order.',
+      'We’ll treat it as urgent.',
+    ]);
+    // The consequence is the card's description, so it is heard with the choice.
+    const high = cards[2]!;
+    expect(document.getElementById(high.getAttribute('aria-describedby') ?? '')?.textContent).toBe('We’ll treat it as urgent.');
+  });
+
+  it('shows where they are of the three steps, ticking the ones done', async () => {
+    mount();
+    const steps = (): string[] => [...document.querySelectorAll('.app-HelpFlow__steps .itsm-Stepper__step')].map((step) => `${step.textContent?.split(',')[0]}:${step.getAttribute('data-status')}`);
+    expect(steps()).toEqual(['Describe:current', 'Details:upcoming', 'Review:upcoming']);
+    await toDetails();
+    expect(steps()).toEqual(['Describe:complete', 'Details:current', 'Review:upcoming']);
+    await toReview();
+    expect(steps()).toEqual(['Describe:complete', 'Details:complete', 'Review:current']);
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toContain('Review');
+    expect(document.querySelector('[data-step]')?.textContent).toBe('Step 3 of 3 · Check and send');
+  });
+
+  it('reviews what will be sent as a definition list, with Edit back to the details', async () => {
+    mount();
+    await toDetails();
+    type(field('Details') as HTMLTextAreaElement, 'Error E-04\nTray stuck');
+    click([...document.querySelectorAll('[role="radio"]')].find((radio) => radio.textContent?.includes('I cannot work'))!);
+    await toReview();
+    expect(phase()).toBe('review');
+    expect(sent).toHaveLength(0);
+    expect(document.activeElement?.textContent).toBe('Check your report');
+    const pairs = [...document.querySelectorAll('.app-HelpReview dt')].map((term) => `${term.textContent} = ${term.nextElementSibling?.textContent}`);
+    expect(pairs).toEqual(['Title = Printer on floor 3 is jammed', 'Details = Error E-04\nTray stuck', 'How much it’s holding you up = I cannot work']);
+
+    await clickAsync(button('Edit'));
+    expect(phase()).toBe('details');
+    expect(document.activeElement).toBe(field('Title'));
+    expect((field('Details') as HTMLTextAreaElement).value).toBe('Error E-04\nTray stuck');
+  });
+
+  it('sends the report, then ends on the panel the server drew, focused, with the way on', async () => {
     respondWith(created('INC-000124'));
     mount();
     await toDetails();
@@ -367,28 +454,43 @@ describe('step 2 · details', () => {
     expect(sent[0]!.url).toBe('/api/proxy/api/v1/tickets');
     expect(sent[0]!.body).toEqual({ type: 'incident', title: 'Printer on floor 3 is jammed', urgency: 'high', sourceChannel: 'portal' });
     expect(sent[0]!.key).toMatch(/^pwa-/);
-    await vi.waitFor(() => expect(bodyText()).toContain('We aim to reply by'));
-    expect(phase()).toBe('sent');
-    expect(bodyText()).toContain('We’ve got it · INC-000124');
-    expect(bodyText()).toContain('What happens next');
+    await vi.waitFor(() => expect(phase()).toBe('sent'));
+    expect(sentPanel).toHaveBeenCalledWith({ number: 'INC-000124', kind: 'issue', headingLevel: 2 });
+    expect(bodyText()).toContain('Request sent: INC-000124');
     expect((button('Track it') as HTMLAnchorElement).getAttribute('href')).toBe('/tickets/INC-000124');
-    expect(document.activeElement).toBe(document.querySelector('.app-HelpDone'));
+    expect(document.activeElement).toBe(document.querySelector('.app-HelpSent'));
+    // The reply time is the server's to find: the browser no longer asks for the clock.
+    expect(api.slaTimers).not.toHaveBeenCalled();
     // Sent: nothing is left to restore.
     expect(localStorage.getItem('itsm-draft:report:u1')).toBeNull();
   });
 
-  it('ends clearly without a reply time when the clock has not started, after asking twice', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  it('ends in its own words when the server cannot draw the panel', async () => {
+    sentPanel.mockResolvedValueOnce(null);
     respondWith(created('INC-000125'));
     mount();
     await toDetails();
     await send();
-    await settle();
-    expect(api.slaTimers).toHaveBeenCalledTimes(1);
-    await flush(1500);
-    expect(api.slaTimers).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(phase()).toBe('sent'));
     expect(bodyText()).toContain('We’ve got it · INC-000125');
-    expect(bodyText()).not.toContain('We aim to reply by');
+    expect(bodyText()).toContain('What happens next');
+    expect(document.activeElement).toBe(document.querySelector('.app-HelpDone'));
+  });
+
+  it('does not wait for a panel that never comes', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    sentPanel.mockImplementationOnce(() => new Promise<ReactNode>(() => undefined));
+    respondWith(created('INC-000126'));
+    mount();
+    await toDetails();
+    await send();
+    expect(phase()).toBe('review');
+    // Still "Sending" while the panel is awaited: one change of screen, not two.
+    expect(button('Send report').getAttribute('aria-busy')).toBe('true');
+    const { SENT_PANEL_TIMEOUT_MS } = await import('../help/sent.js');
+    await flush(SENT_PANEL_TIMEOUT_MS);
+    expect(phase()).toBe('sent');
+    expect(bodyText()).toContain('We’ve got it · INC-000126');
   });
 
   it('sends one key for one report: online, after a failure, and in the offline queue', async () => {
@@ -396,7 +498,7 @@ describe('step 2 · details', () => {
     mount();
     await toDetails();
     await send();
-    expect(phase()).toBe('details');
+    expect(phase()).toBe('review');
     expect(bodyText()).toContain('The service desk couldn’t take it just now. Your report is still here — try again.');
     expect(document.activeElement?.closest('[role="alert"], .itsm-FormErrorSummary')).not.toBeNull();
 
@@ -419,6 +521,7 @@ describe('step 2 · details', () => {
     mount();
     await toDetails();
     await send();
+    await clickAsync(button('Edit'));
     type(field('Title') as HTMLInputElement, 'Printer on floor 3 is jammed (E-04)');
     await send();
     expect(sent).toHaveLength(2);
@@ -432,12 +535,16 @@ describe('step 2 · details', () => {
     type(field('Title') as HTMLInputElement, '   ');
     await send();
     expect(sent).toHaveLength(0);
+    expect(phase()).toBe('details');
     expect(bodyText()).toContain('Give it a short title');
 
     type(field('Title') as HTMLInputElement, 'It');
     await send();
+    // The API named the field: back on the details, the message beside it and the summary focused.
+    expect(phase()).toBe('details');
     expect(bodyText()).toContain('Title is too vague');
     expect(bodyText()).toContain('Check the highlighted fields and send it again.');
+    expect(document.activeElement?.closest('.itsm-FormErrorSummary')).not.toBeNull();
   });
 
   it('says so plainly when the organisation is out of tickets', async () => {
@@ -457,11 +564,11 @@ describe('step 2 · details', () => {
     await send();
     stop();
     expect(heard).toEqual(['action']);
-    expect(phase()).toBe('details');
+    expect(phase()).toBe('review');
     expect(JSON.parse(localStorage.getItem('itsm-draft:report:u1') ?? '{}').value).toMatchObject({ title: 'Printer on floor 3 is jammed' });
   });
 
-  it('sends with mod+Enter from the details', async () => {
+  it('moves on with mod+Enter from the details, and sends with it from the review', async () => {
     respondWith(created());
     mount();
     await toDetails();
@@ -470,7 +577,49 @@ describe('step 2 · details', () => {
       details.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
     });
     await settle();
+    expect(phase()).toBe('review');
+    expect(sent).toHaveLength(0);
+    await act(async () => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    await settle();
     expect(sent).toHaveLength(1);
+  });
+
+  it('moves between the three steps and back by keyboard alone, focus following', async () => {
+    mount();
+    type(field('What do you need help with?') as HTMLInputElement, 'Printer jammed');
+    await submit(field('What do you need help with?').closest('form')!);
+    await settle();
+    expect(phase()).toBe('details');
+    expect(document.activeElement).toBe(field('Title'));
+    // Enter in the title goes to the details, not on.
+    await act(async () => {
+      field('Title').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    expect(document.activeElement).toBe(field('Details'));
+    await toReview();
+    expect(document.activeElement?.textContent).toBe('Check your report');
+    await clickAsync(button('Back'));
+    expect(phase()).toBe('details');
+    expect(document.activeElement).toBe(field('Title'));
+  });
+
+  it('never renders an attach control, at any step or ending', async () => {
+    const attach = (): Element[] => [
+      ...document.querySelectorAll('input[type="file"]'),
+      ...[...document.querySelectorAll('button, a, [role="button"]')].filter((node) => /attach|upload|paperclip/i.test(`${node.textContent} ${node.getAttribute('aria-label') ?? ''}`)),
+    ];
+    respondWith(created('INC-000127'));
+    mount();
+    expect(attach()).toEqual([]);
+    await toDetails();
+    expect(attach()).toEqual([]);
+    await toReview();
+    expect(attach()).toEqual([]);
+    await send();
+    await vi.waitFor(() => expect(phase()).toBe('sent'));
+    expect(attach()).toEqual([]);
   });
 });
 
@@ -627,5 +776,173 @@ describe('the rules of the flow', () => {
       if (status !== 422) expect(message).toMatch(/still here|IT team/);
     }
     expect(model.sendFailureMessage({ status: 429, fields: {}, retryAfterSeconds: 20 })).toContain('Try again in 20 s');
+  });
+});
+
+/* ---- Accessibility on every step ------------------------------------------------ */
+
+interface AxeRule {
+  readonly id: string;
+  readonly nodes: readonly { readonly html: string }[];
+}
+interface Axe {
+  run(context: Element, options: Record<string, unknown>): Promise<{ violations: AxeRule[] }>;
+}
+// axe-core is the design system's devDependency; this app has none of its own (rule 9), so it is resolved through `@itsm/ui`.
+const axe = createRequire(createRequire(import.meta.url).resolve('@itsm/ui'))('axe-core') as Axe;
+/** Rules a fragment cannot answer, and rules that need the layout engine jsdom lacks. */
+const AXE_OFF = ['region', 'page-has-heading-one', 'html-has-lang', 'bypass', 'document-title', 'html-lang-valid', 'color-contrast', 'color-contrast-enhanced', 'target-size'];
+
+async function violations(): Promise<string[]> {
+  const results = await axe.run(document.body, {
+    runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] },
+    rules: Object.fromEntries(AXE_OFF.map((rule) => [rule, { enabled: false }])),
+  });
+  return results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.html).join(' | ')}`);
+}
+
+describe('accessibility', () => {
+  it('has no axe violations on any step, on the server’s ending or on its own', async () => {
+    respondWith(created('INC-000128'), created('INC-000129'));
+    mount();
+    expect(await violations()).toEqual([]);
+    await toDetails();
+    expect(await violations()).toEqual([]);
+    await toReview();
+    expect(await violations()).toEqual([]);
+    await send();
+    await vi.waitFor(() => expect(phase()).toBe('sent'));
+    expect(await violations()).toEqual([]);
+    cleanupDocument();
+
+    sentPanel.mockResolvedValueOnce(null);
+    mount();
+    await toDetails();
+    await send();
+    await vi.waitFor(() => expect(phase()).toBe('sent'));
+    expect(await violations()).toEqual([]);
+  }, 20_000);
+
+  it('has no axe violations on the real success panel, in either flow’s words', async () => {
+    const { SentPanel } = await import('../help/SentPanel.js');
+    const { sentPanelModel } = await import('../help/sent.js');
+    for (const model of [
+      sentPanelModel({ number: 'INC-004812', kind: 'issue', approval: false, replyBy: '14:00' }),
+      sentPanelModel({ number: 'REQ-003377', kind: 'request', approval: true, replyBy: null }),
+    ]) {
+      document.body.innerHTML = `<main>${renderToStaticMarkup(<SentPanel model={model} headingLevel={2} id="request-sent" />)}</main>`;
+      expect(await violations()).toEqual([]);
+    }
+  });
+});
+
+/* ---- The success panel, drawn on the server -------------------------------------- */
+
+const { renderSentPanel } = await vi.importActual<typeof import('../help/actions.js')>('../help/actions.js');
+const sentModel = await import('../help/sent.js');
+
+/** The action's answer as the browser would get it: markup, in the document. */
+async function drawn(input: unknown): Promise<HTMLElement | null> {
+  const panel = await renderSentPanel(input);
+  if (!isValidElement(panel)) return null;
+  document.body.innerHTML = renderToStaticMarkup(panel as ReactElement);
+  return document.body;
+}
+
+const timer = (dueAt: string) => ({ targetType: 'response', state: 'running', dueAt });
+
+describe('the success panel', () => {
+  beforeEach(() => {
+    session = { id: 's1' };
+    serverApi.ticket.mockReset().mockImplementation(async (number: string) => ({ number, status: 'new' }));
+    serverApi.me.mockReset().mockResolvedValue({ locale: 'en-GB', timeZone: 'Europe/London' });
+    serverApi.slaTimers.mockReset().mockResolvedValue({ ticketId: 't1', timers: [] });
+  });
+
+  it('is a light hero: "Request sent", the number and the reply time, what happens next', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-30T09:00:00Z'));
+    serverApi.slaTimers.mockResolvedValue({ ticketId: 't1', timers: [timer('2026-09-30T13:00:00Z')] });
+    const body = await drawn({ number: 'INC-004812', kind: 'issue', headingLevel: 3 });
+    const hero = body?.querySelector('.itsm-HeroCard');
+    expect(hero?.getAttribute('data-variant')).toBe('light');
+    expect(hero?.getAttribute('aria-labelledby')).toBe('request-sent-verdict');
+    const heading = body?.querySelector('h3#request-sent-verdict');
+    expect(heading?.textContent).toBe('Request sent: INC-004812 · We’ll reply by 14:00');
+    expect(body?.querySelector('.itsm-HeroCard__kicker')?.textContent).toBe('Request sent');
+    expect(body?.textContent).toContain('What happens next');
+    expect([...(body?.querySelectorAll('.itsm-Stepper__step') ?? [])].map((step) => step.getAttribute('data-status'))).toEqual(['complete', 'upcoming', 'upcoming']);
+    expect(serverApi.ticket).toHaveBeenCalledWith('INC-004812');
+  });
+
+  it('waits once for a clock that has not started, then makes no promise', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pending = drawn({ number: 'INC-000125', kind: 'issue' });
+    await vi.advanceTimersByTimeAsync(sentModel.SLA_RETRY_MS);
+    const body = await pending;
+    expect(serverApi.slaTimers).toHaveBeenCalledTimes(2);
+    expect(body?.querySelector('h2')?.textContent).toBe('Request sent: INC-000125');
+    expect(body?.textContent).not.toContain('We’ll reply by');
+  });
+
+  it('promises nothing for a request waiting for approval, and says why', async () => {
+    const body = await drawn({ number: 'REQ-003377', kind: 'request', approval: true });
+    expect(body?.querySelector('h2')?.textContent).toBe('Request sent: REQ-003377 · Waiting for approval');
+    expect(body?.querySelector('.itsm-HeroCard__verdict')?.getAttribute('data-tone')).toBe('hold');
+    expect(body?.textContent).toContain('Sent for approval. Nothing starts until it’s approved.');
+    expect(serverApi.slaTimers).not.toHaveBeenCalled();
+
+    serverApi.ticket.mockResolvedValueOnce({ number: 'REQ-003378', status: 'pending_approval' });
+    const read = await drawn({ number: 'REQ-003378', kind: 'request' });
+    expect(read?.querySelector('h2')?.textContent).toContain('Waiting for approval');
+  });
+
+  it('answers nothing it should not: bad input, no session, a number that is not theirs', async () => {
+    for (const input of [null, 'INC-1', { number: 'INC-1; drop', kind: 'issue' }, { number: 'INC-000001', kind: 'admin' }, { number: '../../x', kind: 'issue' }]) {
+      expect(await renderSentPanel(input)).toBeNull();
+    }
+    expect(serverApi.ticket).not.toHaveBeenCalled();
+
+    session = null;
+    expect(await renderSentPanel({ number: 'INC-000001', kind: 'issue' })).toBeNull();
+
+    session = { id: 's1' };
+    serverApi.ticket.mockRejectedValueOnce(Object.assign(new Error('Not found'), { status: 404 }));
+    expect(await renderSentPanel({ number: 'INC-999999', kind: 'issue' })).toBeNull();
+  });
+
+  it('keeps its promise honest when the clock cannot be read', async () => {
+    serverApi.slaTimers.mockRejectedValue(new Error('down'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pending = drawn({ number: 'INC-000130', kind: 'issue' });
+    await vi.advanceTimersByTimeAsync(sentModel.SLA_RETRY_MS);
+    expect((await pending)?.querySelector('h2')?.textContent).toBe('Request sent: INC-000130');
+  });
+});
+
+describe('the success panel’s words', () => {
+  it('reads a request from the browser field by field', () => {
+    expect(sentModel.readSentRequest({ number: 'REQ-003377', kind: 'request', approval: true, headingLevel: 3, extra: 'x' })).toEqual({ number: 'REQ-003377', kind: 'request', approval: true, headingLevel: 3 });
+    expect(sentModel.readSentRequest({ number: 'INC-000001', kind: 'issue', approval: 'yes', headingLevel: 4 })).toEqual({ number: 'INC-000001', kind: 'issue', approval: false, headingLevel: 2 });
+    expect(sentModel.isTicketNumber('INC-000124')).toBe(true);
+    expect(sentModel.isTicketNumber('inc-000124')).toBe(false);
+  });
+
+  it('says one thing per case, from one kicker', () => {
+    const issue = sentModel.sentPanelModel({ number: 'INC-1', kind: 'issue', approval: false, replyBy: '09:00 tomorrow' });
+    const request = sentModel.sentPanelModel({ number: 'REQ-1', kind: 'request', approval: false, replyBy: null });
+    const waiting = sentModel.sentPanelModel({ number: 'REQ-2', kind: 'request', approval: true, replyBy: '14:00' });
+    expect([issue.kicker, request.kicker, waiting.kicker]).toEqual(['Request sent', 'Request sent', 'Request sent']);
+    expect(issue.verdict).toEqual({ tone: 'success', icon: 'circle-check', label: 'INC-1 · We’ll reply by 09:00 tomorrow' });
+    expect(request.verdict.label).toBe('REQ-1');
+    expect(waiting.verdict).toEqual({ tone: 'hold', icon: 'hourglass', label: 'REQ-2 · Waiting for approval' });
+    expect(waiting.steps.map((step) => step.status)).toEqual(['complete', 'waiting', 'upcoming']);
+    for (const model of [issue, request, waiting]) expect(model.narrative).not.toMatch(/priority|attach/i);
+  });
+
+  it('drops "today" from a reply time today, for the verdict', () => {
+    const now = new Date('2026-09-30T09:00:00Z');
+    expect(replyByPhrase('2026-09-30T13:00:00Z', now, 'en-GB', 'Europe/London', { today: false })).toBe('14:00');
+    expect(replyByPhrase('2026-10-01T08:00:00Z', now, 'en-GB', 'Europe/London', { today: false })).toBe('09:00 tomorrow');
   });
 });

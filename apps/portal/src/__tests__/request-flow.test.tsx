@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -23,12 +24,14 @@ import { cleanupDocument, click, clickAsync, render, type } from './support/rend
 
 /**
  * Services and asking for one (SPEC §6.3 `/catalogue`, `/catalogue/[key]`,
- * §4.4 steps, F38): the catalogue grouped by service with a search in the
- * URL and chips that jump; an item's form in steps with a review, a device
- * draft per form version, one idempotency key per intent, only the visible
- * answers sent, the outcome on the page (with the approval sentence when
- * there is one), offline and failure states, and the person question that
- * can only be "You".
+ * §4.4 steps, F38; v3 §7.2, X-M12, WP-49): the catalogue grouped by service
+ * with a search in the URL and chips that jump; an item's form in steps, each
+ * a card with the item's tile, and a review grid; a device draft per form
+ * version, one idempotency key per intent, only the visible answers sent, the
+ * ending drawn on the server (or, without it, in the flow's own words, with
+ * the approval sentence when there is one), offline and failure states, the
+ * person question that can only be "You", axe on every step, no attach
+ * control, and the sticky offsets under the frame's top.
  */
 
 vi.mock('server-only', () => ({}));
@@ -56,6 +59,16 @@ vi.mock('../app/AppLink.js', () => ({
 
 const helpFlow = { open: vi.fn(), available: true };
 vi.mock('../components/PortalShell.js', () => ({ useHelpFlow: () => helpFlow }));
+
+/* The success panel's action: a stand-in here (help-flow.test.tsx tests the real one). */
+const sentPanel = vi.fn(
+  async (input: { number: string }): Promise<ReactNode> => (
+    <section aria-labelledby="sent-test" data-sent="">
+      <h2 id="sent-test">Request sent: {input.number}</h2>
+    </section>
+  ),
+);
+vi.mock('../help/actions.js', () => ({ renderSentPanel: (input: { number: string }) => sentPanel(input) }));
 
 const browserApi = {
   submitRequest: vi.fn(async (_key: string, _answers: unknown, _options?: { idempotencyKey?: string }) => result('REQ-000046')),
@@ -98,6 +111,28 @@ const flow = await import('../catalogue/RequestFlow.js');
 const group = await import('../catalogue/group.js');
 const { matchSummary } = await import('../catalogue/ServiceBrowser.js');
 const { onSessionEnded } = await import('../client/useAction.js');
+
+/* ---- axe, as the design system runs it ---------------------------------- */
+
+interface AxeRule {
+  readonly id: string;
+  readonly nodes: readonly { readonly html: string }[];
+}
+interface Axe {
+  run(context: Element, options: Record<string, unknown>): Promise<{ violations: AxeRule[] }>;
+}
+// axe-core is the design system's devDependency; this app has none of its own (rule 9), so it is resolved through `@itsm/ui`.
+const axe = createRequire(createRequire(import.meta.url).resolve('@itsm/ui'))('axe-core') as Axe;
+/** Rules a fragment cannot answer, and rules that need the layout engine jsdom lacks. */
+const AXE_OFF = ['region', 'page-has-heading-one', 'html-has-lang', 'bypass', 'document-title', 'html-lang-valid', 'color-contrast', 'color-contrast-enhanced', 'target-size'];
+
+async function violations(): Promise<string[]> {
+  const results = await axe.run(document.body, {
+    runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] },
+    rules: Object.fromEntries(AXE_OFF.map((rule) => [rule, { enabled: false }])),
+  });
+  return results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.html).join(' | ')}`);
+}
 
 /* ---- Fixtures -------------------------------------------------------------- */
 
@@ -507,26 +542,89 @@ describe('the request, in steps', () => {
     expect(Object.keys(answers as object)).toEqual(['reason', 'system']);
     expect(options?.idempotencyKey).toMatch(/^portal-request-/);
 
-    const heading = document.querySelector<HTMLElement>('.app-ServiceDone__title')!;
-    expect(heading.textContent).toBe('Requested · REQ-000046');
-    expect(document.activeElement).toBe(heading);
-    expect(text()).toContain('We’ve got it.');
-    expect(text()).not.toContain('Sent for approval');
+    // The ending the server drew, focused as a whole, with the two ways on under it.
+    expect(sentPanel).toHaveBeenCalledWith({ number: 'REQ-000046', kind: 'request', approval: false });
+    const done = document.querySelector<HTMLElement>('.app-ServiceDone')!;
+    expect(done.querySelector('[data-sent] h2')?.textContent).toBe('Request sent: REQ-000046');
+    expect(document.activeElement).toBe(done);
     expect(link('Track it').getAttribute('href')).toBe('/tickets/REQ-000046');
     expect(link('Request something else').getAttribute('href')).toBe('/catalogue');
     expect(document.querySelector('.itsm-FormRenderer')).toBeNull();
     expect(window.localStorage.getItem('itsm-draft:form:system-access@3')).toBeNull();
   });
 
-  it('explains that nothing starts until an approval is given, when the request needs one', async () => {
+  it('tells the server a decision comes first, and says so in its own words when the server cannot', async () => {
     browserApi.submitRequest.mockResolvedValue(result('REQ-000047', 'appr-9'));
+    sentPanel.mockResolvedValueOnce(null);
     await showItem();
     await answerEverything();
     await clickAsync(button('Request System access'));
-    expect(document.querySelector('.app-ServiceDone__title')?.textContent).toBe('Requested · REQ-000047');
+    expect(sentPanel).toHaveBeenCalledWith({ number: 'REQ-000047', kind: 'request', approval: true });
+    const heading = document.querySelector('.app-ServiceDone__title');
+    expect(heading?.textContent).toBe('Requested · REQ-000047');
     expect(text()).toContain('Sent for approval. Nothing starts until it’s approved.');
-    expect(document.querySelector('.app-ServiceDone__mark')?.getAttribute('data-tone')).toBe('neutral');
+    expect(document.activeElement).toBe(document.querySelector('.app-ServiceDone'));
+    expect(link('Track it').getAttribute('href')).toBe('/tickets/REQ-000047');
   });
+
+  it('keeps saying "Sending" while the server draws the ending, and never sends twice', async () => {
+    let release: (node: ReactNode) => void = () => undefined;
+    sentPanel.mockImplementationOnce(() => new Promise<ReactNode>((resolve) => (release = resolve)));
+    await showItem();
+    await answerEverything();
+    await clickAsync(button('Request System access'));
+    const sending = document.querySelector<HTMLButtonElement>('.itsm-FormRenderer__actionsEnd .itsm-Button')!;
+    expect(sending.getAttribute('aria-busy')).toBe('true');
+    await clickAsync(sending);
+    expect(browserApi.submitRequest).toHaveBeenCalledTimes(1);
+    await act(async () => release(null));
+    expect(document.querySelector('.app-ServiceDone__title')?.textContent).toBe('Requested · REQ-000046');
+  });
+
+  it('draws each step as a card with the item’s tile beside the step’s heading', async () => {
+    await showItem();
+    const card = document.querySelector('.app-ServiceRequest__card')!;
+    const tile = card.querySelector(':scope > .itsm-IconTile');
+    expect(tile?.getAttribute('data-size')).toBe('28');
+    expect(tile?.getAttribute('aria-hidden')).toBe('true');
+    // The item's own glyph, from its words ("System access" → access).
+    expect(tile?.querySelector('svg')).not.toBeNull();
+    expect(card.querySelector(':scope > .itsm-FormRenderer[data-mode="steps"] > .itsm-FormRenderer__step .itsm-FormRenderer__stepHeading')).not.toBeNull();
+    // Focus follows the step to its heading, by keyboard as by mouse.
+    choose(control('System'), 'finance');
+    click(button('Continue'));
+    expect(document.activeElement).toBe(document.querySelector('.itsm-FormRenderer__stepHeading'));
+  });
+
+  it('never renders an attach control, at any step or at the end', async () => {
+    const attach = (): Element[] => [
+      ...document.querySelectorAll('input[type="file"]'),
+      ...[...document.querySelectorAll('button, a, [role="button"]')].filter((node) => /attach|upload|paperclip/i.test(`${node.textContent} ${node.getAttribute('aria-label') ?? ''}`)),
+    ];
+    await showItem();
+    expect(attach()).toEqual([]);
+    choose(control('System'), 'finance');
+    click(button('Continue'));
+    expect(attach()).toEqual([]);
+    type(control('Why do you need it?') as HTMLTextAreaElement, 'Month-end close');
+    click(button('Continue'));
+    expect(attach()).toEqual([]);
+    await clickAsync(button('Request System access'));
+    expect(attach()).toEqual([]);
+  });
+
+  it('has no axe violations on any step or at the end', async () => {
+    await showItem();
+    expect(await violations()).toEqual([]);
+    choose(control('System'), 'finance');
+    click(button('Continue'));
+    expect(await violations()).toEqual([]);
+    type(control('Why do you need it?') as HTMLTextAreaElement, 'Month-end close');
+    click(button('Continue'));
+    expect(await violations()).toEqual([]);
+    await clickAsync(button('Request System access'));
+    expect(await violations()).toEqual([]);
+  }, 20_000);
 
   it('retries a failed send with the same key, and uses a new key once the answers change', async () => {
     browserApi.submitRequest.mockRejectedValueOnce(new ApiError(503, { type: 'about:blank', title: 'Unavailable', status: 503, correlationId: 'c1' }, 'down'));
@@ -553,7 +651,7 @@ describe('the request, in steps', () => {
     await clickAsync(button('Request System access'));
     expect(browserApi.submitRequest).toHaveBeenCalledTimes(3);
     expect(browserApi.submitRequest.mock.calls[2]![2]?.idempotencyKey).not.toBe(keys[0]);
-    expect(document.querySelector('.app-ServiceDone__title')?.textContent).toBe('Requested · REQ-000046');
+    expect(document.querySelector('.app-ServiceDone [data-sent] h2')?.textContent).toBe('Request sent: REQ-000046');
   });
 
   it('offers no Try again when the demo’s cap is reached, which waiting does not lift', async () => {
@@ -582,7 +680,7 @@ describe('the request, in steps', () => {
       finish(result('REQ-000046'));
       await Promise.resolve();
     });
-    expect(document.querySelector('.app-ServiceDone__title')).not.toBeNull();
+    expect(document.querySelector('.app-ServiceDone')).not.toBeNull();
   });
 
   it('takes the API’s field errors back to their step, with the summary', async () => {
@@ -656,7 +754,7 @@ describe('the request, in steps', () => {
     expect(text()).toContain('Nothing to fill in');
     await clickAsync(button('Request New laptop'));
     expect(browserApi.submitRequest).toHaveBeenCalledWith('laptop', {}, expect.objectContaining({ idempotencyKey: expect.stringMatching(/^portal-request-/) }));
-    expect(document.querySelector('.app-ServiceDone__title')?.textContent).toBe('Requested · REQ-000046');
+    expect(document.querySelector('.app-ServiceDone [data-sent] h2')?.textContent).toBe('Request sent: REQ-000046');
   });
 });
 
@@ -705,5 +803,19 @@ describe('the styles for Services and asking for one', () => {
     expect(used.length).toBeGreaterThan(10);
     expect(used.filter((variable) => !defined.has(variable))).toEqual([]);
     expect(css).not.toMatch(/^\s*\.itsm-/m);
+  });
+
+  it('keeps the sticky parts under the frame’s top, so nothing slides under the demo bar (v3 §3.4, V1-M6)', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'app', '(portal)', 'catalogue', 'catalogue.css'), 'utf8');
+    const rule = (selector: string, property: string): string | undefined => {
+      const block = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1];
+      return new RegExp(`${property}:\\s*([^;]+);`).exec(block ?? '')?.[1]?.trim();
+    };
+    expect(rule('.app-Services__chips', 'inset-block-start')).toBe('calc(var(--itsm-frame-top) + var(--itsm-safe-area-top))');
+    expect(rule('.app-Services__section', 'scroll-margin-block-start')).toBe(
+      'calc(var(--itsm-frame-top) + var(--itsm-safe-area-top) + var(--itsm-control-height-sm) + var(--itsm-space-lg))',
+    );
+    expect(rule('.app-ServiceRequest__rail', 'inset-block-start')).toBe('calc(var(--itsm-frame-top) + var(--itsm-safe-area-top) + var(--itsm-space-lg))');
+    expect(css).not.toContain('--itsm-topbar-height');
   });
 });
