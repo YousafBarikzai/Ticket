@@ -198,6 +198,11 @@
   --app-hero-ink: var(--itsm-colour-warning-subtleText);
 }
 
+.app-RequestHero[data-tone='hold'] {
+  --app-hero-tint: var(--itsm-colour-hold-subtle);
+  --app-hero-ink: var(--itsm-colour-hold-subtleText);
+}
+
 .app-RequestHero[data-tone='danger'] {
   --app-hero-tint: var(--itsm-colour-danger-subtle);
   --app-hero-ink: var(--itsm-colour-danger-subtleText);
