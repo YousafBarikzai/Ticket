@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../../components/Forbidden.js';
 import { SlaPerformancePage } from '../../../../../components/sla-performance/SlaPerformancePage.js';
-import { purposeFor, tabsFor } from '../../../../../navigation.js';
+import { isPending, purposeFor, tabsFor } from '../../../../../navigation.js';
 import { pageAccess } from '../../../../../server/session.js';
 
 export const metadata: Metadata = { title: 'Performance · Service levels' };
@@ -15,6 +16,8 @@ export const dynamic = 'force-dynamic';
  * the component, not this file's shape.
  */
 export default async function SlaPerformanceRoute(): Promise<ReactNode> {
+  // Held back for the v3 release (UNFINISHED in navigation.ts): a stand-in is not shown in production.
+  if (isPending('/sla/performance')) notFound();
   const access = await pageAccess('/sla/performance');
   if (!access.allowed) return <Forbidden route="/sla/performance" />;
   return (

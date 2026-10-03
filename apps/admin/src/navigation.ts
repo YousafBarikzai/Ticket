@@ -442,8 +442,18 @@ export const EXCLUDED: readonly { readonly route: string; readonly read: readonl
 export const PENDING: ReadonlySet<string> = new Set([
 ]);
 
+/**
+ * Routes whose page exists but is still a stand-in (`A7_PLACEHOLDER`), held
+ * back for the v3 release so production shows nothing unfinished: hidden
+ * from the sidebar, the tabs, the palette and every cross-link exactly as a
+ * pending route is, and answered with a 404 by the page itself. The package
+ * that replaces a stand-in (WP-77, WP-80, WP-81) removes its line here.
+ */
+export const UNFINISHED: ReadonlySet<string> = new Set(['/sla/performance', '/integrations/channels', '/status-page']);
+
+/** Whether a route is held back: no page yet (`PENDING`), or a stand-in page (`UNFINISHED`). */
 export function isPending(route: string): boolean {
-  return PENDING.has(route);
+  return PENDING.has(route) || UNFINISHED.has(route);
 }
 
 /* =========================================================================

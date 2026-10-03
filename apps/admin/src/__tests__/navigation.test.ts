@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import {
@@ -12,6 +12,7 @@ import {
   NOT_FOUND_TITLE,
   PAGE_PURPOSES,
   PENDING,
+  UNFINISHED,
   allRoutes,
   breadcrumbsFor,
   createCommandsFor,
@@ -97,7 +98,7 @@ describe('every page is on the map', () => {
 
   it('has a page for every route that is not pending, and none for a pending one', () => {
     for (const route of allRoutes()) {
-      if (isPending(route)) {
+      if (PENDING.has(route)) {
         expect(builtRoutes.has(route), `${route} has a page now: remove it from PENDING in navigation.ts`).toBe(false);
       } else {
         expect(builtRoutes.has(route), `${route} is on the map but has no page.tsx`).toBe(true);
@@ -175,7 +176,7 @@ describe('nav gate = page gate', () => {
       const visible = new Set(visibleNav(me).map((item) => item.id));
       for (const item of NAV) {
         const routes = [...(item.tabs ? item.tabs.flatMap((tab) => [tab.href, ...(tab.routes ?? [])]) : [item.href]), ...(item.routes ?? [])];
-        const opens = routes.some((route) => builtRoutes.has(route) && mayOpen(me, route));
+        const opens = routes.some((route) => builtRoutes.has(route) && !isPending(route) && mayOpen(me, route));
         expect(visible.has(item.id), `${item.id} for someone holding only ${key}`).toBe(opens);
       }
     }
@@ -300,7 +301,8 @@ describe('the sidebar model', () => {
 
   it('shows 18 items to someone who holds everything, plus the two operator items', () => {
     const ids = visibleNav(everyone).map((item) => item.id);
-    expect(ids.filter((id) => id !== 'tenants' && id !== 'plans')).toHaveLength(18);
+    // 18 on the map; the Status page is held back for the release (UNFINISHED).
+    expect(ids.filter((id) => id !== 'tenants' && id !== 'plans')).toHaveLength(18 - NAV.filter((item) => UNFINISHED.has(item.href)).length);
     expect(ids).toHaveLength(NAV.filter((item) => !isPending(item.href)).length);
     expect(ids).toContain('tenants');
   });
@@ -404,6 +406,12 @@ describe('purposes (A7 §3.1; SPEC §3.5)', () => {
 });
 
 describe('the v3 map (A7 §3.2; SPEC §3.5)', () => {
+  // The map as it reads once the stand-ins are replaced: the release hold
+  // (UNFINISHED) is lifted for this block and asserted on its own below.
+  const held = [...UNFINISHED];
+  beforeEach(() => held.forEach((route) => (UNFINISHED as Set<string>).delete(route)));
+  afterEach(() => held.forEach((route) => (UNFINISHED as Set<string>).add(route)));
+
   it('puts SLA performance first among the Service levels tabs, gated on analytics', () => {
     const lead = person('analytics.read');
     expect(NAV.find((item) => item.id === 'service-levels')!.tabs!.map((tab) => tab.id)).toEqual(['performance', 'policies', 'calendars', 'matrix']);
@@ -474,6 +482,22 @@ describe('the three new routes’ stand-ins (A7 §12)', () => {
       const dir = join(consoleDir, '(admin)', ...shell.route.split('/').filter(Boolean));
       expect(existsSync(join(dir, 'loading.tsx')), shell.route).toBe(true);
       expect(readFileSync(join(dir, 'page.tsx'), 'utf8')).toContain(`purposeFor('${shell.route}')`);
+    }
+  });
+
+  it('are held back for the release: off the sidebar, the tabs and the palette, and a 404 from the page', () => {
+    expect([...UNFINISHED].sort()).toEqual(shells.map((shell) => shell.route).sort());
+    const everyoneHere = person(...everyGateKey);
+    const hrefs = [
+      ...visibleNav(everyoneHere).map((item) => item.href),
+      ...NAV.flatMap((item) => tabsFor(everyoneHere, item.id).map((tab) => tab.href)),
+      ...createCommandsFor(everyoneHere).map((command) => command.href),
+    ];
+    for (const shell of shells) {
+      expect(isPending(shell.route), shell.route).toBe(true);
+      expect(hrefs, shell.route).not.toContain(shell.route);
+      const dir = join(consoleDir, '(admin)', ...shell.route.split('/').filter(Boolean));
+      expect(readFileSync(join(dir, 'page.tsx'), 'utf8')).toContain(`if (isPending('${shell.route}')) notFound();`);
     }
   });
 
