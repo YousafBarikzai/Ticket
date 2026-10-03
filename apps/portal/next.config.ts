@@ -35,6 +35,16 @@ const csp = [
   "form-action 'self'",
 ].join('; ');
 
+/** The host of `PORTAL_ORIGIN` (`help.example.com`, with its port when it has one), or nothing. */
+function allowedActionOrigins(origin: string | undefined): string[] {
+  if (!origin) return [];
+  try {
+    return [new URL(origin).host];
+  } catch {
+    return [];
+  }
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   /**
@@ -71,7 +81,19 @@ const nextConfig: NextConfig = {
    * with them, and `@itsm/ui/shell` does the same for the frame: every route
    * imports a handful of its parts, never the whole barrel.
    */
-  experimental: { optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme', '@itsm/ui/charts', '@itsm/ui/shell'] },
+  experimental: {
+    optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme', '@itsm/ui/charts', '@itsm/ui/shell'],
+    /**
+     * One Server Action, `renderSentPanel`, draws the success panel after a
+     * request is sent (WP-49). Next refuses an action whose `Origin` is not
+     * this app's own host (`x-forwarded-host`, else `host`); `PORTAL_ORIGIN`
+     * adds the public host for a deployment whose proxy forwards an internal
+     * one instead, as the admin does with `ADMIN_ORIGIN`. Read when the app is
+     * built, which is where Next fixes its configuration. A refused action
+     * costs only the panel: the flow falls back to its plain ending.
+     */
+    serverActions: { allowedOrigins: allowedActionOrigins(process.env.PORTAL_ORIGIN) },
+  },
   /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension, which is what ECMAScript modules require and what `tsx`,
