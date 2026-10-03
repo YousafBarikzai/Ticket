@@ -1,0 +1,263 @@
+/*
+ * The ticket hero (v3 §7.1.4, A6 §5.6.2): a white bordered card holding the
+ * identity, the title, the chips, the lifecycle and the SLA block. Imported
+ * by `TicketHero`, so the inbox's pane and the ticket page both carry it.
+ *
+ * Arrangement only: every colour, space, size and duration is a design-system
+ * custom property. Unlayered, so it wins over the design system's
+ * `@layer itsm.*` rules without `!important`. Logical properties throughout.
+ * The hero is its own container (`app-hero`), so its layout follows its own
+ * width — the pane's and the page's — rather than the window's.
+ */
+
+/* ---- The card --------------------------------------------------------------- */
+
+.app-TicketHero {
+  container: app-hero / inline-size;
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-md);
+  padding: var(--itsm-space-md) var(--app-ws-gutter, var(--itsm-space-lg));
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raised);
+}
+
+/* On the page the hero is a card on the canvas: radius 12, padding 20 24, a border, no resting shadow (border-first depth). */
+.app-TicketHero[data-mode='page'] {
+  padding: var(--itsm-space-lg) var(--itsm-space-xl);
+  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+}
+
+/* The SLA block takes the end column once the hero is wide enough for both (A6: 260 px, below the chips under 1100). */
+@container app-hero (min-width: 68.75rem) {
+  .app-TicketHero[data-sla] {
+    grid-template-columns: minmax(0, 1fr) 16.25rem;
+    align-items: start;
+  }
+}
+
+.app-TicketHero__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  min-inline-size: 0;
+}
+
+.app-TicketHero__chips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-2xs) var(--itsm-space-xs);
+}
+
+.app-TicketHero__chips > .app-Chips {
+  flex: 1 1 auto;
+}
+
+/* ---- The identity and title rows (Header) -------------------------------------- */
+
+.app-WsHeader__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  min-inline-size: 0;
+}
+
+.app-WsHeader__tile {
+  flex: none;
+}
+
+.app-WsHeader__number {
+  font-family: var(--itsm-text-id-family);
+  font-size: var(--itsm-text-id-size);
+  font-weight: var(--itsm-text-id-weight);
+  line-height: var(--itsm-text-id-line);
+}
+
+.app-WsHeader__raised {
+  display: inline;
+  color: var(--itsm-colour-text-muted);
+}
+
+/* The record's title (v3 §2.7 `recordTitle`): Jakarta 600 22/28 on the page, 600 18/26 in the pane. */
+.app-TicketHero .app-WsHeader__title {
+  font-family: var(--itsm-text-recordTitle-family);
+  font-size: var(--itsm-text-title3-size);
+  font-weight: var(--itsm-text-recordTitle-weight);
+  line-height: var(--itsm-text-title3-line);
+  letter-spacing: var(--itsm-text-recordTitle-tracking);
+}
+
+.app-TicketHero[data-mode='page'] .app-WsHeader__title {
+  font-size: var(--itsm-text-recordTitle-size);
+  line-height: var(--itsm-text-recordTitle-line);
+}
+
+/* ---- The lifecycle --------------------------------------------------------------- */
+
+.app-TicketHero__lifecycle {
+  min-inline-size: 0;
+}
+
+.app-Lifecycle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs) var(--itsm-space-sm);
+  min-block-size: 2.75rem;
+}
+
+.app-Lifecycle__steps {
+  flex: 1 1 32rem;
+  min-inline-size: 0;
+}
+
+/* ---- The SLA block ---------------------------------------------------------------- */
+
+.app-SlaBlock {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-sm);
+  padding: var(--itsm-space-sm);
+  border-radius: var(--itsm-radius-lg);
+  background: var(--itsm-colour-surface-raisedAlt);
+  box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-subtle);
+  cursor: pointer;
+}
+
+.app-SlaBlock[data-compact] {
+  padding: var(--itsm-space-2xs) var(--itsm-space-xs);
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The block's own lines say what the ring's words would: the ring alone, its sentence still spoken. */
+.app-SlaBlock .itsm-SlaClock__stack,
+.app-SlaBlock .itsm-SlaClock__label,
+.app-SlaBlock .itsm-SlaClock__reading {
+  display: none;
+}
+
+.app-SlaBlock__icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: 50%;
+  background: var(--itsm-colour-surface-sunken);
+  color: var(--itsm-colour-text-muted);
+}
+
+.app-SlaBlock__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-SlaBlock__line1 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--itsm-colour-text-primary);
+  font: inherit;
+  font-size: var(--itsm-text-callout-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-callout-line);
+  text-align: start;
+}
+
+.app-SlaBlock__open {
+  align-self: flex-start;
+  border-radius: var(--itsm-radius-xs);
+  cursor: pointer;
+}
+
+.app-SlaBlock__open:hover {
+  color: var(--itsm-colour-text-link);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.app-SlaBlock[data-tone='danger'] .app-SlaBlock__line1 {
+  color: var(--itsm-colour-danger-subtleText);
+}
+
+.app-SlaBlock[data-tone='hold'] .app-SlaBlock__line1 {
+  color: var(--itsm-colour-hold-subtleText);
+}
+
+.app-SlaBlock[data-state='none'] .app-SlaBlock__line1 {
+  color: var(--itsm-colour-text-muted);
+  font-weight: var(--itsm-font-weight-regular);
+}
+
+.app-SlaBlock__line2,
+.app-SlaBlock__update {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-SlaBlock__bullet {
+  margin-block-start: var(--itsm-space-3xs);
+}
+
+/* The chip stands in for the block where the block does not fit: a phone's header row, the condensed hero. */
+.app-TicketHero__slaChip {
+  display: none;
+}
+
+/* ---- Condensed on scroll (X-32): one 52 px row --------------------------------------- */
+
+.app-TicketHero[data-condensed] {
+  gap: var(--itsm-space-xs);
+  padding-block: var(--itsm-space-xs);
+}
+
+.app-TicketHero[data-condensed] .app-TicketHero__lifecycle,
+.app-TicketHero[data-condensed] .app-WsHeader__tile {
+  display: none;
+}
+
+/* ---- Phones (A6 §5.6.10): the SLA chip in the header row, the block gone ---------------- */
+
+@container app-hero (max-width: 47.9999rem) {
+  .app-TicketHero__sla,
+  .app-TicketHero__lifecycle {
+    display: none;
+  }
+  .app-TicketHero__slaChip {
+    display: inline-flex;
+    order: -1;
+  }
+  .app-WsHeader__tile {
+    display: none;
+  }
+  .app-TicketHero[data-mode='page'] {
+    padding: var(--itsm-space-md) var(--app-ws-gutter, var(--itsm-space-md));
+    border-radius: 0;
+    border-inline: 0;
+    border-block-start: 0;
+  }
+}
+
+/* ---- Forced colours ------------------------------------------------------------------ */
+
+@media (forced-colors: active) {
+  .app-TicketHero,
+  .app-SlaBlock {
+    border: 1px solid CanvasText;
+  }
+}

@@ -109,6 +109,20 @@ describe('deciding what to do with it', () => {
     expect(buttons.every((button) => button.disabled)).toBe(true);
   });
 
+  it('says a demo sample is a sample, in a neutral pill and in words, and says nothing of the kind otherwise', () => {
+    const { container } = render(card({ sample: true }));
+    const pill = container.querySelector('.itsm-AiSuggestion__sample');
+    expect(pill?.textContent).toContain('Sample');
+    // D5: a sample is not a state, so it carries no status colour.
+    expect(pill?.getAttribute('data-tone')).toBe('neutral');
+    expect(container.querySelector('.itsm-AiSuggestion__sampleNote')?.textContent).toBe('A sample written into the demo; no AI provider was called.');
+    expect(container.querySelector('article')?.hasAttribute('data-sample')).toBe(true);
+    cleanupDocument();
+    const plain = render(card());
+    expect(plain.container.querySelector('.itsm-AiSuggestion__sample')).toBeNull();
+    expect(plain.container.querySelector('.itsm-AiSuggestion__sampleNote')).toBeNull();
+  });
+
   /**
    * ADR-0006's governance properties are only real if a person can perceive
    * them. The tests above check the reason, the confidence and the evidence
@@ -122,6 +136,7 @@ describe('deciding what to do with it', () => {
         {card()}
         {card({ outcome: 'edited' })}
         {card({ busy: true })}
+        {card({ sample: true, title: 'Suggested triage' })}
       </div>,
     );
     await expectNoViolations(container);

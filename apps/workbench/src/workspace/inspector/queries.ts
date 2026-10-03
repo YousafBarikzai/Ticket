@@ -1,4 +1,4 @@
-import { ApiError, builders, createClient, type FieldRow, type PriorityMatrixRow, type TicketLinkRow, type TriageSuggestion, type UserRow, type WatcherRow } from '@itsm/sdk';
+import { ApiError, builders, createClient, type FieldRow, type PriorityMatrixRow, type RecordCiRow, type TicketLinkRow, type TimeSummary, type TriageSuggestion, type UserRow, type WatcherRow } from '@itsm/sdk';
 import { api } from '../../client/api.js';
 import { deskKeys } from '../../client/query-client.js';
 
@@ -23,6 +23,8 @@ export const inspectorKeys = {
   links: (number: string) => ['ticket-connections', number, 'links'] as const,
   watchers: (number: string) => ['ticket-connections', number, 'watchers'] as const,
   tags: (number: string) => ['ticket-connections', number, 'tags'] as const,
+  cis: (number: string) => ['ticket-connections', number, 'cis'] as const,
+  time: (number: string) => ['ticket-connections', number, 'time'] as const,
   person: (id: string) => ['person', id] as const,
   openFrom: (requesterId: string) => ['requester-open', requesterId] as const,
 } as const;
@@ -99,6 +101,26 @@ export function tagsQuery(number: string, enabled: boolean) {
   return {
     queryKey: inspectorKeys.tags(number),
     queryFn: (): Promise<string[] | null> => unlessRefused(api.tags(number)),
+    staleTime: TICKET_MS,
+    enabled,
+  } as const;
+}
+
+/** The configuration items the ticket is linked to (R5-W `recordCis`), for the Related card. */
+export function cisQuery(number: string, ticketId: string, enabled: boolean) {
+  return {
+    queryKey: inspectorKeys.cis(number),
+    queryFn: (): Promise<RecordCiRow[] | null> => unlessRefused(api.recordCis('ticket', ticketId)),
+    staleTime: TICKET_MS,
+    enabled,
+  } as const;
+}
+
+/** Time logged on the ticket and what it cost, for the Effort card. */
+export function timeQuery(number: string, ticketId: string, enabled: boolean) {
+  return {
+    queryKey: inspectorKeys.time(number),
+    queryFn: async (): Promise<TimeSummary | null> => (await unlessRefused(api.timeOnTicket(ticketId)))?.summary ?? null,
     staleTime: TICKET_MS,
     enabled,
   } as const;

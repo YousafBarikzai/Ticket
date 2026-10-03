@@ -1,9 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import type { Ticket } from '@itsm/sdk';
-import { Avatar, Badge, InlineEdit, useItsm, type InlineEditOption, type InlineEditResult } from '@itsm/ui';
+import { InlineEdit, useItsm, type InlineEditOption, type InlineEditResult } from '@itsm/ui';
 import { formatDateTime } from '@itsm/ui/format';
 import type { CategorySummary, TeamSummary } from '../../client/desk-ticket.js';
 import { searchPeople } from '../../client/desk-list.js';
@@ -12,12 +11,11 @@ import { channelLabel, personName, priorityLabel, typeLabel } from '../../inbox/
 import type { ChipChangeOptions } from '../PropertyChips.js';
 import type { WorkspaceApi } from '../TicketWorkspace.js';
 import { isLevel, LEVEL_LABEL } from './priority.js';
-import { openFromQuery, personQuery } from './queries.js';
 import { TriageOnRow, type TriageState } from './Triage.js';
 
 /**
- * The inspector's Details (SPEC §6.2): who asked, and the facts that route
- * the ticket — each editable in place where the reader may change it, through
+ * The inspector's Details (SPEC §6.2; A6 §5.6.5 row 4): the facts that route
+ * the ticket (who asked is the Requester card's) — each editable in place where the reader may change it, through
  * the workspace's one writer (optimistic, with the version they saw, a
  * conflict explained rather than overwritten). AI triage sits on the rows it
  * would change: Team, Category and Priority.
@@ -46,44 +44,6 @@ function Plain({ children }: { readonly children: ReactNode }): ReactNode {
 
 function None({ children = 'Not set' }: { readonly children?: string }): ReactNode {
   return <span className="app-InspRow__none">{children}</span>;
-}
-
-/* ------------------------------------------------------------ Requester */
-
-function RequesterCard({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
-  const { ticket, people, viewer } = ws.bundle;
-  const { Link } = useItsm();
-  const id = ticket.requesterId?.toLowerCase() ?? null;
-  const person = useQuery(personQuery(id, viewer.can.readPeople)).data;
-  const others = useQuery(openFromQuery(id, id !== null)).data;
-  if (!id) return <None>Not recorded</None>;
-
-  const name = person?.displayName || person?.email || personName(id, people, viewer.id);
-  const shortName = id === viewer.id ? 'you' : name.split(/\s+/)[0] ?? name;
-  const otherCount = others ? others.numbers.filter((number) => number !== ticket.number).length : 0;
-  const detail = person?.email ?? (ticket.sourceChannel === 'email' ? 'Replying by email' : null);
-
-  return (
-    <div className="app-Person">
-      <Avatar name={id === viewer.id ? viewer.name : name} size="md" decorative />
-      <div className="app-Person__body">
-        <p className="app-Person__name">
-          <span>{id === viewer.id ? 'You' : name}</span>
-          {person?.isExternal ? (
-            <Badge size="sm" tone="neutral">
-              External
-            </Badge>
-          ) : null}
-        </p>
-        {detail ? <p className="app-Person__detail">{detail}</p> : null}
-        {otherCount > 0 ? (
-          <Link className="app-Person__more" href={`/inbox/all?requester=${encodeURIComponent(id)}`}>
-            {`Other open tickets from ${shortName} (${otherCount}${others?.more ? '+' : ''})`}
-          </Link>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
 /* ---------------------------------------------------------------- Rows */
@@ -220,7 +180,6 @@ export function Details({ ws, triage, teams, categories }: DetailsProps): ReactN
 
   return (
     <>
-      <RequesterCard ws={ws} />
       <dl className="app-InspRows">
         <Row label="Affected user" field="affectedUser">
           {affectedValue}

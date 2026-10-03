@@ -1,8 +1,9 @@
 /*
- * The ticket workspace (SPEC §6.2): the header and its chips, the
- * conversation, the composer and the inspector — beside the inbox list and
- * as the full ticket page. Imported by the workspace itself, so both routes
- * that show it carry it.
+ * The ticket workspace (SPEC §6.2; v3 §7.1.4): the hero's rows and chips,
+ * the conversation, the composer and the inspector — beside the inbox list
+ * and as the full ticket page. Imported by the workspace itself, so both
+ * routes that show it carry it. The hero card's own layout is
+ * `workspace/hero.css`.
  *
  * Arrangement only, like `globals.css`: every colour, space, size and
  * duration is a design-system custom property, so a token change reaches the
@@ -11,28 +12,24 @@
  * throughout.
  *
  * Two shapes. **Contained** (the inbox pane, and the page from 768 px): the
- * workspace fills its box, the header and the composer stay put, and the
+ * workspace fills its box, the hero and the composer stay put, and the
  * conversation and the inspector scroll on their own — the way Mail reads a
- * message. **Flow** (the page below 768 px): one column, the window scrolls,
- * the header sticks under the top bar and the composer to the bottom edge.
+ * message. On the page they sit on the canvas as cards (v3: the hero, then
+ * the conversation and the inspector's cards), under the frame's bars
+ * (`--itsm-frame-top`, the system bar plus the top bar). **Flow** (the page
+ * below 768 px): one column, the window scrolls, the hero sticks under the
+ * bars and the composer to the bottom edge.
  */
 
 /* ---- The frame ------------------------------------------------------------ */
 
 .app-Ws {
-  --app-ws-block: calc(100dvh - var(--itsm-topbar-height));
-  --app-ws-top: var(--itsm-topbar-height);
+  --app-ws-block: calc(100dvh - var(--itsm-frame-top) - 2 * var(--itsm-page-gutter));
+  --app-ws-top: var(--itsm-frame-top);
   --app-ws-gutter: var(--itsm-space-lg);
   --app-ws-measure: 52rem;
   position: relative;
   outline: none;
-}
-
-@media (min-width: 64rem) {
-  .app-Ws {
-    --app-ws-block: calc(100dvh - 2 * var(--itsm-panel-inset));
-    --app-ws-top: 0px;
-  }
 }
 
 .app-Ws__frame {
@@ -47,24 +44,33 @@
   block-size: 100%;
 }
 
-/* The page, from 768 px: edge to edge in the content panel, like the inbox. */
+/* The page, from 768 px: the hero card, then the conversation and the inspector as cards on the canvas. */
 @container itsm-page (min-width: 48rem) {
   .app-Ws[data-mode='page'] {
     block-size: var(--app-ws-block);
-    min-block-size: 28rem;
-    margin: calc(-1 * var(--itsm-page-gutter));
+    min-block-size: 32rem;
   }
   .app-Ws[data-mode='page'] > .app-Ws__frame {
     block-size: 100%;
+    gap: var(--itsm-space-md);
+    background: transparent;
   }
-}
-
-@media (min-width: 64rem) {
-  @container itsm-page (min-width: 48rem) {
-    .app-Ws[data-mode='page'] {
-      overflow: clip;
-      border-radius: var(--itsm-radius-xl);
-    }
+  .app-Ws[data-mode='page'] .app-Ws__body {
+    gap: var(--itsm-space-md);
+  }
+  .app-Ws[data-mode='page'] .app-Ws__main {
+    overflow: clip;
+    border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+    border-radius: var(--itsm-radius-xl);
+    background: var(--itsm-colour-surface-raised);
+  }
+  .app-Ws[data-mode='page'] .app-Ws__inspector {
+    padding: 0;
+    border-inline-start: 0;
+    background: transparent;
+  }
+  .app-Ws[data-mode='page'] .app-Ws__banner {
+    margin: 0;
   }
 }
 
@@ -75,7 +81,7 @@
     margin-inline: calc(-1 * var(--itsm-page-gutter));
     margin-block-start: calc(-1 * var(--itsm-page-gutter));
   }
-  .app-Ws[data-mode='page'] .app-WsHeader {
+  .app-Ws[data-mode='page'] .app-TicketHero {
     position: sticky;
     inset-block-start: var(--app-ws-top);
     z-index: var(--itsm-z-sticky);
@@ -145,23 +151,7 @@
   padding: var(--itsm-space-lg);
 }
 
-/* ---- The header ----------------------------------------------------------- */
-
-/* Opaque (SPEC D6): the ticket header is never glass. */
-.app-WsHeader {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-sm);
-  padding: var(--itsm-space-md) var(--app-ws-gutter) var(--itsm-space-sm);
-  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
-  background: var(--itsm-colour-surface-raised);
-}
-
-.app-WsHeader[data-condensed] {
-  gap: var(--itsm-space-xs);
-  padding-block-start: var(--itsm-space-sm);
-}
+/* ---- The hero's identity and title rows -------------------------------------- */
 
 .app-WsHeader__top {
   display: flex;
@@ -195,7 +185,7 @@
   letter-spacing: var(--itsm-text-footnote-tracking);
 }
 
-.app-WsHeader[data-condensed] .app-WsHeader__meta {
+.app-TicketHero[data-condensed] .app-WsHeader__meta {
   display: none;
 }
 
@@ -232,25 +222,8 @@
   outline: none;
 }
 
-@container itsm-page (min-width: 48rem) {
-  .app-Ws[data-mode='page'] .app-WsHeader__title {
-    font-size: var(--itsm-text-title2-size);
-    line-height: var(--itsm-text-title2-line);
-    letter-spacing: var(--itsm-text-title2-tracking);
-  }
-}
-
-@container itsm-page (min-width: 64rem) {
-  .app-Ws[data-mode='page'] .app-WsHeader__title {
-    font-size: var(--itsm-text-title1-size);
-    font-weight: var(--itsm-text-title1-weight);
-    line-height: var(--itsm-text-title1-line);
-    letter-spacing: var(--itsm-text-title1-tracking);
-  }
-}
-
 /* Condensed: one line of title, at the size of a list group heading. */
-.app-Ws .app-WsHeader[data-condensed] .app-WsHeader__title {
+.app-Ws .app-TicketHero[data-condensed] .app-WsHeader__title {
   overflow: hidden;
   font-size: var(--itsm-text-headline-size);
   line-height: var(--itsm-text-headline-line);
@@ -329,12 +302,6 @@
   min-inline-size: 0;
 }
 
-.app-Chip__label {
-  flex: none;
-  color: var(--itsm-colour-text-secondary);
-  font-weight: var(--itsm-font-weight-regular);
-}
-
 .app-Chip__value {
   display: inline-flex;
   align-items: center;
@@ -372,35 +339,10 @@
   font-weight: var(--itsm-font-weight-regular);
 }
 
-/* The status's tone, always beside its word (SC 1.4.1). */
-.app-Chip__dot {
-  flex: none;
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
-  border-radius: 50%;
-  background: var(--itsm-colour-neutral-border);
-}
-.app-Chip__dot[data-tone='info'] {
-  background: var(--itsm-colour-info-border);
-}
-.app-Chip__dot[data-tone='warning'] {
-  background: var(--itsm-colour-warning-border);
-}
-.app-Chip__dot[data-tone='success'] {
-  background: var(--itsm-colour-success-border);
-}
-.app-Chip__dot[data-tone='danger'] {
-  background: var(--itsm-colour-danger-border);
-}
-
-.app-Chip__flag {
-  display: inline-flex;
-}
-.app-Chip__flag[data-priority='P1'] {
-  color: var(--itsm-colour-danger-subtleText);
-}
-.app-Chip__flag[data-priority='P2'] {
-  color: var(--itsm-colour-warning-subtleText);
+/* Status and priority carry their own pill inside the chip: the chip's edge goes, the pill's stays (A6 §5.6.2). */
+.app-Chip:has(.app-Chip__pill, .app-Chip__priority),
+.app-Chip--static:has(.app-Chip__pill, .app-Chip__priority) {
+  padding-inline-start: var(--itsm-space-3xs);
 }
 
 /* Someone else changed it: a background flash that fades (SPEC §1.9), never movement. */
@@ -430,45 +372,6 @@
 
 .app-NextStep {
   flex: none;
-}
-
-/* ---- The SLA, as words ---------------------------------------------------- */
-
-.app-Sla {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--itsm-space-2xs);
-  min-block-size: var(--itsm-control-height-sm);
-  padding-inline: var(--itsm-space-xs);
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-callout-size);
-  line-height: var(--itsm-text-callout-line);
-}
-
-.app-Sla--button {
-  border: 0;
-  border-radius: var(--itsm-radius-pill);
-  background: transparent;
-  font: inherit;
-  font-size: var(--itsm-text-callout-size);
-  cursor: pointer;
-  transition: background-color var(--itsm-duration-fast) var(--itsm-easing-standard);
-}
-
-.app-Sla--button:hover {
-  background: var(--itsm-colour-fill-hover);
-}
-
-.app-Sla__chevron {
-  color: var(--itsm-colour-text-muted);
-}
-
-.app-SlaList {
-  display: grid;
-  gap: var(--itsm-space-sm);
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
 /* ---- The conversation ----------------------------------------------------- */
@@ -652,8 +555,8 @@
 }
 
 .app-Queued__item[data-internal] .app-Queued__bubble {
-  border-color: var(--itsm-colour-warning-border);
-  background: var(--itsm-colour-warning-subtle);
+  border-color: var(--itsm-colour-border-soft);
+  background: var(--itsm-colour-surface-raisedAlt);
 }
 
 .app-Queued__status {
@@ -669,6 +572,51 @@
 
 .app-Queued__status--failed {
   color: var(--itsm-colour-danger-subtleText);
+}
+
+/*
+ * The internal-note frame (v3 §7.1.4, X-B3): the bubble on `surface.raisedAlt`
+ * with a 1 px dashed `border.soft` edge and a 3 px `border.strong` bar at its
+ * start, the label "Internal note · only agents see this" (600 12/16
+ * `text.secondary`) under a 14 px lock in `text.muted`. Neutral: D5 keeps
+ * amber for an SLA at risk.
+ */
+.itsm-Timeline__bubble:has(> .app-Note) {
+  position: relative;
+  background: var(--itsm-colour-surface-raisedAlt);
+  box-shadow: none;
+  outline: var(--itsm-hairline) dashed var(--itsm-colour-border-soft);
+  outline-offset: calc(-1 * var(--itsm-hairline));
+}
+.itsm-Timeline__bubble:has(> .app-Note)::before {
+  content: '';
+  position: absolute;
+  inset-block: var(--itsm-space-xs);
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-border-strong);
+}
+
+.app-Note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+}
+
+.app-Note__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-caption-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-caption-line);
+}
+
+.app-Note__lock {
+  color: var(--itsm-colour-text-muted);
 }
 
 /* "Ada replied just now · Show": floats above the composer and takes no room. */
@@ -717,12 +665,25 @@
 
 /*
  * The third statement that a note is internal, after the mode and the
- * button: the warning tint and a lock. A tint alone would fail SC 1.4.1; a
- * tint *as well as* the words is what makes it visible at a glance.
+ * button: the conversation's note frame — a dashed edge, a 3 px bar at the
+ * start, a lock and the words. Neutral, never amber (v3 §7.1.4, D5): amber
+ * is an SLA at risk, and a note is a kind of message, not a state.
  */
 .app-Composer__form[data-internal='true'] {
-  background: var(--itsm-colour-warning-subtle);
-  box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-warning-border);
+  position: relative;
+  background: var(--itsm-colour-surface-raisedAlt);
+  box-shadow: none;
+  outline: var(--itsm-hairline) dashed var(--itsm-colour-border-soft);
+  outline-offset: calc(-1 * var(--itsm-hairline));
+}
+.app-Composer__form[data-internal='true']::before {
+  content: '';
+  position: absolute;
+  inset-block: var(--itsm-space-xs);
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-border-strong);
 }
 
 .app-Composer__top {
@@ -744,7 +705,8 @@
 }
 
 .app-Composer__form[data-internal='true'] .app-Composer__channel {
-  color: var(--itsm-colour-warning-subtleText);
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-semibold);
 }
 
 .app-Composer__label {
@@ -904,9 +866,7 @@
 /* ---- Forced colours ------------------------------------------------------- */
 
 @media (forced-colors: active) {
-  .app-Chip__dot {
-    background: CanvasText;
-  }
+  .app-Note,
   .app-Queued__bubble,
   .app-Original,
   .app-Composer__form {

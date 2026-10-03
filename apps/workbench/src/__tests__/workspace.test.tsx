@@ -9,7 +9,7 @@ import { headlineTimer, statusChoices } from '../workspace/PropertyChips.js';
 import { neighboursFrom } from '../workspace/TicketWorkspace.js';
 import { FakeEventSource, fakeFetch, key, noIdle, pointerDown, stream, type Call } from './support/inbox.js';
 import { cleanupDocument, click, type } from './support/render.js';
-import { ADA, HISTORY, JO, ME, bundle, buttonNamed, cached, flush, menuItem, mountWorkspace, ticket, until } from './support/workspace.js';
+import { ADA, HISTORY, JO, ME, TIMERS, bundle, buttonNamed, cached, flush, menuItem, mountWorkspace, ticket, until } from './support/workspace.js';
 
 const notify = vi.fn();
 vi.mock('@itsm/ui', async (original) => ({
@@ -70,9 +70,13 @@ function writes(): Call[] {
 }
 
 describe('what the ticket shows', () => {
-  it('names the ticket in its header: number, type and channel, then the title as the pane’s h2', async () => {
+  it('names the ticket in its hero: the type’s tile, number, type, channel and who raised it, then the title as the pane’s h2', async () => {
     await mountWorkspace();
-    expect(document.querySelector('.app-WsHeader__meta')?.textContent).toBe('INC-000123 · Incident · Email');
+    const meta = document.querySelector('.app-TicketHero .app-WsHeader__meta')?.textContent ?? '';
+    expect(meta.startsWith('INC-000123 · Incident · Email · raised')).toBe(true);
+    expect(meta.endsWith('by Ada Lovelace')).toBe(true);
+    // D5: a type is a neutral tile, never a status colour (X-B3).
+    expect(document.querySelector('.app-WsHeader__tile')?.getAttribute('data-tone')).toBe('neutral');
     const title = document.querySelector('h2.app-WsHeader__title');
     expect(title?.textContent).toBe('VPN keeps dropping');
     expect(document.querySelector('h1')).toBeNull();
@@ -116,10 +120,23 @@ describe('what the ticket shows', () => {
     expect(mine.dataset.side).toBe('end');
     expect(mine.querySelector('.itsm-Timeline__actor')?.textContent).toBe('You');
 
+    // The neutral note frame (v3 §7.1.4, X-B3): its label and lock, and no amber anywhere on it.
     const note = message('Probably the new firewall rule.');
-    expect(note.hasAttribute('data-internal')).toBe(true);
-    expect(note.textContent).toContain('Internal note');
-    expect(note.querySelector('.itsm-Timeline__bubble')?.getAttribute('data-surface')).toBe('internal');
+    expect(note.querySelector('.itsm-Timeline__bubble > .app-Note')).not.toBeNull();
+    expect(note.querySelector('.app-Note__label')?.textContent).toBe('Internal note · only agents see this');
+    expect(note.querySelector('.app-Note__label [data-icon="lock"]')).not.toBeNull();
+    expect(note.querySelector('[data-tone="warning"]')).toBeNull();
+    expect(note.hasAttribute('data-internal')).toBe(false);
+    expect(document.querySelector('.app-Conversation [data-tone="warning"]')).toBeNull();
+  });
+
+  it('still finds the notes, and only the notes, under the Notes filter', async () => {
+    await mountWorkspace();
+    click([...document.querySelectorAll<HTMLElement>('.app-Conversation__filter [role="radio"]')].find((radio) => radio.textContent === 'Notes')!);
+    await flush(1);
+    const messages = [...document.querySelectorAll('.itsm-Timeline__item[data-kind="comment"]')].map((item) => item.textContent ?? '');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain('Probably the new firewall rule.');
   });
 
   it('writes changes as sentences and puts days under headings', async () => {
@@ -137,10 +154,14 @@ describe('what the ticket shows', () => {
     expect(filters).toEqual(['All', 'Messages', 'Activity']);
   });
 
-  it('shows the SLA in words, with the one next step at the end of the row', async () => {
-    await mountWorkspace();
-    expect(document.querySelector('.app-Sla')?.textContent).toContain('Resolution');
-    expect(document.querySelector('.app-NextStep')?.textContent).toContain('Resolve…');
+  it('shows the SLA block — ring, deadline and what is left — with the one next step at the end of the chip row', async () => {
+    const dueAt = new Date(Date.now() + 130 * 60_000).toISOString();
+    await mountWorkspace({ mode: 'page', bundle: bundle({ timers: TIMERS.map((timer) => ({ ...timer, dueAt })) }) });
+    const block = document.querySelector('.app-TicketHero .app-SlaBlock')!;
+    expect(block.querySelector('.itsm-SlaClock[data-display="ring"]')).not.toBeNull();
+    expect(block.querySelector('.app-SlaBlock__line1')?.textContent).toMatch(/^Resolve by /);
+    expect(block.querySelector('.app-SlaBlock__line2')?.textContent).toMatch(/left · \d+% used$/);
+    expect(document.querySelector('.app-TicketHero__chips .app-Chips__end .app-NextStep')?.textContent).toContain('Resolve…');
   });
 
   it('has at most one filled button in view: Send, once the composer is open', async () => {

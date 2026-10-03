@@ -17,6 +17,7 @@ import {
 } from '../../ai/render.js';
 import { api } from '../../client/api.js';
 import { problemOf } from '../../inbox/presentation.js';
+import { demoLock } from '../../server/demo.js';
 import { openArticle } from '../ArticleSheet.js';
 import { useTicketWorkspace, type WorkspaceApi } from '../TicketWorkspace.js';
 import './assist.css';
@@ -43,7 +44,20 @@ import { articlesQuery, assistKeys, capabilitiesQuery, suggestionsQuery } from '
  *
  * Suggested articles — published answers that match the ticket — sit at the
  * foot, each opening in the sheet to read and insert.
+ *
+ * In the shared demo, where calling a live model is turned off (feature
+ * `ai`), every chip is drawn locked with the demo's sentence — shown, never
+ * hidden, so a visitor learns the feature exists (v3 §7.0.2) — and a stored
+ * sample answer carries the "Sample" pill (D13).
  */
+
+/** `/me` on the client (the workspace and the New ticket sheet share the key): the demo's locked features live there. */
+const DESK_ME_KEY = ['desk', 'me'] as const;
+
+/** Whether a stored suggestion is one of the demo's samples (its provider, when the API says). */
+function isSample(suggestion: Suggestion): boolean {
+  return (suggestion as Suggestion & { readonly provider?: unknown }).provider === 'sample';
+}
 
 /** Twelve tries five seconds apart: a minute's patience, with the live notice as the fast path. */
 const POLL_MS = 5_000;
@@ -119,6 +133,8 @@ function AssistPanel({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
   const search = useSearchParams().toString();
 
   const capabilities = useQuery(capabilitiesQuery(can.aiRead === true));
+  const me = useQuery({ queryKey: DESK_ME_KEY, queryFn: () => api.me(), staleTime: 10 * 60_000 }).data;
+  const aiLock = demoLock(me, 'ai');
   const suggestions = useQuery(suggestionsQuery(ticket.id, can.aiRead === true));
   const articles = useQuery(articlesQuery(ticket.number, ticket.title.slice(0, 200), can.search === true && can.knowledge === true));
 
@@ -389,6 +405,7 @@ function AssistPanel({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
           // The composer's Send is the view's one filled button (SPEC §1.1).
           acceptVariant="tinted"
           actions={actions}
+          sample={isSample(suggestion)}
           {...(onAccept ? { onAccept } : {})}
           onReject={() => void decide(suggestion, 'rejected')}
         >
@@ -420,7 +437,9 @@ function AssistPanel({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
           {offered.length > 0 && can.ai ? (
             <div className="app-Assist__chips" role="group" aria-label="Ask the AI">
               {offered.map(({ chip, capability }) => {
-                const reason = budgetReached && capability.callsAModel ? BUDGET_REACHED : ws.gate ?? (running && running.chip.key !== chip.key ? 'One request at a time' : undefined);
+                const reason =
+                  aiLock.disabledReason ??
+                  (budgetReached && capability.callsAModel ? BUDGET_REACHED : ws.gate ?? (running && running.chip.key !== chip.key ? 'One request at a time' : undefined));
                 return (
                   <Button
                     key={chip.key}
@@ -432,6 +451,7 @@ function AssistPanel({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
                     loadingLabel={chip.running}
                     title={capability.description}
                     {...(reason ? { disabledReason: reason } : {})}
+                    {...(aiLock.disabledIcon ? { disabledIcon: aiLock.disabledIcon } : {})}
                     onClick={() => void ask(chip)}
                   >
                     {chip.label}

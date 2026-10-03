@@ -270,21 +270,25 @@ afterEach(() => {
 /* --------------------------------------------------------------- Tests */
 
 describe('the inspector', () => {
-  it('opens Details and SLA and keeps the rest closed until wanted', async () => {
+  it('shows its cards in the fixed order, opening Requester, Service levels, Suggested triage and Details, the rest closed until wanted', async () => {
     await mount();
+    await until(() => expect(inspector().querySelector('[data-card="triage"]')).not.toBeNull());
+    // A6 §5.6.5: Requester, Service levels, Suggested triage, Details, (Custom fields), Related, Tasks, Effort and watchers, Assist.
+    const cards = [...inspector().querySelectorAll<HTMLElement>('[data-card]')];
+    expect(cards.map((card) => card.dataset.card)).toEqual(['requester', 'sla', 'triage', 'details', 'related', 'tasks', 'effort', 'assist']);
     const sections = [...inspector().querySelectorAll<HTMLDetailsElement>('details.app-Insp__section')];
     const summary = (details: HTMLDetailsElement): string => details.querySelector('summary')?.textContent?.trim() ?? '';
-    expect(sections.map(summary)).toEqual(['Details', 'SLA', 'Connections', 'TasksNone', 'Assist']);
-    expect(sections.map((details) => details.open)).toEqual([true, true, false, false, false]);
+    expect(sections.map(summary)).toEqual(['Requester', 'Service levels', 'Details', 'Related', 'TasksNone', 'Effort and watchers', 'Assist']);
+    expect(sections.map((details) => details.open)).toEqual([true, true, true, false, false, false, false]);
     // The inspector is the `aside "Details"` region beside the conversation.
     expect(inspector().closest('aside')?.getAttribute('aria-label')).toBe('Details');
     expect(row('type').textContent).toContain('Fixed when the ticket was raised');
   });
 
-  it('remembers a section someone opened', async () => {
+  it('remembers a card someone opened', async () => {
     localStorage.setItem(`itsm-disclosure:${SECTION_KEYS.connections}`, 'open');
     await mount();
-    await until(() => expect(inspector().querySelectorAll<HTMLDetailsElement>('details.app-Insp__section')[2]?.open).toBe(true));
+    await until(() => expect(inspector().querySelector<HTMLDetailsElement>('details[data-card="effort"]')?.open).toBe(true));
   });
 
   it('changes impact in place with the version on screen, and takes the priority the service worked out', async () => {
@@ -306,20 +310,26 @@ describe('the inspector', () => {
     expect(notify).toHaveBeenCalledWith('Impact set to High', expect.objectContaining({ tone: 'success' }));
   });
 
-  it('reads the connections when they are first opened, with related tickets from the history', async () => {
+  it('reads Related and Effort when they are first opened, with linked tickets from the history', async () => {
     const entries = [
       ...bundle().entries,
       { kind: 'event' as const, id: 'e-link', at: '2026-09-30T08:50:00.000Z', type: 'linked', actorType: 'user', actorId: ME, payload: { targetId: 'x', targetNumber: 'INC-000118', linkType: 'caused_by' } },
     ];
     await mount(bundle({ ticket: ticket({ version: 4 }), entries, can: { aiRead: true, ai: true, link: true } }));
-    expect(wire.calls.some((call) => call.url.includes('/tags'))).toBe(false);
-    const details = inspector().querySelectorAll<HTMLDetailsElement>('details.app-Insp__section')[2]!;
+    // Nothing behind a closed card is read: `j`/`k` through the list costs the ticket's own reads.
+    expect(wire.calls.some((call) => call.url.includes('/watchers') || call.url.includes('/links') || call.url.includes('/cis'))).toBe(false);
+    const effort = inspector().querySelector<HTMLDetailsElement>('details[data-card="effort"]')!;
+    act(() => {
+      effort.open = true;
+      effort.dispatchEvent(new Event('toggle'));
+    });
+    await until(() => expect(effort.textContent).toContain('vpn'));
+    const details = inspector().querySelector<HTMLDetailsElement>('details[data-card="related"]')!;
     act(() => {
       details.open = true;
       details.dispatchEvent(new Event('toggle'));
     });
-    await until(() => expect(details.textContent).toContain('vpn'));
-    expect(details.querySelector('.app-Connections__link')?.textContent).toContain('Caused byINC-000118');
+    await until(() => expect(details.querySelector('.app-Related__row')?.textContent).toContain('Caused byINC-000118'));
     click(buttonNamed('Link…', details)!);
     await flush(2);
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
@@ -331,7 +341,7 @@ describe('the inspector', () => {
   it('ticks a task off with ticket.task.manage', async () => {
     const entries = [...bundle().entries, { kind: 'task' as const, id: 'task-1', at: '2026-09-30T08:40:00.000Z', title: 'Check the firewall rule', status: 'open', assigneeId: null }];
     await mount(bundle({ ticket: ticket({ version: 4 }), entries, can: { aiRead: true, ai: true, tasks: true } }));
-    const details = inspector().querySelectorAll<HTMLDetailsElement>('details.app-Insp__section')[3]!;
+    const details = inspector().querySelector<HTMLDetailsElement>('details[data-card="tasks"]')!;
     expect(details.querySelector('summary')?.textContent).toContain('1 open');
     const box = details.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     click(box);

@@ -14,11 +14,12 @@ import {
   type Ref,
 } from 'react';
 import { ApiError, type Ticket } from '@itsm/sdk';
-import { announce, Badge, Button, Icon, Kbd, SegmentedControl, Textarea, cx, notify } from '@itsm/ui';
+import { announce, Badge, Button, Icon, Kbd, SegmentedControl, Textarea, cx, describeProblem, notify } from '@itsm/ui';
 import { SplitButton, type MenuItemSpec } from '@itsm/ui/overlays';
 import { api } from '../client/api.js';
 import { newIdempotencyKey, sendComment } from '../client/outbox.js';
-import { replyChannelLine } from '../inbox/presentation.js';
+import { problemOf, replyChannelLine } from '../inbox/presentation.js';
+import { NOTE_LABEL } from './Conversation.js';
 import { INBOX_REGIONS } from '../inbox/views.js';
 import { transitionsFrom } from '../queue/transitions.js';
 
@@ -30,7 +31,9 @@ import { transitionsFrom } from '../queue/transitions.js';
  * service desk a customer, so it is stated three times over: the mode
  * control says which it is, the label, placeholder and Send button say what
  * will happen ("Reply to requester" versus "Add internal note"), and the
- * composer is tinted with a lock when it is internal. None of those alone is
+ * composer takes the conversation's note frame — a dashed edge, a bar at
+ * its start, a lock and "Internal note · only agents see this" — when it is
+ * internal (v3 §7.1.4; neutral, never amber, D5). None of those alone is
  * enough — an agent typing at speed reads the button, a screen-reader user
  * hears the mode, and a person glancing back at a half-written draft sees
  * the tint.
@@ -171,6 +174,13 @@ export function sendOptions(mode: ComposerMode, status: string): readonly SendOp
 export function sendFailure(failure: unknown, internal: boolean): string {
   const what = internal ? 'an internal note' : 'a reply';
   if (failure instanceof ApiError) {
+    const problem = problemOf(failure);
+    if (problem.code === 'demo_limit' || problem.code === 'demo_disabled') {
+      // The shared demo's cap or lock (v3 §4.7): waiting does not lift it, so
+      // say what the demo allows rather than "try again in a moment".
+      const described = describeProblem(problem);
+      return `${described.body ?? `${described.title}.`} Your text is still here.`;
+    }
     switch (failure.status) {
       case 401:
         return 'Your session ended. Your text is still here — sign in again to send it.';
@@ -453,7 +463,7 @@ export function Composer({
             {internal ? (
               <>
                 <Icon name="lock" size="xs" />
-                Only agents will see this.
+                {NOTE_LABEL}
               </>
             ) : (
               <>
@@ -470,7 +480,7 @@ export function Composer({
 
         <div className="app-Composer__line">
           {internal && !expanded ? (
-            <Badge tone="warning" icon="lock" size="sm" className="app-Composer__mode">
+            <Badge tone="neutral" icon="lock" size="sm" className="app-Composer__mode">
               Note
             </Badge>
           ) : null}

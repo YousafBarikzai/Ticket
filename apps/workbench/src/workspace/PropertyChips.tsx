@@ -1,20 +1,25 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react';
-import type { SlaTimer, Ticket } from '@itsm/sdk';
-import { Avatar, Button, Icon, SlaClock, VisuallyHidden, type ButtonProps, type Tone } from '@itsm/ui';
-import { ConfirmDialog, Dialog, Menu, PersonPicker, Popover, type MenuItemSpec, type PersonOption } from '@itsm/ui/overlays';
+import type { Ticket } from '@itsm/sdk';
+import { Avatar, Button, PriorityChip, StatusPill, VisuallyHidden, ticketStateLook, type ButtonProps } from '@itsm/ui';
+import { ConfirmDialog, Dialog, Menu, PersonPicker, type MenuItemSpec, type PersonOption } from '@itsm/ui/overlays';
 import type { CategorySummary, TeamSummary, WorkspacePermissions } from '../client/desk-ticket.js';
 import { searchPeople } from '../client/desk-list.js';
 import { PRIORITIES, type Priority, type TicketChange } from '../client/mutations.js';
-import { categoryTone, isUrgentPriority, personName, priorityLabel, stateLabel, type PeopleMap } from '../inbox/presentation.js';
+import { personName, priorityLabel, stateLabel, type PeopleMap } from '../inbox/presentation.js';
 import { ALLOWED_TRANSITIONS, transitionsFrom } from '../queue/transitions.js';
 
 /**
- * The ticket's properties as chips (SPEC §6.2): Status, Priority, Assignee,
- * Team and Category, each a menu that changes it in place — then the SLA as
- * words, and the one next step. The keys `s`, `p` (then `1`–`4`), `a` and
- * `t` open the same menus from anywhere in the ticket or the list.
+ * The ticket's properties as chips (SPEC §6.2, v3 §7.1.4): Status, Priority,
+ * Assignee, Team and Category, each a menu that changes it in place — then
+ * the one next step. The keys `s`, `p` (then `1`–`4`), `a` and `t` open the
+ * same menus from anywhere in the ticket or the list.
+ *
+ * Status and priority carry their D5 look — the state's `StatusPill` (a
+ * wait in `hold`, never amber) and the priority's `PriorityChip` with its
+ * bars, spoken "Priority 3, medium" — and the rest are neutral. The SLA is
+ * no longer words in this row: it is the hero's SLA block (`SlaBlock`).
  *
  * A chip the person may not change is shown, not hidden — the value is the
  * point — but as plain text without a menu. Only moves the state machine
@@ -40,7 +45,8 @@ export interface PropertyChipsProps {
   readonly teams: readonly TeamSummary[] | null | undefined;
   /** Ticket categories (WA2); `null` when the API cannot list them. */
   readonly categories: readonly CategorySummary[] | null | undefined;
-  readonly timers: readonly SlaTimer[] | null;
+  /** "Step 2 of 5", said with the status where the lifecycle row is not drawn (the pane). */
+  readonly step?: string | null;
   /** A state gate for every change: "Needs a connection", "You no longer have access to this ticket". */
   readonly gate?: string;
   readonly openMenu: ChipMenu | null;
@@ -94,88 +100,8 @@ export function isKnownState(status: string): boolean {
   return Object.prototype.hasOwnProperty.call(ALLOWED_TRANSITIONS, status);
 }
 
-function statusTone(ticket: Ticket): Tone {
-  if (ticket.status === 'cancelled') return 'neutral';
-  return categoryTone(ticket.statusCategory);
-}
-
-/* ------------------------------------------------------------------ SLA */
-
-type ClockState = 'running' | 'paused' | 'met' | 'breached';
-
-function clockState(state: string): ClockState {
-  return state === 'running' || state === 'met' || state === 'breached' ? state : 'paused';
-}
-
-/**
- * The timer the header speaks for: the running one due soonest, else a
- * breached one, else a paused one, else the last met. One line of words —
- * "Resolution 2 h 10 min left" — never a ring in a row of chips (X-33).
- */
-export function headlineTimer(timers: readonly SlaTimer[] | null): SlaTimer | null {
-  if (!timers || timers.length === 0) return null;
-  const due = (timer: SlaTimer): number => (timer.dueAt ? Date.parse(timer.dueAt) : Number.POSITIVE_INFINITY);
-  const running = timers.filter((timer) => timer.state === 'running').sort((a, b) => due(a) - due(b));
-  if (running[0]) return running[0];
-  return (
-    timers.find((timer) => timer.state === 'breached') ??
-    timers.find((timer) => clockState(timer.state) === 'paused') ??
-    timers[timers.length - 1] ??
-    null
-  );
-}
-
-function Clock({ timer }: { readonly timer: SlaTimer }): ReactNode {
-  const state = clockState(timer.state);
-  // The server's figure, not one computed from this machine's clock: the
-  // server render and the first browser render must agree. With `dueAt`
-  // the clock then counts down to the real moment.
-  const remaining = state === 'running' ? Math.round(timer.remainingMs / 60_000) : null;
-  const total = timer.remainingMs + timer.elapsedMs > 0 ? Math.round((timer.remainingMs + timer.elapsedMs) / 60_000) : undefined;
-  return (
-    <SlaClock
-      targetType={timer.targetType}
-      state={state}
-      remainingMinutes={remaining}
-      display="text"
-      {...(total ? { totalMinutes: total } : {})}
-      {...(state === 'running' && timer.dueAt ? { dueAt: timer.dueAt } : {})}
-    />
-  );
-}
-
-function SlaSummary({ timers }: { readonly timers: readonly SlaTimer[] | null }): ReactNode {
-  const headline = headlineTimer(timers);
-  if (!headline || !timers) return null;
-  if (timers.length === 1) {
-    return (
-      <div className="app-Sla" data-state={clockState(headline.state)}>
-        <Clock timer={headline} />
-      </div>
-    );
-  }
-  return (
-    <Popover
-      title="Service levels"
-      width="sm"
-      align="start"
-      trigger={
-        <button type="button" className="app-Sla app-Sla--button" data-state={clockState(headline.state)} aria-label={`Service levels: ${timers.length} timers`}>
-          <Clock timer={headline} />
-          <Icon name="chevron-down" size="xs" className="app-Sla__chevron" />
-        </button>
-      }
-    >
-      <ul className="app-SlaList">
-        {timers.map((timer) => (
-          <li key={timer.id}>
-            <Clock timer={timer} />
-          </li>
-        ))}
-      </ul>
-    </Popover>
-  );
-}
+/** The timer the ticket answers to: moved to the SLA block, named here still for the callers that read it from the chips. */
+export { headlineTimer } from './SlaBlock.js';
 
 /* ---------------------------------------------------------------- Chips */
 
@@ -186,12 +112,21 @@ interface ChipProps {
   readonly field: ChipMenu;
 }
 
+/**
+ * The chip's question ("Status: "), for the ear: the v3 chips show their
+ * values alone, as the benchmark's do. None for priority, whose chip already
+ * says "Priority 3, medium".
+ */
+function ChipLabel({ label }: { readonly label: string }): ReactNode {
+  if (!label) return null;
+  return <VisuallyHidden className="app-Chip__label">{`${label}: `}</VisuallyHidden>;
+}
+
 /** A property the person may not change: the same shape, no menu. */
 function StaticChip({ label, children, flash, field, note }: ChipProps & { readonly note?: string }): ReactNode {
   return (
     <span className="app-Chip app-Chip--static" data-field={field} data-flash={flash ? '' : undefined}>
-      <span className="app-Chip__label">{label}</span>
-      <VisuallyHidden>: </VisuallyHidden>
+      <ChipLabel label={label} />
       <span className="app-Chip__value">{children}</span>
       {note ? <span className="app-Chip__note">{note}</span> : null}
     </span>
@@ -210,8 +145,7 @@ function ChipTrigger({ label, children, flash, field, ...rest }: ChipProps & Omi
       data-field={field}
       data-flash={flash ? '' : undefined}
     >
-      <span className="app-Chip__label">{label}</span>
-      <VisuallyHidden>: </VisuallyHidden>
+      <ChipLabel label={label} />
       <span className="app-Chip__value">{children}</span>
     </Button>
   );
@@ -227,7 +161,7 @@ export function PropertyChips({
   can,
   teams,
   categories,
-  timers,
+  step,
   gate,
   openMenu,
   onOpenMenuChange,
@@ -263,10 +197,11 @@ export function PropertyChips({
   }, [openMenu, can.update, gate, onOpenMenuChange, onChange, ticket.priority]);
 
   /* Status */
+  const look = ticketStateLook(ticket.status, ticket.statusCategory);
   const statusValue = (
     <>
-      <span className="app-Chip__dot" data-tone={statusTone(ticket)} aria-hidden="true" />
-      {stateLabel(ticket.status)}
+      <StatusPill size="md" tone={look.tone} icon={look.icon} label={stateLabel(ticket.status)} className="app-Chip__pill" />
+      {step ? <VisuallyHidden>{`, ${step.toLowerCase()}`}</VisuallyHidden> : null}
     </>
   );
   const known = isKnownState(ticket.status);
@@ -319,17 +254,7 @@ export function PropertyChips({
   }
 
   /* Priority */
-  const urgent = isUrgentPriority(ticket.priority);
-  const priorityValue = (
-    <>
-      {urgent ? (
-        <span className="app-Chip__flag" data-priority={ticket.priority.toUpperCase()}>
-          <Icon name="flag" size="xs" />
-        </span>
-      ) : null}
-      {priorityLabel(ticket.priority)}
-    </>
-  );
+  const priorityValue = <PriorityChip priority={ticket.priority.toUpperCase()} words size="md" className="app-Chip__priority" />;
   const priority = can.update ? (
     <Menu
       {...menuProps('priority')}
@@ -348,13 +273,13 @@ export function PropertyChips({
         },
       ]}
       trigger={
-        <ChipTrigger label="Priority" field="priority" flash={flash?.has('priority')} aria-keyshortcuts="P">
+        <ChipTrigger label="" field="priority" flash={flash?.has('priority')} aria-keyshortcuts="P">
           {priorityValue}
         </ChipTrigger>
       }
     />
   ) : (
-    <StaticChip label="Priority" field="priority" flash={flash?.has('priority')}>
+    <StaticChip label="" field="priority" flash={flash?.has('priority')}>
       {priorityValue}
     </StaticChip>
   );
@@ -482,7 +407,6 @@ export function PropertyChips({
       {assigneeChip}
       {teamChip}
       {categoryChip}
-      <SlaSummary timers={timers} />
       {children ? <span className="app-Chips__end">{children}</span> : null}
       {cancelling ? (
         <ConfirmDialog

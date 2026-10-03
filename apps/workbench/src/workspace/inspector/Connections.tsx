@@ -1,91 +1,46 @@
 'use client';
 
-import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { TicketLinkRow, TicketLinkType, TimelineEntry } from '@itsm/sdk';
-import { Avatar, Badge, Button, FormField, Input, Select, notify, useItsm } from '@itsm/ui';
+import type { TimeSummary } from '@itsm/sdk';
+import { Avatar, Badge, Button, notify } from '@itsm/ui';
 import { Dialog, PersonPicker, type PersonOption } from '@itsm/ui/overlays';
 import { api } from '../../client/api.js';
 import { searchPeople } from '../../client/desk-list.js';
-import { deskKeys } from '../../client/query-client.js';
-import { personName, problemOf, stateLabel, ticketEventType, type PeopleMap } from '../../inbox/presentation.js';
+import { personName, problemOf, type PeopleMap } from '../../inbox/presentation.js';
 import type { WorkspaceApi } from '../TicketWorkspace.js';
-import { inspectorKeys, linksQuery, tagsQuery, watchersQuery } from './queries.js';
+import { inspectorKeys, tagsQuery, timeQuery, watchersQuery } from './queries.js';
 
 /**
- * What the ticket is connected to (SPEC §6.2 "Connections", X-12): its tags,
- * who is watching, and the tickets it is linked to — one section, because
- * each is a short list and three sections of one line each is clutter.
+ * Effort and watchers (A6 §5.6.5 row 8; v2's Connections, X-12): the time
+ * logged on the ticket and what it cost, its tags, and who is watching —
+ * one card, because each is a short list and three cards of one line each
+ * is clutter. The tickets it is linked to moved to the Related card.
  *
- * Watchers and links read the ticket's own lists where the API has them
- * (WA5); without them the links come from the history's "linked" events and
- * watching is known only from the person's own action.
+ * Watchers read the ticket's own list where the API has it (WA5); without
+ * it, watching is known only from the person's own action.
  */
 
-export const LINK_TYPES: readonly { readonly value: TicketLinkType; readonly label: string }[] = [
-  { value: 'related_to', label: 'Related to' },
-  { value: 'duplicate_of', label: 'Duplicate of' },
-  { value: 'caused_by', label: 'Caused by' },
-  { value: 'blocks', label: 'Blocks' },
-  { value: 'affects', label: 'Affects' },
-  { value: 'parent_of', label: 'Parent of' },
-  { value: 'child_of', label: 'Child of' },
-];
-
-export function linkLabel(type: string): string {
-  return LINK_TYPES.find((entry) => entry.value === type)?.label ?? type.replaceAll('_', ' ');
-}
-
-export interface LinkLine {
-  readonly number: string;
-  readonly type: string;
-  readonly title?: string;
-  readonly status?: string;
-}
-
-/** The links, from the ticket's own list (WA5) or, without it, from its history's "linked" events (newest first, one per ticket). */
-export function linkLines(rows: readonly TicketLinkRow[] | null | undefined, entries: readonly TimelineEntry[]): LinkLine[] {
-  if (rows) return rows.map((row) => ({ number: row.ticket.number, type: row.linkType, title: row.ticket.title, status: row.ticket.status }));
-  const seen = new Set<string>();
-  const lines: LinkLine[] = [];
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index]!;
-    if (entry.kind !== 'event' || ticketEventType(entry.type) !== 'ticket.linked') continue;
-    const number = entry.payload?.targetNumber;
-    const type = entry.payload?.linkType;
-    if (typeof number !== 'string' || seen.has(number)) continue;
-    seen.add(number);
-    lines.push({ number, type: typeof type === 'string' ? type : 'related_to' });
-  }
-  return lines;
-}
-
-/** A ticket number the person typed, tidied: "inc 123" → "INC-000123"; a bare number is left as typed. */
-export function tidyNumber(text: string): string {
-  const match = /^\s*([a-z]{2,5})[\s-]*0*(\d{1,9})\s*$/i.exec(text);
-  if (!match) return text.trim();
-  return `${match[1]!.toUpperCase()}-${match[2]!.padStart(6, '0')}`;
-}
-
-function openInPane(number: string): void {
-  const url = new URL(window.location.href);
-  url.searchParams.set('t', number);
-  url.searchParams.delete('open');
-  window.history.pushState(null, '', `${url.pathname}${url.search}`);
+/** "1 h 20 min · £42.67": time logged and its cost, as the card's first line. */
+export function effortLine(summary: TimeSummary, locale = 'en-GB'): string {
+  const hours = Math.floor(summary.loggedMinutes / 60);
+  const minutes = summary.loggedMinutes % 60;
+  const time = summary.loggedMinutes === 0 ? 'No time logged' : hours > 0 ? (minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`) : `${minutes} min`;
+  if (summary.loggedMinutes === 0 || !summary.currency || summary.cost <= 0) return time;
+  const cost = new Intl.NumberFormat(locale, { style: 'currency', currency: summary.currency }).format(summary.cost);
+  return `${time} · ${cost}`;
 }
 
 export function Connections({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
-  const { ticket, entries, viewer, people } = ws.bundle;
+  const { ticket, viewer, people } = ws.bundle;
   const number = ticket.number;
   const can = viewer.can;
   const client = useQueryClient();
-  const { Link } = useItsm();
   const tags = useQuery(tagsQuery(number, true)).data;
   const watchers = useQuery(watchersQuery(number, true)).data;
-  const links = useQuery(linksQuery(number, true)).data;
-  const lines = useMemo(() => linkLines(links, entries), [links, entries]);
+  const time = useQuery(timeQuery(number, ticket.id, true)).data;
   const [watchingNow, setWatchingNow] = useState(false);
-  const [adding, setAdding] = useState<'watcher' | 'link' | null>(null);
+  const [adding, setAdding] = useState<'watcher' | null>(null);
   const me = viewer.id;
 
   /* Names for watchers the bundle does not already name (with `identity.user.read`). */
@@ -115,14 +70,15 @@ export function Connections({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
     }
   };
 
-  const openTicket = (target: string) => (event: MouseEvent<HTMLAnchorElement>) => {
-    if (ws.mode !== 'pane' || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
-    event.preventDefault();
-    openInPane(target);
-  };
-
   return (
     <div className="app-Connections">
+      {time ? (
+        <div className="app-Connections__group">
+          <h3 className="app-Connections__heading">Time logged</h3>
+          <p className="app-Connections__effort">{effortLine(time)}</p>
+        </div>
+      ) : null}
+
       {tags !== null ? (
         <div className="app-Connections__group">
           <h3 className="app-Connections__heading">Tags</h3>
@@ -180,33 +136,6 @@ export function Connections({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
         ) : null}
       </div>
 
-      <div className="app-Connections__group">
-        <h3 className="app-Connections__heading">Related</h3>
-        {lines.length === 0 ? (
-          <p className="app-Insp__empty">Not linked to other tickets.</p>
-        ) : (
-          <ul className="app-Connections__links">
-            {lines.map((line) => (
-              <li key={`${line.type}:${line.number}`} className="app-Connections__link">
-                <span className="app-Connections__linkType">{linkLabel(line.type)}</span>
-                <Link href={`/tickets/${encodeURIComponent(line.number)}`} className="app-Connections__linkNumber" onClick={openTicket(line.number)}>
-                  {line.number}
-                </Link>
-                {line.title ? <span className="app-Connections__linkTitle">{line.title}</span> : null}
-                {line.status ? <span className="app-Connections__linkStatus">{stateLabel(line.status)}</span> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        {can.link ? (
-          <div className="app-Connections__actions">
-            <Button size="sm" variant="ghost" iconStart="link" {...(ws.gate ? { disabledReason: ws.gate } : {})} onClick={() => setAdding('link')}>
-              Link…
-            </Button>
-          </div>
-        ) : null}
-      </div>
-
       {adding === 'watcher' ? (
         <AddWatcherDialog
           number={number}
@@ -215,17 +144,6 @@ export function Connections({ ws }: { readonly ws: WorkspaceApi }): ReactNode {
           onPick={(person) => {
             setAdding(null);
             void watch(person.id, person.id === me);
-          }}
-        />
-      ) : null}
-      {adding === 'link' ? (
-        <LinkDialog
-          number={number}
-          onClose={() => setAdding(null)}
-          onLinked={() => {
-            setAdding(null);
-            void client.invalidateQueries({ queryKey: inspectorKeys.links(number) });
-            void client.invalidateQueries({ queryKey: deskKeys.ticket(number) });
           }}
         />
       ) : null}
@@ -269,85 +187,6 @@ function AddWatcherDialog({
         onChange={(next) => setValue(Array.isArray(next) ? (next[0] ?? null) : (next as PersonOption | null))}
         loadPeople={async (query) => (await searchPeople(query)).filter((person) => !exclude.includes(person.id))}
       />
-    </Dialog>
-  );
-}
-
-function LinkDialog({ number, onClose, onLinked }: { readonly number: string; readonly onClose: () => void; readonly onLinked: () => void }): ReactNode {
-  const [target, setTarget] = useState('');
-  const [type, setType] = useState<TicketLinkType>('related_to');
-  const [error, setError] = useState<string | undefined>();
-  const [saving, setSaving] = useState(false);
-
-  const link = async (): Promise<void> => {
-    const other = tidyNumber(target);
-    if (!other) {
-      setError('Enter the other ticket’s number, like INC-000118.');
-      return;
-    }
-    if (other.toUpperCase() === number.toUpperCase()) {
-      setError('A ticket can’t be linked to itself.');
-      return;
-    }
-    setSaving(true);
-    setError(undefined);
-    try {
-      await api.link(number, other, type);
-      notify(`${number} ${linkLabel(type).toLowerCase()} ${other}`, { tone: 'success' });
-      onLinked();
-    } catch (failure) {
-      const problem = problemOf(failure);
-      setError(
-        problem.status === 404
-          ? `There’s no ticket ${other} you can see.`
-          : problem.status === 409
-            ? 'Those tickets are already linked that way.'
-            : (problem.detail ?? 'That didn’t link. Try again.'),
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={`Link ${number}`}
-      size="sm"
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" loading={saving} loadingLabel="Linking…" onClick={() => void link()}>
-            Link tickets
-          </Button>
-        </>
-      }
-    >
-      <form
-        className="app-LinkForm"
-        noValidate
-        onSubmit={(event) => {
-          event.preventDefault();
-          void link();
-        }}
-      >
-        <FormField label="This ticket is">
-          <Select value={type} options={LINK_TYPES} onChange={(event) => setType(event.target.value as TicketLinkType)} />
-        </FormField>
-        <FormField label="Other ticket" hint="Its number, like INC-000118" {...(error ? { error } : {})}>
-          <Input
-            value={target}
-            autoComplete="off"
-            onChange={(event) => {
-              setTarget(event.target.value);
-              setError(undefined);
-            }}
-          />
-        </FormField>
-      </form>
     </Dialog>
   );
 }

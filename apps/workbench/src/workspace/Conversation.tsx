@@ -4,7 +4,6 @@ import { useId, useMemo, useState, type ReactNode, type Ref } from 'react';
 import type { Ticket, TimelineAttachment, TimelineEventEntry } from '@itsm/sdk';
 import {
   Avatar,
-  Badge,
   Button,
   Icon,
   RelativeTime,
@@ -26,9 +25,12 @@ import { INBOX_REGIONS } from '../inbox/views.js';
  *
  * Whose words are whose is never left to colour alone: the requester's
  * messages sit on the start side on the raised surface, the desk's public
- * replies on the end side on the sunken one, and internal notes carry the
- * word "Internal note", a lock and the warning tint — three signals, so an
- * agent never mistakes a note for something the requester has read.
+ * replies on the end side on the sunken one, and internal notes sit in the
+ * note frame — a dashed edge with a bar at its start, a lock, and the words
+ * "Internal note · only agents see this" — so an agent never mistakes a note
+ * for something the requester has read. The frame is neutral, not amber
+ * (v3 §7.1.4, X-B3): amber means an SLA at risk, and a note is a kind of
+ * message, not a state of the ticket (D5).
  *
  * Changes to the ticket read as sentences ("Jo moved it from New to In
  * progress", the reason quoted) between the messages, and a burst of
@@ -56,6 +58,56 @@ function eventActor(entry: TimelineEventEntry, people: PeopleMap, me: string | n
 
 function Message({ text }: { readonly text: string }): ReactNode {
   return <p className="app-Message">{text}</p>;
+}
+
+/** What the note frame says, in the conversation and in the composer's note mode. */
+export const NOTE_LABEL = 'Internal note · only agents see this';
+
+/**
+ * The internal-note frame (v3 §7.1.4): its label with a lock, then the note.
+ * The bubble around it takes the frame's look from the stylesheet, so a
+ * note queued offline and one in the composer read the same.
+ */
+export function NoteFrame({ children }: { readonly children: ReactNode }): ReactNode {
+  return (
+    <div className="app-Note">
+      <p className="app-Note__label">
+        <Icon name="lock" size="xs" className="app-Note__lock" />
+        {NOTE_LABEL}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+/** Whether an entry is a message (a reply, a note, the request) rather than an event. */
+function isMessageEvent(event: TimelineEvent): boolean {
+  const kind = event.kind ?? (event.body !== undefined && event.body !== null ? 'comment' : 'event');
+  return kind === 'comment' || kind === 'description';
+}
+
+/** The conversation's filter, applied here because the notes reach the timeline already framed. */
+export function filterEvents(events: readonly TimelineEvent[], filter: TimelineFilter): readonly TimelineEvent[] {
+  if (filter === 'all') return events;
+  return events.filter((event) => {
+    const internal = event.visibility === 'internal';
+    if (filter === 'messages') return isMessageEvent(event) && !internal;
+    if (filter === 'notes') return isMessageEvent(event) && internal;
+    return !isMessageEvent(event);
+  });
+}
+
+/**
+ * Notes as the timeline draws them: in the note frame, and no longer marked
+ * `internal`, whose amber badge the design system's timeline would add. The
+ * frame says it in words; the filter above has already read the mark.
+ */
+export function framedNotes(events: readonly TimelineEvent[]): readonly TimelineEvent[] {
+  return events.map((event) => {
+    if (event.visibility !== 'internal') return event;
+    const { visibility: _internal, ...rest } = event;
+    return { ...rest, body: <NoteFrame>{event.body ?? event.title}</NoteFrame> };
+  });
 }
 
 function fileChip(attachment: TimelineAttachment): FileChipProps {
@@ -263,11 +315,12 @@ function Queued({ items, onRetry, onDiscard }: { readonly items: readonly Queued
         <li key={item.id} className="app-Queued__item" data-internal={item.internal ? '' : undefined} data-state={item.state}>
           <article className="app-Queued__bubble" aria-label={`You, ${item.internal ? 'internal note, ' : ''}${item.state === 'failed' ? 'not sent' : 'queued'}`}>
             {item.internal ? (
-              <Badge tone="warning" icon="lock" size="sm">
-                Internal note
-              </Badge>
-            ) : null}
-            <p className="app-Message">{item.body}</p>
+              <NoteFrame>
+                <p className="app-Message">{item.body}</p>
+              </NoteFrame>
+            ) : (
+              <p className="app-Message">{item.body}</p>
+            )}
           </article>
           {item.state === 'waiting' ? (
             <p className="app-Queued__status">
@@ -332,7 +385,7 @@ export function Conversation({ bundle, model, me, newSince, queued = [], onRetry
   );
 
   const hidden = filter === 'all' ? hiddenCount(model.events, newSince, expanded) : 0;
-  const shown = hidden > 0 ? model.events.slice(hidden) : model.events;
+  const shown = useMemo(() => framedNotes(filterEvents(hidden > 0 ? model.events.slice(hidden) : model.events, filter)), [model.events, hidden, filter]);
 
   return (
     <section
@@ -383,7 +436,6 @@ export function Conversation({ bundle, model, me, newSince, queued = [], onRetry
           groupBy="day"
           order="oldest"
           collapseSystem={{ withinMinutes: 10 }}
-          filter={filter}
           {...(newSince ? { newSinceId: newSince, newSinceTargetId: newHeadingId } : {})}
           emptyMessage={FILTER_EMPTY[filter]}
           headingLevel={headingLevel}

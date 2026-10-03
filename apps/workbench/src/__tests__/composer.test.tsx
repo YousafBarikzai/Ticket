@@ -157,9 +157,10 @@ describe('reply or internal note', () => {
     expect(document.querySelector('.app-Composer__label')?.textContent).toBe('Internal note');
     expect(label(submitButton())).toBe('Add internal note');
     expect(textarea().placeholder).toContain('Only agents');
-    // The tint is the third statement, never the only one (SC 1.4.1).
+    // The note frame is the third statement, never the only one (SC 1.4.1) — and neutral, never amber (v3 §7.1.4, D5).
     expect(form().dataset.internal).toBe('true');
-    expect(document.querySelector('.app-Composer__channel')?.textContent).toContain('Only agents will see this.');
+    expect(document.querySelector('.app-Composer__channel')?.textContent).toContain('Internal note · only agents see this');
+    expect(document.querySelector('.app-Composer [data-tone="warning"]')).toBeNull();
   });
 
   it('sends internally only once it has been chosen', async () => {
@@ -187,7 +188,7 @@ describe('reply or internal note', () => {
     cleanupDocument();
     render(<Composer ticket={{ ...TICKET, sourceChannel: 'portal' }} />);
     act(() => textarea().focus());
-    expect(document.querySelector('.app-Composer__channel')?.textContent).toContain('Visible in the portal');
+    expect(document.querySelector('.app-Composer__channel')?.textContent).toContain('Visible in the Help Portal');
   });
 });
 
@@ -222,6 +223,22 @@ describe('when the service refuses', () => {
     expect(sendComment.mock.calls[2]![0].idempotencyKey).not.toBe(sendComment.mock.calls[0]![0].idempotencyKey);
   });
 
+  it('words the shared demo’s cap as the cap — no “try again” — keeping the text', async () => {
+    const sentence = "To keep this shared demo tidy for everyone, each visit can add 40 comments. You've reached that limit.";
+    sendComment.mockRejectedValueOnce(
+      new ApiError(429, { type: 'https://itsm.example/problems/demo_limit', title: 'Demo limit reached', status: 429, detail: sentence, correlationId: 'c' }, 'capped'),
+    );
+    mount();
+    type(textarea(), 'One comment too many.');
+    await submit(form());
+    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull());
+    const alert = document.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(alert).toContain(sentence);
+    expect(alert).toContain('Your text is still here.');
+    expect(alert).not.toMatch(/too many|try again/i);
+    expect(textarea().value).toBe('One comment too many.');
+  });
+
   it('asks for a new sign-in on a 401, keeping the text', async () => {
     sendComment.mockRejectedValueOnce(new ApiError(401, null, 'ended'));
     const onSessionEnded = vi.fn();
@@ -230,6 +247,20 @@ describe('when the service refuses', () => {
     await submit(form());
     await vi.waitFor(() => expect(onSessionEnded).toHaveBeenCalled());
     expect(textarea().value).toBe('Keep me.');
+  });
+});
+
+describe('attachments (RV4)', () => {
+  it('renders no attach control in any mode: the product has none, and the demo locks uploads at the API', () => {
+    mount();
+    const none = (): void => {
+      expect(document.querySelector('input[type="file"]')).toBeNull();
+      expect(document.querySelector('[data-icon="paperclip"]')).toBeNull();
+      expect([...document.querySelectorAll('button')].some((button) => /attach|upload/i.test(`${button.textContent} ${button.getAttribute('aria-label') ?? ''}`))).toBe(false);
+    };
+    none();
+    click(radio('Internal note')!);
+    none();
   });
 });
 
