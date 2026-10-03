@@ -5,6 +5,7 @@ import {
   authz,
   enqueue,
   getSetting,
+  isDemoTenant,
   logger,
   metrics,
   newId,
@@ -243,12 +244,24 @@ export function transportFor(channel: string): DeliveryTransport | undefined {
   return transports.get(channel);
 }
 
+/**
+ * What a delivery attempt the shared demo held back is recorded as (E2): the
+ * attempt's `status`, and its `error` naming why. The admin's delivery log
+ * reads the pair as "Not sent — shared demo".
+ */
+export const SUPPRESSED_DELIVERY = Object.freeze({ status: 'suppressed', error: 'demo' } as const);
+
 /** Delivers one notification on one channel, recording every attempt. */
 export async function dispatch(
   ctx: TenantContext,
   notificationId: string,
   channel: string,
 ): Promise<'sent' | 'skipped'> {
+  // Asked before the transaction opens: the answer comes from the platform
+  // pool (and is cached for good), and a tenant transaction should not wait
+  // on a second connection.
+  const demo = channel !== 'inapp' && (await isDemoTenant(ctx.tenantId));
+
   return transaction(ctx, async (tx) => {
     const notification = await tx.notification.findFirst({ where: { id: notificationId } });
     if (!notification) throw new NotFoundError('notification', notificationId);
@@ -262,6 +275,35 @@ export async function dispatch(
         action: 'queued',
       });
       return 'sent';
+    }
+
+    // E2 (SPEC v3 §4.7.2): the shared demo sends no e-mail — no ticket,
+    // SLA, approval, report, survey, budget or import message reaches a real
+    // inbox, whoever a visitor typed in as a requester. In-app delivery above
+    // is untouched: the inbox is the product being shown. The notification
+    // and the attempt say what happened rather than staying "queued", and a
+    // redelivered job writes the attempt once.
+    if (demo) {
+      const already = await tx.deliveryAttempt.count({
+        where: { notificationId, channel, status: SUPPRESSED_DELIVERY.status },
+      });
+      if (already === 0) {
+        const attempt = (await tx.deliveryAttempt.count({ where: { notificationId, channel } })) + 1;
+        await tx.deliveryAttempt.create({
+          data: {
+            id: newId(),
+            tenantId: ctx.tenantId,
+            notificationId,
+            channel,
+            attempt,
+            status: SUPPRESSED_DELIVERY.status,
+            error: SUPPRESSED_DELIVERY.error,
+          },
+        });
+      }
+      await tx.notification.update({ where: { id: notificationId }, data: { status: SUPPRESSED_DELIVERY.status } });
+      metrics.increment('demo_egress_suppressed_total', { choke: 'E2' });
+      return 'skipped';
     }
 
     const transport = transports.get(channel);

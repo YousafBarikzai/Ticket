@@ -1,4 +1,5 @@
-import { type TenantContext, ValidationError, logger, metrics, newId, transaction } from '@itsm/platform';
+import { demoFeaturePhrase } from '@itsm/contracts/demo';
+import { type TenantContext, ValidationError, isDemoTenant, logger, metrics, newId, transaction } from '@itsm/platform';
 import { checkDestination } from './address-guard.js';
 import { CircuitOpenError, breakers } from './circuit-breaker.js';
 import { redactBody, redactHeaders, redactUrl } from './redact.js';
@@ -52,6 +53,12 @@ export interface GatewayResponse {
 
 export class GatewayRefusedError extends ValidationError {}
 
+/**
+ * Why the shared demo makes no outbound call (E1, SPEC v3 §4.7.2), in the
+ * words the demo uses everywhere else for the same feature.
+ */
+export const DEMO_GATEWAY_REFUSAL = `this is a shared demo, so ${demoFeaturePhrase('integrations')} is turned off`;
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 1_000_000;
@@ -98,6 +105,19 @@ export async function call(
 ): Promise<GatewayResponse> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
+
+  // E1: the shared demo calls nothing outside the platform — no webhook, no
+  // connector action, no discovery or import fetch, no Slack or WhatsApp
+  // post — whatever a visitor configured. Checked on the tenant's kind rather
+  // than on anything in the request, and before the destination check, so a
+  // demo call never even resolves the hostname it names. Recorded like any
+  // other refusal, so the integration log shows why nothing happened, and
+  // refused rather than failed, so no queue retries it.
+  if (await isDemoTenant(ctx.tenantId)) {
+    await record(ctx, request, { status: 0, error: 'refused: demo', durationMs: 0 }, deps);
+    metrics.increment('demo_egress_suppressed_total', { choke: 'E1' });
+    throw new GatewayRefusedError(DEMO_GATEWAY_REFUSAL);
+  }
 
   const verdict = await checkDestination(request.url, deps.resolver);
   if (!verdict.allowed) {

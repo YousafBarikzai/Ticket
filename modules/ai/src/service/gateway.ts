@@ -1,4 +1,12 @@
-import { DependencyUnavailableError, ForbiddenError, ValidationError, logger, metrics } from '@itsm/platform';
+import {
+  DemoDisabledError,
+  DependencyUnavailableError,
+  ForbiddenError,
+  ValidationError,
+  isDemoTenant,
+  logger,
+  metrics,
+} from '@itsm/platform';
 import { renderStrict } from '@itsm/module-workflow';
 import { CircuitBreakers, CircuitOpenError } from '@itsm/module-integrations';
 import { costOf, isPriced, pricedModels } from '../domain/budget.js';
@@ -34,6 +42,12 @@ export class NoProviderConfigured extends DependencyUnavailableError {
 }
 
 export interface GatewayCall {
+  /**
+   * Whose call this is. Required for the reason `allowedRegions` is: the
+   * shared demo calls no live model (E9, SPEC v3 §4.7.2), and a tenant check
+   * a caller could leave out would be missing exactly where it was left out.
+   */
+  readonly tenantId: string;
   capability: Capability;
   systemPrompt: string;
   template: string;
@@ -112,7 +126,21 @@ export function residencyPermits(processingRegion: string | null, allowed: reado
   return allowed.includes(processingRegion);
 }
 
+/**
+ * E9: whether the shared demo holds back this call. Checked before anything
+ * else — before the provider, the price or the render — so a demo visitor's
+ * text is never interpolated into a prompt at all, and the answer is the
+ * demo's sentence even on a deployment with no provider configured.
+ */
+async function demoRefusesModels(tenantId: string): Promise<boolean> {
+  if (!(await isDemoTenant(tenantId))) return false;
+  metrics.increment('demo_egress_suppressed_total', { choke: 'E9' });
+  return true;
+}
+
 export async function callModel(call: GatewayCall): Promise<GatewayResult> {
+  if (await demoRefusesModels(call.tenantId)) throw new DemoDisabledError('ai');
+
   const provider = activeProvider();
   if (!provider) throw new NoProviderConfigured();
 
@@ -171,7 +199,7 @@ export async function callModel(call: GatewayCall): Promise<GatewayResult> {
  * rules without saying why would look exactly like a chain that was never
  * configured.
  */
-export type SkipReason = 'not-registered' | 'no-decide' | 'residency' | 'unpriced' | 'circuit-open' | 'budget';
+export type SkipReason = 'not-registered' | 'no-decide' | 'residency' | 'unpriced' | 'circuit-open' | 'budget' | 'demo';
 export type FailReason = 'timeout' | 'unavailable' | 'refused' | 'invalid-answer';
 
 export interface ChainAttempt {
@@ -185,6 +213,8 @@ export interface ChainAttempt {
 }
 
 export interface DecideCall {
+  /** Required for the reason `GatewayCall.tenantId` is. */
+  readonly tenantId: string;
   purpose: DecisionPurpose;
   state: Readonly<Record<string, unknown>>;
   questions: Readonly<Record<string, DecisionQuestion>>;
@@ -293,6 +323,30 @@ export async function decide(call: DecideCall): Promise<DecideResult> {
   let spent = 0n;
   let inputTokens = 0;
   let outputTokens = 0;
+
+  // E9: the shared demo asks no provider. Every link is recorded as skipped
+  // for the demo, so the decision reads as what it is rather than as a chain
+  // nobody configured, and the ticket keeps what rules gave it (D13) — the
+  // same outcome as a chain that ran out.
+  if (await demoRefusesModels(call.tenantId)) {
+    for (const name of chain) {
+      const entry = providerNamed(name);
+      const model = entry ? decisionModelFor(definition, name, entry) : null;
+      attempts.push({ provider: name, outcome: 'skipped', reason: 'demo', model, ms: 0, costMicros: '0' });
+    }
+    metrics.increment('ai_decisions_total', { purpose: call.purpose, provider: 'rules', model: 'none' });
+    return {
+      decision: null,
+      provider: 'rules',
+      model: null,
+      costMicros: 0n,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: 0,
+      attempts,
+      problems: [],
+    };
+  }
 
   for (const name of chain) {
     const entry = providerNamed(name);

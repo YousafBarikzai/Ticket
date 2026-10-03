@@ -10,8 +10,21 @@ import {
   replyToChat,
   resolveAccountTenant,
 } from '@itsm/module-channels';
-import { systemContext, transaction, withContext, logger, metrics } from '@itsm/platform';
+import { isDemoTenant, systemContext, transaction, withContext, logger, metrics } from '@itsm/platform';
 import { contextOf } from '../plugins/context.js';
+
+/**
+ * E11 (SPEC v3 §4.7.2): a provider delivery addressed to the shared demo is
+ * ignored once the directory has said whose it is — before its signature is
+ * checked, a row is written or a ticket raised — so no real mailbox or chat
+ * workspace can write into a tenant every visitor reads. The demo registers
+ * no mailbox in the directory anyway (A3 §13); this holds if one slips in.
+ */
+async function ignoredForDemo(tenantId: string): Promise<boolean> {
+  if (!(await isDemoTenant(tenantId))) return false;
+  metrics.increment('demo_egress_suppressed_total', { choke: 'E11' });
+  return true;
+}
 
 /**
  * MOD-03 channel intake.
@@ -38,7 +51,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     // other's rules.
     const address = decodeURIComponent(accountKey);
     const account = await resolveAccountTenant('email', address);
-    if (!account) {
+    if (!account || (await ignoredForDemo(account.tenantId))) {
       reply.code(202);
       return { status: 'ignored' };
     }
@@ -187,7 +200,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const account = await resolveAccountTenant(params.channel, params.accountKey);
-    if (!account) {
+    if (!account || (await ignoredForDemo(account.tenantId))) {
       reply.code(202);
       return { status: 'ignored' };
     }
@@ -233,7 +246,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       if (parsed.slashText !== undefined) {
         return { response_type: 'ephemeral', text: outcome.reply };
       }
-      await replyToChat(config.transport ?? params.channel, {
+      await replyToChat(account.tenantId, config.transport ?? params.channel, {
         roomId: parsed.roomId,
         threadId: parsed.threadId,
         text: outcome.reply,

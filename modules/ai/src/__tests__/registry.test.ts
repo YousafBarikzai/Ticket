@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { setTenantKindReader } from '@itsm/platform';
 import { clearModelPrices, registerModelPrices } from '../domain/budget.js';
 import { activeDefaultModel, activeProvider, chooseDefaultModel, clearAiProvider, registerAiProvider } from '../providers/registry.js';
 import { stubProvider } from '../providers/stub.js';
@@ -26,9 +27,21 @@ function fakeProvider(models: string[], seen: CompletionRequest[] = []): AiProvi
   };
 }
 
+/**
+ * A real tenant's call. The gateway asks whose call it is before anything
+ * else (the shared demo calls no model, E9), and these cases are about a
+ * tenant that may; the demo's side is `gateway-demo.test.ts`.
+ */
+const TENANT_ID = '0192a000-0000-7000-8000-000000000001';
+
+beforeEach(() => {
+  setTenantKindReader(async () => 'standard');
+});
+
 afterEach(() => {
   clearAiProvider();
   clearModelPrices();
+  setTenantKindReader(null);
 });
 
 describe('choosing the default', () => {
@@ -78,6 +91,7 @@ describe('the gateway', () => {
     registerAiProvider(fakeProvider(['real-model'], seen));
 
     const result = await callModel({
+      tenantId: TENANT_ID,
       capability: 'ticket-summary',
       systemPrompt: 'You summarise.',
       template: 'Title: {{title}}',
@@ -96,6 +110,7 @@ describe('the gateway', () => {
     registerAiProvider({ ...stub, complete: (request) => (seen.push(request), stub.complete(request)) });
 
     await callModel({
+      tenantId: TENANT_ID,
       capability: 'ticket-summary',
       systemPrompt: 'You summarise.',
       template: 'Title: {{title}}',

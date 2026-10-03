@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  DemoDisabledError,
   ForbiddenError,
   NotFoundError,
   ValidationError,
@@ -8,6 +9,7 @@ import {
   createContext,
   enqueue,
   getSetting,
+  isDemoTenant,
   isEnabled,
   logger,
   metrics,
@@ -49,10 +51,11 @@ import { tenantAiRegions } from './residency-service.js';
  *
  *   1. permission  — may this person ask at all
  *   2. kill switch — is the capability switched on for this tenant
- *   3. provider    — is there anything to ask (OD-04)
- *   4. residency   — may this tenant's prompts be processed where it runs
- *   5. budget      — has this tenant any money left this month
- *   6. visibility  — may this person see the ticket they named
+ *   3. demo        — the shared demo calls no live model (E9)
+ *   4. provider    — is there anything to ask (OD-04)
+ *   5. residency   — may this tenant's prompts be processed where it runs
+ *   6. budget      — has this tenant any money left this month
+ *   7. visibility  — may this person see the ticket they named
  *
  * Every one of them happens before a job is queued, so a refusal is immediate
  * and costs nothing. A job that reached the worker and failed there would be a
@@ -106,6 +109,14 @@ export async function requestSuggestion(ctx: TenantContext, input: SuggestionReq
 
   const needsAModel = callsAModel(capability);
   if (needsAModel) {
+    // The shared demo's door (E9). The gateway refuses the call itself; this
+    // says so now, with the demo's sentence, rather than handing a visitor a
+    // job id that ends in a refusal. Retrieval-only capabilities call no
+    // model and stay available.
+    if (await isDemoTenant(ctx.tenantId)) {
+      metrics.increment('demo_egress_suppressed_total', { choke: 'E9' });
+      throw new DemoDisabledError('ai');
+    }
     const provider = activeProvider();
     if (!provider) throw new NoProviderConfigured();
     // The gateway makes the same decision immediately before it sends, and
@@ -321,6 +332,7 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
     }
 
     const result = await callModel({
+      tenantId: ctx.tenantId,
       capability,
       systemPrompt: version.systemPrompt,
       template: version.template,
@@ -363,7 +375,8 @@ export async function runSuggestionJob(ctx: TenantContext, jobId: string): Promi
     await announce(ctx, job, 'completed');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const refused = error instanceof ValidationError || error instanceof UnparseableCompletion;
+    // The demo's refusal is a refusal too: asking again changes nothing.
+    const refused = error instanceof ValidationError || error instanceof UnparseableCompletion || error instanceof DemoDisabledError;
     await transaction(ctx, (tx) =>
       tx.aiJob.update({
         where: { id: job.id },

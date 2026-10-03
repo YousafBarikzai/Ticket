@@ -1,6 +1,7 @@
 import {
   buildPermissionSet,
   createContext,
+  isDemoTenant,
   loadConfig,
   logger,
   metrics,
@@ -44,6 +45,11 @@ export interface PublicStatus {
   }[];
   maintenance: { id: string; title: string; body: string | null; status: MaintenanceStatus; startsAt: string; endsAt: string; components: string[] }[];
   generatedAt: string;
+  /**
+   * The shared demo's page (A3 §7.4): it takes no subscriptions, so the page
+   * says so instead of offering a form. Absent reads as a real tenant's page.
+   */
+  demo?: boolean;
 }
 
 /** A tenant as the public side needs it: enough to read its page and address it. */
@@ -78,6 +84,7 @@ export async function tenantForHost(host: string): Promise<PublicTenant | null> 
 
 export async function readPublicStatus(tenant: PublicTenant, now: Date = new Date()): Promise<PublicStatus | null> {
   const ctx = publicContext(tenant.id);
+  const demo = await isDemoTenant(tenant.id);
   return withContext(ctx, () =>
     transaction(ctx, async (tx) => {
       const page = await tx.statusPage.findFirst({ where: { tenantId: tenant.id, isPublic: true } });
@@ -126,6 +133,7 @@ export async function readPublicStatus(tenant: PublicTenant, now: Date = new Dat
           components: window.componentIds.map((id) => byId.get(id)).filter((key): key is string => Boolean(key)),
         })),
         generatedAt: now.toISOString(),
+        demo,
       };
     }),
   );
@@ -146,7 +154,26 @@ function link(slug: string, kind: 'confirm' | 'unsubscribe', tenantId: string, s
   return `${statusUrl(slug)}/${kind}/${token}`;
 }
 
-async function sendMail(to: string, subject: string, body: string): Promise<boolean> {
+/**
+ * Whether the shared demo holds back one of the status page's outbound or
+ * public-write paths (SPEC v3 §4.7.2), counted per choke point.
+ */
+async function demoSuppresses(tenantId: string, choke: 'E3' | 'E4' | 'E12'): Promise<boolean> {
+  if (!(await isDemoTenant(tenantId))) return false;
+  metrics.increment('demo_egress_suppressed_total', { choke });
+  return true;
+}
+
+/**
+ * Sends one status-page e-mail. The tenant comes first because it decides
+ * whether anything is sent at all (E3): the shared demo's page e-mails
+ * nobody, whatever address a visitor left on it.
+ */
+async function sendMail(tenantId: string, to: string, subject: string, body: string): Promise<boolean> {
+  if (await demoSuppresses(tenantId, 'E3')) {
+    logger.info('a status-page email was not sent: this is the shared demo', { subject });
+    return false;
+  }
   const transport = transportFor('email');
   if (!transport) {
     logger.warn('no email transport is registered; a status-page email was not sent', { subject });
@@ -162,6 +189,11 @@ async function sendMail(to: string, subject: string, body: string): Promise<bool
  * not be a way to find out who subscribes to it, or whether it exists.
  */
 export async function subscribe(tenant: PublicTenant, email: string, now: Date = new Date()): Promise<{ ok: true }> {
+  // E4: the same answer from the shared demo, and nothing stored. A visitor's
+  // address must never sit in a tenant whose administrator persona every
+  // other visitor can sign in as, so not even an unconfirmed row is written.
+  if (await demoSuppresses(tenant.id, 'E4')) return { ok: true };
+
   const ctx = publicContext(tenant.id);
   const address = email.trim().toLowerCase();
   const result = await withContext(ctx, () =>
@@ -182,6 +214,7 @@ export async function subscribe(tenant: PublicTenant, email: string, now: Date =
 
   const expiresAt = new Date(now.getTime() + CONFIRM_DAYS * 24 * 3600 * 1000);
   await sendMail(
+    tenant.id,
     address,
     'Confirm your status updates subscription',
     `Somebody asked for status updates to be sent to this address.\n\nIf that was you, confirm here (the link works for ${CONFIRM_DAYS} days):\n${link(tenant.slug, 'confirm', tenant.id, result.subscriber.id, expiresAt)}\n\nIf it was not, ignore this message and nothing further will be sent.`,
@@ -199,6 +232,10 @@ async function slugOf(tenantId: string): Promise<string | null> {
 export async function confirm(token: string, now: Date = new Date()): Promise<{ ok: boolean; slug: string | null }> {
   const verdict = verifyToken(token, now);
   if (!verdict.ok || verdict.payload.kind !== 'status_confirm') return { ok: false, slug: null };
+  // E12: no genuine link to the shared demo exists (E3 and E4 send and store
+  // nothing), so a link that verifies was forged — with a signing secret left
+  // at its default, say. It is answered as an invalid link, and touches no row.
+  if (await demoSuppresses(verdict.payload.tenantId, 'E12')) return { ok: false, slug: null };
   const slug = await slugOf(verdict.payload.tenantId);
   if (!slug) return { ok: false, slug: null };
   const ctx = publicContext(verdict.payload.tenantId);
@@ -218,6 +255,8 @@ export async function confirm(token: string, now: Date = new Date()): Promise<{ 
 export async function unsubscribe(token: string, now: Date = new Date()): Promise<{ ok: boolean; slug: string | null }> {
   const verdict = verifyToken(token, now);
   if (!verdict.ok || verdict.payload.kind !== 'status_unsubscribe') return { ok: false, slug: null };
+  // E12, as for `confirm`.
+  if (await demoSuppresses(verdict.payload.tenantId, 'E12')) return { ok: false, slug: null };
   const slug = await slugOf(verdict.payload.tenantId);
   if (!slug) return { ok: false, slug: null };
   const ctx = publicContext(verdict.payload.tenantId);
@@ -283,7 +322,7 @@ export async function notifySubscribers(ctx: TenantContext, input: { updateId?: 
 
   let sent = 0;
   for (const subscriber of prepared.recipients) {
-    const ok = await sendMail(subscriber.email, prepared.subject, `${prepared.body}\n\nUnsubscribe: ${subscriber.unsubscribeUrl}`);
+    const ok = await sendMail(ctx.tenantId, subscriber.email, prepared.subject, `${prepared.body}\n\nUnsubscribe: ${subscriber.unsubscribeUrl}`);
     if (ok) sent += 1;
   }
   metrics.increment('status_notifications_sent_total', {}, sent);

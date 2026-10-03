@@ -149,6 +149,7 @@ export async function runEvaluation(ctx: TenantContext, promptKey: string, versi
 
   for (const evalCase of dataset.cases) {
     const result = await callModel({
+      tenantId: ctx.tenantId,
       capability,
       systemPrompt: promptVersion.systemPrompt,
       template: promptVersion.template,

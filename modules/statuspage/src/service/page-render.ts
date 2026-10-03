@@ -44,6 +44,13 @@ function shell(title: string, body: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><style>${STYLE}</style></head><body>${body}</body></html>`;
 }
 
+/**
+ * What the shared demo's page shows where the subscribe form would be (A3
+ * §7.4). The demo stores no visitor's address and sends nothing (E3, E4), so
+ * offering a form that quietly does nothing would be the page lying.
+ */
+export const DEMO_SUBSCRIPTIONS_OFF = 'Subscriptions are turned off for this demo.';
+
 function when(iso: string): string {
   return escape(iso.replace('T', ' ').slice(0, 16) + ' UTC');
 }
@@ -93,7 +100,9 @@ export function renderStatusPage(status: PublicStatus, message?: string): string
       `<h2>Active incidents</h2>${active.map(incident).join('') || '<p class="muted">None.</p>'}` +
       `<h2>Scheduled maintenance</h2>${maintenance || '<p class="muted">None scheduled.</p>'}` +
       `<h2>Recently resolved</h2>${recent.map(incident).join('') || '<p class="muted">Nothing in the last seven days.</p>'}` +
-      `<form method="post" action="${escape(status.page.path)}/subscribe" accept-charset="utf-8"><label for="email">Get updates by email</label><br><input type="email" id="email" name="email" required placeholder="you@example.com"><button type="submit">Subscribe</button></form>` +
+      (status.demo
+        ? `<p class="muted">${escape(DEMO_SUBSCRIPTIONS_OFF)}</p>`
+        : `<form method="post" action="${escape(status.page.path)}/subscribe" accept-charset="utf-8"><label for="email">Get updates by email</label><br><input type="email" id="email" name="email" required placeholder="you@example.com"><button type="submit">Subscribe</button></form>`) +
       (status.page.supportUrl ? `<p class="muted">Need help? <a href="${escape(status.page.supportUrl)}">Contact support</a>.</p>` : '') +
       `<p class="muted">Last updated ${when(status.generatedAt)}.</p>`,
   );

@@ -312,6 +312,7 @@ export async function runTriage(ctx: TenantContext, ticketId: string, at = new D
   const set = triageQuestions({ categories: read.categories, groups: read.teams });
 
   const result = await decide({
+    tenantId: ctx.tenantId,
     purpose,
     state,
     questions: set.questions,

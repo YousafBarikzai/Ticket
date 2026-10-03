@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { logger, type TenantContext } from '@itsm/platform';
+import { isDemoTenant, logger, metrics, type TenantContext } from '@itsm/platform';
 import { emailTransport, type EmailTransport } from './email-transport.js';
 import { microsoftGraphTransport, type GraphOptions } from './microsoft-graph.js';
 import { postmarkTransport, type PostmarkOptions } from './postmark.js';
@@ -58,6 +58,16 @@ export async function transportForAccount(
   config: unknown,
   ctx: TenantContext | null = null,
 ): Promise<EmailTransport | null> {
+  // E6 (SPEC v3 §4.7.2): a mailbox in the shared demo has no transport. The
+  // Postmark and Graph adapters call `fetch` themselves, outside the
+  // integration gateway, so this is where their sends stop. A caller with no
+  // context is the inbound webhook verifying a delivery, which E11 answers
+  // for the demo before it gets here.
+  if (ctx && (await isDemoTenant(ctx.tenantId))) {
+    metrics.increment('demo_egress_suppressed_total', { choke: 'E6' });
+    return null;
+  }
+
   const parsed = transportConfigSchema.safeParse(config);
   if (!parsed.success) {
     logger.warn('a channel account has no usable transport configuration', {

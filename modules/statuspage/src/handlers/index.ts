@@ -1,4 +1,4 @@
-import { defineHandler, type TenantContext, type Tx } from '@itsm/platform';
+import { defineHandler, isDemoTenant, metrics, type TenantContext, type Tx } from '@itsm/platform';
 import { impactForSeverity, incidentStatusFor } from '../domain/status.js';
 import { openIncident, postUpdate, resolveIncident, setMaintenanceStatus, upsertMaintenance } from '../service/incident-service.js';
 import { componentsForServices } from '../service/page-service.js';
@@ -17,6 +17,18 @@ import { componentsForServices } from '../service/page-service.js';
  * was declared customer-facing; an update appears only if its audience is
  * `public`; a change appears only if it touches a service the page lists.
  */
+
+/**
+ * E5 (SPEC v3 §4.7.2): the shared demo's public page is not a mirror. It
+ * stays exactly as the nightly build made it, so a major incident a visitor
+ * declares or a change a visitor schedules never appears on a page the
+ * public can read (D23). Checked first, before any row is read.
+ */
+async function mirroringSuppressed(ctx: TenantContext): Promise<boolean> {
+  if (!(await isDemoTenant(ctx.tenantId))) return false;
+  metrics.increment('demo_egress_suppressed_total', { choke: 'E5' });
+  return true;
+}
 
 type MajorIncidentRow = {
   id: string;
@@ -67,6 +79,7 @@ defineHandler({
   eventType: 'incident.major.declared',
   required: false,
   async handle(ctx, event, tx) {
+    if (await mirroringSuppressed(ctx)) return;
     const { incidentId } = event.payload as { incidentId: string };
     const incident = await tx.majorIncident.findFirst({ where: { id: incidentId } });
     if (!incident) return;
@@ -80,6 +93,7 @@ defineHandler({
   eventType: 'incident.major.updated',
   required: false,
   async handle(ctx, event, tx) {
+    if (await mirroringSuppressed(ctx)) return;
     const { incidentId, updateId } = event.payload as { incidentId: string; updateId: string };
     const update = await tx.majorIncidentUpdate.findFirst({ where: { id: updateId } });
     // The audience is the commander's decision and it is honoured here, not
@@ -105,6 +119,7 @@ defineHandler({
   eventType: 'incident.major.resolved',
   required: false,
   async handle(ctx, event, tx) {
+    if (await mirroringSuppressed(ctx)) return;
     const { incidentId } = event.payload as { incidentId: string };
     const mirrored = await tx.statusIncident.findFirst({ where: { majorIncidentId: incidentId } });
     // Not customer-facing, so never on the page: nothing to resolve. The
@@ -120,6 +135,7 @@ defineHandler({
   eventType: 'change.scheduled',
   required: false,
   async handle(ctx, event, tx) {
+    if (await mirroringSuppressed(ctx)) return;
     const { changeId } = event.payload as { changeId: string };
     const change = await tx.change.findFirst({ where: { id: changeId } });
     if (!change || !change.plannedStartAt || !change.plannedEndAt) return;
@@ -147,6 +163,7 @@ defineHandler({
   eventType: 'change.closed',
   required: false,
   async handle(ctx, event, tx) {
+    if (await mirroringSuppressed(ctx)) return;
     const { changeId } = event.payload as { changeId: string };
     const window = await tx.maintenanceWindow.findFirst({ where: { changeId } });
     if (!window || window.status === 'completed' || window.status === 'cancelled') return;
