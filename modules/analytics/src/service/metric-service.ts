@@ -33,6 +33,13 @@ import * as query from '../repo/query-repo.js';
 import { bumpQueryVersion, queryHash, readThrough, scopeKeyFor } from './query-cache.js';
 
 /**
+ * Reachable as `metricService.bumpQueryVersion`, for work outside this module
+ * that changes the facts by other means — the `analytics-reproject` command
+ * bumps once it has run — without a second way into the cache.
+ */
+export { bumpQueryVersion } from './query-cache.js';
+
+/**
  * Metrics: what they are, and asking one a question.
  *
  * A metric is resolved by key — a tenant's own definition first, then the
@@ -393,8 +400,9 @@ function toAnswer(result: QueryResult): QueryAnswer {
 
 /**
  * One question, answered, with `Date`s: what forecasts, dashboard renders and
- * reports build on. Never cached (A8 R4c) — those callers do arithmetic on
- * the dates, and a render is many questions a cache in front of each answers.
+ * reports build on. Never cached (A8 R4c): those callers work with the dates
+ * themselves, and the cache holds JSON, so a cached answer would hand them
+ * strings where they expect instants.
  */
 export async function evaluate(ctx: TenantContext, input: QueryInput): Promise<QueryResult> {
   authz.require(ctx, 'analytics.read');
