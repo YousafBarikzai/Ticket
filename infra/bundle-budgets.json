@@ -5,6 +5,13 @@
     "Baselines are the sizes last recorded. A change that grows a route on purpose records the new size in the same change: pnpm tsx infra/scripts/check-bundles.ts --update"
   ],
   "growthTolerance": 10000,
+  "async": {
+    "itsm-reader-core": 3000
+  },
+  "asyncRequired": [
+    "admin",
+    "workbench"
+  ],
   "apps": {
     "portal": {
       "budget": 250000,

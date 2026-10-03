@@ -7,6 +7,7 @@
  */
 export { AreaChart, type AreaChartProps } from './AreaChart.js';
 export { BarChart, type BarChartProps, type BarDatum } from './BarChart.js';
+export type { BarLabels, BarLayout, BarSeriesDef } from './BarChart.js';
 export { BulletBar, BulletList, measureBullet, type BulletBarProps, type BulletListProps, type BulletMeasure, type BulletRow } from './Bullet.js';
 export { CHART_HEIGHTS, ChartCard, type ChartCardProps, type ChartCardState } from './ChartCard.js';
 export { ChartFigure, type ChartFigureProps, type ChartFigureTable } from './ChartFigure.js';
