@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { events } from '@itsm/contracts';
+import { safeHrefSchema } from '@itsm/contracts/links/schemas';
 import {
   type TenantContext,
   type Tx,
@@ -57,7 +58,12 @@ export const declareSchema = z.object({
   impactSummary: z.string().max(2000).optional(),
   affectedServiceIds: z.array(z.string().uuid()).max(50).default([]),
   customerFacing: z.boolean().default(false),
-  bridgeUrl: z.string().url().max(2000).optional(),
+  /**
+   * Everybody working the incident is shown this and clicks it under
+   * pressure, so it is `https:` or `mailto:` only (D23), in every tenant:
+   * `z.string().url()` took `javascript:` and `http:` alike.
+   */
+  bridgeUrl: safeHrefSchema.optional(),
   /** Overrides the tenant's default for this severity. */
   updateIntervalMinutes: z.number().int().min(5).max(1440).optional(),
 });

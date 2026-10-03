@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ConflictError, NotFoundError, authz, newId, recordAudit, transaction, type TenantContext, type Tx } from '@itsm/platform';
+import { safeHrefSchema } from '@itsm/contracts/links/schemas';
 import { COMPONENT_STATUSES } from '../domain/status.js';
 
 /**
@@ -11,7 +12,12 @@ export const pageSchema = z.object({
   description: z.string().max(500).nullable().optional(),
   isPublic: z.boolean().optional(),
   timeZone: z.string().min(1).max(60).optional(),
-  supportUrl: z.string().url().max(500).nullable().optional(),
+  // `https:` or `mailto:` only (D23), in every tenant. The public page is
+  // rendered by the API's own string template, which React does not protect,
+  // so `z.string().url()` — which takes `javascript:alert(1)` — let anyone
+  // holding `statuspage.manage` store script that ran on the API's origin for
+  // every visitor to the page.
+  supportUrl: safeHrefSchema.nullable().optional(),
 });
 
 export const componentSchema = z.object({

@@ -13,6 +13,7 @@ import {
   transaction,
 } from '@itsm/platform';
 import { events } from '@itsm/contracts';
+import { refineSafeLinks } from '@itsm/contracts/links/schemas';
 import { indexDocument, removeDocument } from '@itsm/module-search';
 import { AUDIENCES, aclForArticle, canRead, type ArticleVisibility } from '../domain/audience.js';
 import { canTransition, refusalReason } from '../domain/lifecycle.js';
@@ -32,7 +33,12 @@ export const articleSchema = z.object({
   key: z.string().regex(/^[a-z][a-z0-9-]{1,62}$/),
   title: z.string().min(1).max(200),
   summary: z.string().max(500).optional(),
-  body: z.array(z.unknown()).default([]),
+  // Every link in the body is `https:` or `mailto:` (D23), in every tenant: an
+  // article is read by the whole organisation, so one `javascript:` link would
+  // run in every reader's session. Each refused link is its own field error at
+  // its own path (`body.2.content.0.href`), so the editor can point at the
+  // paragraph rather than the article. `draftSchema` inherits the rule.
+  body: z.array(z.unknown()).superRefine(refineSafeLinks).default([]),
   audience: z.enum(AUDIENCES).default('internal'),
   orgId: z.string().uuid().nullable().optional(),
   categoryKey: z.string().optional(),
