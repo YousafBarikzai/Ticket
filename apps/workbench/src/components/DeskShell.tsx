@@ -37,10 +37,12 @@ import {
   setNavigationSheetOpen,
   setShortcutsDialogOpen,
   useNavigationSheetOpen,
+  type DemoBarProps,
   type NavItem,
   type TabItem,
 } from '@itsm/ui/shell';
 import { useTheme } from '@itsm/ui/theme';
+import { DemoBarSlot } from '../app/demo/DemoBarSlot.js';
 import { api, fetchDeskCounts } from '../client/api.js';
 import { useCountsFollowLive } from '../client/live.js';
 import { AVAILABILITY_CHOICES, type AvailabilityChoice, type DeskPaletteDeps } from '../client/palette.js';
@@ -74,8 +76,8 @@ import { DeskNotifications } from './DeskNotifications.js';
  *     in a demo, "Your demo session ended" and Continue the demo;
  *   - sign-out, which first clears this device's copies of the person's
  *     work (F19) and asks before discarding replies that have not been sent;
- *   - in a demo, clearing those copies again when the data is reset under
- *     the visitor (S11).
+ *   - in a demo, the demo bar, and with it clearing those copies again when
+ *     the data is reset under the visitor (S11).
  */
 
 export interface DeskPermissions {
@@ -94,8 +96,13 @@ export interface DeskShellProps {
   readonly frame: DeskFrame;
   /** The workspace's name, under the product's in the brand block. */
   readonly workspace?: string;
-  /** The demo bar, in a demo session only (v3 §3.8). */
-  readonly systemBar?: ReactNode;
+  /**
+   * The demo bar's props, in a demo session only (v3 §3.8): the clock the
+   * server computed, the persona, the generation and the areas. The frame
+   * draws it through the lazy slot, which also clears this device's copies
+   * of the visit's work when the data is reset (S11).
+   */
+  readonly demoBar?: DemoBarProps;
   /** The frame's context chip: the live major incident (A2 §5.2.4). */
   readonly context?: ReactNode;
   readonly user: { readonly id: string | null; readonly name: string; readonly detail?: string };
@@ -303,40 +310,14 @@ export function isPersonalKey(key: string): boolean {
   return isRecentsKey(key) || isDismissalKey(key) || isDisclosureKey(key) || key.startsWith('itsm-wb-');
 }
 
-/**
- * In a demo, forget this device's copies of the visit's work when the data is
- * reset under it (S11, A3 §6.10): the demo bar announces a new generation,
- * and the clearing it waits for runs here, where the app's own keys are
- * known. The listener and the clearing are both fetched only in a demo: the
- * listener comes from the bar's own module, which a demo page loads anyway.
- */
-function useDemoResetClearing(demo: boolean): void {
-  useEffect(() => {
-    if (!demo) return undefined;
-    let stop: (() => void) | undefined;
-    let cancelled = false;
-    void import(/* webpackExports: ["onDemoGenerationChange"] */ '@itsm/ui/shell').then(({ onDemoGenerationChange }) => {
-      if (cancelled) return;
-      stop = onDemoGenerationChange((generation) =>
-        import('@itsm/pwa/demo').then(({ clearDemoLocalData }) => clearDemoLocalData({ generation, alsoKeys: isPersonalKey })),
-      );
-    });
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
-  }, [demo]);
-}
-
 /* ------------------------------------------------------------------- Frame */
 
-export function DeskShell({ areas, frame, workspace, systemBar, context, user, teams, can, children }: DeskShellProps): ReactNode {
+export function DeskShell({ areas, frame, workspace, demoBar, context, user, teams, can, children }: DeskShellProps): ReactNode {
   const { router } = useItsm();
   const { prefs, setPrefs } = useTheme();
   const pathname = usePathname();
   const demo = areas.demo;
   const signInHref = useSignInHref(demo);
-  useDemoResetClearing(demo);
 
   /* Counts: on mount, every minute, on focus, and after live ticket changes. */
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
@@ -490,7 +471,7 @@ export function DeskShell({ areas, frame, workspace, systemBar, context, user, t
         areas={areas}
         brand={{ href: areas.areas.find((area) => area.current)?.href ?? '/overview', ...(workspace ? { workspace } : {}) }}
         nav={nav}
-        {...(systemBar ? { systemBar } : {})}
+        {...(demoBar ? { systemBar: <DemoBarSlot {...demoBar} clearKeys={isPersonalKey} /> } : {})}
         {...(context ? { context } : {})}
         help={{ items: help }}
         sidebarAction={

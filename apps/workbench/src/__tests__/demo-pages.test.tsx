@@ -73,6 +73,9 @@ vi.mock('@itsm/sdk', async (importOriginal) => {
   return { ...actual, workbench: () => ({ me: () => server.me() }) };
 });
 
+const pwaDemo = vi.hoisted(() => ({ clearDemoLocalData: vi.fn(async () => ({})) }));
+vi.mock('@itsm/pwa/demo', () => pwaDemo);
+
 vi.mock('../app/demo/DemoBarSlot.js', () => ({
   DemoBarSlot: (props: { variant: string; state?: string; links?: { home?: string } }) => (
     <div className="test-DemoBar" data-variant={props.variant} data-state={props.state ?? ''} data-home={props.links?.home ?? ''} />
@@ -432,21 +435,55 @@ describe('/signed-out (§4.6.3, A3 §6.7)', () => {
 /* ------------------------------------------------------------- The demo bar */
 
 describe('the demo bar’s slot (v3 §3.8, §10.2)', () => {
-  it('loads the bar on its own and draws it with the props it was given', async () => {
-    const { DemoBarSlot } = await vi.importActual<typeof import('../app/demo/DemoBarSlot.js')>('../app/demo/DemoBarSlot.js');
+  type Slot = typeof import('../app/demo/DemoBarSlot.js');
+
+  async function slotted(element: (Slot: Slot['DemoBarSlot']) => ReactElement): Promise<HTMLElement> {
+    const { DemoBarSlot } = await vi.importActual<Slot>('../app/demo/DemoBarSlot.js');
     let rendered!: { container: HTMLElement };
     await act(async () => {
-      rendered = render(<DemoBarSlot variant="session" clock={clock} persona={{ name: 'Alex Morgan', title: 'Service Desk team lead' }} generation={7} />);
+      rendered = render(element(DemoBarSlot));
     });
-    for (let attempt = 0; attempt < 50 && !rendered.container.querySelector('.itsm-DemoBar'); attempt += 1) {
+    for (let attempt = 0; attempt < 100 && !rendered.container.querySelector('.itsm-DemoBar'); attempt += 1) {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
     }
-    const bar = rendered.container.querySelector('.itsm-DemoBar');
+    return rendered.container;
+  }
+
+  function reset(generation: number): Promise<unknown>[] {
+    const waited: Promise<unknown>[] = [];
+    act(() => {
+      window.dispatchEvent(new CustomEvent('itsm:demo-generation-change', { detail: { generation, waitUntil: (work: Promise<unknown>) => waited.push(work) } }));
+    });
+    return waited;
+  }
+
+  it('loads the bar on its own and draws it with the props it was given', async () => {
+    const container = await slotted((Slot) => <Slot variant="session" clock={clock} persona={{ name: 'Alex Morgan', title: 'Service Desk team lead' }} generation={7} />);
+    const bar = container.querySelector('.itsm-DemoBar');
     expect(bar).not.toBeNull();
     expect(bar!.getAttribute('aria-label')).toBe('Demo environment');
     expect(text(bar)).toContain('Alex Morgan');
+  });
+
+  it('in a session, clears this device’s copies of the visit when the data is reset, and the bar waits for it (S11)', async () => {
+    pwaDemo.clearDemoLocalData.mockClear();
+    const clearKeys = (key: string): boolean => key.startsWith('itsm-wb-');
+    await slotted((Slot) => <Slot variant="session" clock={clock} persona={{ name: 'Alex Morgan', title: 'Service Desk team lead' }} generation={7} clearKeys={clearKeys} />);
+    const waited = reset(8);
+    expect(waited).toHaveLength(1);
+    await act(async () => {
+      await Promise.all(waited);
+    });
+    expect(pwaDemo.clearDemoLocalData).toHaveBeenCalledWith({ generation: 8, alsoKeys: clearKeys });
+  });
+
+  it('on a public page, never listens: there is no visit to clear', async () => {
+    pwaDemo.clearDemoLocalData.mockClear();
+    await slotted((Slot) => <Slot variant="public" clock={clock} />);
+    expect(reset(9)).toEqual([]);
+    expect(pwaDemo.clearDemoLocalData).not.toHaveBeenCalled();
   });
 
   it('computes the clock from the pure UK reset clock, on the server', () => {

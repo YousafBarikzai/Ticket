@@ -13,7 +13,6 @@ import { bff } from '../../bff.js';
 import { apiFor, currentAreas, currentMe, currentSession, currentTeams, heldPermissions } from '../../server/session.js';
 import { settle } from '../../server/settle.js';
 import { demoBarClock } from '../demo/clock.js';
-import { DemoBarSlot } from '../demo/DemoBarSlot.js';
 
 /**
  * Everything behind a session: the Service Desk frame (v3 §3.4, §3.5; SPEC
@@ -134,17 +133,17 @@ export default async function DeskLayout({ children }: { children: ReactNode }):
         areas={areas}
         frame={frame}
         {...(me.tenant ? { workspace: me.tenant.name } : {})}
-        systemBar={
-          persona ? (
-            <DemoBarSlot
-              variant="session"
-              clock={demoBarClock()}
-              persona={{ name: persona.name, title: persona.title }}
-              {...(generation !== undefined ? { generation } : {})}
-              areas={areas}
-            />
-          ) : undefined
-        }
+        {...(persona
+          ? {
+              demoBar: {
+                variant: 'session' as const,
+                clock: demoBarClock(),
+                persona: { name: persona.name, title: persona.title },
+                ...(generation !== undefined ? { generation } : {}),
+                areas,
+              },
+            }
+          : {})}
         context={chip ? <ContextChip tone="danger" icon="siren" {...chip} /> : undefined}
         user={{
           id: me.actor.id,
