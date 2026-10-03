@@ -44,8 +44,8 @@ import {
  *      guard (the personas' own accounts, the locked settings, the story's
  *      hero tickets) or read-only.
  *
- * A cap is counted on the way in and given back in `onResponse` when the
- * request fails, so a typo in a form costs the visitor nothing.
+ * A cap is counted on the way in and given back as the answer is sent when
+ * the request fails, so a typo in a form costs the visitor nothing.
  *
  * The budgets fail closed: a Redis error or a Redis that does not answer
  * within two seconds is 503 `demo_unavailable`, never an unmetered write.
@@ -563,18 +563,29 @@ export const demoPlugin = fp<DemoPluginOptions>(
     }
 
     // A failed request gives its cap back: the cap counts what visitors did,
-    // not what they tried.
-    app.addHook('onResponse', async (request, reply) => {
+    // not what they tried. Given back as the answer is sent rather than after
+    // it, so a visitor who corrects a form and sends it again at once finds
+    // the use returned; `onResponse` catches an answer that never passed
+    // through `onSend`.
+    async function giveBack(request: FastifyRequest, statusCode: number): Promise<void> {
       const claim = request.demoCap;
-      if (!claim || reply.statusCode < 400) return;
+      if (!claim || statusCode < 400) return;
       request.demoCap = undefined;
       const store = storeFor();
       try {
         await counted(() => store.giveBackCap(claim));
       } catch {
-        // Already logged; the answer has gone, and a lost give-back costs the
+        // Already logged; the answer stands, and a lost give-back costs the
         // visitor one use until the reset.
       }
+    }
+
+    app.addHook('onSend', async (request, reply, payload) => {
+      await giveBack(request, reply.statusCode);
+      return payload;
+    });
+    app.addHook('onResponse', async (request, reply) => {
+      await giveBack(request, reply.statusCode);
     });
   },
   { name: 'itsm-demo-policy' },
