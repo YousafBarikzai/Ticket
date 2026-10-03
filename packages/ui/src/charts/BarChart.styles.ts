@@ -447,29 +447,39 @@ ${moreContrast(
   background: ${hatch('var(--_itsm-chart-surface)')}, var(--_itsm-series);
 }
 
+/* As specific as the reveal, and after it, so reduced motion wins. */
 ${mq.reducedMotion} {
   .itsm-BarChart__bar {
     transition: none;
+  }
+  .itsm-BarChart[data-reveal] :is(.itsm-BarChart__row, .itsm-BarChart__column) .itsm-BarChart__bar {
     animation: none;
   }
 }
 
 ${prefers.reducedMotion} .itsm-BarChart__bar {
   transition: none;
+}
+
+${prefers.reducedMotion} .itsm-BarChart[data-reveal] :is(.itsm-BarChart__row, .itsm-BarChart__column) .itsm-BarChart__bar {
   animation: none;
 }
 
+/*
+ * Forced colours: as specific as the contrast rules and after them, because
+ * a system high-contrast theme usually asks for more contrast as well.
+ */
 ${mq.forcedColors} {
-  .itsm-BarChart .itsm-BarChart__segment {
+  :root .itsm-BarChart .itsm-BarChart__segment {
     forced-color-adjust: none;
     --_itsm-ink: CanvasText;
     background: var(--_itsm-texture, none), Canvas;
     box-shadow: inset 0 0 0 1px CanvasText;
   }
-  .itsm-BarChart .itsm-BarChart__segment[data-slot="1"] {
+  :root .itsm-BarChart .itsm-BarChart__segment[data-slot="1"] {
     background: CanvasText;
   }
-  .itsm-BarChart :is(.itsm-BarChart__segment, .itsm-ChartLegend__key)[data-pattern] {
+  :root .itsm-BarChart :is(.itsm-BarChart__segment, .itsm-ChartLegend__key)[data-pattern] {
     background: ${hatch('CanvasText')}, Canvas;
   }
   .itsm-BarChart__overlay {

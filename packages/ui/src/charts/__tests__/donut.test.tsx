@@ -48,6 +48,9 @@ describe('parts', () => {
     const four = html(<DonutChart title="Channels" segments={channels} maxSegments={4} />);
     expect(count(four, /class="itsm-DonutChart__segment"/g)).toBe(4);
     expect(four).toContain('>Other · 4<');
+    // One part and "Other" is the smallest fold there is; nonsense asks for the default.
+    expect(count(html(<DonutChart title="Channels" segments={channels} maxSegments={1} />), /class="itsm-DonutChart__segment"/g)).toBe(2);
+    expect(count(html(<DonutChart title="Channels" segments={channels} maxSegments={Number.NaN} />), /class="itsm-DonutChart__segment"/g)).toBe(6);
   });
 
   it('colours parts by tone for a status donut, the tone winning over a slot, and hatches a part marked so', () => {
@@ -153,7 +156,8 @@ describe('the card, the reader and motion', () => {
     expect(html(<DonutChart title="x" segments={channels} />)).toContain('data-reveal=""');
     expect(html(<DonutChart title="x" segments={channels} animate={false} />)).not.toContain('data-reveal');
     expect(donutChartStyles).toMatch(/\.itsm-DonutChart\[data-reveal\] \.itsm-DonutChart__svg \{\s*animation: itsm-chart-reveal var\(--itsm-duration-reveal\) var\(--itsm-easing-entrance\);/);
-    expect(donutChartStyles).toMatch(/:root\[data-itsm-motion="reduced"\] \.itsm-DonutChart__svg \{\s*animation: none;/);
+    expect(donutChartStyles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[^@]*\.itsm-DonutChart\[data-reveal\] \.itsm-DonutChart__svg \{\s*animation: none;/);
+    expect(donutChartStyles).toMatch(/:root\[data-itsm-motion="reduced"\] \.itsm-DonutChart\[data-reveal\] \.itsm-DonutChart__svg \{\s*animation: none;/);
     expect(html(<DonutChart title="x" segments={states} />)).toBe(html(<DonutChart title="x" segments={states} />));
   });
 

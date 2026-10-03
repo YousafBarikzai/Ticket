@@ -126,7 +126,8 @@ export function DonutChart({
     ...(segment.tone ? { tone: segment.tone } : {}),
     hatch: segment.pattern === 'hatch',
   }));
-  const limit = Math.min(MOST, Number.isFinite(maxSegments) ? Math.floor(maxSegments) : MOST);
+  // Two at least: one part and "Other" is the smallest fold there is.
+  const limit = Math.max(2, Math.min(MOST, Number.isFinite(maxSegments) ? Math.floor(maxSegments) : MOST));
   const slices = foldOther(cleaned, limit, (value, folded): Slice => ({ id: '__other', label: `Other · ${folded.length}`, value, slot: 'other', tone: 'neutral', hatch: true }));
   const total = slices.reduce((sum, slice) => sum + slice.value, 0);
   if (slices.length === 0 || total <= 0) {

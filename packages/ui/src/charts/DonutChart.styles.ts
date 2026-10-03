@@ -131,6 +131,7 @@ export const donutChartStyles = layer(
   flex: 1 1 auto;
   inline-size: min(100%, 24rem);
   min-inline-size: 0;
+  max-inline-size: 24rem;
   flex-direction: column;
   flex-wrap: nowrap;
   gap: var(--itsm-space-xs);
@@ -162,11 +163,12 @@ export const donutChartStyles = layer(
 
 ${moreContrast((scope) => `${scope} .itsm-DonutChart__texture { display: inline; }`)}
 
+/* As specific as the reveal, and after it, so reduced motion wins. */
 ${mq.reducedMotion} {
   .itsm-DonutChart__part {
     transition: none;
   }
-  .itsm-DonutChart__svg {
+  .itsm-DonutChart[data-reveal] .itsm-DonutChart__svg {
     animation: none;
   }
 }
@@ -175,7 +177,7 @@ ${prefers.reducedMotion} .itsm-DonutChart__part {
   transition: none;
 }
 
-${prefers.reducedMotion} .itsm-DonutChart__svg {
+${prefers.reducedMotion} .itsm-DonutChart[data-reveal] .itsm-DonutChart__svg {
   animation: none;
 }
 

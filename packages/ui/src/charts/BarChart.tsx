@@ -69,8 +69,9 @@ export interface BarChartProps extends ChartCommon {
    * Columns: `total` writes each bar's value at its end (default `none`).
    * Rows always write the value — a row is label, bar and value — so there
    * `total` is the default and `none` changes nothing. `segments` writes each
-   * part inside its part wherever the part is at least 28 px long, decided
-   * by container query, never by measuring.
+   * part inside its part, in columns and horizontal bars (a list's bars are
+   * too thin), wherever the part is at least 28 px long — decided by
+   * container query, never by measuring.
    */
   readonly labels?: BarLabels;
   /** A dashed line to read the bars against; the value axis stretches to include it. On a `normalised` chart, a share (0.9). */
@@ -284,7 +285,7 @@ export function BarChart({
 
   /** One series: the bar's own look — the emphasis form, "Other", a tone, a slot, the accent. */
   const barLook = (bar: Bar): Look => {
-    if (highlight !== undefined) return bar.id === highlight ? { slot: 1 } : { tone: 'neutral' };
+    if (highlight !== undefined) return bar.id === highlight ? { slot: 1 } : { tone: 'neutral', hatch: bar.other };
     if (bar.other) return { tone: 'neutral', hatch: true };
     const hatch = bar.pattern === 'hatch';
     return bar.tone ? { tone: bar.tone, hatch } : { slot: bar.slot ?? 1, hatch };
@@ -338,6 +339,7 @@ export function BarChart({
   ]);
   const tableMode = table ?? CHART_TABLE_DEFAULTS[shape];
 
+  const lookOf = (look: Look): Pick<ReaderRow, 'slot' | 'tone'> => (look.tone ? { tone: look.tone } : { slot: look.slot ?? 1 });
   const readerRows = (bar: Bar): ReaderRow[] =>
     parted
       ? [
@@ -354,7 +356,7 @@ export function BarChart({
           }),
           ...(grouped ? [] : [{ id: '__total', label: 'Total', value: format(bar.value) }]),
         ]
-      : [{ id: bar.id, label: '', value: format(bar.value), ...(barLook(bar).tone ? { tone: barLook(bar).tone } : { slot: barLook(bar).slot ?? 1 }) }];
+      : [{ id: bar.id, label: '', value: format(bar.value), ...lookOf(barLook(bar)) }];
 
   // The key: one chip per series (two or more), and the target's dashed key on rows, where its line has no label of its own.
   const keyed = parted && defs.length >= 2;
@@ -572,9 +574,10 @@ export function BarChart({
 /**
  * The chart's point in a sentence, for screen readers when the page gives
  * none: the largest bars ("Largest: Email (42), Portal (30) and Slack
- * (12); smallest: Voice (3)."), or for bars in their own order the highest
- * and lowest; for groups, each series' highest bar; for 100 % stacks, each
- * series' share of everything. A target is said with how many bars reach it.
+ * (12); smallest: Voice (3); Other · 4 (9)."), or for bars in their own
+ * order the highest and lowest; for groups, each series' highest bar; for
+ * 100 % stacks, each series' share of everything. A target is said with how
+ * many bars reach it.
  */
 function summarise(
   bars: readonly Bar[],
@@ -598,12 +601,15 @@ function summarise(
     const shares = defs.map((def, index) => `${def.label} ${percent(total > 0 ? bars.reduce((sum, bar) => sum + (bar.parts[index] ?? 0), 0) / total : 0)}`);
     sentence = `Overall: ${sentenceList(shares)}, of ${format(total)} in all.`;
   } else {
-    const ranked = [...bars].sort((a, b) => b.value - a.value);
-    if (ranked.length === 1) sentence = `${describe(ranked[0]!)}.`;
-    else if (ordered) sentence = `Highest: ${describe(ranked[0]!)}; lowest: ${describe(ranked[ranked.length - 1]!)}.`;
+    // "Other · n" is a sum of the smallest, never a contender for largest: it is said after them.
+    const ranked = bars.filter((bar) => !bar.other).sort((a, b) => b.value - a.value);
+    const other = bars.find((bar) => bar.other);
+    const rest = other ? `; ${describe(other)}` : '';
+    if (ranked.length === 1) sentence = `${describe(ranked[0]!)}${rest}.`;
+    else if (ordered) sentence = `Highest: ${describe(ranked[0]!)}; lowest: ${describe(ranked[ranked.length - 1]!)}${rest}.`;
     else {
       const tail = ranked.length > 3 ? `; smallest: ${describe(ranked[ranked.length - 1]!)}` : '';
-      sentence = `Largest: ${sentenceList(ranked.slice(0, 3).map(describe))}${tail}.`;
+      sentence = `Largest: ${sentenceList(ranked.slice(0, 3).map(describe))}${tail}${rest}.`;
     }
   }
   if (!target) return sentence;

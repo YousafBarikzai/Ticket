@@ -110,6 +110,9 @@ describe('colour: one series, tones, the emphasis form and "Other · n"', () => 
     expect(count(markup, /data-slot="1"/g)).toBe(1);
     expect(markup).toMatch(/itsm-BarChart__name">Other · 2<\/span><\/span><span class="itsm-BarChart__value">460</);
     expect(markup).toContain('<span class="itsm-BarChart__segment" data-tone="neutral" data-pattern="hatch" style="flex-grow:1"></span>');
+    // A sum of the smallest is never the largest: the sentence says it after the bars it ranks.
+    expect(markup).toContain('>Email (412); Other · 2 (460).<');
+    expect(html(<BarChart title="x" maxBars={3} data={[...channels, { id: 'fax', label: 'Fax', value: 3 }, { id: 'sms', label: 'SMS', value: 2 }]} />)).toContain('Largest: Email (412) and Portal (318); Other · 3 (147).');
   });
 
   it('colours a bar by its own tone or slot on a chart of one series', () => {
@@ -137,6 +140,8 @@ describe('colour: one series, tones, the emphasis form and "Other · n"', () => 
     expect(count(markup, /data-slot="1"/g)).toBe(1);
     expect(count(markup, /data-tone="neutral"/g)).toBe(2);
     expect(markup).not.toContain('data-tone="danger"');
+    // "Other · n" stays hatched in the emphasis form too.
+    expect(html(<BarChart title="x" highlight="email" maxBars={2} data={channels} />)).toContain('data-tone="neutral" data-pattern="hatch"');
   });
 
   it('stacks priority tones honestly: P1 danger, P2 high, P3 neutral, P4 the soft fill with its outline', () => {
@@ -369,8 +374,12 @@ describe('reveal, determinism and contrast', () => {
     expect(html(<BarChart title="x" data={channels} animate={false} />)).not.toContain('data-reveal');
     expect(barChartStyles).toMatch(/@keyframes itsm-column-grow \{\s*from \{ transform: scaleY\(0\); \}/);
     expect(barChartStyles).toMatch(/\.itsm-BarChart\[data-reveal\] \.itsm-BarChart__column \.itsm-BarChart__bar \{\s*transform-origin: 50% 100%;\s*animation: itsm-column-grow var\(--itsm-duration-reveal\) var\(--itsm-easing-entrance\);/);
-    expect(barChartStyles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.itsm-BarChart__bar \{\s*transition: none;\s*animation: none;/);
-    expect(barChartStyles).toMatch(/:root\[data-itsm-motion="reduced"\] \.itsm-BarChart__bar \{\s*transition: none;\s*animation: none;/);
+    // Reduced motion turns it off with a selector as specific as the reveal's, after it, so it wins.
+    const off = '.itsm-BarChart[data-reveal] :is(.itsm-BarChart__row, .itsm-BarChart__column) .itsm-BarChart__bar';
+    const reduced = barChartStyles.slice(barChartStyles.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduced).toContain(`${off} {\n    animation: none;`);
+    expect(barChartStyles).toContain(`:root[data-itsm-motion="reduced"] ${off} {\n  animation: none;`);
+    expect(barChartStyles.indexOf('@media (prefers-reduced-motion: reduce)')).toBeGreaterThan(barChartStyles.indexOf('animation: itsm-column-grow'));
   });
 
   it('renders the same props to the same markup, and reconciles new values into the same bars, so a refetch never replays the reveal', () => {
@@ -391,8 +400,10 @@ describe('reveal, determinism and contrast', () => {
     expect(barChartStyles).toContain(':root[data-itsm-theme="high-contrast"] .itsm-BarChart__segment { --_itsm-ink: var(--_itsm-chart-surface); background: var(--_itsm-texture, none), var(--_itsm-series); }');
     expect(barChartStyles).toContain(':root[data-itsm-theme="high-contrast-dark"] .itsm-BarChart__segment {');
     const forced = barChartStyles.slice(barChartStyles.indexOf('@media (forced-colors: active)'));
-    expect(forced).toMatch(/\.itsm-BarChart \.itsm-BarChart__segment \{\s*forced-color-adjust: none;\s*--_itsm-ink: CanvasText;\s*background: var\(--_itsm-texture, none\), Canvas;\s*box-shadow: inset 0 0 0 1px CanvasText;/);
-    expect(forced).toMatch(/\.itsm-BarChart :is\(\.itsm-BarChart__segment, \.itsm-ChartLegend__key\)\[data-pattern\] \{\s*background: repeating-linear-gradient\(45deg, transparent 0 3px, CanvasText 3px 4\.5px\), Canvas;/);
+    // As specific as the contrast rules and after them: a system high-contrast theme asks for more contrast too.
+    expect(forced).toMatch(/:root \.itsm-BarChart \.itsm-BarChart__segment \{\s*forced-color-adjust: none;\s*--_itsm-ink: CanvasText;\s*background: var\(--_itsm-texture, none\), Canvas;\s*box-shadow: inset 0 0 0 1px CanvasText;/);
+    expect(forced).toMatch(/:root \.itsm-BarChart :is\(\.itsm-BarChart__segment, \.itsm-ChartLegend__key\)\[data-pattern\] \{\s*background: repeating-linear-gradient\(45deg, transparent 0 3px, CanvasText 3px 4\.5px\), Canvas;/);
+    expect(barChartStyles.indexOf('@media (forced-colors: active)')).toBeGreaterThan(barChartStyles.indexOf('@media (prefers-contrast: more)'));
     expect(forced).toMatch(/\.itsm-BarChart__overlay \{\s*forced-color-adjust: none;/);
   });
 });
