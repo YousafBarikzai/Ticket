@@ -216,6 +216,32 @@ describe('the demo’s page', () => {
   });
 });
 
+describe('the support link, in every tenant (D23)', () => {
+  // Here rather than in `render.test.ts`, which is not this package's file
+  // this wave: a link stored before the https:/mailto: rule must not run.
+  async function pageWith(supportUrl: string) {
+    db.rows['statusPage.findFirst'] = () => ({ ...PAGE, supportUrl });
+    return renderStatusPage((await readPublicStatus(tenant(STANDARD)))!);
+  }
+
+  it.each(['javascript:alert(document.cookie)', 'JavaScript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'http://help.example'])(
+    'shows %s as text, never as a link',
+    async (unsafe) => {
+      const html = await pageWith(unsafe);
+      expect(html).toContain('<p class="muted">Need help? Contact support.</p>');
+      expect(html).not.toContain('href="javascript');
+      expect(html).not.toContain('href="JavaScript');
+      expect(html).not.toContain('href="data:');
+      expect(html).not.toContain('href="http:');
+      expect(html).not.toContain('<script>');
+    },
+  );
+
+  it.each(['https://help.northwind.example/it', 'mailto:it.help@northwind.example'])('links %s, as before', async (safe) => {
+    expect(await pageWith(safe)).toContain(`<a href="${safe}">Contact support</a>`);
+  });
+});
+
 describe('E5 · mirroring onto the page', () => {
   const EVENTS: [string, Record<string, string>, string][] = [
     ['incident.major.declared', { incidentId: 'mi-1' }, 'majorIncident.findFirst'],

@@ -1,3 +1,4 @@
+import { isSafeHref } from '@itsm/contracts/links';
 import { HEADLINES, STATUS_LABELS, type ComponentStatus } from '../domain/status.js';
 import type { PublicStatus } from './public-service.js';
 
@@ -55,6 +56,19 @@ function when(iso: string): string {
   return escape(iso.replace('T', ' ').slice(0, 16) + ' UTC');
 }
 
+/**
+ * The support line, linked only when the stored address is one D23 allows
+ * (`https:` or `mailto:`, every tenant). New values are refused when they are
+ * saved, but a `javascript:` link stored before that rule would otherwise run
+ * on a public page served from the API's own origin; it is shown as text
+ * instead, as `RichText` shows an unsafe link.
+ */
+function supportLine(supportUrl: string | null): string {
+  if (!supportUrl) return '';
+  if (!isSafeHref(supportUrl)) return '<p class="muted">Need help? Contact support.</p>';
+  return `<p class="muted">Need help? <a href="${escape(supportUrl)}">Contact support</a>.</p>`;
+}
+
 export function renderStatusPage(status: PublicStatus, message?: string): string {
   const overall = status.overall;
   const headline = `<div class="headline" style="background:${COLOURS[overall]}">${escape(HEADLINES[overall])}</div>`;
@@ -103,7 +117,7 @@ export function renderStatusPage(status: PublicStatus, message?: string): string
       (status.demo
         ? `<p class="muted">${escape(DEMO_SUBSCRIPTIONS_OFF)}</p>`
         : `<form method="post" action="${escape(status.page.path)}/subscribe" accept-charset="utf-8"><label for="email">Get updates by email</label><br><input type="email" id="email" name="email" required placeholder="you@example.com"><button type="submit">Subscribe</button></form>`) +
-      (status.page.supportUrl ? `<p class="muted">Need help? <a href="${escape(status.page.supportUrl)}">Contact support</a>.</p>` : '') +
+      supportLine(status.page.supportUrl) +
       `<p class="muted">Last updated ${when(status.generatedAt)}.</p>`,
   );
 }
