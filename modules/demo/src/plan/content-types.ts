@@ -614,7 +614,11 @@ export interface ProblemContent {
   readonly service: ServiceKey;
   /** The subcategory its incidents are drawn from. */
   readonly subcategory: SubcategoryKey;
-  /** How many generated incidents are linked, and from where; heroes are listed apart. */
+  /**
+   * Which generated incidents are linked, and how many; heroes are listed
+   * apart. A `major-incident` source links every report of the incident, and
+   * its `count` only records how many A4 expects at full scale.
+   */
   readonly links: readonly { readonly source: ProblemLinkSource; readonly count: number }[];
   /** Heroes linked to it (H2, H5, H7). */
   readonly heroes?: readonly HeroKey[];
