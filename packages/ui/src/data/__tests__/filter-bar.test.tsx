@@ -155,7 +155,7 @@ describe('chips', () => {
     press(activeElement()!, 'Escape');
     await settle();
     const clear = container.querySelector<HTMLButtonElement>('.itsm-FilterChip__clear')!;
-    expect(clear.getAttribute('aria-label')).toBe('Clear Status filter');
+    expect(clear.getAttribute('aria-label')).toBe('Remove filter Status: Live');
     clear.focus();
     click(clear);
     await settle(10);

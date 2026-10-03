@@ -969,7 +969,7 @@ describe('v3 active-filter chips', () => {
     const chip = container.querySelector('.itsm-FilterChip')!;
     expect(chip.getAttribute('data-tone')).toBe('danger');
     expect(chip.querySelector('.itsm-FilterChip__trigger')?.textContent).toBe('SLA: Breached');
-    expect(chip.querySelector('.itsm-FilterChip__clear')?.getAttribute('aria-label')).toBe('Clear SLA filter');
+    expect(chip.querySelector('.itsm-FilterChip__clear')?.getAttribute('aria-label')).toBe('Remove filter SLA: Breached');
     expect(chipRule('.itsm-FilterChip[data-active][data-tone="danger"]')).toContain('--_chip-bg: var(--itsm-colour-danger-subtle);');
     await expectNoViolations(container);
     cleanupDocument();

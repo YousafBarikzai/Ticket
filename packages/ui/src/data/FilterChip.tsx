@@ -67,7 +67,8 @@ export function FilterChip({ label, valueLabel, active, onClear, children, open,
         <button
           type="button"
           className="itsm-FilterChip__clear"
-          aria-label={`Clear ${label} filter`}
+          // Named with the value it removes (§2.14): "Remove filter Status: Open".
+          aria-label={shown ? `Remove filter ${label}: ${shown}` : `Remove filter ${label}`}
           onClick={() => {
             onClear();
             // The × goes with the value; focus stays on the chip rather than
