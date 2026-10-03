@@ -133,7 +133,10 @@ function checkProvisionOptions(parsed: z.infer<typeof provisionTenantSchema>, op
     throw new ValidationError('a seeding demo tenant needs a demo-build-g<n> slug, which the purge guard recognises');
   }
   if (!options.demo) throw new ValidationError('a seeding demo tenant needs its build settings (settings.demo)');
-  demoBuildSettingsSchema.parse(options.demo);
+  const settings = demoBuildSettingsSchema.safeParse(options.demo);
+  if (!settings.success) {
+    throw new ValidationError(`the demo build settings are invalid: ${settings.error.issues.map((issue) => `${issue.path.join('.')} ${issue.message}`).join('; ')}`);
+  }
 }
 
 export async function provisionTenant(
