@@ -225,15 +225,6 @@ button.itsm-AreaSwitcher.itsm-AppTopBar__area .itsm-AreaSwitcher__chevron {
   align-items: center;
   gap: var(--itsm-space-2xs);
 }
-.itsm-Menu__detail {
-  color: var(--itsm-colour-text-secondary);
-  font-weight: var(--itsm-font-weight-medium);
-}
-.itsm-Menu__current {
-  flex: none;
-  margin-inline-start: auto;
-  color: var(--itsm-colour-accent);
-}
 
 /* ---- AreaList ---- */
 

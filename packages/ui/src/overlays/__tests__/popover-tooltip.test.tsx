@@ -11,6 +11,7 @@ import { Tooltip } from '../../web/Tooltip.js';
 import { confirmDialogStyles } from '../ConfirmDialog.styles.js';
 import { contextMenuStyles } from '../ContextMenu.styles.js';
 import { menuStyles } from '../Menu.styles.js';
+import { styleRegistry } from '../../styles/registry.js';
 import { popoverStyles } from '../Popover.styles.js';
 import { sheetStyles } from '../Sheet.styles.js';
 import { toasterStyles } from '../Toaster.styles.js';
@@ -327,6 +328,10 @@ describe('v3 overlay restyles', () => {
     // The item's detail line and the current choice's check live with the menu.
     expect(rule(menuStyles, '.itsm-Menu__detail')).toContain('color: var(--itsm-colour-text-secondary);');
     expect(rule(menuStyles, '.itsm-Menu__current')).toContain('color: var(--itsm-colour-accent);');
+    // Only there: the area switcher's interim copies are gone, so a change here is the only change.
+    for (const name of ['.itsm-Menu__detail {', '.itsm-Menu__current {']) {
+      expect(styleRegistry.filter((entry) => entry.css.includes(name)).map((entry) => entry.module), name).toEqual(['overlays/Menu.styles.ts']);
+    }
   });
 
   it('popovers: the menu’s surface, with room for free content', () => {
