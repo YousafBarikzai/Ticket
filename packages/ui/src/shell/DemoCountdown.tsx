@@ -133,6 +133,11 @@ export function useResetRemaining(clock: DemoClock): { readonly remaining: numbe
     };
   }, []);
 
+  // A layout re-rendered after midnight hands over the new reset; never step back to an older one.
+  useEffect(() => {
+    setTarget((current) => Math.max(current, clock.nextResetAt));
+  }, [clock.nextResetAt]);
+
   useEffect(() => {
     setRemaining(effective - (Date.now() + demoBarState().skewMs));
   }, [effective]);

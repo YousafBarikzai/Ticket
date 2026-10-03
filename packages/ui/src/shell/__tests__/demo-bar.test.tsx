@@ -451,6 +451,15 @@ describe('DemoCountdown, running', () => {
     expect(timer().querySelector('time')?.getAttribute('datetime')).toBe(new Date(Date.UTC(2026, 9, 3, 23, 0, 0)).toISOString());
   });
 
+  it('takes a later reset from a re-rendered layout, and never steps back to an earlier one', () => {
+    const view = render(<DemoBar variant="public" clock={clock} />);
+    expect(shown()).toBe('09:01:38');
+    view.rerender(<DemoBar variant="public" clock={{ ...clock, nextResetAt: NEXT_RESET + 24 * 3600_000 }} />);
+    expect(shown()).toBe('33:01:38');
+    view.rerender(<DemoBar variant="public" clock={clock} />);
+    expect(shown()).toBe('33:01:38');
+  });
+
   it('shows the busy state while a reset runs, with the estimate after "Resetting now…"', () => {
     render(<DemoBar {...sessionProps()} />);
     act(() => {
