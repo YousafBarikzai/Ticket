@@ -28,7 +28,7 @@ export const workloadManifest: ModuleManifest = registerModule({
     { key: 'workload.oncall.override', scopes: ['team', 'any'], description: 'Record a swap on an on-call rotation.' },
   ],
   events: {
-    publishes: ['workload.assignment.declined', 'workload.oncall.changed'],
+    publishes: ['workload.assignment.declined', 'workload.oncall.overridden'],
     consumes: ['ticket.assigned'],
   },
   featureFlags: [],
