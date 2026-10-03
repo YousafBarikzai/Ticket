@@ -8,8 +8,8 @@ import { css, layer } from '../styles/css.js';
  * 12/16 `text.muted` — sits 2 px under the title, and the plot 16 px under
  * the lede, as in the PMO. In a state with nothing to plot, the card keeps
  * its final height (an inline `min-block-size`) and the empty, insufficient
- * or failed plot fills it, so a dashboard row stays level. The plot area is
- * the chart's container (`itsm-chart`) as everywhere else in the kit.
+ * or failed plot fills it, so a dashboard row stays level. A gauge sits in
+ * the middle of its card; every other chart takes the card's width.
  */
 export const chartCardStyles = layer(
   'components',
@@ -55,6 +55,11 @@ export const chartCardStyles = layer(
 
 .itsm-ChartCard__plot > .itsm-Chart__empty {
   flex: 1 1 auto;
+}
+
+/* A gauge is a dial, not a strip: it sits in the middle of its card, as in the PMO. */
+.itsm-ChartCard__plot > .itsm-Gauge {
+  align-self: center;
 }
 
 .itsm-ChartCard__retry {

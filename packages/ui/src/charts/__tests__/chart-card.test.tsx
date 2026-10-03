@@ -67,6 +67,8 @@ describe('the card', () => {
     expect(wide).not.toContain('data-tier="2"');
     expect(narrow).toContain('data-tier="2"');
     expect(narrow).toMatch(/^<div class="itsm-GridItem" data-span="4">/);
+    // 9 is a span too (X-m25): a wide card beside a span-3 list.
+    expect(html(<ChartCard title="t" span={9}>{chart}</ChartCard>)).toMatch(/^<div class="itsm-GridItem" data-span="9">/);
   });
 
   it('leaves a chart without a title as it is', () => {
@@ -163,6 +165,7 @@ describe('styles', () => {
     expect(chartCardStyles).toMatch(/\.itsm-ChartCard\[data-lede\] > \.itsm-Card__header \+ \.itsm-Card__body \{\s*padding-block-start: var\(--itsm-space-3xs\);/);
     expect(chartCardStyles).toMatch(/\.itsm-ChartCard > \.itsm-Card__body \{[^}]*gap: var\(--itsm-space-md\);/);
     expect(chartCardStyles).toMatch(/\.itsm-ChartCard__headline \{[^}]*font-weight: var\(--itsm-font-weight-medium\);[^}]*color: var\(--itsm-colour-text-secondary\);/);
+    expect(chartCardStyles).toMatch(/\.itsm-ChartCard__plot > \.itsm-Gauge \{\s*align-self: center;/);
   });
 });
 

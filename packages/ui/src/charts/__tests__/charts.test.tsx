@@ -24,7 +24,7 @@ import { ProgressRing } from '../ProgressRing.js';
 import { READER_CORE_MARK } from '../reader-core.js';
 import { Sparkline } from '../Sparkline.js';
 import { TEXTURE_TONES, TexturePatterns, textureId } from '../texture.js';
-import { textureRules, toneTextureImages, toneTextureRules } from '../texture-css.js';
+import { textureRules, textureVariables, toneTextureImages, toneTextureRules } from '../texture-css.js';
 
 /**
  * The charts as a server renders them: static markup, no provider, no
@@ -143,6 +143,13 @@ describe('textures by tone (A8 §6.3)', () => {
     expect(toneTextureImages('ink').danger).toBe(textureRules('', '.x', 'ink').match(/\[data-slot="4"\] \{ background: (.*), var\(--_itsm-series\); \}/)![1]);
     expect(toneTextureRules('.s', '.m', 'ink')).toContain('.s .m[data-tone="hold"] { background: ');
     expect(toneTextureRules('.s', '.m', 'ink')).not.toContain('success');
+  });
+
+  it('writes each key’s texture once as a variable in the ink its theme sets', () => {
+    const rules = textureVariables('.m');
+    expect(rules.split('\n')).toHaveLength(14);
+    expect(rules).toContain('.m[data-tone="info"] { --_itsm-texture: radial-gradient(circle, var(--_itsm-ink) 1px, transparent 1.5px) 0 0 / 5px 5px; }');
+    expect(textureVariables('.m', { slots: false }).split('\n')).toHaveLength(7);
   });
 });
 

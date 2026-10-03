@@ -1,6 +1,6 @@
 import { moreContrast } from '../feedback/tone.js';
 import { css, layer, mq } from '../styles/css.js';
-import { textureImages, textureRules, toneTextureRules } from './texture-css.js';
+import { textureImages, textureVariables } from './texture-css.js';
 
 const hatch = (ink: string): string => textureImages(ink)[2]!;
 
@@ -152,9 +152,10 @@ export const distributionBarStyles = layer(
   color: var(--itsm-colour-danger-subtleText);
 }
 
+${textureVariables('.itsm-DistributionBar__segment')}
+
 ${moreContrast(
-  (scope) => `${textureRules(scope, '.itsm-DistributionBar__segment', 'var(--_itsm-chart-surface)')}
-${toneTextureRules(scope, '.itsm-DistributionBar__segment', 'var(--_itsm-chart-surface)')}`,
+  (scope) => `${scope} .itsm-DistributionBar__segment { --_itsm-ink: var(--_itsm-chart-surface); background: var(--_itsm-texture, none), var(--_itsm-series); }`,
 )}
 
 ${mq.forcedColors} {
@@ -169,14 +170,13 @@ ${mq.forcedColors} {
     box-shadow: inset 0 0 0 1px CanvasText;
   }
   .itsm-DistributionBar__segment {
-    background: Canvas;
+    --_itsm-ink: CanvasText;
+    background: var(--_itsm-texture, none), Canvas;
     box-shadow: inset 0 0 0 1px CanvasText;
   }
   .itsm-DistributionBar__segment[data-slot="1"] {
     background: CanvasText;
   }
-${textureRules('  ', '.itsm-DistributionBar__segment', 'CanvasText', 'Canvas')}
-${toneTextureRules('  ', '.itsm-DistributionBar__segment', 'CanvasText', 'Canvas')}
   .itsm-DistributionBar__over {
     background: ${hatch('Highlight')}, Canvas;
   }

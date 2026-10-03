@@ -128,10 +128,13 @@ describe('labels, totals, layouts and nothing', () => {
 
 describe('increase contrast and forced colours', () => {
   it('textures every slot and tone with more contrast, and outlines segments in forced colours', () => {
-    expect(distributionBarStyles).toContain(':root[data-itsm-theme="high-contrast"] .itsm-DistributionBar__segment[data-tone="danger"] { background: ');
-    expect(distributionBarStyles).toContain(':root[data-itsm-theme="high-contrast"] .itsm-DistributionBar__segment[data-slot="2"] { background: ');
+    // Each key's texture is written once, as a variable drawn in `--_itsm-ink`; a theme only says when to paint it.
+    expect(distributionBarStyles).toContain('.itsm-DistributionBar__segment[data-tone="danger"] { --_itsm-texture: ');
+    expect(distributionBarStyles).toContain('.itsm-DistributionBar__segment[data-slot="2"] { --_itsm-texture: repeating-linear-gradient(45deg, transparent 0 3px, var(--_itsm-ink) 3px 4.5px); }');
+    expect(distributionBarStyles).not.toContain('[data-slot="1"] { --_itsm-texture');
+    expect(distributionBarStyles).toContain(':root[data-itsm-theme="high-contrast"] .itsm-DistributionBar__segment { --_itsm-ink: var(--_itsm-chart-surface); background: var(--_itsm-texture, none), var(--_itsm-series); }');
     const forced = distributionBarStyles.slice(distributionBarStyles.indexOf('@media (forced-colors: active)'));
-    expect(forced).toMatch(/\.itsm-DistributionBar__segment \{\s*background: Canvas;\s*box-shadow: inset 0 0 0 1px CanvasText;/);
+    expect(forced).toMatch(/\.itsm-DistributionBar__segment \{\s*--_itsm-ink: CanvasText;\s*background: var\(--_itsm-texture, none\), Canvas;\s*box-shadow: inset 0 0 0 1px CanvasText;/);
     expect(forced).toMatch(/\.itsm-DistributionBar__marker \{\s*background: Highlight;/);
   });
 });

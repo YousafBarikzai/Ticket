@@ -1,6 +1,6 @@
 import { moreContrast } from '../feedback/tone.js';
 import { css, layer, mq } from '../styles/css.js';
-import { textureImages, toneTextureRules } from './texture-css.js';
+import { textureImages, textureVariables } from './texture-css.js';
 
 const fills = (['success', 'warning', 'danger'] as const)
   .map((tone) => `.itsm-Bullet__fill[data-tone="${tone}"] { --_itsm-series: var(--itsm-colour-${tone}-border); }`)
@@ -10,9 +10,10 @@ const fills = (['success', 'warning', 'danger'] as const)
  * `BulletBar` and `BulletList` (A8 §4.6, the PMO's "By category").
  *
  * A row is a grid — label · track · value · detail — 32 px tall (24
- * compact). The columns are fractions of the row, not of the content, so the
- * tracks of every row in a list (and of the rows behind "Show all") start and
- * end together. The track is 8 px (6 compact) of `fill.secondary`; the fill
+ * compact), the label and the track sharing what the value and the detail
+ * leave, two to three. In a list the rows are one subgrid, so every track
+ * starts and ends together whatever its value's width. The track is 8 px (6
+ * compact) of `fill.secondary`; the fill
  * the accent or its zone's chart colour; the shortfall to the target the
  * warning or danger *subtle* tint, the PMO's amber and pink segment; the
  * target a 2 × 14 tick in the marker navy; a run past the end hatched in
@@ -38,12 +39,31 @@ export const bulletStyles = layer(
   --_itsm-track: 0.5rem;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto auto;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
   align-items: center;
   column-gap: var(--itsm-space-sm);
   min-block-size: 2rem;
   font-size: var(--itsm-text-callout-size);
   line-height: var(--itsm-text-callout-line);
+}
+
+.itsm-Bullet[data-detail] {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto auto;
+}
+
+/* In a list the rows share one set of columns, so every track starts and ends together. */
+@supports (grid-template-columns: subgrid) {
+  .itsm-BulletList__rows {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+    column-gap: var(--itsm-space-sm);
+  }
+  .itsm-BulletList[data-detail] .itsm-BulletList__rows {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto auto;
+  }
+  .itsm-BulletList__rows > .itsm-Bullet {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
 }
 
 .itsm-Bullet[data-compact] {
@@ -150,9 +170,11 @@ ${mq.hover} {
   cursor: pointer;
 }
 
+${textureVariables('.itsm-Bullet__fill', { slots: false })}
+
 ${moreContrast(
   (scope) => `${scope} .itsm-Bullet__track { box-shadow: inset 0 0 0 1px var(--itsm-colour-border-strong); }
-${toneTextureRules(scope, '.itsm-Bullet__fill', 'var(--_itsm-chart-surface, var(--itsm-colour-surface-raised))')}`,
+${scope} .itsm-Bullet__fill { --_itsm-ink: var(--_itsm-chart-surface, var(--itsm-colour-surface-raised)); background: var(--_itsm-texture, none), var(--_itsm-series); }`,
 )}
 
 ${mq.forcedColors} {

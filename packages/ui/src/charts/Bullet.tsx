@@ -180,6 +180,7 @@ function BulletRowView({
     <Tag
       className={cx('itsm-Bullet', row.className)}
       data-compact={row.compact || undefined}
+      data-detail={row.detail ? '' : undefined}
       data-link={row.href ? '' : undefined}
       data-point={point}
       {...(image ? { role: 'img', 'aria-label': image } : {})}
@@ -304,7 +305,7 @@ export function BulletList({
       }}
       tableMode={table}
     >
-      <div className="itsm-Chart itsm-BulletList">
+      <div className="itsm-Chart itsm-BulletList" data-detail={ordered.some((row) => row.detail) ? '' : undefined}>
         {interactive ? (
           <ChartReader label={title} points={points} mode="marks" axis="y" placement="above" nearest={false}>
             {body}

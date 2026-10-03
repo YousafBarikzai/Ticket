@@ -49,3 +49,19 @@ export function toneTextureRules(scope: string, selector: string, ink: string, f
     .map(([tone, image]) => `${scope} ${selector}[data-tone="${tone}"] { background: ${image}, ${fill}; }`)
     .join('\n');
 }
+
+/**
+ * Each slot's and tone's texture as a variable on the mark itself,
+ * `--_itsm-texture`, drawn in `--_itsm-ink`: one rule per key, written once,
+ * where `textureRules` writes one per key for every theme scope. A rule then
+ * paints it only where it is wanted — `--_itsm-ink: …; background:
+ * var(--_itsm-texture, none), var(--_itsm-series)` — and a key without a
+ * texture (slot 1, `success`) falls back to its plain fill.
+ */
+export function textureVariables(selector: string, { slots = true }: { readonly slots?: boolean } = {}): string {
+  const ink = 'var(--_itsm-ink)';
+  return [
+    ...(slots ? Object.entries(textureImages(ink)) : []).map(([slot, image]) => `${selector}[data-slot="${slot}"] { --_itsm-texture: ${image}; }`),
+    ...Object.entries(toneTextureImages(ink)).map(([tone, image]) => `${selector}[data-tone="${tone}"] { --_itsm-texture: ${image}; }`),
+  ].join('\n');
+}

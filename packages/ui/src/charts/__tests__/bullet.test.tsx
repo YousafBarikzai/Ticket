@@ -66,7 +66,7 @@ describe('measureBullet', () => {
 describe('BulletBar', () => {
   it('is an image named by its sentence, its track decoration', () => {
     const markup = html(<BulletBar label="Network team" value={0.81} target={0.9} format={percent} detail="9 open" />);
-    expect(markup).toMatch(/^<div class="itsm-Bullet" role="img" aria-label="Network team: 81%, target 90%, 9 points below, 9 open">/);
+    expect(markup).toMatch(/^<div class="itsm-Bullet" data-detail="" role="img" aria-label="Network team: 81%, target 90%, 9 points below, 9 open">/);
     expect(markup).toContain('<span class="itsm-Bullet__track" aria-hidden="true">');
     expect(markup).toContain('<span class="itsm-Bullet__gap" data-tone="warning" style="inset-inline-start:81%;inline-size:9%"></span>');
     expect(markup).toContain('<span class="itsm-Bullet__fill" data-tone="accent" style="inline-size:81%"></span>');
@@ -80,6 +80,11 @@ describe('BulletBar', () => {
     expect(markup).toContain('<a href="/team/network" class="itsm-Bullet__link">Network team<span class="itsm-visually-hidden">: 81%, target 90%, 9 points below</span></a>');
     expect(markup).toContain('<span class="itsm-Bullet__value" aria-hidden="true">81%</span>');
     expect(markup).toContain('data-link=""');
+  });
+
+  it('shares one set of columns down a list, so every track lines up', () => {
+    expect(html(<BulletList title="t" rows={[{ id: 'a', label: 'A', value: 1, detail: 'note' }]} />)).toContain('<div class="itsm-Chart itsm-BulletList" data-detail="">');
+    expect(bulletStyles).toMatch(/@supports \(grid-template-columns: subgrid\) \{[\s\S]*?\.itsm-BulletList__rows > \.itsm-Bullet \{\s*grid-column: 1 \/ -1;\s*grid-template-columns: subgrid;/);
   });
 
   it('has a compact form for tiles and inspector cards', () => {
@@ -139,7 +144,9 @@ describe('styles', () => {
   });
 
   it('textures the fills with more contrast, and outlines them in forced colours', () => {
-    expect(bulletStyles).toContain(':root[data-itsm-theme="high-contrast"] .itsm-Bullet__fill[data-tone="danger"] { background: ');
+    expect(bulletStyles).toContain('.itsm-Bullet__fill[data-tone="danger"] { --_itsm-texture: repeating-linear-gradient(45deg, transparent 0 3.5px, var(--_itsm-ink) 3.5px 5px)');
+    expect(bulletStyles).toContain(':root[data-itsm-theme="high-contrast"] .itsm-Bullet__fill { --_itsm-ink: var(--_itsm-chart-surface, var(--itsm-colour-surface-raised)); background: var(--_itsm-texture, none), var(--_itsm-series); }');
+    expect(bulletStyles).not.toContain('.itsm-Bullet__fill[data-slot');
     const forced = bulletStyles.slice(bulletStyles.indexOf('@media (forced-colors: active)'));
     expect(forced).toMatch(/\.itsm-Bullet__fill \{\s*background: Highlight;/);
     expect(forced).toMatch(/\.itsm-Bullet__gap \{\s*background: Canvas;\s*box-shadow: inset 0 0 0 1px CanvasText;/);
