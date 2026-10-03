@@ -3,6 +3,7 @@
 import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { Button, Icon } from '@itsm/ui';
 import { useTheme } from '@itsm/ui/theme';
+import type { DemoFeature } from '@itsm/contracts/demo';
 import { permissionLabel } from '../permissions.js';
 
 /**
@@ -19,17 +20,40 @@ import { permissionLabel } from '../permissions.js';
  *
  * Write controls themselves are hidden, not disabled, for a missing
  * permission; disabled-with-a-reason is only for state (offline, invalid).
+ *
+ * In the shared demo the reason is different and so are the words (A7 §2.8,
+ * A7-S17): with `demo`, the pill reads "Turned off in the demo" with a lock,
+ * and its popover gives A3's sentence for the feature — "This is a shared
+ * demo, so changing people's roles is turned off. Everything else works as in
+ * the full product." — because no administrator could grant it.
  */
 
 const Popover = lazy(() => import('@itsm/ui/overlays').then((module) => ({ default: module.Popover })));
+/** The demo sentence, fetched with the popover so the copy register is not part of a page's first load. */
+const DemoExplanation = lazy(() => import('./page/DemoExplanation.js'));
 
-export interface ViewOnlyProps {
+interface ViewOnlyBase {
   /** What can be seen: "Business hours", "this rule". */
   readonly label: string;
-  /** The permission its changes need, as a key: `sla.policy.manage`. */
-  readonly permission: string;
   readonly className?: string;
 }
+
+export type ViewOnlyProps = ViewOnlyBase &
+  (
+    | {
+        /** The permission its changes need, as a key: `sla.policy.manage`. */
+        readonly permission: string;
+        readonly demo?: undefined;
+      }
+    | {
+        /** The shared demo turns this feature off (`me.demo.disabledFeatures`): the pill says so, with A3's sentence. */
+        readonly demo: DemoFeature;
+        readonly permission?: string;
+      }
+  );
+
+/** The pill's words in the shared demo. */
+export const DEMO_PILL = 'Turned off in the demo';
 
 function Explanation({ label, permission }: { readonly label: string; readonly permission: string }): ReactNode {
   const { prefs } = useTheme();
@@ -65,7 +89,8 @@ function Explanation({ label, permission }: { readonly label: string; readonly p
   );
 }
 
-export function ViewOnly({ label, permission, className }: ViewOnlyProps): ReactNode {
+export function ViewOnly(props: ViewOnlyProps): ReactNode {
+  const { label, permission, demo, className } = props;
   const [wanted, setWanted] = useState(false);
   const [open, setOpen] = useState(false);
   const pill = (
@@ -83,15 +108,15 @@ export function ViewOnly({ label, permission, className }: ViewOnlyProps): React
             },
           })}
     >
-      <Icon name="eye" size="xs" />
-      <span>View only</span>
+      <Icon name={demo ? 'lock' : 'eye'} size="xs" />
+      <span>{demo ? DEMO_PILL : 'View only'}</span>
     </button>
   );
   if (!wanted) return pill;
   return (
     <Suspense fallback={pill}>
-      <Popover trigger={pill} title="View only" width="sm" align="end" open={open} onOpenChange={setOpen}>
-        <Explanation label={label} permission={permission} />
+      <Popover trigger={pill} title={demo ? DEMO_PILL : 'View only'} width="sm" align="end" open={open} onOpenChange={setOpen}>
+        {demo ? <DemoExplanation feature={demo} /> : <Explanation label={label} permission={permission ?? ''} />}
       </Popover>
     </Suspense>
   );

@@ -1,0 +1,270 @@
+/*
+ * The Administration page kit (A7 §2.3): the toolbar row, "As at", the range
+ * and scope controls, freshness, the KPI strip's spacing, the register card,
+ * the record hero, the phone's section chips and the print sheet.
+ *
+ * Tokens only (D3): every colour, size and space is a design-system variable,
+ * so dark mode and Increase contrast reach all of it.
+ */
+
+/* ---- G2: the toolbar row ------------------------------------------------- */
+
+.app-Toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs) var(--itsm-space-md);
+  min-block-size: 2.75rem;
+}
+
+.app-Toolbar[data-sticky] {
+  position: sticky;
+  inset-block-start: var(--itsm-frame-top);
+  z-index: 2;
+  padding-block: var(--itsm-space-xs);
+  background: var(--itsm-colour-surface-canvas);
+}
+
+.app-Toolbar__start,
+.app-Toolbar__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs) var(--itsm-space-sm);
+  min-inline-size: 0;
+}
+
+.app-Toolbar__end {
+  margin-inline-start: auto;
+}
+
+.app-Toolbar__slot {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+/* ---- As at and freshness ------------------------------------------------- */
+
+.app-AsAt,
+.app-Updated,
+.app-Freshness,
+.app-RangeControl__custom {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-AsAt {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.app-AsAt__time {
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-Freshness,
+.app-Updated {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  white-space: nowrap;
+}
+
+.app-Freshness__dot {
+  flex: none;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-success-border);
+}
+
+/* ---- Range and scope ----------------------------------------------------- */
+
+.app-RangeControl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+
+.app-Scope {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+}
+
+.app-Scope[data-static] {
+  min-block-size: 2rem;
+  padding-inline: var(--itsm-space-sm);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-surface-raised);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* ---- G5 and G8: the KPI strip and the register card ---------------------- */
+
+.app-KpiStrip {
+  min-inline-size: 0;
+}
+
+.app-RegisterCard__table {
+  min-inline-size: 0;
+}
+
+/* ---- T3: the record hero ------------------------------------------------- */
+
+.app-RecordHero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "icon body actions" ". aside aside";
+  align-items: center;
+  gap: var(--itsm-space-xs) var(--itsm-space-md);
+}
+
+.app-RecordHero__icon {
+  grid-area: icon;
+}
+
+.app-RecordHero__body {
+  grid-area: body;
+  min-inline-size: 0;
+}
+
+.app-RecordHero__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs) var(--itsm-space-sm);
+}
+
+.app-RecordHero__title {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-text-recordTitle-family);
+  font-size: var(--itsm-text-recordTitle-size);
+  line-height: var(--itsm-text-recordTitle-line);
+  font-weight: var(--itsm-text-recordTitle-weight);
+  letter-spacing: var(--itsm-text-recordTitle-tracking);
+  word-spacing: var(--itsm-text-recordTitle-word-spacing);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.app-RecordHero__meta {
+  margin: var(--itsm-space-3xs) 0 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-RecordHero__aside {
+  grid-area: aside;
+}
+
+.app-RecordHero__actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--itsm-space-xs);
+}
+
+@media (max-width: 47.99rem) {
+  .app-RecordHero {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "icon body" "aside aside" "actions actions";
+  }
+
+  .app-RecordHero__actions {
+    justify-content: flex-start;
+  }
+}
+
+/* ---- G12: section chips on a phone --------------------------------------- */
+
+.app-SectionJump {
+  display: none;
+}
+
+@media (max-width: 47.99rem) {
+  .app-SectionJump {
+    display: block;
+    position: sticky;
+    inset-block-start: var(--itsm-frame-top);
+    z-index: 2;
+    margin-inline: calc(var(--itsm-space-md) * -1);
+    padding: var(--itsm-space-xs) var(--itsm-space-md);
+    overflow-x: auto;
+    background: var(--itsm-colour-surface-canvas);
+    scrollbar-width: none;
+  }
+}
+
+.app-SectionJump__list {
+  display: flex;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-SectionJump__chip {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2rem;
+  padding-inline: var(--itsm-space-sm);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-pill);
+  background: var(--itsm-colour-surface-raised);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-SectionJump__chip:hover {
+  border-color: var(--itsm-colour-border-softHover);
+}
+
+.app-SectionJump__chip:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-focus-offset);
+}
+
+/* A section a chip jumps to lands under the frame, not behind it. */
+[id]:target {
+  scroll-margin-block-start: calc(var(--itsm-frame-top) + var(--itsm-space-xs));
+}
+
+/* ---- Print or save as PDF (ExportMenu) ----------------------------------- */
+
+@media print {
+  .app-Toolbar {
+    position: static;
+    background: none;
+  }
+
+  /* On paper the toolbar says only when the numbers were read. */
+  .app-Toolbar__slot:not([data-slot="as-at"]),
+  .app-SectionJump,
+  .app-RecordHero__actions,
+  .app-SampleNote button {
+    display: none;
+  }
+
+  .app-KpiStrip,
+  .app-RegisterCard,
+  .app-RecordHero {
+    break-inside: avoid;
+  }
+}
