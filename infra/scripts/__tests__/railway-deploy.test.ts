@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ANALYTICS_QUERY_CACHE_SECONDS,
   assertPullable,
   callApi,
   checkPullable,
@@ -285,6 +286,23 @@ describe('what each service is actually given', () => {
     // And `off` nowhere else: the six are the only services that mention it.
     const mentioned = catalogue.services.filter((service) => service.variables && 'DEMO_MODE' in service.variables).map((service) => service.name);
     expect(mentioned.sort()).toEqual(on);
+  });
+
+  it('turns the metric answer cache on for the API, and for nothing else', () => {
+    // A8 R4c: the cache is off in code so tests and development always read
+    // fresh facts; the deploy turns it on where the shared demo's dashboards
+    // are answered. On a worker or an application it would be a variable
+    // nothing reads.
+    const hosts = hostsFor(catalogue, domain, 'production');
+    expect(variablesFor(named('api'), hosts).ANALYTICS_QUERY_CACHE_SECONDS).toBe('120');
+    expect(ANALYTICS_QUERY_CACHE_SECONDS).toBe(120);
+    const others = catalogue.services.filter((service) => service.name !== 'api');
+    expect(others.length).toBeGreaterThan(5);
+    for (const service of others) {
+      expect('ANALYTICS_QUERY_CACHE_SECONDS' in variablesFor(service, hosts), service.name).toBe(false);
+    }
+    // Even before the API has a domain: it is a setting, not an address.
+    expect(variablesFor(named('api'), new Map()).ANALYTICS_QUERY_CACHE_SECONDS).toBe('120');
   });
 
   it('gives the API its own public base URL and no origin it does not own', () => {

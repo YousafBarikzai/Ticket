@@ -213,6 +213,15 @@ export async function inTwoPasses<T>(
 }
 
 /**
+ * How long the API keeps one evaluated metric answer, in seconds (A8 R4c).
+ * Two minutes: long enough that a room of visitors on one dashboard costs one
+ * query per figure, short enough that an answer a lost version bump left
+ * behind is never stale for long. Projection writes move the version on, so
+ * a changed figure does not wait for it.
+ */
+export const ANALYTICS_QUERY_CACHE_SECONDS = 120;
+
+/**
  * Every variable this deploy sets on one service.
  *
  * These were computed since the pipeline was written, printed in its dry run,
@@ -259,6 +268,12 @@ export function variablesFor(
     }
   }
   if (service.name === 'api' && mine) variables.PUBLIC_BASE_URL = `https://${mine}`;
+
+  // The metric answer cache (A8 R4c), on for the API only: it is the one
+  // service that answers metric questions, and the shared demo sends every
+  // visitor's identical dashboard to it. Off in code (tests and development
+  // read fresh facts); a setting, not a credential, so the deploy owns it.
+  if (service.name === 'api') variables.ANALYTICS_QUERY_CACHE_SECONDS = String(ANALYTICS_QUERY_CACHE_SECONDS);
 
   // Where the web services find the API. The applications' server components
   // call it directly and their proxies forward to it; the site's server reads

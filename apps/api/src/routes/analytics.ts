@@ -45,10 +45,25 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
     return null;
   });
 
-  /** One question, answered: a number, a series or a breakdown. */
+  /**
+   * One question, answered: a number, a series or a breakdown. Through the
+   * metric cache (A8 R4c) when the deployment turns it on; an `sla.attainment`
+   * answer carries the tenant's target (S1).
+   */
   app.post('/analytics/query', async (request) => {
     const ctx = contextOf(request);
-    return metricService.evaluate(ctx, request.body as never);
+    return metricService.evaluateCached(ctx, request.body as never);
+  });
+
+  /**
+   * Up to thirty questions in one round trip (A8 R4): `{ results }` in the
+   * order asked, each `ok` with its answer or not `ok` with its own problem.
+   * A dashboard draws in one request instead of twenty, and one card that
+   * cannot be answered does not take the page with it.
+   */
+  app.post('/analytics/query/batch', async (request) => {
+    const ctx = contextOf(request);
+    return metricService.evaluateBatch(ctx, request.body as never);
   });
 
   app.post('/analytics/forecast', async (request) => {
