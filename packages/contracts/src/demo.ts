@@ -19,6 +19,11 @@
  * Nothing here reads `process.env` or a Node API: defaults that a deployment
  * may change (the cooldown, the write budgets) belong to the platform and BFF
  * configuration, and are passed in where they matter.
+ *
+ * Every module-level table is built by calls marked `#__PURE__`, so a
+ * bundle that imports one name (the areas map's persona lookup, say) does
+ * not keep the rest: `Object.freeze` is otherwise a call a minifier must
+ * assume has side effects (WP-42b measured +7 kB on five admin routes).
  */
 
 /* ------------------------------------------------------------------ Areas and personas */
@@ -28,7 +33,7 @@ export type DemoArea = 'portal' | 'workbench' | 'admin';
 export type DemoPersonaKey = 'employee' | 'agent' | 'admin';
 export type DemoRole = 'requester' | 'agent' | 'team_lead' | 'service_owner' | 'administrator';
 
-export const DEMO_AREAS: readonly DemoArea[] = Object.freeze(['portal', 'workbench', 'admin'] as const);
+export const DEMO_AREAS: readonly DemoArea[] = /*#__PURE__*/ Object.freeze(['portal', 'workbench', 'admin'] as const);
 
 export interface DemoPersona {
   readonly key: DemoPersonaKey;
@@ -49,7 +54,7 @@ export interface DemoPersona {
 }
 
 /** The fictional company every demo generation is built for (D16). */
-export const DEMO_COMPANY = Object.freeze({
+export const DEMO_COMPANY = /*#__PURE__*/ Object.freeze({
   name: 'Northwind Traders (UK)',
   emailDomain: 'northwind.example',
   plan: 'professional',
@@ -57,10 +62,10 @@ export const DEMO_COMPANY = Object.freeze({
 } as const);
 
 function frozenPersona(value: DemoPersona): DemoPersona {
-  return Object.freeze({
+  return /*#__PURE__*/ Object.freeze({
     ...value,
-    roles: Object.freeze([...value.roles]),
-    ...(value.team ? { team: Object.freeze({ ...value.team }) } : {}),
+    roles: /*#__PURE__*/ Object.freeze([...value.roles]),
+    ...(value.team ? { team: /*#__PURE__*/ Object.freeze({ ...value.team }) } : {}),
   });
 }
 
@@ -69,8 +74,8 @@ function frozenPersona(value: DemoPersona): DemoPersona {
  * allow-list and the landing's role buttons. Frozen, because client code
  * receives the same objects and a mutation would change every later reader.
  */
-export const DEMO_PERSONAS: readonly DemoPersona[] = Object.freeze([
-  frozenPersona({
+export const DEMO_PERSONAS: readonly DemoPersona[] = /*#__PURE__*/ Object.freeze([
+  /*#__PURE__*/ frozenPersona({
     key: 'employee',
     button: 'Employee',
     area: 'portal',
@@ -81,7 +86,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = Object.freeze([
     site: 'London HQ',
     roles: ['requester'],
   }),
-  frozenPersona({
+  /*#__PURE__*/ frozenPersona({
     key: 'agent',
     button: 'Agent',
     area: 'workbench',
@@ -93,7 +98,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = Object.freeze([
     roles: ['agent', 'team_lead'],
     team: { key: 'service-desk', lead: true },
   }),
-  frozenPersona({
+  /*#__PURE__*/ frozenPersona({
     key: 'admin',
     button: 'Admin',
     area: 'admin',
@@ -108,11 +113,11 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = Object.freeze([
 
 // A Map rather than an object lookup: `demoPersona('toString')` must be null,
 // and a key that arrives from a form or a cookie is exactly that kind of input.
-const PERSONAS_BY_KEY: ReadonlyMap<string, DemoPersona> = new Map(DEMO_PERSONAS.map((p) => [p.key, p]));
+const PERSONAS_BY_KEY: ReadonlyMap<string, DemoPersona> = /*#__PURE__*/ new Map(/*#__PURE__*/ DEMO_PERSONAS.map((p) => [p.key, p]));
 
 /** Derived from the table, never typed twice; a test asserts it is a bijection. */
-export const DEMO_PERSONA_FOR_AREA: Readonly<Record<DemoArea, DemoPersonaKey>> = Object.freeze(
-  Object.fromEntries(DEMO_PERSONAS.map((p) => [p.area, p.key])) as Record<DemoArea, DemoPersonaKey>,
+export const DEMO_PERSONA_FOR_AREA: Readonly<Record<DemoArea, DemoPersonaKey>> = /*#__PURE__*/ Object.freeze(
+  /*#__PURE__*/ Object.fromEntries(/*#__PURE__*/ DEMO_PERSONAS.map((p) => [p.area, p.key])) as Record<DemoArea, DemoPersonaKey>,
 );
 
 export function isDemoArea(value: unknown): value is DemoArea {
@@ -152,7 +157,7 @@ export function mayMint(app: DemoArea, persona: unknown): persona is DemoPersona
  * visitor sees and the build the worker starts agree to the second, through
  * both daylight-saving changes.
  */
-export const DEMO_RESET = Object.freeze({ timeZone: 'Europe/London', hour: 0, label: '00:00 UK time' } as const);
+export const DEMO_RESET = /*#__PURE__*/ Object.freeze({ timeZone: 'Europe/London', hour: 0, label: '00:00 UK time' } as const);
 
 interface WallClock {
   readonly year: number;
@@ -313,7 +318,7 @@ const GENERATION_PATTERN = /^[1-9]\d*$/;
  * runs in every mode and is not demo data (RV3), so `isDemoKey` must not
  * excuse it from the isolation scan.
  */
-export const DEMO_KEYS = Object.freeze({
+export const DEMO_KEYS = /*#__PURE__*/ Object.freeze({
   live: 'demo:live',
   paused: 'demo:paused',
   build: 'demo:build',
@@ -364,7 +369,7 @@ function demoKeyPatterns(): readonly RegExp[] {
   const ipb = '(?:[0-9a-f]{16}|unknown)';
   const sid = 'demo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
   const app = `(?:${DEMO_AREAS.join('|')})`;
-  const personaKey = `(?:${DEMO_PERSONAS.map((p) => p.key).join('|')})`;
+  const personaKey = `(?:${/*#__PURE__*/ DEMO_PERSONAS.map((p) => p.key).join('|')})`;
   const category = `(?:${DEMO_CAP_CATEGORIES.map(escapeForPattern).join('|')})`;
   const window = '(?:m|h):\\d+';
   const sources = [
@@ -386,7 +391,7 @@ function demoKeyPatterns(): readonly RegExp[] {
     `demo:rb:ip:${ipb}:m:\\d+`,
     `demo:cap:[1-9]\\d*:${category}:(?:${sid}|all)`,
   ];
-  return Object.freeze(sources.map((source) => new RegExp(`^${source}$`)));
+  return /*#__PURE__*/ Object.freeze(sources.map((source) => new RegExp(`^${source}$`)));
 }
 
 let keyPatterns: readonly RegExp[] | undefined;
@@ -405,7 +410,7 @@ export function isDemoKey(key: unknown): boolean {
 /* ------------------------------------------------------------------ Records */
 
 export type DemoResetReason = 'initial' | 'scheduled' | 'catch-up' | 'manual' | 'operator';
-export const DEMO_RESET_REASONS: readonly DemoResetReason[] = Object.freeze([
+export const DEMO_RESET_REASONS: readonly DemoResetReason[] = /*#__PURE__*/ Object.freeze([
   'initial',
   'scheduled',
   'catch-up',
@@ -459,7 +464,7 @@ export type DemoEvent =
   | { readonly type: 'paused' | 'resumed'; readonly at: number };
 
 /** The build's steps, in order; `stepIndex` is the position in this list, from 1. */
-export const DEMO_BUILD_STEPS = Object.freeze([
+export const DEMO_BUILD_STEPS = /*#__PURE__*/ Object.freeze([
   'prepare',
   'company',
   'people',
@@ -571,8 +576,8 @@ export interface DemoStatusRecords {
 /** D12's cooldown after every reset; deployments may change it (`DEMO_RESET_COOLDOWN_SECONDS`). */
 export const DEMO_RESET_COOLDOWN_SECONDS = 1800;
 
-const STATUS_PERSONAS: readonly DemoStatusPersona[] = Object.freeze(
-  DEMO_PERSONAS.map((p) => Object.freeze({ key: p.key, button: p.button, name: p.name, title: p.title, area: p.area })),
+const STATUS_PERSONAS: readonly DemoStatusPersona[] = /*#__PURE__*/ Object.freeze(
+  /*#__PURE__*/ DEMO_PERSONAS.map((p) => /*#__PURE__*/ Object.freeze({ key: p.key, button: p.button, name: p.name, title: p.title, area: p.area })),
 );
 
 /**
@@ -630,7 +635,7 @@ export function computeDemoStatus(
  * (a live AI call, the personas' own accounts, the seeded dashboards, the
  * story's hero tickets, the locked settings).
  */
-export const DEMO_FEATURES = Object.freeze([
+export const DEMO_FEATURES = /*#__PURE__*/ Object.freeze([
   'integrations',
   'channels',
   'sso',
@@ -658,7 +663,7 @@ export const DEMO_FEATURES = Object.freeze([
 export type DemoFeature = (typeof DEMO_FEATURES)[number];
 
 /** What each feature is called in "This is a shared demo, so ___ is turned off." */
-const FEATURE_PHRASES: Readonly<Record<DemoFeature, string>> = Object.freeze({
+const FEATURE_PHRASES: Readonly<Record<DemoFeature, string>> = /*#__PURE__*/ Object.freeze({
   integrations: 'connecting to other systems',
   channels: 'connecting mailboxes and chat channels',
   sso: 'single sign-on and user provisioning',
@@ -708,7 +713,7 @@ export function demoDisabledSentence(feature: DemoFeature | (string & {}) | null
  * test, so a renamed permission fails the build instead of silently coming
  * back into the shared demo.
  */
-export const DEMO_STRIPPED_PERMISSIONS = Object.freeze({
+export const DEMO_STRIPPED_PERMISSIONS = /*#__PURE__*/ Object.freeze({
   'integration.credential.manage': 'integrations',
   'integration.action.manage': 'integrations',
   'integration.action.replay': 'integrations',
@@ -735,7 +740,7 @@ export const DEMO_STRIPPED_PERMISSIONS = Object.freeze({
 export type DemoStrippedPermission = keyof typeof DEMO_STRIPPED_PERMISSIONS;
 
 /** Prefixes stripped whole: no platform operator action is ever available in the demo tenant. */
-export const DEMO_STRIPPED_PREFIXES = Object.freeze({
+export const DEMO_STRIPPED_PREFIXES = /*#__PURE__*/ Object.freeze({
   'platform.': 'platform',
 } as const satisfies Readonly<Record<string, DemoFeature>>);
 
@@ -758,7 +763,7 @@ export function demoFeatureForPermission(key: string): DemoFeature | null {
  * trailing `.*` matches the whole family; anything else is one exact key.
  * Other settings stay editable, within the `setting.change` cap.
  */
-export const DEMO_LOCKED_SETTINGS = Object.freeze([
+export const DEMO_LOCKED_SETTINGS = /*#__PURE__*/ Object.freeze([
   'sla.*',
   'ticket.autoClose.*',
   'workflow.*',
@@ -785,7 +790,7 @@ export function isDemoLockedSetting(key: string): boolean {
  * visitor together a few more times per generation (A3 §7.6 as amended by
  * §4.7.4). The API counts them; the UI words them.
  */
-export const DEMO_CAP_CATEGORIES = Object.freeze([
+export const DEMO_CAP_CATEGORIES = /*#__PURE__*/ Object.freeze([
   'mi.declare',
   'mi.update',
   'mi.transition',
@@ -823,41 +828,41 @@ export interface DemoCap {
   readonly phrase: (perVisit: number) => string;
 }
 
-const COUNT_FORMAT = new Intl.NumberFormat('en-GB');
+const COUNT_FORMAT = /*#__PURE__*/ new Intl.NumberFormat('en-GB');
 
 function counted(n: number, one: string, many: string): string {
   return n === 1 ? `${one}` : `${COUNT_FORMAT.format(n)} ${many}`;
 }
 
 function cap(perVisit: number, perGeneration: number, phrase: (n: number) => string): DemoCap {
-  return Object.freeze({ perVisit, perGeneration, phrase });
+  return /*#__PURE__*/ Object.freeze({ perVisit, perGeneration, phrase });
 }
 
-export const DEMO_CAPS: Readonly<Record<DemoCapCategory, DemoCap>> = Object.freeze({
-  'mi.declare': cap(1, 10, (n) => `declare ${counted(n, 'one major incident', 'major incidents')}`),
-  'mi.update': cap(10, 150, (n) => `post ${counted(n, 'one major-incident update', 'major-incident updates')}`),
-  'mi.transition': cap(3, 30, (n) => `change a major incident's state ${counted(n, 'once', 'times')}`),
-  'mi.review': cap(5, 50, (n) => `make ${counted(n, 'one change', 'changes')} to major-incident roles and reviews`),
-  'kb.publish': cap(3, 30, (n) => `publish, roll back or retire ${counted(n, 'one knowledge article', 'knowledge articles')}`),
-  'kb.draft': cap(10, 200, (n) => `write ${counted(n, 'one knowledge draft', 'knowledge drafts')}`),
-  'catalogue.change': cap(5, 50, (n) => `make ${counted(n, 'one change', 'changes')} to the service catalogue`),
-  'ticket.create': cap(25, 1500, (n) => `raise ${counted(n, 'one ticket', 'tickets')}`),
-  'user.create': cap(5, 50, (n) => `add ${counted(n, 'one person', 'people')}`),
-  'user.deactivate': cap(3, 30, (n) => `deactivate ${counted(n, 'one person', 'people')}`),
-  'dashboard.change': cap(5, 50, (n) => `make ${counted(n, 'one dashboard change', 'dashboard changes')}`),
-  'metric.change': cap(3, 30, (n) => `make ${counted(n, 'one change', 'changes')} to metric definitions`),
-  'report.change': cap(5, 50, (n) => `make ${counted(n, 'one change', 'changes')} to reports and their schedules`),
-  'report.run': cap(10, 200, (n) => `run ${counted(n, 'one report', 'reports')}`),
-  'rule.change': cap(5, 40, (n) => `make ${counted(n, 'one change', 'changes')} to business rules`),
-  'rule.test': cap(30, 600, (n) => `run ${counted(n, 'one rule test', 'rule tests')}`),
-  'workflow.change': cap(3, 20, (n) => `make ${counted(n, 'one change', 'changes')} to workflows`),
-  'sla.change': cap(3, 20, (n) => `make ${counted(n, 'one change', 'changes')} to service levels`),
-  'approval-policy.change': cap(3, 20, (n) => `make ${counted(n, 'one change', 'changes')} to approval policies`),
-  'setting.change': cap(5, 40, (n) => `change ${counted(n, 'one setting', 'settings')}`),
-  'pack.install': cap(1, 3, (n) => `install or upgrade ${counted(n, 'one pack', 'packs')}`),
-  'field.change': cap(5, 30, (n) => `make ${counted(n, 'one change', 'changes')} to ticket fields`),
-  'problem.publish': cap(3, 30, (n) => `publish or withdraw ${counted(n, 'one known error', 'known errors')}`),
-  'usage.change': cap(3, 20, (n) => `change usage warnings ${counted(n, 'once', 'times')}`),
+export const DEMO_CAPS: Readonly<Record<DemoCapCategory, DemoCap>> = /*#__PURE__*/ Object.freeze({
+  'mi.declare': /*#__PURE__*/ cap(1, 10, (n) => `declare ${counted(n, 'one major incident', 'major incidents')}`),
+  'mi.update': /*#__PURE__*/ cap(10, 150, (n) => `post ${counted(n, 'one major-incident update', 'major-incident updates')}`),
+  'mi.transition': /*#__PURE__*/ cap(3, 30, (n) => `change a major incident's state ${counted(n, 'once', 'times')}`),
+  'mi.review': /*#__PURE__*/ cap(5, 50, (n) => `make ${counted(n, 'one change', 'changes')} to major-incident roles and reviews`),
+  'kb.publish': /*#__PURE__*/ cap(3, 30, (n) => `publish, roll back or retire ${counted(n, 'one knowledge article', 'knowledge articles')}`),
+  'kb.draft': /*#__PURE__*/ cap(10, 200, (n) => `write ${counted(n, 'one knowledge draft', 'knowledge drafts')}`),
+  'catalogue.change': /*#__PURE__*/ cap(5, 50, (n) => `make ${counted(n, 'one change', 'changes')} to the service catalogue`),
+  'ticket.create': /*#__PURE__*/ cap(25, 1500, (n) => `raise ${counted(n, 'one ticket', 'tickets')}`),
+  'user.create': /*#__PURE__*/ cap(5, 50, (n) => `add ${counted(n, 'one person', 'people')}`),
+  'user.deactivate': /*#__PURE__*/ cap(3, 30, (n) => `deactivate ${counted(n, 'one person', 'people')}`),
+  'dashboard.change': /*#__PURE__*/ cap(5, 50, (n) => `make ${counted(n, 'one dashboard change', 'dashboard changes')}`),
+  'metric.change': /*#__PURE__*/ cap(3, 30, (n) => `make ${counted(n, 'one change', 'changes')} to metric definitions`),
+  'report.change': /*#__PURE__*/ cap(5, 50, (n) => `make ${counted(n, 'one change', 'changes')} to reports and their schedules`),
+  'report.run': /*#__PURE__*/ cap(10, 200, (n) => `run ${counted(n, 'one report', 'reports')}`),
+  'rule.change': /*#__PURE__*/ cap(5, 40, (n) => `make ${counted(n, 'one change', 'changes')} to business rules`),
+  'rule.test': /*#__PURE__*/ cap(30, 600, (n) => `run ${counted(n, 'one rule test', 'rule tests')}`),
+  'workflow.change': /*#__PURE__*/ cap(3, 20, (n) => `make ${counted(n, 'one change', 'changes')} to workflows`),
+  'sla.change': /*#__PURE__*/ cap(3, 20, (n) => `make ${counted(n, 'one change', 'changes')} to service levels`),
+  'approval-policy.change': /*#__PURE__*/ cap(3, 20, (n) => `make ${counted(n, 'one change', 'changes')} to approval policies`),
+  'setting.change': /*#__PURE__*/ cap(5, 40, (n) => `change ${counted(n, 'one setting', 'settings')}`),
+  'pack.install': /*#__PURE__*/ cap(1, 3, (n) => `install or upgrade ${counted(n, 'one pack', 'packs')}`),
+  'field.change': /*#__PURE__*/ cap(5, 30, (n) => `make ${counted(n, 'one change', 'changes')} to ticket fields`),
+  'problem.publish': /*#__PURE__*/ cap(3, 30, (n) => `publish or withdraw ${counted(n, 'one known error', 'known errors')}`),
+  'usage.change': /*#__PURE__*/ cap(3, 20, (n) => `change usage warnings ${counted(n, 'once', 'times')}`),
 });
 
 export function isDemoCapCategory(value: unknown): value is DemoCapCategory {
@@ -893,7 +898,7 @@ export function demoLimitSentence(
 /* ------------------------------------------------------------------ Problems */
 
 /** The `code` (last segment of the problem `type`) of each demo problem (§4.4). */
-export const DEMO_PROBLEM_CODES = Object.freeze({
+export const DEMO_PROBLEM_CODES = /*#__PURE__*/ Object.freeze({
   reset: 'demo_reset',
   sessionEnded: 'demo_session_ended',
   unavailable: 'demo_unavailable',
@@ -903,7 +908,7 @@ export const DEMO_PROBLEM_CODES = Object.freeze({
 export type DemoProblemCode = (typeof DEMO_PROBLEM_CODES)[keyof typeof DEMO_PROBLEM_CODES];
 
 /** Why a `demo_unavailable` (503) was answered. */
-export const DEMO_UNAVAILABLE_REASONS = Object.freeze(['store', 'paused', 'preparing', 'persona', 'misconfigured'] as const);
+export const DEMO_UNAVAILABLE_REASONS = /*#__PURE__*/ Object.freeze(['store', 'paused', 'preparing', 'persona', 'misconfigured'] as const);
 export type DemoUnavailableReason = (typeof DEMO_UNAVAILABLE_REASONS)[number];
 
 /* ------------------------------------------------------------------ Links */
@@ -937,7 +942,7 @@ export function signInAgainHref(path: string, options: { readonly demo?: boolean
 }
 
 /** Browser storage keys of the reset notice; cleared with the rest of a visit's local data. */
-export const DEMO_LOCAL_KEYS = Object.freeze({
+export const DEMO_LOCAL_KEYS = /*#__PURE__*/ Object.freeze({
   lastGeneration: 'itsm-demo:last-gen',
   noticeSeen: 'itsm-demo:notice-seen',
 } as const);
@@ -949,7 +954,7 @@ export const DEMO_LOCAL_KEYS = Object.freeze({
  * every hop into the Service Desk lands on a ticket Alex can open. The
  * generator's tests and its S10 checks assert each one.
  */
-export const DEMO_SD_HEROES = Object.freeze([
+export const DEMO_SD_HEROES = /*#__PURE__*/ Object.freeze([
   'H1',
   'H2',
   'H3',
@@ -987,7 +992,7 @@ export function isDemoHeroRef(externalRef: unknown): boolean {
  * visitors changed and the audit log can fold the build into one row.
  */
 export const DEMO_BUILD_REASON = 'demo.build';
-export const DEMO_BUILD_ACTOR = Object.freeze({ type: 'system', id: 'demo-build' } as const);
+export const DEMO_BUILD_ACTOR = /*#__PURE__*/ Object.freeze({ type: 'system', id: 'demo-build' } as const);
 
 /* ------------------------------------------------------------------ Copy */
 
@@ -1002,7 +1007,7 @@ export function demoEtaPhrase(etaSec: number | null | undefined): string {
   return minutes === 1 ? 'about 1 minute' : `about ${COUNT_FORMAT.format(minutes)} minutes`;
 }
 
-const RESET_WHEN: Readonly<Record<Exclude<DemoResetReason, 'initial'>, string>> = Object.freeze({
+const RESET_WHEN: Readonly<Record<Exclude<DemoResetReason, 'initial'>, string>> = /*#__PURE__*/ Object.freeze({
   scheduled: `at ${DEMO_RESET.label}`,
   'catch-up': 'overnight',
   manual: 'by a visitor',
@@ -1023,7 +1028,7 @@ export function demoResetNotice(variant: 'fresh' | 'stale', reason: DemoResetRea
 }
 
 /** Shared demo sentences, in one wording everywhere (canonical copy register, §6.6). */
-export const DEMO_COPY = Object.freeze({
+export const DEMO_COPY = /*#__PURE__*/ Object.freeze({
   resetsDaily: `Demo data resets every day at ${DEMO_RESET.label}.`,
   sharedData: "Changes are shared with other visitors until the nightly reset. Please don't enter real personal data.",
   fictional: `${DEMO_COMPANY.name} and its people are fictional.`,
@@ -1042,7 +1047,7 @@ export const DEMO_COPY = Object.freeze({
   resetBlocked: 'Resetting is paused on this demo at the moment.',
   resetCooldown: (minutesAgo: number, minutesLeft: number) =>
     `The demo was reset ${minutesAgo} min ago. To keep fresh data safe for presenters, it can be reset again in ${minutesLeft} min.`,
-  resetConfirm: Object.freeze({
+  resetConfirm: /*#__PURE__*/ Object.freeze({
     title: 'Reset demo data?',
     body: "This restores the original demo data for everyone using it. Changes made by you and other visitors since the last reset are discarded. This can't be undone.",
     note: 'Nobody can reset it again for 30 minutes afterwards.',
