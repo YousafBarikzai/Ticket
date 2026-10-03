@@ -11,7 +11,7 @@ import { colour, themeNames, type MaterialName, type ThemeName } from '../tokens
  * composites each material over the worst backdrops the product draws and
  * keeps the lowest ratio, so the numbers here are floors, not averages.
  *
- * The expected figures are the ones the redesign spec records (§1.3). They are
+ * The expected figures are the ones the specs record (v2 §1.3, v3 §2.6). They are
  * pinned exactly rather than only checked against the minimum: a change to a
  * material's tint or alpha that still passes is still a change to what people
  * read, and should be made on purpose, with this table updated beside it.
@@ -30,6 +30,23 @@ describe('the material contract', () => {
     expect(materialBackdrops).toEqual(
       expect.arrayContaining(['#000000', '#ffffff', '#0071e3', '#d70015', '#ff9f0a', '#30d158', '#b25000']),
     );
+    // v3's saturated fills (the new danger red, hold's fuchsia, high's
+    // orange) and navy scrolling under the portal's glass bar.
+    expect(materialBackdrops).toEqual([
+      '#000000',
+      '#ffffff',
+      '#0071e3',
+      '#d70015',
+      '#dc2626',
+      '#c026d3',
+      '#ea580c',
+      '#ff9f0a',
+      '#30d158',
+      '#b25000',
+      '#0f172a',
+    ]);
+    // Ten checks per theme: three on chrome, seven on a popover.
+    for (const theme of themeNames) expect(results.filter((r) => r.theme === theme)).toHaveLength(10);
     expect(new Set(results.map((r) => r.theme))).toEqual(new Set(themeNames));
     // Chrome carries only primary, secondary and the accent; a popover the full
     // range of a menu.
@@ -55,14 +72,16 @@ describe('the material contract', () => {
   });
 
   it('holds the light materials to the recorded worst cases', () => {
-    expect(ratio('apple', 'chrome', 'text.primary')).toBe(12.88);
-    expect(ratio('apple', 'chrome', 'text.secondary')).toBe(7.66);
-    expect(ratio('apple', 'chrome', 'accent')).toBe(3.07);
-    expect(ratio('apple', 'popover', 'text.muted')).toBe(5.08);
+    expect(ratio('apple', 'chrome', 'text.primary')).toBe(13.89);
+    expect(ratio('apple', 'chrome', 'text.secondary')).toBe(8.05);
+    expect(ratio('apple', 'chrome', 'accent')).toBe(3.12);
+    expect(ratio('apple', 'popover', 'text.muted')).toBe(6.95);
     expect(ratio('apple', 'popover', 'text.link')).toBe(5.1);
-    expect(ratio('apple', 'popover', 'intent.danger.subtleText')).toBe(6.32);
-    expect(ratio('apple', 'popover', 'border.interactive')).toBe(3.32);
+    expect(ratio('apple', 'popover', 'intent.danger.subtleText')).toBe(5.93);
+    expect(ratio('apple', 'popover', 'border.interactive')).toBe(3.37);
     expect(ratio('apple', 'popover', 'accent')).toBe(3.68);
+    // Black is still the worst thing behind light glass, whatever v3 added.
+    for (const result of results.filter((r) => r.theme === 'apple')) expect(result.worstBackdrop, result.token).toBe('#000000');
   });
 
   it('holds the dark materials to the recorded worst cases', () => {

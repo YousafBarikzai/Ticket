@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { PreconditionRequiredError, ValidationError, jsonEquals, type TenantContext } from '@itsm/platform';
-import { categoryService, fieldService, ticketService, type TicketRow } from '@itsm/module-ticket';
+import { categoryService, fieldService, ticketService, type ListFilter, type TicketRow } from '@itsm/module-ticket';
 import { timerService } from '@itsm/module-sla';
 import { canonicalStateSchema, linkTypeSchema } from '@itsm/contracts';
 import { contextOf } from '../plugins/context.js';
@@ -17,8 +17,22 @@ import { booleanQuery } from './query.js';
  */
 
 /**
- * The list's filter grammar, shared by `GET /tickets` and `GET /tickets/count`
- * so a view's badge counts exactly what its list shows.
+ * An instant on the wire: ISO 8601 with `Z` or an offset. A zone-less local
+ * time is refused, because the server has no viewer zone to read it in and
+ * must not guess one: "due today" is the caller's local midnight, sent as an
+ * instant. An offset's `+` must be sent as `%2B`, as `URLSearchParams` does;
+ * a bare `+` in a query string arrives as a space.
+ */
+const instant = z.string().datetime({ offset: true });
+
+/**
+ * The list's filter grammar, shared by `GET /tickets`, `GET /tickets/count`
+ * and `GET /tickets/counts`, so a view's badge and its breakdowns count
+ * exactly what its list shows.
+ *
+ * Date windows are half-open (R2): `…After` is inclusive and `…Before`
+ * exclusive. `filter[sla]` is judged on the server clock, so a saved link
+ * never goes stale.
  */
 const filterQuerySchema = z.object({
   'filter[status]': z.string().optional(),
@@ -29,6 +43,13 @@ const filterQuerySchema = z.object({
   'filter[group]': z.string().uuid().optional(),
   'filter[requester]': z.string().optional(),
   'filter[service]': z.string().uuid().optional(),
+  'filter[createdAfter]': instant.optional(),
+  'filter[createdBefore]': instant.optional(),
+  'filter[dueAfter]': instant.optional(),
+  'filter[dueBefore]': instant.optional(),
+  'filter[resolvedAfter]': instant.optional(),
+  'filter[resolvedBefore]': instant.optional(),
+  'filter[sla]': z.enum(['breached', 'due_soon']).optional(),
   q: z.string().max(200).optional(),
 });
 
@@ -38,24 +59,55 @@ const listQuerySchema = filterQuerySchema.extend({
   sort: z.enum(['createdAt', '-createdAt', 'dueAt', '-dueAt']).default('-createdAt'),
 });
 
+const countsQuerySchema = filterQuerySchema.extend({ groupBy: z.enum(ticketService.COUNT_DIMENSIONS) });
+
+interface ParsedFilter {
+  readonly filter: ListFilter;
+  /**
+   * The `filter[…]` names this server honoured, sorted (A8-S12). An API from
+   * before a filter existed drops the unknown key without a word and answers
+   * for everything, so a client sending a new key checks it is listed here
+   * before trusting the figure.
+   */
+  readonly applied: string[];
+}
+
 /** Turns the public filter grammar into the repository's filter shape. */
-function toFilter(query: z.infer<typeof filterQuerySchema>, actorId: string | null) {
-  const csv = (value?: string): string[] | undefined => (value ? value.split(',').filter(Boolean) : undefined);
+function toFilter(query: z.infer<typeof filterQuerySchema>, actorId: string | null): ParsedFilter {
+  const csv = (value?: string): string[] | undefined => {
+    const values = value?.split(',').filter(Boolean);
+    return values?.length ? values : undefined;
+  };
+  const filter: ListFilter = {};
+  const applied: string[] = [];
+  const honour = <K extends keyof ListFilter>(name: string, key: K, value: ListFilter[K] | undefined) => {
+    if (value === undefined) return;
+    filter[key] = value;
+    applied.push(name);
+  };
+  const instantOf = (value?: string) => (value ? new Date(value) : undefined);
   const assignee = query['filter[assignee]'];
   const requester = query['filter[requester]'];
 
-  return {
-    ...(csv(query['filter[status]']) ? { status: csv(query['filter[status]']) } : {}),
-    ...(csv(query['filter[statusCategory]']) ? { statusCategory: csv(query['filter[statusCategory]']) } : {}),
-    ...(csv(query['filter[type]']) ? { type: csv(query['filter[type]']) } : {}),
-    ...(csv(query['filter[priority]']) ? { priority: csv(query['filter[priority]']) } : {}),
-    // `me` is resolved server-side so a saved view is portable between people.
-    ...(assignee ? { assigneeId: assignee === 'me' ? actorId : assignee === 'none' ? null : assignee } : {}),
-    ...(query['filter[group]'] ? { groupId: query['filter[group]'] } : {}),
-    ...(requester ? { requesterId: requester === 'me' ? (actorId ?? undefined) : requester } : {}),
-    ...(query['filter[service]'] ? { serviceId: query['filter[service]'] } : {}),
-    ...(query.q ? { search: query.q } : {}),
-  };
+  honour('status', 'status', csv(query['filter[status]']));
+  honour('statusCategory', 'statusCategory', csv(query['filter[statusCategory]']));
+  honour('type', 'type', csv(query['filter[type]']));
+  honour('priority', 'priority', csv(query['filter[priority]']));
+  // `me` is resolved server-side so a saved view is portable between people.
+  honour('assignee', 'assigneeId', assignee ? (assignee === 'me' ? actorId : assignee === 'none' ? null : assignee) : undefined);
+  honour('group', 'groupId', query['filter[group]']);
+  honour('requester', 'requesterId', requester ? (requester === 'me' ? (actorId ?? undefined) : requester) : undefined);
+  honour('service', 'serviceId', query['filter[service]']);
+  honour('createdAfter', 'createdAfter', instantOf(query['filter[createdAfter]']));
+  honour('createdBefore', 'createdBefore', instantOf(query['filter[createdBefore]']));
+  honour('dueAfter', 'dueAfter', instantOf(query['filter[dueAfter]']));
+  honour('dueBefore', 'dueBefore', instantOf(query['filter[dueBefore]']));
+  honour('resolvedAfter', 'resolvedAfter', instantOf(query['filter[resolvedAfter]']));
+  honour('resolvedBefore', 'resolvedBefore', instantOf(query['filter[resolvedBefore]']));
+  honour('sla', 'sla', query['filter[sla]']);
+  if (query.q) filter.search = query.q;
+
+  return { filter, applied: applied.sort() };
 }
 
 interface Lens {
@@ -110,6 +162,9 @@ function present(ticket: TicketRow, lens?: Lens) {
     categoryId: ticket.categoryId,
     orgId: ticket.orgId,
     sourceChannel: ticket.sourceChannel,
+    // How the row arrived, not how the work did (ADR-0056): `native` or
+    // `import`. The contract's `ticketSchema.origin` describes it.
+    origin: ticket.origin,
     parentId: ticket.parentId,
     dueAt: ticket.dueAt?.toISOString() ?? null,
     resolvedAt: ticket.resolvedAt?.toISOString() ?? null,
@@ -219,13 +274,14 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
   app.get('/tickets', async (request) => {
     const ctx = contextOf(request);
     const query = listQuerySchema.parse(request.query);
-    const result = await ticketService.listTickets(ctx, toFilter(query, ctx.actor.id), {
+    const { filter, applied } = toFilter(query, ctx.actor.id);
+    const result = await ticketService.listTickets(ctx, filter, {
       limit: query.limit,
       ...(query.cursor ? { cursor: query.cursor } : {}),
       sort: query.sort,
     });
     const lens = await lensFor(ctx);
-    return { data: result.data.map((row) => present(row, lens)), nextCursor: result.nextCursor };
+    return { data: result.data.map((row) => present(row, lens)), nextCursor: result.nextCursor, applied };
   });
 
   /**
@@ -241,7 +297,27 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
   app.get('/tickets/count', async (request) => {
     const ctx = contextOf(request);
     const query = filterQuerySchema.parse(request.query);
-    return ticketService.countTicketsUpTo(ctx, toFilter(query, ctx.actor.id));
+    const { filter, applied } = toFilter(query, ctx.actor.id);
+    return { ...(await ticketService.countTicketsUpTo(ctx, filter)), applied };
+  });
+
+  /**
+   * How many tickets fall in each value of one dimension (R2g):
+   * `{ groupBy, groups: { key, count }[], total, applied }`, with `key` null
+   * for "none" (unassigned, no service).
+   *
+   * A route of its own rather than `?groupBy=` on `/tickets/count`: an API
+   * without the feature would drop the unknown key and answer
+   * `{ count, capped }`, which a grouped reader could misread, where an
+   * unknown route answers 404. Static, so it no more competes with
+   * `/tickets/:idOrNumber` than `/tickets/count` does. The guard that keeps
+   * it from scanning a tenant's whole history is the service's (422).
+   */
+  app.get('/tickets/counts', async (request) => {
+    const ctx = contextOf(request);
+    const query = countsQuerySchema.parse(request.query);
+    const { filter, applied } = toFilter(query, ctx.actor.id);
+    return { ...(await ticketService.countTicketsBy(ctx, filter, query.groupBy)), applied };
   });
 
   app.get('/tickets/:idOrNumber', async (request, reply) => {
@@ -419,6 +495,11 @@ export async function ticketRoutes(app: FastifyInstance): Promise<void> {
         warningsFired: timer.warningsFired,
         metAt: timer.metAt?.toISOString() ?? null,
         breachedAt: timer.breachedAt?.toISOString() ?? null,
+        // An update target's cycle (F1): "Update 3 · next due 14:30".
+        // `cycleStartedAt` is null for the first cycle, which began at
+        // `startedAt`.
+        cycle: timer.cycle,
+        cycleStartedAt: timer.cycleStartedAt?.toISOString() ?? null,
       })),
     };
   });

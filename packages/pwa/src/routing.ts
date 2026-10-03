@@ -7,11 +7,19 @@
  * it to somebody for as long as their browser keeps it, and they cannot tell
  * the difference between a stale page and a broken one.
  *
- * Four rules, in order of how much damage getting them wrong does:
+ * Five rules, in order of how much damage getting them wrong does:
  *
  * **Nothing about a session is ever cached.** `/api/session/*` mints, refreshes
  * and destroys sessions. A cached sign-in response is somebody else's session
  * served to the next person on a shared machine.
+ *
+ * **The doors are never kept.** `/demo`, `/sign-in`, `/signed-out` and
+ * `/resume` decide where a visit goes from the cookies and the session it
+ * arrives with — the demo's auto-submitting entry, the re-entry chooser,
+ * "Thanks for exploring", the hop to the last page in another area (A3 §5.3,
+ * critique S11). A cached copy would replay yesterday's decision, or one made
+ * for whoever used the browser before, so they go to the network whatever
+ * the request, and offline they fail rather than pretend.
  *
  * **A write is never cached, and only three of them are queued.** Everything
  * else that fails offline fails, visibly, where the person can see it — which
@@ -65,6 +73,13 @@ export interface Routed {
 
 const NEVER_CACHED: Routed = { strategy: 'network-only', cache: null };
 
+/** The pages that route a visit by its cookies and session: `/demo`, `/sign-in`, `/signed-out`, `/resume` (and below). */
+const DOOR_PAGES = /^\/(?:demo|sign-in|signed-out|resume)(?:\/|$)/;
+
+export function isDoorPage(pathname: string): boolean {
+  return DOOR_PAGES.test(pathname);
+}
+
 /** The design system's stylesheet, served by each app's route handler. */
 const STYLESHEET_PATH = '/itsm-ui.css';
 
@@ -75,6 +90,8 @@ export function routeFor(request: { method: string; url: string; mode?: string }
 
   // Never anything to do with a session, whatever the method.
   if (path.startsWith('/api/session/')) return NEVER_CACHED;
+  // Nor the pages that decide where a visit goes, navigated to or fetched.
+  if (isDoorPage(path)) return NEVER_CACHED;
 
   if (method !== 'GET' && method !== 'HEAD') {
     return isQueueablePath(path) && method === 'POST'

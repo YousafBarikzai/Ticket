@@ -26,6 +26,7 @@ export { refreshNotificationFact } from './service/notification-projector.js';
 export { refreshSurveyFact } from './service/survey-projector.js';
 export { refreshTimeFact } from './service/time-projector.js';
 export { replayProjection } from './service/replay-service.js';
+export { REPROJECT_SOURCES, reprojectFromSource, type ReprojectOptions, type ReprojectResult, type ReprojectSource } from './service/reproject-service.js';
 export * as metricService from './service/metric-service.js';
 export * as dashboardService from './service/dashboard-service.js';
 export * as reportService from './service/report-service.js';

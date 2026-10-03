@@ -2,18 +2,22 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import type { Ticket } from '@itsm/sdk';
-import { Button, Icon, IconButton, Input, channelInfo } from '@itsm/ui';
+import { Button, Icon, IconButton, IconTile, Input, RelativeTime, channelInfo, ticketTypeLook } from '@itsm/ui';
 import { Menu, type MenuItemSpec } from '@itsm/ui/overlays';
 import { typeLabel } from '../inbox/presentation.js';
 
 /**
- * The ticket's header (SPEC §6.2, X-32): opaque, two rows.
+ * The ticket hero's identity and title rows (v3 §7.1.4, A6 §5.6.2; the v2
+ * header's logic, SPEC §6.2, X-32). `TicketHero` lays them out with the
+ * chips, the lifecycle and the SLA block.
  *
- * Row one says which ticket this is — `INC-000123 · Incident · Email`, the
- * title (the pane's `h2`, the page's `h1`, editable with `e`) — and how to
- * move: ‹ › through the list it was opened from, "Open full page" beside the
- * list or "‹ Back to My work" on the page, and ⋯ for the rest. Row two is the
- * property chips, the SLA and the next step.
+ * The identity row says which ticket this is — the type's neutral tile (D5:
+ * never a status colour), `INC-000123 · Incident · Email · raised 5 h ago by
+ * Ada Lovelace` — and how to move: ‹ › through the list it was opened from,
+ * "Open full page" beside the list or "‹ Back to My work" on the page, the
+ * inspector's toggle and ⋯ for the rest. The title row is the pane's `h2` or
+ * the page's `h1`, editable with `e`; a refused edit stays open and says why
+ * (in the shared demo, the hero tickets' sentence).
  *
  * It condenses as the conversation scrolls — the identity line folds away
  * and the title shrinks to one line — but every control stays where it was,
@@ -37,8 +41,8 @@ export interface HeaderProps {
   readonly gate?: string;
   readonly editingTitle: boolean;
   readonly onEditingTitleChange: (editing: boolean) => void;
-  /** Resolves `true` once saved; `false` keeps the editor open (the workspace has said why). */
-  readonly onSaveTitle: (title: string) => Promise<boolean>;
+  /** Resolves `true` once saved; otherwise why not, and the editor stays open saying so. */
+  readonly onSaveTitle: (title: string) => Promise<true | string>;
   readonly neighbours: Neighbours;
   readonly onStep: (number: string) => void;
   /** Pane only: `/tickets/<number>`. */
@@ -50,8 +54,10 @@ export interface HeaderProps {
   /** The inspector's toggle (`]`), when it can be shown or hidden here. */
   readonly inspector?: { readonly open: boolean; onToggle(): void };
   readonly condensed?: boolean;
-  /** Row two: the chips, the SLA and the next step. */
-  readonly properties: ReactNode;
+  /** The chips and the next step: `TicketHero` draws them under the title. */
+  readonly properties?: ReactNode;
+  /** Who raised it, for "raised 5 h ago by Ada Lovelace"; absent when not recorded. */
+  readonly requesterName?: string | null;
 }
 
 /** The longest title the API takes. */
@@ -63,7 +69,7 @@ function TitleEditor({
   onCancel,
 }: {
   readonly initial: string;
-  readonly onSave: (title: string) => Promise<boolean>;
+  readonly onSave: (title: string) => Promise<true | string>;
   readonly onCancel: () => void;
 }): ReactNode {
   const [value, setValue] = useState(initial);
@@ -92,7 +98,11 @@ function TitleEditor({
     setError(null);
     const saved = await onSave(title);
     setBusy(false);
-    if (!saved) input.current?.focus();
+    if (saved !== true) {
+      // Why it was refused, beside the field the person is still in.
+      setError(saved);
+      input.current?.focus();
+    }
   }
 
   return (
@@ -146,10 +156,11 @@ export function Header({
   menuReturnFocus,
   inspector,
   condensed = false,
-  properties,
+  requesterName,
 }: HeaderProps): ReactNode {
   const Title = mode === 'page' ? 'h1' : 'h2';
   const channel = channelInfo(ticket.sourceChannel);
+  const type = ticketTypeLook(ticket.type);
   const editButton = useRef<HTMLButtonElement | null>(null);
   const wasEditing = useRef(editingTitle);
 
@@ -160,8 +171,9 @@ export function Header({
   }, [editingTitle]);
 
   return (
-    <header className="app-WsHeader" data-mode={mode} data-condensed={condensed ? '' : undefined}>
+    <div className="app-WsHeader__rows" data-condensed={condensed ? '' : undefined}>
       <div className="app-WsHeader__top">
+        <IconTile icon={type.icon} tone="neutral" size={40} className="app-WsHeader__tile" />
         <div className="app-WsHeader__identity">
           {mode === 'page' && neighbours.back ? (
             <Button href={neighbours.back.href} variant="ghost" size="sm" iconStart="chevron-left" className="app-WsHeader__back">
@@ -176,6 +188,11 @@ export function Header({
             <span className="app-WsHeader__channel">
               <Icon name={channel.icon} size="xs" />
               {channel.label}
+            </span>
+            <span className="app-WsHeader__raised">
+              <span aria-hidden="true"> · </span>
+              raised <RelativeTime date={ticket.createdAt} />
+              {requesterName ? ` by ${requesterName}` : null}
             </span>
           </p>
           {editingTitle ? (
@@ -249,7 +266,6 @@ export function Header({
           />
         </div>
       </div>
-      <div className="app-WsHeader__properties">{properties}</div>
-    </header>
+    </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, type TriageAppliedItem, type TriageSuggestionItem } from '@itsm/sdk';
-import { Badge, Button, Disclosure, Icon, InlineAlert, describeProblem, notify } from '@itsm/ui';
+import { Badge, Button, Disclosure, Icon, InfoTipTrigger, InlineAlert, StatusPill, describeProblem, notify } from '@itsm/ui';
 import { api } from '../../client/api.js';
 import { isConflict } from '../../client/mutations.js';
 import { deskKeys } from '../../client/query-client.js';
@@ -16,6 +16,7 @@ import {
   confidenceLabel,
   fieldName,
   notesLine,
+  SAMPLE_NOTE,
   stripLine,
   suggestionLine,
   triageView,
@@ -33,7 +34,9 @@ import { triageQuery } from './queries.js';
  * slim strip at the top of the inspector says how many are waiting, with
  * Accept all. In `auto` mode the value the AI set carries "Set by AI" and an
  * Undo on its row. The type note hides behind "1 more note"; a possible major
- * incident is a warning with no button that declares anything.
+ * incident is a danger notice (v3: amber is SLA risk alone, D5) with no
+ * button that declares anything. A decision the shared demo wrote in advance
+ * carries a neutral "Sample" pill with its reason (A6 §5.6.5, D13).
  *
  * Every answer is the agent's own edit, made with the version they are
  * looking at: a ticket somebody else changed meanwhile is a conflict to read,
@@ -224,6 +227,16 @@ export function useTriage(ws: WorkspaceApi): TriageState {
   };
 }
 
+/** "Sample", beside the triage's heading, with what it means one press away. */
+function SampleBadge(): ReactNode {
+  return (
+    <span className="app-Triage__sample">
+      <StatusPill size="sm" tone="neutral" icon="sparkles" label="Sample" />
+      <InfoTipTrigger label="About Sample" title="Sample" body={SAMPLE_NOTE} />
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------- The strip */
 
 /**
@@ -259,12 +272,13 @@ export function TriageStrip({
   };
 
   return (
-    <section className="app-Triage" aria-labelledby={headingId} aria-busy={progress ? true : undefined}>
+    <section className="app-Triage" data-card="triage" aria-labelledby={headingId} aria-busy={progress ? true : undefined}>
       {count > 0 ? (
         <div className="app-Triage__head">
           <p id={headingId} className="app-Triage__line">
             <Icon name="sparkles" size="sm" className="app-Triage__mark" />
             {stripLine(count)}
+            {view.sample ? <SampleBadge /> : null}
           </p>
           {canAct ? (
             <div className="app-Triage__actions">
@@ -288,6 +302,7 @@ export function TriageStrip({
         <p id={headingId} className="app-Triage__line">
           <Icon name="sparkles" size="sm" className="app-Triage__mark" />
           AI triage
+          {view.sample ? <SampleBadge /> : null}
         </p>
       )}
       <p className="app-Triage__progress" role="status">
@@ -295,7 +310,7 @@ export function TriageStrip({
       </p>
 
       {view.warning ? (
-        <InlineAlert tone="warning" className="app-Triage__warning">
+        <InlineAlert tone="danger" className="app-Triage__warning">
           <p className="app-Triage__warningText">{suggestionLine(view.warning)}</p>
           <div className="app-Triage__warningActions">
             <Button size="sm" variant="secondary" iconStart="copy" onClick={() => void copy()}>

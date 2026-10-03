@@ -1,10 +1,11 @@
 import { css, layer } from '../styles/css.js';
 
 /**
- * `Textarea`: what it adds to the box in `Input.styles.ts` — padding for
- * more than one line, the vertical resize handle (none while it grows by
- * itself), and the footer row that holds the submit-shortcut hint and the
- * character count.
+ * `Textarea`: what it adds to the box in `Input.styles.ts` (the v3 field:
+ * control radius, `border.interactive` edge, halo focus, input text size) —
+ * padding for more than one line, the vertical resize handle (none while it
+ * grows by itself), and the footer row that holds the submit-shortcut hint
+ * and the character count.
  */
 export const textareaStyles = layer(
   'components',

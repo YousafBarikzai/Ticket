@@ -60,9 +60,9 @@ describe('foundations audit', () => {
     await audit(
       <div>
         <a href="/">
-          <BrandMark app="workbench" /> Workbench
+          <BrandMark app="workbench" /> Service Desk
         </a>
-        <BrandMark app="portal" title="Help centre" size={64} />
+        <BrandMark app="portal" title="Help Portal" size={64} />
       </div>,
     );
   });

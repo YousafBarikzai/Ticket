@@ -72,6 +72,41 @@ describe('Kbd', () => {
     expect(kbdStyles).toContain(':root[data-itsm-os="apple"] .itsm-Kbd__set[data-platform="other"]');
   });
 
+  it('draws v3 caps: a raised key in text.muted with a 1 px edge and a 2 px lip, 600 11/16', () => {
+    const rule = (selector: string): string => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return kbdStyles.match(new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`))?.[1] ?? '';
+    };
+    const kbd = rule('.itsm-Kbd');
+    expect(kbd).toContain('font-size: var(--itsm-text-caption-size);');
+    expect(kbd).toContain('line-height: var(--itsm-text-caption-line);');
+    expect(kbd).toContain('font-weight: var(--itsm-font-weight-semibold);');
+    expect(kbd).toContain('color: var(--itsm-colour-text-muted);');
+    const key = rule('.itsm-Kbd__key');
+    expect(key).toContain('--_itsm-kbd-face: var(--itsm-colour-surface-raised);');
+    expect(key).toContain('--_itsm-kbd-edge: var(--itsm-colour-border-subtle);');
+    expect(key).toContain('--_itsm-kbd-lip: var(--itsm-colour-border-soft);');
+    expect(key).toContain('border: var(--itsm-border-hair) solid var(--_itsm-kbd-edge);');
+    expect(key).toContain('border-block-end: var(--itsm-border-thick) solid var(--_itsm-kbd-lip);');
+    expect(key).toContain('border-radius: var(--itsm-radius-xs);');
+    expect(key).toContain('background: var(--_itsm-kbd-face);');
+  });
+
+  it('draws the caps from the text around them on a dark bubble and on navy, never as light keys', () => {
+    const context = ':where(.itsm-Tooltip__content, .itsm-Bubble, .itsm-Sidebar__tip, [data-surface="hero"])';
+    expect(kbdStyles).toContain(`${context} .itsm-Kbd {\n  color: inherit;`);
+    const keys = kbdStyles.slice(kbdStyles.indexOf(`${context} .itsm-Kbd__key {`));
+    expect(keys).toMatch(/--_itsm-kbd-face: color-mix\(in srgb, currentColor 10%, transparent\);/);
+    // The tooltip renders its shortcut inside its bubble, which the context names.
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(
+      <span className="itsm-Tooltip__content">
+        Copy <Kbd keys="mod+shift+c" size="sm" aria-hidden />
+      </span>,
+    );
+    expect(host.querySelector('.itsm-Tooltip__content .itsm-Kbd')).not.toBeNull();
+  });
+
   it('hydrates what the server rendered without a mismatch', async () => {
     const element = (
       <p>

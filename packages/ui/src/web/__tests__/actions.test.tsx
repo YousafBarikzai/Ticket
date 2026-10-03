@@ -3,7 +3,9 @@ import { act, createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestProvider } from '../../provider/__tests__/support/provider.js';
 import { Button } from '../Button.js';
+import { buttonStyles } from '../Button.styles.js';
 import { IconButton } from '../IconButton.js';
+import { iconButtonStyles } from '../IconButton.styles.js';
 import { activeElement, cleanupDocument, click, focus, press, render } from './support/render.js';
 
 /*
@@ -62,6 +64,12 @@ function button(name?: string): HTMLButtonElement {
 
 function bubble(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.itsm-Bubble');
+}
+
+/** The declarations of the first rule in `sheet` written exactly as `selector {`. */
+function rule(sheet: string, selector: string): string {
+  const start = sheet.indexOf(`${selector} {`);
+  return start < 0 ? '' : sheet.slice(start, sheet.indexOf('}', start));
 }
 
 describe('Button', () => {
@@ -288,6 +296,118 @@ describe('Button', () => {
     render(<Button disabled>Save</Button>);
     expect(button('Save').disabled).toBe(true);
     expect(button('Save').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  describe('disabledIcon (the demo-locked action)', () => {
+    it('draws a decorative 14 px lock after the label while the action is unavailable, with the reason as its description', () => {
+      render(
+        <Button disabledReason="Uploads are turned off in the demo" disabledIcon="lock" iconStart="plus">
+          Attach a file
+        </Button>,
+      );
+      const element = button('Attach a file');
+      expect(element.getAttribute('aria-disabled')).toBe('true');
+      expect(element.hasAttribute('data-locked')).toBe(true);
+      const lock = element.querySelector('.itsm-Button__lock')!;
+      expect(lock.getAttribute('data-icon')).toBe('lock');
+      expect(lock.getAttribute('aria-hidden')).toBe('true');
+      expect(lock.getAttribute('data-size')).toBe('xs');
+      // After the label, the last thing in the button.
+      expect(element.querySelector('.itsm-Button__label')?.compareDocumentPosition(lock)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(element.textContent).toBe('Attach a file');
+      const describedBy = element.getAttribute('aria-describedby') ?? '';
+      expect(document.getElementById(describedBy)?.textContent).toBe('Uploads are turned off in the demo');
+    });
+
+    it('takes the end icon’s place, and shows on a plain disabled button too', () => {
+      render(
+        <>
+          <Button disabledIcon="lock" disabledReason="Turned off in the demo" iconEnd="arrow-right">
+            Export
+          </Button>
+          <Button disabledIcon="lock" disabled>
+            Delete
+          </Button>
+        </>,
+      );
+      expect(button('Export').querySelector('[data-icon="arrow-right"]')).toBeNull();
+      expect(button('Export').querySelector('[data-icon="lock"]')).not.toBeNull();
+      expect(button('Delete').querySelector('[data-icon="lock"]')).not.toBeNull();
+    });
+
+    it('is not drawn while the action is available, or while it is only busy', () => {
+      const view = render(
+        <Button disabledIcon="lock" iconEnd="arrow-right">
+          Export
+        </Button>,
+      );
+      expect(button('Export').querySelector('[data-icon="lock"]')).toBeNull();
+      expect(button('Export').querySelector('[data-icon="arrow-right"]')).not.toBeNull();
+      expect(button('Export').hasAttribute('data-locked')).toBe(false);
+      view.rerender(
+        <Button disabledIcon="lock" loading>
+          Export
+        </Button>,
+      );
+      expect(button('Export').querySelector('[data-icon="lock"]')).toBeNull();
+    });
+
+    it('keeps a link that is locked a button, with the lock', () => {
+      render(
+        <Button href="/reports/export" disabledIcon="lock" disabledReason="Turned off in the demo">
+          Export
+        </Button>,
+      );
+      expect(document.querySelector('a')).toBeNull();
+      expect(button('Export').querySelector('[data-icon="lock"]')).not.toBeNull();
+    });
+  });
+
+  describe('the v3 look (§2.14)', () => {
+    it('paints primary with the brand gradient over the solid colour, the xs shadow and the inner highlight', () => {
+      const primary = rule(buttonStyles, '.itsm-Button--primary');
+      expect(primary).toContain('background-color: var(--itsm-colour-brand-solid)');
+      expect(primary).toContain('background-image: var(--itsm-gradient-brand)');
+      expect(primary).toContain('box-shadow: var(--itsm-elevation-xs), var(--itsm-highlight-inset)');
+      expect(rule(buttonStyles, '.itsm-Button--primary:hover,\n.itsm-Button--primary:active')).toContain('var(--itsm-gradient-brand-hover)');
+    });
+
+    it('makes secondary a raised button with a border.soft edge, firming under the pointer', () => {
+      const secondary = rule(buttonStyles, '.itsm-Button--secondary');
+      expect(secondary).toContain('border-color: var(--itsm-colour-border-soft)');
+      expect(secondary).toContain('background-color: var(--itsm-colour-surface-raised)');
+      expect(secondary).toContain('box-shadow: var(--itsm-elevation-xs)');
+      const hover = rule(buttonStyles, '.itsm-Button--secondary:hover');
+      expect(hover).toContain('var(--itsm-colour-border-interactive)');
+      expect(hover).toContain('var(--itsm-colour-surface-raisedAlt)');
+      expect(rule(buttonStyles, '.itsm-Button--ghost:hover')).toContain('var(--itsm-colour-surface-hover)');
+    });
+
+    it('sets 600 13/20 labels, 12/16 small, 14/20 large, and the item radius at 44 px', () => {
+      const base = rule(buttonStyles, '.itsm-Button');
+      expect(base).toContain('font-weight: var(--itsm-font-weight-semibold)');
+      expect(base).toContain('font-size: var(--itsm-text-callout-size)');
+      expect(base).toContain('border-radius: var(--itsm-radius-lg)');
+      expect(rule(buttonStyles, '.itsm-Button--sm')).toContain('font-size: var(--itsm-text-footnote-size)');
+      const large = rule(buttonStyles, '.itsm-Button--lg');
+      expect(large).toContain('border-radius: var(--itsm-radius-item)');
+      expect(large).toContain('font-size: var(--itsm-text-body-size)');
+      expect(large).toContain('line-height: var(--itsm-text-callout-line)');
+    });
+
+    it('draws unavailable on the opaque sunken surface, never with opacity', () => {
+      const unavailable = rule(buttonStyles, '.itsm-Button:disabled,\n.itsm-Button[aria-disabled="true"]:not([aria-busy="true"])');
+      expect(unavailable).toContain('background-color: var(--itsm-colour-surface-sunken)');
+      expect(unavailable).toContain('color: var(--itsm-colour-text-disabled)');
+      expect(buttonStyles).not.toMatch(/opacity:\s*0?\.\d/);
+    });
+
+    it('gives the icon button the same corners and variants', () => {
+      expect(rule(iconButtonStyles, '.itsm-IconButton--lg')).toContain('border-radius: var(--itsm-radius-item)');
+      expect(rule(iconButtonStyles, '.itsm-IconButton--secondary')).toContain('border-color: var(--itsm-colour-border-soft)');
+      expect(rule(iconButtonStyles, '.itsm-IconButton--ghost:hover')).toContain('var(--itsm-colour-surface-hover)');
+      expect(iconButtonStyles).not.toContain('fill-secondary');
+    });
   });
 });
 

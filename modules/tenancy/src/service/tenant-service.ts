@@ -4,6 +4,7 @@ import {
   type Tx,
   ConflictError,
   NotFoundError,
+  ValidationError,
   SYSTEM_PERMISSIONS,
   createContext,
   logger,
@@ -37,8 +38,15 @@ export const provisionTenantSchema = z.object({
   region: z.string().default('eu-west'),
   adminEmail: z.string().email().optional(),
   parentTenantId: z.string().uuid().optional(),
+  /**
+   * A real customer, or the shared demo (D25). Written once, here: the
+   * database refuses any later change, because flipping a kind either
+   * silences a real tenant's e-mail or opens the demo's egress.
+   */
+  kind: z.enum(['standard', 'demo']).default('standard'),
 });
-export type ProvisionTenantInput = z.infer<typeof provisionTenantSchema>;
+/** What a caller passes: fields with a default (`region`, `kind`) may be left out. */
+export type ProvisionTenantInput = z.input<typeof provisionTenantSchema>;
 
 export interface ProvisionStep {
   key: string;
@@ -64,22 +72,109 @@ export function registeredSeedSteps(): string[] {
   return seedSteps.map((s) => s.key);
 }
 
-export async function provisionTenant(input: ProvisionTenantInput): Promise<{ tenantId: string; steps: ProvisionStep[] }> {
+/**
+ * The slug of a demo generation while it is being built: `demo-build-g<n>`,
+ * optionally with six hex digits. The purge guard recognises exactly this
+ * shape (and `demo-retired-g<n>`), so a seeding tenant with any other slug
+ * could never be cleaned up after a failed build.
+ */
+export const DEMO_BUILD_SLUG_PATTERN = /^demo-build-g\d+(-[0-9a-f]{6})?$/;
+
+/**
+ * What a demo build records on its tenant at insert (`settings.demo`). Written
+ * with the row rather than after it, so a build that dies between the two
+ * still leaves a tenant the purge guard recognises as managed: an unmanaged
+ * `seeding` tenant is one the guard refuses to touch, and it would stay for
+ * ever.
+ */
+export const demoBuildSettingsSchema = z.object({
+  generation: z.number().int().min(1),
+  seed: z.number().int(),
+  /** T0, the instant the generation's story is told from. */
+  anchor: z.date(),
+  scale: z.number().min(0.1).max(1),
+  generatorVersion: z.string().min(1).max(100),
+});
+export type DemoBuildSettings = z.infer<typeof demoBuildSettingsSchema>;
+
+export interface ProvisionTenantOptions {
+  /**
+   * `active` (the default) is today's behaviour: inserted as `provisioning`,
+   * seeded, then made `active`. `seeding` is for a demo build only: the row is
+   * inserted as `seeding` and left there, because the swap is the one write
+   * that may make a demo generation `active`. Inserting it as `provisioning`
+   * instead would let the outbox publisher, which scans `active` and
+   * `provisioning` tenants, dispatch the seed steps' events for a few seconds
+   * (A4 §2.3, §2.4 Q1).
+   */
+  status?: 'active' | 'seeding';
+  /**
+   * The tenant's id, chosen by the caller, so the build can mark it quiet
+   * (`beginQuiet`) before its first row exists.
+   */
+  id?: string;
+  /** Required with `seeding`: the generation this tenant is being built as. */
+  demo?: DemoBuildSettings;
+}
+
+function checkProvisionOptions(parsed: z.infer<typeof provisionTenantSchema>, options: ProvisionTenantOptions): void {
+  if (options.id !== undefined && !z.string().uuid().safeParse(options.id).success) {
+    throw new ValidationError('a chosen tenant id must be a UUID');
+  }
+  const seeding = options.status === 'seeding';
+  if (!seeding && options.demo) {
+    throw new ValidationError('demo build settings are written only on a tenant provisioned as seeding');
+  }
+  if (!seeding) return;
+  // Each refusal here is a tenant that, once inserted, no swap could activate
+  // and no purge could remove.
+  if (parsed.kind !== 'demo') throw new ValidationError('only a demo tenant is provisioned as seeding');
+  if (!DEMO_BUILD_SLUG_PATTERN.test(parsed.slug)) {
+    throw new ValidationError('a seeding demo tenant needs a demo-build-g<n> slug, which the purge guard recognises');
+  }
+  if (!options.demo) throw new ValidationError('a seeding demo tenant needs its build settings (settings.demo)');
+  const settings = demoBuildSettingsSchema.safeParse(options.demo);
+  if (!settings.success) {
+    throw new ValidationError(`the demo build settings are invalid: ${settings.error.issues.map((issue) => `${issue.path.join('.')} ${issue.message}`).join('; ')}`);
+  }
+}
+
+export async function provisionTenant(
+  input: ProvisionTenantInput,
+  options: ProvisionTenantOptions = {},
+): Promise<{ tenantId: string; steps: ProvisionStep[] }> {
   const parsed = provisionTenantSchema.parse(input);
+  checkProvisionOptions(parsed, options);
+  const seeding = options.status === 'seeding';
   const db = platformDb();
 
   const existing = await db.tenant.findFirst({ where: { slug: parsed.slug } });
   if (existing) throw new ConflictError(`a tenant with the slug ${parsed.slug} already exists`);
 
-  const tenantId = newId();
+  const tenantId = options.id ?? newId();
+  if (options.id && (await db.tenant.findFirst({ where: { id: tenantId }, select: { id: true } }))) {
+    throw new ConflictError(`a tenant with the id ${tenantId} already exists`);
+  }
+  const demo = options.demo
+    ? {
+        managed: true,
+        generation: options.demo.generation,
+        seed: options.demo.seed,
+        anchor: options.demo.anchor.toISOString(),
+        scale: options.demo.scale,
+        generatorVersion: options.demo.generatorVersion,
+      }
+    : null;
   await db.tenant.create({
     data: {
       id: tenantId,
       name: parsed.name,
       slug: parsed.slug,
       region: parsed.region,
-      status: 'provisioning',
+      kind: parsed.kind,
+      status: seeding ? 'seeding' : 'provisioning',
       parentTenantId: parsed.parentTenantId ?? null,
+      ...(demo ? { settings: { demo } } : {}),
     },
   });
 
@@ -133,7 +228,9 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<{ te
     }
 
     await recordSteps('done');
-    await db.tenant.update({ where: { id: tenantId }, data: { status: 'active' } });
+    // A seeding tenant stays seeding: the demo swap activates it, or the purge
+    // removes it, and nothing else may.
+    if (!seeding) await db.tenant.update({ where: { id: tenantId }, data: { status: 'active' } });
 
     // The audit row and the event go through the ordinary tenant-scoped path,
     // so a tenant's history starts with its own creation.
@@ -152,7 +249,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<{ te
     });
   });
 
-  logger.info('tenant provisioned', { tenantId, slug: parsed.slug, steps: steps.length });
+  logger.info('tenant provisioned', { tenantId, slug: parsed.slug, steps: steps.length, status: seeding ? 'seeding' : 'active' });
   return { tenantId, steps };
 }
 

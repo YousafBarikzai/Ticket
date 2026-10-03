@@ -35,6 +35,16 @@ const csp = [
   "form-action 'self'",
 ].join('; ');
 
+/** The host of `PORTAL_ORIGIN` (`help.example.com`, with its port when it has one), or nothing. */
+function allowedActionOrigins(origin: string | undefined): string[] {
+  if (!origin) return [];
+  try {
+    return [new URL(origin).host];
+  } catch {
+    return [];
+  }
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   /**
@@ -66,8 +76,24 @@ const nextConfig: NextConfig = {
    * only the pre-paint script from it: unoptimised, the theme barrel's
    * `ThemeProvider` became a client reference of the root layout and shipped
    * a second time on every route (the providers already carry it).
+   * `@itsm/ui/charts` (SPEC v3 §4.6.1) keeps the portal's few charts — the
+   * summary strips' `StatCard`s — from bringing the kit's client islands
+   * with them, and `@itsm/ui/shell` does the same for the frame: every route
+   * imports a handful of its parts, never the whole barrel.
    */
-  experimental: { optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme'] },
+  experimental: {
+    optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme', '@itsm/ui/charts', '@itsm/ui/shell'],
+    /**
+     * One Server Action, `renderSentPanel`, draws the success panel after a
+     * request is sent (WP-49). Next refuses an action whose `Origin` is not
+     * this app's own host (`x-forwarded-host`, else `host`); `PORTAL_ORIGIN`
+     * adds the public host for a deployment whose proxy forwards an internal
+     * one instead, as the admin does with `ADMIN_ORIGIN`. Read when the app is
+     * built, which is where Next fixes its configuration. A refused action
+     * costs only the panel: the flow falls back to its plain ending.
+     */
+    serverActions: { allowedOrigins: allowedActionOrigins(process.env.PORTAL_ORIGIN) },
+  },
   /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension, which is what ECMAScript modules require and what `tsx`,
@@ -102,6 +128,21 @@ const nextConfig: NextConfig = {
         headers: [
           { key: 'cache-control', value: 'no-cache, no-store, must-revalidate' },
           { key: 'service-worker-allowed', value: '/' },
+        ],
+      },
+      {
+        /*
+         * The demo's entry (SPEC v3 §4.6.1). Not in any index, whatever a
+         * crawler makes of `robots.txt`; and never stored by a cache or the
+         * browser's back-forward copy, because what it shows — "Opening the
+         * Help Portal…", a confirm, a reason — is decided per request from this
+         * browser's session and the demo's state, and a form that submits
+         * itself must never be replayed from a cache.
+         */
+        source: '/demo',
+        headers: [
+          { key: 'x-robots-tag', value: 'noindex, nofollow' },
+          { key: 'cache-control', value: 'no-store' },
         ],
       },
       {

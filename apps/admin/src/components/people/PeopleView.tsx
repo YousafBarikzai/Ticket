@@ -71,7 +71,7 @@ export function PeopleView(props: PeopleViewProps): ReactNode {
   const reactivate = useMutation((id: string) => api.tenant.reactivateUser(id), { failure: 'Couldn’t reactivate them' });
 
   const statusMap = useMemo(() => {
-    const map: Record<string, { label: string; tone: 'success' | 'neutral' | 'info' | 'warning' | 'danger'; icon: 'circle-check' | 'circle-dashed' | 'dot' }> = {};
+    const map: Record<string, { label: string; tone: 'success' | 'neutral' | 'info' | 'danger'; icon: 'circle-check' | 'circle-dashed' | 'dot' }> = {};
     for (const row of rows) if (!map[row.status]) map[row.status] = userStatusLook(row.status) as (typeof map)[string];
     return map;
   }, [rows]);

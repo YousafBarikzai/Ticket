@@ -18,6 +18,7 @@ import {
 } from '@itsm/ui';
 import { ConfirmDialog, Sheet } from '@itsm/ui/overlays';
 import type { FormDefinition } from '@itsm/ui/forms';
+import { crossAreaHref, type AreaModel } from '@itsm/contracts/areas';
 import { useOnline } from '../../client/live.js';
 import { useMutation } from '../../client/useMutation.js';
 import type { KeyState } from '../../keys.js';
@@ -73,7 +74,8 @@ export interface RequestTypeSheetProps {
   readonly teams: readonly { readonly id: string; readonly name: string }[] | null;
   /** May write forms (`catalogue.form.manage`): own questions are editable. */
   readonly canEditQuestions: boolean;
-  readonly portalOrigin?: string;
+  /** The person's areas (`currentAreas()`): *Open in Help Portal* after publishing goes through `crossAreaHref` (A2 §3.7). */
+  readonly areas?: AreaModel;
 }
 
 export function RequestTypeSheet(props: RequestTypeSheetProps): ReactNode {
@@ -144,7 +146,7 @@ function RequestTypeForm({
   forms,
   teams,
   canEditQuestions,
-  portalOrigin,
+  areas,
   onDirtyChange,
   onDone,
 }: RequestTypeSheetProps & { readonly target: SheetTarget; readonly onDirtyChange: (dirty: boolean) => void; readonly onDone: () => void }): ReactNode {
@@ -248,9 +250,10 @@ function RequestTypeForm({
     if (result.ok) {
       const name = fields.name.trim();
       if (intent === 'publish') {
+        const portal = areas ? crossAreaHref(areas, 'portal', `/catalogue/${encodeURIComponent(key)}`) : null;
         notify(`${name} is live`, {
           tone: 'success',
-          ...(portalOrigin ? { action: { label: 'Open portal', onClick: () => window.location.assign(`${portalOrigin}/catalogue/${encodeURIComponent(key)}`) } } : {}),
+          ...(portal ? { action: { label: 'Open in Help Portal', onClick: () => window.location.assign(portal) } } : {}),
         });
       } else notify(live ? `${name} saved` : existing ? `${name} saved as a draft` : `${name} added as a draft`, { tone: 'success' });
       onDirtyChange(false);
@@ -299,7 +302,7 @@ function RequestTypeForm({
         steps,
         spec: {
           title: `Publish ${fields.name.trim()}?`,
-          body: 'Requesters will see this in the portal immediately.',
+          body: 'Requesters will see this in the Help Portal immediately.',
           confirmLabel: 'Publish',
           ...(consequences.length > 0 ? { consequences } : {}),
         },

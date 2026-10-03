@@ -1,5 +1,6 @@
 import {
   type TenantContext,
+  isDemoTenant,
   logger,
   metrics,
   newId,
@@ -300,11 +301,27 @@ function replyFor(outcome: string, ticketNumber?: string, reason?: string): stri
   return reason ?? 'I could not do that.';
 }
 
-/** Posts a reply through whichever transport this account uses. */
+/**
+ * E8 (SPEC v3 §4.7.2): the shared demo posts into no chat thread. No
+ * production code registers a chat transport today, so this is defence in
+ * depth — the guard is in place before the first transport is.
+ */
+async function chatSuppressed(tenantId: string): Promise<boolean> {
+  if (!(await isDemoTenant(tenantId))) return false;
+  metrics.increment('demo_egress_suppressed_total', { choke: 'E8' });
+  return true;
+}
+
+/**
+ * Posts a reply through whichever transport this account uses. The tenant
+ * comes first because it decides whether anything is posted at all (E8).
+ */
 export async function replyToChat(
+  tenantId: string,
   transportName: string,
   message: { roomId: string; threadId: string | null; text: string },
 ): Promise<void> {
+  if (await chatSuppressed(tenantId)) return;
   const transport = chatTransport(transportName);
   if (!transport) {
     logger.warn('no chat transport is registered for a reply', { transport: transportName });
@@ -329,6 +346,9 @@ export async function postToTicketThread(
   message: { text: string; actions?: OutboundChat['actions'] },
   awaiting?: Awaiting,
 ): Promise<{ posted: boolean; conversationId: string | null; channel: string | null; supportsButtons: boolean }> {
+  // Nothing posted, and nothing marked as awaiting a reply that cannot come.
+  if (await chatSuppressed(ctx.tenantId)) return { posted: false, conversationId: null, channel: null, supportsButtons: false };
+
   const conversation = await tx.conversation.findFirst({
     where: { ticketId, channel: { in: ['slack', 'teams', 'whatsapp'] } },
     orderBy: { lastInboundAt: 'desc' },

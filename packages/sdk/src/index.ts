@@ -1,10 +1,13 @@
 /** `@itsm/sdk` — the typed client every application talks to the API through. */
 export { ApiError, createClient, type Client, type ClientOptions, type RequestOptions } from './client.js';
+export { attainmentTarget, honoured, permissionScope, type AttainmentGoal, type PermissionScope } from './helpers.js';
 export { ticketCountQuery, ticketQuery, workbench, type TicketFilter, type Workbench } from './resources/workbench.js';
+export { ticketCountsQuery } from './resources/workbench.js';
 export {
   admin,
   type ActivityRow,
   type Admin,
+  type DeploymentWarning,
   type FieldRow,
   type FlagRow,
   type ModuleRow,
@@ -119,6 +122,8 @@ export {
   type WidgetRow,
   type WidgetType,
 } from './resources/operations.js';
+export { MAX_METRIC_BATCH, type AttainmentTarget, type MetricBatchQuery, type MetricBatchResult, type MetricQueries } from './resources/insights.js';
+export type { MajorIncidentAudience, MajorIncidentDetail, MajorIncidentFilter, MajorIncidentTimelineEntry } from './resources/service-management.js';
 export {
   portal,
   queueable,
@@ -139,6 +144,7 @@ export {
   type PublicStatus,
   type SubmitResult,
 } from './resources/portal.js';
+export { demo, type Demo } from './resources/demo.js';
 export type {
   ActivityTypeRow,
   AiCapability,
@@ -152,9 +158,13 @@ export type {
   CreateTicketInput,
   JobSuggestion,
   Me,
+  MeDemo,
   NotificationInbox,
   NotificationRow,
   Page,
+  ProblemDetails,
+  ProblemExtensions,
+  RecordCiRow,
   RunningTimer,
   SearchHit,
   SearchOptions,
@@ -170,8 +180,11 @@ export type {
   TeamMemberRow,
   Ticket,
   TicketCount,
+  TicketCountDimension,
+  TicketCountsBy,
   TicketLinkRow,
   TicketLinkType,
+  TicketPage,
   TicketPatch,
   TimeEntryRow,
   TransitionOptions,

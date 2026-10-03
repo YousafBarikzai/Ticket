@@ -62,6 +62,19 @@ describe('feedback audit', () => {
     );
   });
 
+  it('Banner v3: a kicker over the title, and the hold and high tones', async () => {
+    await audit(
+      <div>
+        <Banner tone="danger" kicker="Major incident" title="MI-0004 · VPN sign-in failures for remote staff" action={{ id: 'room', label: 'Open war room', href: '/major-incidents/MI-0004' }}>
+          Mitigating · Next update 14:52
+        </Banner>
+        <Banner tone="accent" kicker="Sample data" title="These figures are generated for the demo" live={false} />
+        <Banner tone="hold" title="Waiting on the requester" />
+        <Banner tone="high" title="Raised to P2" variant="subtle" />
+      </div>,
+    );
+  });
+
   it('InlineAlert: each tone, with a control inside', async () => {
     await audit(
       <div>
@@ -91,6 +104,7 @@ describe('feedback audit', () => {
         />
         <GlobalBanner tone="warning" title="Your session ended" live="assertive" action={{ id: 'sign-in', label: 'Sign in again', href: '/api/session/login' }} />
         <GlobalBanner tone="neutral" icon="wifi-off" title="Offline" body="Showing the copy from 10:42." live={false} />
+        <GlobalBanner tone="danger" emphasis="strong" kicker="Major incident" title="Email is delayed" live={false} />
       </div>,
     );
   });
@@ -104,6 +118,7 @@ describe('feedback audit', () => {
         <EmptyState tone="error" title="Rules could not be loaded" action={<button type="button">Try again</button>} />
         <EmptyState tone="success" size="sm" headingLevel={3} title="Nothing needs you right now" description="Checked 1 min ago" />
         <EmptyState tone="forbidden" size="lg" title="You don't have access to Rules" secondaryAction={{ id: 'back', label: 'Back', href: '/' }} />
+        <EmptyState frame="dashed" tone="search" title="This page isn't here" action={{ id: 'overview', label: 'Back to Overview', href: '/overview' }} />
         <EmptyState tone="offline" size="lg" title="You're offline">
           <ul>
             <li>
@@ -140,6 +155,32 @@ describe('feedback audit', () => {
         <form method="post" action="/api/session/logout">
           <button type="submit" className="itsm-Button itsm-Button--secondary itsm-Button--lg">
             Sign out
+          </button>
+        </form>
+      </StatusScreen>,
+    );
+    await expectNoViolations(document.body);
+  });
+
+  it('StatusScreen variant="hop": the status line, the persona strip and the entry form', async () => {
+    render(
+      <StatusScreen
+        variant="hop"
+        brand="portal"
+        title="Opening the Help Portal as Emma Clarke…"
+        session={{
+          badge: 'Demo',
+          persona: (
+            <>
+              You're <strong>Emma Clarke</strong> · Finance Manager
+            </>
+          ),
+        }}
+      >
+        <form id="itsm-demo-entry" method="post" action="/api/session/demo">
+          <input type="hidden" name="persona" value="employee" />
+          <button type="submit" className="itsm-Button itsm-Button--secondary itsm-Button--lg">
+            Open the demo
           </button>
         </form>
       </StatusScreen>,

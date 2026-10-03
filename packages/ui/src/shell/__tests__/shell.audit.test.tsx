@@ -27,7 +27,9 @@ import { TabNav } from '../TabNav.js';
 import { TopBar } from '../TopBar.js';
 import { TopNavShell } from '../TopNavShell.js';
 import { UserMenu } from '../UserMenu.js';
-import { createLocation, setViewport, sidebarProps, topnavProps } from './support.js';
+import { AreaSwitcher } from '../AreaSwitcher.js';
+import { ContextChip } from '../AppTopBar.js';
+import { adminAreas, agentPortalAreas, createLocation, demoAreas, requesterAreas, setViewport, sidebarProps, topnavProps } from './support.js';
 
 vi.mock('../../web/IconButtonTooltip.js', () => ({ IconButtonTooltip: () => null }));
 vi.mock('../../overlays/Toaster.js', () => ({ Toaster: () => null }));
@@ -56,7 +58,7 @@ async function loaded(): Promise<void> {
 const now = Date.now();
 const notifications: NotificationItem[] = [
   { id: 'n1', subject: 'Assigned to you: Printer jammed', body: 'Ada raised it from the portal.', eventType: 'ticket.assigned', createdAt: new Date(now - 60_000).toISOString(), readAt: null },
-  { id: 'n2', subject: 'SLA breached: VPN down', eventType: 'sla.breached.lead', createdAt: new Date(now - 90_000).toISOString(), readAt: null },
+  { id: 'n2', subject: 'SLA breached: VPN down', eventType: 'sla.timer.breached', createdAt: new Date(now - 90_000).toISOString(), readAt: null },
   { id: 'n3', subject: 'Approved: Laptop', eventType: 'approval.decided', createdAt: new Date(now - 3 * 86_400_000).toISOString(), readAt: new Date(now).toISOString() },
 ];
 
@@ -93,13 +95,46 @@ describe('the frame passes axe', () => {
     const location = createLocation('/rules');
     render(
       <location.Provider>
-        <AppShell {...sidebarProps({ bell: <Bell />, status: <span>Offline · 2 waiting</span>, sidebarHeaderExtra: <button type="button" aria-label="New ticket">+</button> })}>
+        <AppShell
+          {...sidebarProps({
+            bell: <Bell />,
+            status: <span>Offline · 2 waiting</span>,
+            sidebarAction: <button type="button">New ticket</button>,
+            context: <ContextChip label="MI-0004 · VPN sign-in failures · Sev 2" compactLabel="MI-0004 · Sev 2" icon="siren" tone="danger" href="/tickets/INC-000004" />,
+            help: { items: [{ id: 'kb', label: 'Knowledge base · Help Portal', href: 'https://help.example/knowledge' }] },
+            footerExtra: <button type="button">Available</button>,
+          })}
+        >
           <Page />
         </AppShell>
       </location.Provider>,
     );
     await settle();
     await expectNoViolations(document.body);
+  });
+
+  it.each(['apple', 'apple-dark'])('AppShell sidebar in a demo session, its area menu open, in the %s theme', async (theme) => {
+    setViewport(1440);
+    document.documentElement.setAttribute('data-itsm-theme', theme);
+    try {
+      const location = createLocation('/rules');
+      render(
+        <location.Provider app="workbench">
+          <AppShell {...sidebarProps({ areas: demoAreas('workbench'), bell: <Bell />, systemBar: <div role="region" aria-label="Demo environment" className="itsm-SystemBar" /> })}>
+            <Page />
+          </AppShell>
+        </location.Provider>,
+      );
+      await settle();
+      await expectNoViolations(document.body);
+      focus(document.querySelector<HTMLElement>('.itsm-Sidebar button.itsm-AreaSwitcher')!);
+      await loaded();
+      press(document.querySelector<HTMLElement>('.itsm-Sidebar button.itsm-AreaSwitcher')!, 'Enter');
+      await settle();
+      await expectNoViolations(document.body);
+    } finally {
+      document.documentElement.removeAttribute('data-itsm-theme');
+    }
   });
 
   it('AppShell sidebar with its navigation sheet open', async () => {
@@ -122,7 +157,7 @@ describe('the frame passes axe', () => {
     const location = createLocation('/tickets/42');
     render(
       <location.Provider app="portal">
-        <AppShell {...topnavProps({ bell: <Bell />, topBarAction: <a href="/report">New request</a> })}>
+        <AppShell {...topnavProps({ areas: agentPortalAreas, bell: <Bell />, topBarAction: <a href="/report">New request</a> })}>
           <PageHeader title="Printer jammed" back={{ href: '/tickets', label: 'My requests' }} />
         </AppShell>
       </location.Provider>,
@@ -153,7 +188,13 @@ describe('the frame passes axe', () => {
         <SkipLinks links={[{ label: 'Skip to content', targetId: 'main' }]} />
         <RouteProgress />
         <RouteFocus />
-        <TopBar brand={{ name: 'Help', href: '/', app: 'portal' }} title="Printer jammed" end={<SearchTrigger placeholder="Search help" shortcut="mod+k" onOpen={() => undefined} />} />
+        <TopBar
+          brand={{ href: '/' }}
+          brandLabel="IT Service Management — Help Portal home"
+          area={<AreaSwitcher model={requesterAreas} display="compact" />}
+          title="Printer jammed"
+          end={<SearchTrigger placeholder="Search help" shortcut="mod+k" onOpen={() => undefined} />}
+        />
         <main id="main" tabIndex={-1}>
           <h1 tabIndex={-1}>Home</h1>
         </main>
@@ -208,7 +249,7 @@ describe('the frame passes axe', () => {
       <TestProvider>
         <main>
           <h1>Home</h1>
-          <UserMenu name="Ada Lovelace" detail="Acme" density shortcuts help={{ href: '/help' }} signOut={{ action: '/api/session/logout' }} badge={{ value: 2, label: '2 approvals waiting' }} switcher={[{ app: 'workbench', label: 'Workbench', href: '/w' }]} />
+          <UserMenu name="Ada Lovelace" detail="Acme" density shortcuts help={{ href: '/help' }} signOut={{ action: '/api/session/logout' }} badge={{ value: 2, label: '2 approvals waiting' }} areas={adminAreas} />
         </main>
       </TestProvider>,
     );
@@ -220,18 +261,18 @@ describe('the frame passes axe', () => {
     await expectNoViolations(document.body);
   });
 
-  it.each([1440, 390])('NotificationCenter, open at %i px', async (width) => {
-    setViewport(width);
+  it('UserMenu in a demo session, open: Switch area, the Demo group and End demo', async () => {
     render(
-      <TestProvider>
+      <TestProvider app="workbench">
         <main>
           <h1>Home</h1>
-          <Bell />
+          <UserMenu name="Alex Morgan" detail="Service Desk team lead" shortcuts signOut={{ action: '/api/session/logout' }} areas={demoAreas('workbench')} />
         </main>
       </TestProvider>,
     );
-    click(document.querySelector<HTMLElement>('.itsm-NotificationCenter__bell')!);
+    focus(document.querySelector<HTMLElement>('.itsm-UserMenu')!);
     await loaded();
+    press(document.querySelector<HTMLElement>('.itsm-UserMenu')!, 'Enter');
     await settle();
     await expectNoViolations(document.body);
   });

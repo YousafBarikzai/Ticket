@@ -55,8 +55,17 @@ export const aiSuggestionCardStyles = layer(
   letter-spacing: var(--itsm-text-body-tracking);
 }
 
-.itsm-AiSuggestion__confidence {
+.itsm-AiSuggestion__confidence,
+.itsm-AiSuggestion__sample {
   flex: none;
+}
+
+/* The demo's sample (D13): a quiet line under the head, never a tint on the card. */
+.itsm-AiSuggestion__sampleNote {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
 }
 
 .itsm-AiSuggestion__body {

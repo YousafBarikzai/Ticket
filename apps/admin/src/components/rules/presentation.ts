@@ -49,7 +49,8 @@ export interface StateLook {
 export const RULE_STATES: Readonly<Record<RuleState, StateLook>> = {
   live: { label: 'Live', tone: 'success', icon: 'circle-check' },
   draft: { label: 'Draft', tone: 'neutral', icon: 'circle-dashed' },
-  changes: { label: 'Unpublished changes', tone: 'warning', icon: 'pencil' },
+  // Work in progress, not a risk: `info`, so amber stays SLA risk and due soon (D5, A7 §2.9).
+  changes: { label: 'Unpublished changes', tone: 'info', icon: 'pencil' },
   archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
 };
 

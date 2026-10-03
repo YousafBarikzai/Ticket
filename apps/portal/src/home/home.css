@@ -1,45 +1,68 @@
 /*
- * Home (SPEC §6.3 `/`, X-34): a centred hero with the one question, then the
- * person's requests beside a "Good to know" card (≥ 1024 px), one column
- * below. Arrangement only, from the design system's tokens; unlayered, so it
- * wins over `@layer itsm.*` without `!important`.
+ * Home v3 (v3 §7.2, A6 §6.1): a light hero band with the greeting, the search
+ * and four quick actions; the status strip; the person's requests as cards
+ * beside an aside (≥ 1024 px), one column below; then common requests.
+ * Arrangement only, from the design system's tokens; unlayered, so it wins
+ * over `@layer itsm.*` without `!important`. Card geometry follows each
+ * card's own width (container queries), not the window's.
  */
 
 .app-Home {
-  --app-home-tile-height: 9.5rem;
+  --app-home-card-height: 6.5rem;
+  --app-home-common-height: 4.75rem;
+  --app-home-aside-height: 16rem;
+  --app-quick-action-height: 4rem;
   display: flex;
   flex-direction: column;
-  gap: var(--itsm-space-xl);
+  gap: var(--itsm-space-lg);
   padding-block: var(--itsm-space-md) var(--itsm-space-3xl);
 }
 
-/* ---- Hero ----------------------------------------------------------------- */
+/* ---- Hero: a light band (D2) ------------------------------------------------ */
 
 .app-Home__hero {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--itsm-space-2xs);
-  padding-block: var(--itsm-space-xl) var(--itsm-space-sm);
-  text-align: center;
+  padding: var(--itsm-space-2xl) var(--itsm-space-2xl) var(--itsm-space-xl);
 }
 
-.app-Home__date {
+.app-Home__hero[data-variant='light'] {
+  border: var(--itsm-border-hair) solid color-mix(in srgb, var(--itsm-colour-accent) 28%, transparent);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-hero-light-background);
+}
+
+.app-Home__kicker {
   margin: 0;
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-footnote-size);
-  line-height: var(--itsm-text-footnote-line);
-  font-weight: var(--itsm-font-weight-semibold);
-  letter-spacing: var(--itsm-text-footnote-tracking);
+  color: var(--itsm-colour-brand-subtleText);
+  font-family: var(--itsm-text-kicker-family);
+  font-size: var(--itsm-text-kicker-size);
+  line-height: var(--itsm-text-kicker-line);
+  font-weight: var(--itsm-text-kicker-weight);
+  letter-spacing: var(--itsm-text-kicker-tracking);
+  text-transform: uppercase;
 }
 
 .app-Home__greeting {
   margin: 0;
+  font-family: var(--itsm-text-largeTitle-family);
   font-size: var(--itsm-text-largeTitle-size);
   line-height: var(--itsm-text-largeTitle-line);
   font-weight: var(--itsm-text-largeTitle-weight);
   letter-spacing: var(--itsm-text-largeTitle-tracking);
   text-wrap: balance;
+}
+
+@media (min-width: 48rem) {
+  .app-Home__greeting {
+    font-family: var(--itsm-text-hero-family);
+    font-size: var(--itsm-text-hero-size);
+    line-height: var(--itsm-text-hero-line);
+    font-weight: var(--itsm-text-hero-weight);
+    letter-spacing: var(--itsm-text-hero-tracking);
+  }
 }
 
 .app-Home__greeting:focus {
@@ -49,10 +72,13 @@
 .app-Home__lede {
   margin: 0;
   color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-title3-size);
-  line-height: var(--itsm-text-title3-line);
-  letter-spacing: var(--itsm-text-title3-tracking);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
   text-wrap: balance;
+}
+
+.app-Home__date {
+  font-weight: var(--itsm-font-weight-semibold);
 }
 
 .app-Home__ask {
@@ -61,8 +87,13 @@
   gap: var(--itsm-space-sm);
   box-sizing: border-box;
   inline-size: 100%;
-  max-inline-size: 46rem;
-  margin-block-start: var(--itsm-space-lg);
+  max-inline-size: 52rem;
+  margin-block-start: var(--itsm-space-md);
+}
+
+.app-Home__askGhost {
+  max-inline-size: 52rem;
+  margin-block-start: var(--itsm-space-md);
 }
 
 .app-Home__new {
@@ -71,16 +102,97 @@
 
 @media (max-width: 47.9375rem) {
   .app-Home__hero {
-    padding-block-start: var(--itsm-space-md);
+    padding: var(--itsm-space-lg) var(--itsm-space-md) var(--itsm-space-md);
   }
 
-  .app-Home__ask {
-    flex-direction: column;
-    align-items: stretch;
+  /* Compact on a phone (A6 §6.1.4): no kicker, and New request as an icon in the search row. */
+  .app-Home__kicker {
+    display: none;
   }
 
-  .app-Home__new {
-    inline-size: 100%;
+  .app-Home__new .itsm-Button__label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ---- Quick actions ------------------------------------------------------------ */
+
+.app-QuickActions {
+  inline-size: 100%;
+  margin-block-start: var(--itsm-space-md);
+}
+
+.app-QuickActions__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12.5rem, 100%), 1fr));
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-QuickAction {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--app-quick-action-height);
+  margin: 0;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  color: var(--itsm-colour-text-primary);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .app-QuickAction:hover {
+    border-color: var(--itsm-colour-border-softHover);
+    box-shadow: var(--itsm-elevation-sm);
+  }
+}
+
+.app-QuickAction:focus-visible {
+  outline: var(--itsm-border-thick) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-border-thick);
+}
+
+.app-QuickAction__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-QuickAction__label {
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-QuickAction__sub {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+/* A 2 × 2 grid on a phone (A6 §6.1.4). */
+@media (max-width: 47.9375rem) {
+  .app-QuickActions__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-QuickAction {
+    padding: var(--itsm-space-xs) var(--itsm-space-sm);
   }
 }
 
@@ -235,14 +347,33 @@
   white-space: nowrap;
 }
 
-/* ---- The incident banner ------------------------------------------------- */
+/* ---- The status strip -------------------------------------------------------- */
 
-.app-Home__incident {
+.app-StatusStrip {
   box-sizing: border-box;
   inline-size: 100%;
 }
 
-/* ---- Requests and "Good to know" ------------------------------------------ */
+/* On a phone the strip's facts take one line (A6 §6.1.4); the title and its link stay whole. */
+@media (max-width: 47.9375rem) {
+  .app-StatusStrip .itsm-Banner__body {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.app-StatusStrip--quiet {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* ---- Requests and the aside -------------------------------------------------- */
 
 .app-Home__grid {
   display: grid;
@@ -252,8 +383,8 @@
 }
 
 @media (min-width: 64rem) {
-  .app-Home__grid:has(> .app-Home__aside) {
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  .app-Home__grid:has(> .app-HomeAside) {
+    grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr);
   }
 }
 
@@ -268,21 +399,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-sm);
-}
-
-.app-Home__sectionHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--itsm-space-sm);
-}
-
-.app-Home__sectionTitle {
-  margin: 0;
-  font-size: var(--itsm-text-title3-size);
-  line-height: var(--itsm-text-title3-line);
-  font-weight: var(--itsm-text-title3-weight);
-  letter-spacing: var(--itsm-text-title3-tracking);
+  min-inline-size: 0;
 }
 
 /* A row's "Yes, it's fixed" went in as a message (the API would not close it for a requester). */
@@ -294,54 +411,9 @@
   font-weight: var(--itsm-font-weight-medium);
 }
 
-.app-Home__skeleton {
-  padding: var(--itsm-space-sm) var(--itsm-space-md);
-  border-radius: var(--itsm-radius-xl);
-  background: var(--itsm-colour-surface-raised);
-  box-shadow: var(--itsm-elevation-xs);
-}
+/* ---- A request as a card -------------------------------------------------- */
 
-.app-Home__tilesSkeleton {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
-  gap: var(--itsm-space-md);
-}
-
-/* ---- Good to know ---------------------------------------------------------- */
-
-.app-Good {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-lg);
-}
-
-.app-Good__part {
-  display: flex;
-  flex-direction: column;
-  gap: var(--itsm-space-xs);
-}
-
-.app-Good__part + .app-Good__part {
-  padding-block-start: var(--itsm-space-lg);
-  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
-}
-
-.app-Good__title {
-  margin: 0;
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-footnote-size);
-  line-height: var(--itsm-text-footnote-line);
-  font-weight: var(--itsm-font-weight-semibold);
-  letter-spacing: var(--itsm-text-footnote-tracking);
-}
-
-.app-Good__overall {
-  margin: 0;
-}
-
-.app-Good__components,
-.app-Good__links,
-.app-Good__channels {
+.app-RequestCards {
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-xs);
@@ -350,49 +422,343 @@
   list-style: none;
 }
 
-.app-Good__component {
+.app-RequestCard {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--itsm-space-2xs) var(--itsm-space-sm);
+  gap: var(--itsm-space-sm) var(--itsm-space-md);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  container: app-request-card / inline-size;
+}
+
+@media (hover: hover) {
+  .app-RequestCard:hover {
+    border-color: var(--itsm-colour-border-softHover);
+  }
+}
+
+.app-RequestCard:has(.app-RequestCard__link:focus-visible) {
+  outline: var(--itsm-border-thick) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-border-thick);
+}
+
+.app-RequestCard__main {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  gap: var(--itsm-space-3xs);
+  min-inline-size: 0;
+}
+
+.app-RequestCard__state,
+.app-RequestCard__meta {
+  margin: 0;
+}
+
+.app-RequestCard__link {
+  color: var(--itsm-colour-text-primary);
+  text-decoration: none;
+}
+
+.app-RequestCard__link:focus-visible {
+  outline: none;
+}
+
+/* The title's hit area covers the card; the actions sit above it. */
+.app-RequestCard__link::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
+}
+
+.app-RequestCard__title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.app-RequestCard__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-3xs) var(--itsm-space-sm);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-RequestCard__number {
+  font-family: var(--itsm-font-family-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-RequestCard__steps {
+  max-inline-size: 26rem;
+  margin-block-start: var(--itsm-space-2xs);
+}
+
+.app-RequestCard__actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-xs);
+}
+
+/* The pill already says where it is; below a 480 px card the stepper goes (A6 §6.1.2). */
+@container app-request-card (max-width: 30rem) {
+  .app-RequestCard__steps {
+    display: none;
+  }
+}
+
+/*
+ * A phone keeps Home near 1,500 px tall (A6 §6.1.4, against v2's 2,055): the
+ * card is the title over one line of facts — the pill and the number — with
+ * its action beside it when there is room; the type and the time are on the
+ * request's own page.
+ */
+@media (max-width: 47.9375rem) {
+  .app-RequestCard {
+    gap: var(--itsm-space-xs) var(--itsm-space-sm);
+    padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  }
+
+  .app-RequestCard__main {
+    flex: 1 1 12rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--itsm-space-3xs) var(--itsm-space-xs);
+  }
+
+  .app-RequestCard__link {
+    flex: 1 0 100%;
+    order: -1;
+  }
+
+  .app-RequestCard__fact {
+    display: none;
+  }
+
+  .app-HomeAside {
+    padding: var(--itsm-space-md);
+  }
+}
+
+/* ---- Common requests --------------------------------------------------------- */
+
+.app-CommonRequests {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-CommonRequest {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  min-block-size: var(--app-home-common-height);
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+  box-sizing: border-box;
+}
+
+@media (hover: hover) {
+  .app-CommonRequest:hover {
+    border-color: var(--itsm-colour-border-softHover);
+    box-shadow: var(--itsm-elevation-sm);
+  }
+}
+
+.app-CommonRequest:has(.app-CommonRequest__link:focus-visible) {
+  outline: var(--itsm-border-thick) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-border-thick);
+}
+
+.app-CommonRequest__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-CommonRequest__link {
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-decoration: none;
+}
+
+.app-CommonRequest__link:focus-visible {
+  outline: none;
+}
+
+.app-CommonRequest__link::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
+}
+
+.app-CommonRequest__summary {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.app-CommonRequest__chevron {
+  flex: none;
+  color: var(--itsm-colour-text-muted);
+}
+
+/* Two-up and compact on a phone, the summary left out (A6 §6.1.4). */
+@media (max-width: 47.9375rem) {
+  .app-CommonRequests {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-CommonRequest {
+    min-block-size: 0;
+    padding: var(--itsm-space-xs) var(--itsm-space-sm);
+  }
+
+  .app-CommonRequest__summary,
+  .app-CommonRequest__chevron {
+    display: none;
+  }
+
+  .app-CommonRequest__link {
+    font-size: var(--itsm-text-subheadline-size);
+    line-height: var(--itsm-text-subheadline-line);
+  }
+}
+
+/* ---- The aside ------------------------------------------------------------------ */
+
+.app-HomeAside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-lg);
+  padding: var(--itsm-space-ml);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
+}
+
+.app-HomeAside__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.app-HomeAside__part + .app-HomeAside__part {
+  padding-block-start: var(--itsm-space-lg);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+}
+
+.app-HomeAside__title {
+  margin: 0;
+  font-family: var(--itsm-text-headline-family);
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+.app-HomeAside__list,
+.app-HomeAside__channels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-HomeAside__answer,
+.app-HomeAside__window {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--itsm-space-xs);
+}
+
+.app-HomeAside__icon {
+  flex: none;
+  margin-block-start: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-HomeAside__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
   font-size: var(--itsm-text-subheadline-size);
   line-height: var(--itsm-text-subheadline-line);
 }
 
-.app-Good__componentName {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-}
-
-.app-Good__link {
+.app-HomeAside__link {
   display: inline-flex;
   align-items: flex-start;
   gap: var(--itsm-space-xs);
   color: var(--itsm-colour-text-link);
-  font-size: var(--itsm-text-subheadline-size);
-  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
 
 @media (hover: hover) {
-  .app-Good__link:hover {
+  .app-HomeAside__link:hover {
     text-decoration: underline;
   }
 }
 
-.app-Good__linkIcon {
-  flex: none;
-  margin-block-start: var(--itsm-space-3xs);
+.app-HomeAside__facts {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-variant-numeric: tabular-nums;
 }
 
-.app-Good__channels {
+.app-HomeAside__when {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-HomeAside__what {
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-HomeAside__channels {
   flex-direction: row;
   flex-wrap: wrap;
   gap: var(--itsm-space-xs) var(--itsm-space-md);
 }
 
-.app-Good__channel {
+.app-HomeAside__channel {
   display: inline-flex;
   align-items: center;
   gap: var(--itsm-space-2xs);
@@ -400,12 +766,8 @@
   line-height: var(--itsm-text-subheadline-line);
 }
 
-.app-Good__quiet {
-  display: flex;
-  align-items: center;
-  gap: var(--itsm-space-xs);
+.app-HomeAside__quiet {
   margin: 0;
-  color: var(--itsm-colour-text-secondary);
   font-size: var(--itsm-text-subheadline-size);
   line-height: var(--itsm-text-subheadline-line);
 }
@@ -421,5 +783,23 @@
 
   .app-HomeSearch__trigger {
     border-color: CanvasText;
+  }
+
+  .app-Home__hero[data-variant='light'],
+  .app-QuickAction,
+  .app-RequestCard,
+  .app-CommonRequest,
+  .app-HomeAside {
+    border-color: CanvasText;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .app-Home__hero[data-variant='light'],
+  .app-QuickAction,
+  .app-RequestCard,
+  .app-CommonRequest,
+  .app-HomeAside {
+    border-color: var(--itsm-colour-border-strong);
   }
 }

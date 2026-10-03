@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { DependencyUnavailableError, ValidationError } from '@itsm/platform';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DependencyUnavailableError, ValidationError, setTenantKindReader } from '@itsm/platform';
 import { clearModelPrices, registerModelPrices } from '../domain/budget.js';
 import { addAiProvider, clearAiProvider, registerAiProvider } from '../providers/registry.js';
 import { stubProvider } from '../providers/stub.js';
@@ -19,8 +19,15 @@ const QUESTIONS: Record<string, DecisionQuestion> = {
   majorIncident: { kind: 'yesno', ask: 'Major?' },
 };
 
+/**
+ * A real tenant's decision: the chain is asked only for a tenant that may
+ * call a model, and the shared demo's side (E9) is `gateway-demo.test.ts`.
+ */
+const TENANT_ID = '0192a000-0000-7000-8000-000000000001';
+
 function call(overrides: Partial<DecideCall> = {}): DecideCall {
   return {
+    tenantId: TENANT_ID,
     purpose: 'triage',
     state: { title: 'The VPN is down for everyone' },
     questions: QUESTIONS,
@@ -59,10 +66,15 @@ function priced(...models: string[]): void {
   registerModelPrices(Object.fromEntries(models.map((model) => [model, { inputPerThousand: 1_000n, outputPerThousand: 10_000n }])));
 }
 
+beforeEach(() => {
+  setTenantKindReader(async () => 'standard');
+});
+
 afterEach(() => {
   clearAiProvider();
   clearModelPrices();
   resetDecisionBreakers();
+  setTenantKindReader(null);
 });
 
 describe('the first link that answers', () => {

@@ -12,19 +12,25 @@ import { Table } from '../../web/Table.js';
 import { Tile, TileGrid } from '../../web/Tile.js';
 import { Timeline, type TimelineEvent } from '../../web/Timeline.js';
 import { ActivityFeed, type ActivityItem } from '../ActivityFeed.js';
+import { AttentionList } from '../AttentionList.js';
 import { AvatarStack } from '../AvatarStack.js';
 import { DescriptionList } from '../DescriptionList.js';
 import { Disclosure } from '../Disclosure.js';
 import { FileChip } from '../FileChip.js';
+import { KanbanCard, KanbanColumn } from '../Kanban.js';
+import { PriorityChip } from '../PriorityChip.js';
 import { Prose } from '../Prose.js';
 import { StatusPill } from '../StatusPill.js';
 import { Stepper } from '../Stepper.js';
 import { Surface } from '../Surface.js';
+import { MAJOR_INCIDENT_LOOK, TICKET_STATE_LOOK } from '../ticket-states.js';
 
 /*
  * Every display export, read by axe (SPEC §8.0 rule 5), in the shapes the
  * applications render: cards in each state, tiles, badges and pills in every
- * tone, avatars of every kind, a stack with its list open, the three
+ * tone (on a navy hero too), priority chips, an attention list with tabs and
+ * quick actions, a board column with a folded neighbour, avatars of every
+ * kind, a stack with its list open, the three
  * description-list layouts, disclosures, an article, steppers, file chips
  * with remove buttons, a property table, a feed with new items waiting, and
  * both timeline variants with a run expanded and the "new" marker placed.
@@ -92,7 +98,7 @@ describe('display audit', () => {
   });
 
   it('Badge and StatusPill: every tone and emphasis, and the pill as a trigger', async () => {
-    const tones = ['neutral', 'accent', 'info', 'success', 'warning', 'danger'] as const;
+    const tones = ['neutral', 'accent', 'info', 'success', 'warning', 'danger', 'hold', 'high'] as const;
     await audit(
       <div>
         {tones.map((tone) => (
@@ -111,6 +117,44 @@ describe('display audit', () => {
           </p>
         ))}
         <StatusPill label="View only" tone="neutral" icon="lock" as="button" aria-haspopup="dialog" aria-expanded={false} />
+        <StatusPill label="Critical" tone="danger" meta="16" size="sm" />
+        <div data-surface="hero">
+          <StatusPill {...TICKET_STATE_LOOK.pending_requester} />
+          <StatusPill {...MAJOR_INCIDENT_LOOK} />
+        </div>
+      </div>,
+    ).check();
+  });
+
+  it('PriorityChip, AttentionList and Kanban: every priority, a list with tabs and actions, a board with a folded column', async () => {
+    await audit(
+      <div>
+        <p>
+          {(['P1', 'P2', 'P3', 'P4'] as const).map((priority) => (
+            <PriorityChip key={priority} priority={priority} words />
+          ))}
+        </p>
+        <section aria-labelledby="audit-needs-you">
+          <h2 id="audit-needs-you">Needs you</h2>
+          <AttentionList
+            label="Needs you"
+            tabs={[
+              { id: 'all', label: 'All', count: 2, href: '/overview', current: true },
+              { id: 'breached', label: 'Breached', count: 1, href: '/overview?attention=breached' },
+            ]}
+            items={[
+              { id: 'a', severity: 'danger', ref: 'INC-000123', title: 'VPN drops', href: '/tickets/1', reason: { label: 'Breached', tone: 'danger' }, owner: { name: 'Alex Morgan' }, due: { label: 'Yesterday', overdue: true, slip: '+1d' } },
+              { id: 'b', severity: 'warning', ref: 'REQ-000456', title: 'SharePoint access', href: '/tickets/2', reason: { label: 'Breaches in 43 min' }, owner: null, due: { label: '16:00' } },
+            ]}
+            rowActions={[{ id: 'assign', label: 'Assign to me' }]}
+            onAction={noop}
+          />
+        </section>
+        <h2>Board</h2>
+        <KanbanColumn id="audit-progress" title="In progress" tone="info" icon="clock" count={1} onFoldedChange={noop}>
+          <KanbanCard href="/tickets/1" refId="INC-000123" title="VPN drops" priority="P1" assignee={null} due={{ label: 'Yesterday', overdue: true }} stripe="danger" progress={0.9} unread />
+        </KanbanColumn>
+        <KanbanColumn id="audit-closed" title="Closed" tone="neutral" icon="archive" count={41} folded onFoldedChange={noop} />
       </div>,
     ).check();
   });
@@ -123,6 +167,8 @@ describe('display audit', () => {
         <Avatar name="Service Desk" kind="team" status="busy" />
         <Avatar name="Assist" kind="ai" size="sm" />
         <Avatar name="Automation" kind="system" status="offline" size="xs" />
+        <Avatar kind="unassigned" size="sm" />
+        <Avatar name="Emma Clarke" size={44} ring />
         <p>
           <Avatar name="Alan Turing" decorative size="sm" /> Alan Turing
         </p>

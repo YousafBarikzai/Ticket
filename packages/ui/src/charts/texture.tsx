@@ -1,15 +1,20 @@
 import type { ReactNode } from 'react';
-import type { ChartSlot } from './types.js';
+import type { ChartSlot, ChartTone } from './types.js';
 
 /**
- * Hatch textures: the backup channel for identity where colour fails —
- * "Increase contrast" (SPEC §1.11: texture on by default in the high-contrast
- * themes), forced colours, greyscale print. Server-safe.
+ * Hatch textures: the backup channel for identity and state where colour
+ * fails — "Increase contrast" (SPEC §1.11: texture on by default in the
+ * high-contrast themes), forced colours, greyscale print. Server-safe.
  *
  * One directional hatch, at 45° and its 135° mirror, spaced two ways, plus a
  * cross and a dot field: eight distinct fills that stay equally loud. Slot 1
  * stays solid, so the first series reads as the plain one. Horizontal and
  * vertical lines are never used; they would read as gridlines.
+ *
+ * State tones (A8 §6.3) get the same vocabulary, so a P1 segment and a
+ * "breached" bullet are told apart from their neighbours without hue:
+ * `danger`, the loudest state, takes the dense cross; `success` stays solid,
+ * as slot 1 does — the good news is the plain one.
  *
  * The texture is an overlay: each textured mark is drawn twice, the coloured
  * shape and on top of it the same shape filled with the pattern, and CSS shows
@@ -34,27 +39,43 @@ const TEXTURES: Readonly<Partial<Record<ChartSlot, Texture>>> = {
   8: { angle: 45, size: 8, kind: 'cross' },
 };
 
+/** The tones' textures: the slot vocabulary again, matched to `toneTextureImages` in `texture-css.ts`. */
+const TONE_TEXTURES: Readonly<Partial<Record<ChartTone, Texture>>> = {
+  danger: TEXTURES[4],
+  high: TEXTURES[2],
+  warning: TEXTURES[3],
+  info: TEXTURES[5],
+  hold: TEXTURES[6],
+  neutral: TEXTURES[7],
+  neutralSoft: TEXTURES[8],
+};
+
 /** The slots that carry a hatch (all but slot 1). */
 export const TEXTURE_SLOTS: readonly ChartSlot[] = [2, 3, 4, 5, 6, 7, 8];
 
-/** The pattern id of a slot's texture in one chart. */
-export function textureId(chart: string, slot: ChartSlot): string {
-  return `${chart}-t${slot}`;
+/** The tones that carry a hatch (all but `success`). */
+export const TEXTURE_TONES: readonly ChartTone[] = ['danger', 'high', 'warning', 'info', 'hold', 'neutral', 'neutralSoft'];
+
+/** The pattern id of a slot's or a tone's texture in one chart. */
+export function textureId(chart: string, key: ChartSlot | ChartTone): string {
+  return `${chart}-t${key}`;
 }
 
-/** The `<defs>` for the textures a chart uses. Render it inside the chart's SVG. */
-export function TexturePatterns({ id, slots }: { readonly id: string; readonly slots: readonly ChartSlot[] }): ReactNode {
-  const used = slots.filter((slot) => TEXTURES[slot] !== undefined);
+/** The `<defs>` for the textures a chart uses, by slot and by tone. Render it inside the chart's SVG. */
+export function TexturePatterns({ id, slots = [], tones = [] }: { readonly id: string; readonly slots?: readonly ChartSlot[]; readonly tones?: readonly ChartTone[] }): ReactNode {
+  const used = [
+    ...slots.flatMap((slot) => (TEXTURES[slot] ? [{ key: slot, texture: TEXTURES[slot] }] : [])),
+    ...tones.flatMap((tone) => (TONE_TEXTURES[tone] ? [{ key: tone, texture: TONE_TEXTURES[tone] }] : [])),
+  ];
   if (used.length === 0) return null;
   return (
     <defs>
-      {used.map((slot) => {
-        const texture = TEXTURES[slot]!;
+      {used.map(({ key, texture }) => {
         const { size } = texture;
         return (
           <pattern
-            key={slot}
-            id={textureId(id, slot)}
+            key={key}
+            id={textureId(id, key)}
             patternUnits="userSpaceOnUse"
             width={size}
             height={size}

@@ -19,7 +19,7 @@ export interface SearchTriggerProps {
    * `AppShell` binds ⌘K once itself and draws two triggers, so it passes false.
    */
   readonly bindShortcut?: boolean;
-  /** `field` (default): an icon, the label and the key caps, collapsing to the icon below md. `icon`: the icon alone. */
+  /** `field` (default): an icon, the label and the key caps, collapsing to the icon below 1024 px. `icon`: the icon alone. */
   readonly display?: 'field' | 'icon';
   readonly className?: string;
   readonly ref?: Ref<HTMLButtonElement>;
@@ -31,10 +31,11 @@ export interface SearchTriggerProps {
  * `aria-haspopup="dialog"`), and never a text input that turns into
  * something else when typed in.
  *
- * On glass (the top bars) it is identified by its icon and label rather than
- * a border (SPEC §1.3 rule a): a filled capsule in `fill.secondary`, the
- * label in `text.secondary`. Below 768 px it is the magnifier alone, with
- * the label kept as its accessible name.
+ * On the opaque v3 top bars it is a 34 px field on `surface.raisedAlt` with
+ * a `border.subtle` edge, the label in `text.muted` and the key caps at the
+ * end (v3 §2.14). Below 1024 px it is the magnifier alone, with the label
+ * kept as its accessible name; the top bar also narrows it by the width of
+ * its column.
  *
  * ⌘K works inside text fields too (D14), which is why the binding asks for
  * `allowInFields`.

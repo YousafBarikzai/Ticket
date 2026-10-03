@@ -68,7 +68,8 @@ export const OUTCOME_LOOK: Readonly<Record<string, { readonly label: string; rea
   applied: { label: 'Set by AI', tone: 'accent' },
   suggested: { label: 'Suggested', tone: 'info' },
   shadowed: { label: 'Recorded', tone: 'neutral' },
-  none: { label: 'Nobody answered', tone: 'warning' },
+  // Nothing went wrong and nothing is late: a suggestion nobody acted on is neutral (D5, A7 §2.9).
+  none: { label: 'Nobody answered', tone: 'neutral' },
 };
 
 export function outcomeLook(outcome: string): { readonly label: string; readonly tone: Tone } {

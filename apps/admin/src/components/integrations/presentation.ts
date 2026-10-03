@@ -507,7 +507,8 @@ export interface WebhookView extends Record<string, unknown> {
 
 export function webhookHealth(row: Pick<WebhookRow, 'status' | 'failureCount'>): Look {
   if (row.status !== 'active') return { label: words(row.status), tone: 'danger', icon: 'circle-alert' };
-  if (row.failureCount > 0) return { label: `${plural(row.failureCount, 'delivery', 'deliveries')} failing`, tone: 'warning', icon: 'clock' };
+  // Failing now, not about to: `danger` (D5, A7 §2.9).
+  if (row.failureCount > 0) return { label: `${plural(row.failureCount, 'delivery', 'deliveries')} failing`, tone: 'danger', icon: 'circle-alert' };
   return { label: 'Delivering', tone: 'success' };
 }
 

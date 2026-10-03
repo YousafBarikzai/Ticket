@@ -12,6 +12,7 @@ import {
 import * as facts from '../repo/fact-repo.js';
 import * as rollups from '../repo/rollup-repo.js';
 import { ensureDateRange } from '../repo/dimension-repo.js';
+import { bumpQueryVersion } from './query-cache.js';
 
 /**
  * Rebuilding the rollup from the facts.
@@ -37,11 +38,18 @@ interface Bucket {
   delta: RollupDelta;
 }
 
-/** Recomputes one day outright. Returns how many facts contributed to it. */
+/**
+ * Recomputes one day outright. Returns how many facts contributed to it.
+ *
+ * Each day is its own transaction, and the metric cache's version moves on
+ * after each commit (A8 R4c): a rebuild that corrected a total must not leave
+ * the old total cached, and a long rebuild should not hide the days it has
+ * already put right until it reaches the last one.
+ */
 export async function rebuildDay(ctx: TenantContext, date: Date): Promise<number> {
   const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
-  return transaction(ctx, async (tx) => {
+  const seen = await transaction(ctx, async (tx) => {
     const buckets = new Map<string, Bucket>();
     let cursor: string | undefined;
     let seen = 0;
@@ -99,6 +107,8 @@ export async function rebuildDay(ctx: TenantContext, date: Date): Promise<number
     metrics.increment('analytics_rollup_days_rebuilt_total', {});
     return seen;
   });
+  await bumpQueryVersion(ctx.tenantId);
+  return seen;
 }
 
 /**
@@ -106,7 +116,8 @@ export async function rebuildDay(ctx: TenantContext, date: Date): Promise<number
  *
  * Recent days first because they are the ones being looked at: if the job is
  * killed halfway through a long window, the part people are reading is the part
- * that got fixed.
+ * that got fixed. Every day bumps the metric cache as it commits, so the last
+ * day's bump is the rebuild's.
  */
 export async function rebuildRange(ctx: TenantContext, from: Date, to: Date): Promise<{ days: number; facts: number }> {
   await transaction(ctx, async (tx) => {

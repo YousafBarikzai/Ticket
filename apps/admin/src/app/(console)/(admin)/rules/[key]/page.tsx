@@ -7,8 +7,8 @@ import { Forbidden } from '../../../../../components/Forbidden.js';
 import { RuleBuilder } from '../../../../../components/rules/RuleBuilder.js';
 import { toRuleView } from '../../../../../components/rules/presentation.js';
 import { breadcrumbsFor } from '../../../../../navigation.js';
-import { pageAccess } from '../../../../../server/session.js';
-import { abilities, loadBuilderContext, loadRule, versionViews, workbenchOrigin } from '../data.js';
+import { currentAreas, pageAccess } from '../../../../../server/session.js';
+import { abilities, loadBuilderContext, loadRule, versionViews } from '../data.js';
 import '../../../../../components/rules/rules.css';
 
 export const dynamic = 'force-dynamic';
@@ -61,7 +61,8 @@ export default async function RulePage({ params, searchParams }: { readonly para
   const view = toRuleView(rule.value);
   const can = abilities(me, view.name);
   const versions = await versionViews(api, rule.value.versions);
-  const origin = workbenchOrigin(me);
+  // Ticket links open in the Service Desk when it is listed for this person (A2 §3.7).
+  const areas = await currentAreas();
 
   return (
     <RuleBuilder
@@ -80,7 +81,7 @@ export default async function RulePage({ params, searchParams }: { readonly para
       breadcrumbs={crumbs}
       initialTab={search.tab === 'history' ? 'history' : 'rule'}
       autoTest={search.test === '1'}
-      {...(origin ? { workbenchOrigin: origin } : {})}
+      areas={areas}
       {...(can.viewOnly ? { viewOnly: can.viewOnly } : {})}
     />
   );

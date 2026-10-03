@@ -43,12 +43,23 @@ export interface Discovery {
 
 const discoveryCache = new Map<string, Discovery>();
 
-export async function discover(settings: OidcSettings, doFetch: typeof fetch = fetch): Promise<Discovery> {
+/**
+ * The provider's endpoints, fetched once per issuer.
+ *
+ * `signal` lets a caller with a tighter budget than the default five seconds —
+ * sign-out, which must never keep a person waiting on the provider — bound the
+ * fetch when the document is not cached yet.
+ */
+export async function discover(
+  settings: OidcSettings,
+  doFetch: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<Discovery> {
   const cached = discoveryCache.get(settings.issuer);
   if (cached) return cached;
 
   const response = await doFetch(`${settings.issuer}/.well-known/openid-configuration`, {
-    signal: AbortSignal.timeout(5000),
+    signal: signal ?? AbortSignal.timeout(5000),
   });
   if (!response.ok) throw new SignInFailed('the identity provider is not reachable');
   const document = (await response.json()) as Discovery;
@@ -180,6 +191,70 @@ export function readClaims(token: string): TokenClaims {
   }
 }
 
+/** How long sign-out waits for the provider before giving up on it (SPEC §4.5 O4). */
+export const END_SESSION_TIMEOUT_MS = 3000;
+
+/**
+ * Ends the person's session at the provider over the back channel (Keycloak
+ * Step A; SPEC §4.5 O4).
+ *
+ * Sign-out used to send the browser to the provider's end-session page, and
+ * that failed three ways: Chromium refuses a form POST's cross-origin redirect
+ * under the apps' `form-action 'self'`, so nothing visibly happened; browsers
+ * that did follow it met Keycloak's "Missing parameters: id_token_hint" page,
+ * because no id token is stored; and with a hint missing Keycloak asks "Do you
+ * want to log out?" instead of doing it. A server-to-server POST with the
+ * client's credentials and the session's refresh token ends the provider's
+ * session outright, and the browser only ever sees this app's own
+ * `/signed-out` — so the person on a shared machine is really signed out, and
+ * the next person is not one redirect away from their account.
+ *
+ * Best effort, and never throws: the app's own session is already gone when
+ * this runs, and a provider that is down, slow or refuses must not stop a
+ * sign-out. Resolves to whether the provider acknowledged it, which is for a
+ * caller that wants to record it rather than a condition to act on. The whole
+ * exchange, discovery included when it is not cached, is bounded by
+ * `timeoutMs`.
+ */
+export async function endProviderSession(
+  settings: OidcSettings,
+  refreshToken: string,
+  doFetch: typeof fetch = fetch,
+  timeoutMs: number = END_SESSION_TIMEOUT_MS,
+): Promise<boolean> {
+  try {
+    const signal = AbortSignal.timeout(timeoutMs);
+    const { end_session_endpoint: endpoint } = await discover(settings, doFetch, signal);
+    if (!endpoint) return false;
+
+    const response = await doFetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: new URLSearchParams({
+        client_id: settings.clientId,
+        client_secret: settings.clientSecret,
+        refresh_token: refreshToken,
+      }).toString(),
+      signal,
+    });
+    // The body is the provider's prose about our client (an `invalid_grant`
+    // for a refresh token that had already expired, say): nothing to show
+    // anyone. Released rather than read, so the connection goes back to the
+    // pool instead of waiting for a body nobody will consume — and a failure
+    // to release it does not change what the provider answered.
+    const acknowledged = response.ok;
+    await response.body?.cancel().catch(() => undefined);
+    return acknowledged;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The front-channel end-session URL. Sign-out no longer uses it — see
+ * `endProviderSession` for why — but it stays exported for a caller that does
+ * hold an id token.
+ */
 export function endSessionUrl(discovery: Discovery, idToken: string | null, redirectTo: string): string | null {
   if (!discovery.end_session_endpoint) return null;
   const url = new URL(discovery.end_session_endpoint);

@@ -61,7 +61,8 @@ export type SettableStatus = (typeof SETTABLE_STATUSES)[number];
 
 export const CI_STATUS_LOOK: Readonly<Record<string, Look>> = {
   operational: { label: 'Operational', tone: 'success', icon: 'circle-check' },
-  degraded: { label: 'Degraded', tone: 'warning', icon: 'triangle-alert' },
+  // `high` orange, as a status-page component's degraded (X-B3); amber stays SLA risk (D5).
+  degraded: { label: 'Degraded', tone: 'high', icon: 'triangle-alert' },
   down: { label: 'Down', tone: 'danger', icon: 'circle-x' },
   retired: { label: 'Retired', tone: 'neutral', icon: 'archive' },
 };
@@ -72,7 +73,7 @@ export type Criticality = (typeof CRITICALITIES)[number];
 /** Critical is danger and High warning; the rest are neutral, and the word always shows. */
 export const CRITICALITY_LOOK: Readonly<Record<string, Look>> = {
   critical: { label: 'Critical', tone: 'danger' },
-  high: { label: 'High', tone: 'warning' },
+  high: { label: 'High', tone: 'high' },
   medium: { label: 'Medium', tone: 'neutral' },
   low: { label: 'Low', tone: 'neutral' },
 };
@@ -91,7 +92,7 @@ export type AssetStatus = (typeof ASSET_STATUSES)[number];
 export const ASSET_STATUS_LOOK: Readonly<Record<string, Look>> = {
   in_stock: { label: 'In stock', tone: 'neutral', icon: 'dot' },
   assigned: { label: 'Assigned', tone: 'info', icon: 'user' },
-  in_repair: { label: 'In repair', tone: 'warning', icon: 'settings-2' },
+  in_repair: { label: 'In repair', tone: 'hold', icon: 'settings-2' },
   retired: { label: 'Retired', tone: 'neutral', icon: 'archive' },
   disposed: { label: 'Disposed of', tone: 'neutral', icon: 'trash' },
 };

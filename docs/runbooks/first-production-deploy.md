@@ -148,6 +148,13 @@ Set on **every** application and worker service:
 | `OIDC_ISSUER` | `https://auth.<your-domain>/realms/itsm` |
 | `NODE_ENV` | `production` |
 
+Set on **`api`**, **`worker-events`**, **`worker-engine`**, **`worker-comms`**
+and **`worker-data`** — the same value on all five:
+
+| Variable | Value |
+|---|---|
+| `DEV_TOKEN_SECRET` | a long random value; see [The signing secret](#the-signing-secret) below |
+
 Set on **`portal`**, **`workbench`** and **`admin`** as well — each signs
 people in as its own Keycloak client, and none of the three can sign anybody
 in without these:
@@ -185,6 +192,64 @@ on the API and on `worker-data`.
 
 Railway's variable references (`${{Postgres.DATABASE_URL}}`) are the tidy way to
 do the database and Redis ones.
+
+### The signing secret
+
+`DEV_TOKEN_SECRET` signs every link the product sends that works without a
+session: survey invitations, status-page confirm and unsubscribe links, and
+file upload and download links. Its default is in this repository, so until
+you set it **anyone who has read the code can forge any of those links** for
+your deployment. The name is historical; the value is a production secret.
+
+Nothing refuses to start without it (decision D24: warn loudly, never refuse).
+A deployment still on the default says so in four places until it is fixed:
+
+- an `error` line, `CONFIGURATION WARNING: DEV_TOKEN_SECRET is the public
+  development default`, from the API and each worker at boot and every six
+  hours — never with the value in it;
+- `warnings: ["dev_token_secret_default"]` beside `checks` on the API's
+  `/health/ready` (the status code is unchanged, so Railway's health check
+  still passes);
+- a `Signing secret` warning annotation on every deploy, from the smoke test;
+- a red banner on the platform pages of Administration (**Tenants**,
+  **Plans**), naming each service still using it.
+
+A value shorter than 32 characters gets the same treatment as a warning
+(`dev_token_secret_short`), because a short secret can be guessed.
+
+**Set it**
+
+1. Generate a value: `openssl rand -base64 48`. Keep it in your password
+   manager, never in the repository. The deploy never sets it, and
+   `railway-deploy.test.ts` asserts that.
+2. In Railway, on **each** of `api`, `worker-events`, `worker-engine`,
+   `worker-comms` and `worker-data`: **Variables** → **New variable** →
+   `DEV_TOKEN_SECRET` = the value. **The same value on all five**: the API
+   signs and checks, and the workers sign survey invitations and status-page
+   mail, so a link signed by one must verify on another.
+   - Alternatively: **Project Settings** → **Shared Variables** →
+     `DEV_TOKEN_SECRET` (a literal value works there; only `${{…}}` references
+     do not), then add it to each of the five as
+     `${{shared.DEV_TOKEN_SECRET}}`.
+   - `portal`, `workbench`, `admin` and `site` never read it; leave them alone.
+3. Apply the staged changes on each service. Railway redeploys it.
+4. Check:
+   - `https://<api>/health/ready` no longer has a `warnings` key;
+   - the banner on Administration → **Tenants** is gone. It clears within a
+     minute of the last of the five restarting: each service removes its own
+     entry at boot once its secret is right;
+   - the next deploy's smoke test prints no `Signing secret` warning.
+
+**What changes when you set it, or rotate it later** — tell your users if any
+of this applies:
+
+- Survey invitation links, and status-page confirm and unsubscribe links,
+  already sent by email stop working. People see that the link has expired.
+- Upload or download links issued in the last five minutes fail once; a retry
+  works.
+- API keys: none exist unless someone inserted one by hand. Any that do must
+  be re-created.
+- Sessions, sign-in and Keycloak are unaffected.
 
 ---
 

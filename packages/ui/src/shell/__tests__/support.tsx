@@ -1,3 +1,4 @@
+import { buildAreaModel, type AreaModel, type Origins } from '@itsm/contracts/areas';
 import { useState, type ReactNode } from 'react';
 import { vi } from 'vitest';
 import { TestProvider, type TestProviderProps } from '../../provider/__tests__/support/provider.js';
@@ -7,8 +8,9 @@ import type { NavModel } from '../nav.js';
 /**
  * Test helpers for the frame: a viewport of a given width (a `matchMedia`
  * that answers `min-width`/`max-width` queries in rem the way the stylesheet
- * writes them), a location the test can move, and a nav model shaped like
- * the admin console's.
+ * writes them), a location the test can move, nav models shaped like
+ * Administration's and the Help Portal's, and area models built the way the
+ * layouts build them (`buildAreaModel`).
  */
 
 const REM = 16;
@@ -113,7 +115,7 @@ export const adminNav: NavModel = {
 };
 
 export const portalNav: NavModel = {
-  label: 'Help portal',
+  label: 'Help Portal',
   sections: [
     {
       id: 'main',
@@ -127,19 +129,39 @@ export const portalNav: NavModel = {
   ],
 };
 
+/** Where the three areas and the site are served, as `appOrigins()` reads them. */
+export const origins: Origins = {
+  portal: 'https://help.example',
+  workbench: 'https://desk.example',
+  admin: 'https://admin.example',
+  site: 'https://itsm.example',
+};
+
+/** An administrator in Administration: all three areas, Administration current. */
+export const adminAreas: AreaModel = buildAreaModel({
+  app: 'admin',
+  held: ['ticket.update', 'admin.setting.read'],
+  session: { kind: 'oidc' },
+  origins,
+  workspace: 'Acme',
+});
+
+/** A requester in the Help Portal: one area, so a lockup. */
+export const requesterAreas: AreaModel = buildAreaModel({ app: 'portal', held: [], session: { kind: 'oidc' }, origins, workspace: 'Acme' });
+
+/** An agent in the Help Portal: the portal and the Service Desk. */
+export const agentPortalAreas: AreaModel = buildAreaModel({ app: 'portal', held: ['ticket.update'], session: { kind: 'oidc' }, origins, workspace: 'Acme' });
+
+/** A demo session in `app` as the agent persona: all three areas with persona lines, and the site. */
+export function demoAreas(app: AreaModel['current'] = 'workbench'): AreaModel {
+  return buildAreaModel({ app, held: [], session: { kind: 'demo', persona: 'agent' }, origins, workspace: 'Northwind Traders (UK)' });
+}
+
 export function sidebarProps(overrides: Partial<AppShellFrameProps> = {}): AppShellFrameProps {
   return {
     variant: 'sidebar',
-    brand: {
-      name: 'Administration',
-      tenant: 'Acme',
-      href: '/',
-      app: 'admin',
-      switcher: [
-        { app: 'admin', label: 'Administration', href: '/' },
-        { app: 'workbench', label: 'Workbench', href: 'https://desk.example/inbox' },
-      ],
-    },
+    areas: adminAreas,
+    brand: { href: '/', workspace: 'Acme' },
     nav: adminNav,
     search: { placeholder: 'Search or jump to…', shortcut: 'mod+k' },
     onOpenSearch: vi.fn(),
@@ -152,7 +174,8 @@ export function sidebarProps(overrides: Partial<AppShellFrameProps> = {}): AppSh
 export function topnavProps(overrides: Partial<AppShellFrameProps> = {}): AppShellFrameProps {
   return {
     variant: 'topnav',
-    brand: { name: 'Help', href: '/', app: 'portal' },
+    areas: requesterAreas,
+    brand: { href: '/', workspace: 'Acme' },
     nav: portalNav,
     search: { placeholder: 'Search help', shortcut: 'mod+k' },
     onOpenSearch: vi.fn(),

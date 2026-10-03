@@ -9,6 +9,8 @@
     "settings through the Railway API instead, which is a thing that happens rather than a",
     "thing that is described.",
     "",
+    "`DEMO_MODE` is set on exactly the six services that read it \u2014 api, worker-data, portal, workbench, admin and site (SPEC v3 \u00a74.9) \u2014 all to the same value, asserted by railway-deploy.test.ts. It is `off` for the v3 release (the owner's decision: the one-click demo ships later). Turning the demo on is changing all six to `on` and deploying; a value edited in Railway by hand is put back by the next deploy.",
+    "",
     "`phase` is the deployment order from doc 16 \u00a74 and is not cosmetic: workers are deployed",
     "before the API so new consumers exist before new events do, and the web applications last",
     "because they are the only ones a person is looking at while it happens.",
@@ -103,7 +105,8 @@
       "replicas": 1,
       "variables": {
         "WORKER_QUEUES": "data",
-        "OTEL_SERVICE_NAME": "itsm-worker-data"
+        "OTEL_SERVICE_NAME": "itsm-worker-data",
+        "DEMO_MODE": "off"
       }
     },
     {
@@ -117,7 +120,8 @@
       "healthcheckPath": "/health/live",
       "replicas": 2,
       "variables": {
-        "OTEL_SERVICE_NAME": "itsm-api"
+        "OTEL_SERVICE_NAME": "itsm-api",
+        "DEMO_MODE": "off"
       }
     },
     {
@@ -131,7 +135,8 @@
       "healthcheckPath": "/api/health",
       "replicas": 2,
       "variables": {
-        "OTEL_SERVICE_NAME": "itsm-portal"
+        "OTEL_SERVICE_NAME": "itsm-portal",
+        "DEMO_MODE": "off"
       }
     },
     {
@@ -145,7 +150,8 @@
       "healthcheckPath": "/api/health",
       "replicas": 2,
       "variables": {
-        "OTEL_SERVICE_NAME": "itsm-workbench"
+        "OTEL_SERVICE_NAME": "itsm-workbench",
+        "DEMO_MODE": "off"
       }
     },
     {
@@ -159,9 +165,26 @@
       "healthcheckPath": "/api/health",
       "replicas": 1,
       "variables": {
-        "OTEL_SERVICE_NAME": "itsm-admin"
+        "OTEL_SERVICE_NAME": "itsm-admin",
+        "DEMO_MODE": "off"
       },
       "$comment": "One replica: the console is used by a handful of people and a second instance buys nothing but a second thing to roll back."
+    },
+    {
+      "name": "site",
+      "target": "site",
+      "phase": 4,
+      "kind": "service",
+      "public": true,
+      "subdomain": "www",
+      "port": 3400,
+      "healthcheckPath": "/api/health",
+      "replicas": 1,
+      "variables": {
+        "OTEL_SERVICE_NAME": "itsm-site",
+        "DEMO_MODE": "off"
+      },
+      "$comment": "The public site (apps/site, ADR-0062): landing, sign-in chooser, role and legal pages. No session and no credential, so nothing is set on it by hand. Phase 4 with the applications because each needs the others' origins, which the two-pass phase resolves. One replica: a few server components and a stylesheet. `subdomain` may become `@` for the bare domain, the owner's choice."
     }
   ],
   "managed": {

@@ -34,8 +34,10 @@ import {
 } from '@itsm/ui';
 import { formatDateTime } from '@itsm/ui/format';
 import { ConflictDialog, Dialog, Sheet, type ConflictChange, type MenuItemSpec } from '@itsm/ui/overlays';
+import { useAreas } from '@itsm/ui/shell';
 import '../app/(desk)/tickets/[id]/workspace.css';
 import { useDeskSkipLinks } from '../components/DeskShell.js';
+import { api as deskApi } from '../client/api.js';
 import {
   categoriesQuery,
   teamsQuery,
@@ -67,17 +69,19 @@ import { transitionsFrom } from '../queue/transitions.js';
 import { Composer, sendFailure, type ComposerHandle, type ComposerMode } from './Composer.js';
 import { Conversation, conversationModel, newSinceId, type QueuedMessage } from './Conversation.js';
 import { ArticleSheet } from './ArticleSheet.js';
-import { Header, type Neighbours } from './Header.js';
-import { Inspector } from './inspector/Inspector.js';
+import type { Neighbours } from './Header.js';
+import { Inspector, SLA_CARD_ID } from './inspector/Inspector.js';
 import { NextStep, nextStepFor } from './NextStep.js';
 import { PropertyChips, type ChipChangeOptions, type ChipMenu } from './PropertyChips.js';
 import { ResolveDialog, ResolvePopover, type ResolveInput } from './ResolvePopover.js';
+import { requesterView, stepText, TicketHero } from './TicketHero.js';
 
 /**
- * The ticket workspace (SPEC §6.2, D16): the header with the ticket's
- * properties and its next step, the conversation, the composer and the
- * inspector — beside the inbox list (`mode="pane"`) and as the full
- * `/tickets/[id]` page (`mode="page"`).
+ * The ticket workspace (SPEC §6.2, D16; v3 §7.1.4): the ticket hero — who
+ * and what, the property chips, the next step, the lifecycle and the SLA
+ * block — then the conversation, the composer and the inspector's cards,
+ * beside the inbox list (`mode="pane"`) and as the full `/tickets/[id]` page
+ * (`mode="page"`).
  *
  * It reads one cache entry, `['ticket', number]` (`GET
  * /api/desk/tickets/[id]`), which the server seeds on a hard load and the
@@ -137,6 +141,9 @@ export function useTicketWorkspace(): WorkspaceApi | null {
 /* --------------------------------------------------------- Small hooks */
 
 const NO_COMMANDS: readonly CommandItem[] = [];
+
+/** `/me` on the client, shared with the New ticket sheet: the demo's persona ids live there. */
+const DESK_ME_KEY = ['desk', 'me'] as const;
 
 /** How wide the workspace is: the inspector is a column from here, a sheet below. */
 const INSPECTOR_COLUMN_MIN = 800;
@@ -258,6 +265,12 @@ function signInHref(): string {
 /** A write's failure in words, for the toast (the service's own detail where it has one). */
 function writeFailure(error: unknown): { title: string; description?: string; retryAt?: number } {
   const problem = problemOf(error);
+  if (problem.code === 'demo_limit' || problem.code === 'demo_disabled') {
+    // The shared demo's cap or lock (v3 §4.7): it does not lift with time, so
+    // there is no "try again" — the sentence says what the demo allows.
+    const described = describeProblem(problem);
+    return { title: described.title, ...(described.body ? { description: described.body } : {}) };
+  }
   if (problem.status === 429) {
     const seconds = problem.retryAfterSeconds ?? 20;
     return { title: `Too many changes at once. Try again in ${seconds} s.`, retryAt: Date.now() + seconds * 1000 };
@@ -284,6 +297,8 @@ interface Writer {
   resolveConflict(choice: 'mine' | 'theirs'): Promise<void>;
   /** Fields this tab changed a moment ago: a refetch showing them is not "someone else's change". */
   readonly ownWrites: RefObject<{ fields: ReadonlySet<ChangedField>; at: number }>;
+  /** Why the last write failed, in words, for a control that keeps the person where they were (the title editor). */
+  readonly lastFailure: RefObject<string | null>;
 }
 
 function useWriter(number: string, directory: Directory, onSessionEnded: () => void): Writer {
@@ -292,6 +307,7 @@ function useWriter(number: string, directory: Directory, onSessionEnded: () => v
   const [pending, setPending] = useState<TicketChange | null>(null);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const ownWrites = useRef<{ fields: ReadonlySet<ChangedField>; at: number }>({ fields: new Set(), at: 0 });
+  const lastFailure = useRef<string | null>(null);
   const latestDirectory = useRef(directory);
   latestDirectory.current = directory;
 
@@ -319,6 +335,7 @@ function useWriter(number: string, directory: Directory, onSessionEnded: () => v
       const before = current()?.ticket;
       if (!before) return 'failed';
       ownWrites.current = { fields: new Set(fieldsOf(change)), at: Date.now() };
+      lastFailure.current = null;
       setTicket(applyOptimistic(before, change));
       setPending(change);
       const attempt = async (ticket: Ticket, retried: boolean): Promise<WriteOutcome> => {
@@ -376,6 +393,7 @@ function useWriter(number: string, directory: Directory, onSessionEnded: () => v
           // Permission revoked mid-session (SPEC §4.10): re-read the ticket, whose viewer rights hide what is no longer allowed.
           if (error instanceof ApiError && error.status === 403) void client.invalidateQueries({ queryKey: key });
           const failure = writeFailure(error);
+          lastFailure.current = failure.description ?? failure.title;
           notify(failure.title, {
             tone: 'danger',
             ...(failure.description ? { description: failure.description } : {}),
@@ -414,7 +432,7 @@ function useWriter(number: string, directory: Directory, onSessionEnded: () => v
     [conflict, current, setTicket, afterWrite],
   );
 
-  return { run, pending, conflict, resolveConflict, ownWrites };
+  return { run, pending, conflict, resolveConflict, ownWrites, lastFailure };
 }
 
 /* ------------------------------------------------------------- States */
@@ -769,15 +787,17 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
   }, [raising, gate, ticket, client, number, router, endSession]);
 
   const saveTitle = useCallback(
-    async (title: string): Promise<boolean> => {
+    async (title: string): Promise<true | string> => {
       if (gate) {
         notify(gate, { tone: 'warning' });
-        return false;
+        return gate;
       }
-      setEditingTitle(false);
       const outcome = await writer.run({ kind: 'title', title });
-      if (outcome === 'failed') setEditingTitle(true);
-      return outcome !== 'failed';
+      // A refusal keeps the editor open and says why beside it — in the shared
+      // demo a hero ticket's title is the story's, and the sentence says so.
+      if (outcome === 'failed') return writer.lastFailure.current ?? 'Not saved. Try again.';
+      setEditingTitle(false);
+      return true;
     },
     [gate, writer],
   );
@@ -792,11 +812,41 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
   }, []);
   const link = typeof window === 'undefined' ? `/tickets/${number}` : `${window.location.origin}/tickets/${encodeURIComponent(number)}`;
 
+  /*
+   * "View as requester" (A6 §5.6.9). In the shared demo the Employee
+   * persona's id comes from `/me` (read once, and only in a demo, under the
+   * key the New ticket sheet shares); the Help Portal's address is built only
+   * when it is chosen, so the areas' tables stay out of this page's first load.
+   */
+  const areas = useAreas();
+  const demoMe = useQuery({ queryKey: DESK_ME_KEY, queryFn: () => deskApi.me(), staleTime: 10 * 60_000, enabled: areas?.demo === true }).data;
+  const employeeId = typeof demoMe?.demo?.personaUserIds?.employee === 'string' ? demoMe.demo.personaUserIds.employee : null;
+  const asRequester = requesterView({ areas, requesterId: ticket.requesterId, viewerId: me, employeeId });
+  const viewAsRequester = useCallback(() => {
+    if (!areas) return;
+    void import('@itsm/contracts/areas').then(({ crossAreaHref }) => {
+      const href = crossAreaHref(areas, 'portal', `/tickets/${encodeURIComponent(number)}`);
+      if (href) window.location.assign(href);
+    });
+  }, [areas, number]);
+
   /* The ⋯ menu. */
   const moreItems = useMemo<MenuItemSpec[]>(
     () => [
       { id: 'copy-link', label: 'Copy link', icon: 'link', onSelect: () => void copy(link, 'Link copied') },
       { id: 'copy-number', label: 'Copy number', icon: 'copy', onSelect: () => void copy(number, `${number} copied`) },
+      ...(asRequester
+        ? [
+            {
+              id: 'view-as-requester',
+              label: 'View as requester',
+              icon: 'external-link' as const,
+              description: 'This ticket in the Help Portal',
+              ...(asRequester.kind === 'disabled' ? { disabled: true, disabledReason: asRequester.reason } : {}),
+              onSelect: viewAsRequester,
+            },
+          ]
+        : []),
       ...(can.watch && me
         ? [
             {
@@ -829,7 +879,7 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
         : []),
       ...(mode === 'pane' ? [{ type: 'separator' as const }, { id: 'open', label: 'Open full page', icon: 'external-link' as const, shortcut: 'o', href: `/tickets/${encodeURIComponent(number)}` }] : []),
     ],
-    [copy, link, number, can.watch, can.create, me, gate, ticket, followUp, mode],
+    [copy, link, number, asRequester, viewAsRequester, can.watch, can.create, me, gate, ticket, followUp, mode],
   );
 
   /* The next step. */
@@ -975,7 +1025,7 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
   let banner: ReactNode = null;
   if (lostAccess) {
     banner = (
-      <Banner tone="warning" icon="lock" title="You no longer have access to this ticket" className="app-Ws__banner">
+      <Banner tone="neutral" icon="lock" title="You no longer have access to this ticket" className="app-Ws__banner">
         This is the copy you had open. It may have moved to a team you’re not in.
       </Banner>
     );
@@ -1004,11 +1054,34 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
   const inspectorColumn = wide && columnOpen;
   const requesterName = ticket.requesterId ? personName(ticket.requesterId.toLowerCase(), bundle.people, me) : null;
 
+  /* The SLA block's button: the inspector's Service levels card, opened, in view and focused. */
+  const openSla = (): void => {
+    if (wide) {
+      if (!columnOpen) {
+        writeStorage(INSPECTOR_PREF_KEY, 'open');
+        setColumnOpen(true);
+      }
+    } else setSheetOpen(true);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const card = document.getElementById(SLA_CARD_ID);
+        if (!(card instanceof HTMLDetailsElement)) return;
+        card.open = true;
+        card.scrollIntoView?.({ block: 'nearest' });
+        card.querySelector<HTMLElement>('summary')?.focus();
+      }),
+    );
+  };
+
   const content = (
     <>
       {banner}
-      <Header
+      <TicketHero
         ticket={ticket}
+        entries={bundle.entries}
+        timers={bundle.timers}
+        onOpenSla={openSla}
+        requesterName={requesterName}
         mode={mode}
         titleId={titleId}
         canEditTitle={can.update}
@@ -1037,7 +1110,7 @@ function Workspace({ bundle, error, refetch, mode, back }: WorkspaceProps): Reac
             can={can}
             teams={teams}
             categories={categories}
-            timers={bundle.timers}
+            step={mode === 'pane' ? stepText(ticket) : null}
             {...(gate ? { gate } : {})}
             openMenu={menu}
             onOpenMenuChange={(which) => {

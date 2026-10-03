@@ -34,6 +34,15 @@ export const impactUrgencySchema = z.enum(['high', 'medium', 'low']);
 export const channelSchema = z.enum(['portal', 'email', 'api', 'slack', 'teams', 'whatsapp', 'voice', 'mobile', 'import', 'system']);
 export type Channel = z.infer<typeof channelSchema>;
 
+/**
+ * How a ticket's row reached the database, as distinct from `sourceChannel`,
+ * how the work reached the desk (ADR-0056). `import` is written only by the
+ * import path (MOD-24 and the demo build), never by a request body, and the
+ * ticket meter leaves those rows out whatever channel they record.
+ */
+export const ticketOriginSchema = z.enum(['native', 'import']);
+export type TicketOrigin = z.infer<typeof ticketOriginSchema>;
+
 export const commentVisibilitySchema = z.enum(['public', 'internal']);
 
 /** The number prefix used per ticket type, e.g. INC-000123. */
@@ -65,6 +74,7 @@ export const ticketSchema = z.object({
   categoryId: uuidSchema.nullable(),
   orgId: uuidSchema.nullable(),
   sourceChannel: channelSchema,
+  origin: ticketOriginSchema,
   parentId: uuidSchema.nullable(),
   dueAt: isoDateTimeSchema.nullable(),
   resolvedAt: isoDateTimeSchema.nullable(),

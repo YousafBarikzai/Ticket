@@ -1,6 +1,7 @@
 /**
- * The glyph each application is drawn with — in the app switcher and the
- * brand mark — so "Workbench" looks the same wherever it is offered.
+ * The glyph each area is drawn with — the same as `AREAS[…].icon` in
+ * `@itsm/contracts/areas` — so the Service Desk looks the same wherever it is
+ * offered: the area switcher's tiles, the brand mark, the palette.
  * Server-safe.
  */
 import type { AppName } from '../theme/prefs.js';

@@ -14,6 +14,8 @@ import { toneIcon } from './tone.js';
 
 export interface GlobalBannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'children' | 'role'> {
   readonly tone: Tone;
+  /** A short uppercase label before the title in the tone's text colour: "Major incident". */
+  readonly kicker?: string;
   readonly title: string;
   readonly body?: string;
   readonly icon?: IconName;
@@ -24,6 +26,12 @@ export interface GlobalBannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 
   readonly dismissKey?: string;
   /** How it is announced when it appears; `false` for a banner present on load. */
   readonly live?: 'polite' | 'assertive' | false;
+  /**
+   * `strong` for the one strip that must not be read past — a major
+   * incident: the bar takes the tone's solid colour and the title its text
+   * colour. `subtle` (default) for everything else.
+   */
+  readonly emphasis?: 'subtle' | 'strong';
   readonly className?: string;
   readonly ref?: Ref<HTMLDivElement>;
 }
@@ -34,8 +42,9 @@ export interface GlobalBannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 
  * session that ended in the background, "Your access changed", a new version,
  * a suspended tenant, "Offline · showing the copy from 10:42".
  *
- * One line where there is room — icon, title, the sentence after it, the
- * action at the end — and wrapping under itself on a phone. It stays until the
+ * One line where there is room — a 3 px bar in the tone's colour at the
+ * start, icon, optional kicker, title, the sentence after it, the action at
+ * the end — and wrapping under itself on a phone. It stays until the
  * condition clears; only a banner with `dismissKey` can be closed, and then it
  * stays closed on this device (a banner already dismissed is never rendered,
  * rather than flashing up on the next load).
@@ -47,6 +56,7 @@ export interface GlobalBannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 
  */
 export function GlobalBanner({
   tone,
+  kicker,
   title,
   body,
   icon,
@@ -54,6 +64,7 @@ export function GlobalBanner({
   onAction,
   dismissKey,
   live = 'polite',
+  emphasis = 'subtle',
   className,
   ref,
   ...rest
@@ -80,12 +91,14 @@ export function GlobalBanner({
       role={live === 'assertive' ? 'alert' : live === 'polite' ? 'status' : undefined}
       className={cx('itsm-GlobalBanner', className)}
       data-tone={tone}
+      data-emphasis={emphasis}
       data-live={live === false ? undefined : live}
     >
       <div className="itsm-GlobalBanner__inner">
-        <Icon name={icon ?? toneIcon[tone]} className="itsm-GlobalBanner__icon" />
+        <Icon name={icon ?? toneIcon[tone]} size="sm" className="itsm-GlobalBanner__icon" />
         <div className="itsm-GlobalBanner__main">
           <p className="itsm-GlobalBanner__text">
+            {kicker ? <span className="itsm-GlobalBanner__kicker">{`${kicker} `}</span> : null}
             <span className="itsm-GlobalBanner__title">{title}</span>
             {body ? <span className="itsm-GlobalBanner__body">{` ${body}`}</span> : null}
           </p>

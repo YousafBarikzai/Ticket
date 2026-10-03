@@ -60,7 +60,7 @@ export function FormsView({
   });
 
   const stateMap = useMemo(() => {
-    const map: Record<string, { label: string; tone: 'neutral' | 'success' | 'warning'; icon: 'circle-dashed' | 'circle-check' | 'pencil' }> = {};
+    const map: Record<string, { label: string; tone: 'neutral' | 'success' | 'info'; icon: 'circle-dashed' | 'circle-check' | 'pencil' }> = {};
     // Keyed by the words the cell shows ("Live · v3"), with the state's tone and icon.
     for (const row of rows) map[row.stateLabel] = { ...FORM_STATE_LOOK[row.state], label: row.stateLabel } as (typeof map)[string];
     return map;

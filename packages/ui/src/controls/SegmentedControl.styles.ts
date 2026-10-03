@@ -1,8 +1,24 @@
 import { css, layer, mq } from '../styles/css.js';
 
 /**
- * `SegmentedControl`: a `fill.secondary` track with a raised thumb that
- * slides to the selected segment on the `spring` curve.
+ * `SegmentedControl` (v3 §2.14, A1 §7.5): an opaque `surface.sunken` track
+ * with a raised thumb that slides to the selected segment on the `spring`
+ * curve.
+ *
+ * The track is opaque rather than v2's translucent `fill.secondary` so the
+ * label pairs on it are audited ones (`text.muted` on sunken): a translucent
+ * track takes whatever colour is under it, and nobody audited that. On a
+ * sunken parent (a `Surface tone="sunken"` well) the track would vanish into
+ * its own colour, so there it gains an inset `border.subtle` edge.
+ *
+ * Sizes: the track is 32 px (`md`) or 28 px (`sm`) — a control height less
+ * the 2 px inset on each side for `md`, so density and coarse pointers
+ * resize it with no rule here — with 2 px of padding and the control radius
+ * (8); segments are concentric (6). Segment labels are 500 13/18 in
+ * `text.muted` (12/16 at `sm`), `text.primary` under the pointer; the
+ * selected one is `text.primary` 600 on the raised thumb with the `sm`
+ * elevation. A count is the shared `Count` (accent on the selected
+ * segment).
  *
  * The thumb is one element placed by script from the selected segment's box
  * (dynamic geometry, the one use of inline style). Until it has been placed —
@@ -11,21 +27,21 @@ import { css, layer, mq } from '../styles/css.js';
  * nothing slides in on load; transitions switch on only after the first
  * placement has been painted (`data-animate`).
  *
- * The thumb is the overlay surface with the dark themes' edge highlight. In a
- * dark scheme it is lightened by the pressed fill (`light-dark()`), so it
- * stands above the track whether the control sits on the black canvas or on
- * a raised card; the light and high-contrast themes keep it white.
+ * In a dark scheme the raised thumb is lightened by the pressed fill
+ * (`light-dark()`), so it stands above the track whether the control sits on
+ * the black canvas or on a raised card; the light and high-contrast themes
+ * keep it the raised surface. On navy (`[data-surface="hero"]`) the hero
+ * card's module re-themes track and thumb (A1 §7.3).
  *
  * Every label reserves the width of its bold self, so the segments do not
- * shift when the selection moves; the selected label is `text.primary` at
- * 600, the others `text.secondary`.
+ * shift when the selection moves.
  */
 export const segmentedControlStyles = layer(
   'components',
   css`
 .itsm-SegmentedControl {
   --_pad: var(--itsm-space-3xs);
-  --_h: var(--itsm-control-height-md);
+  --_h: calc(var(--itsm-control-height-md) - 2 * var(--itsm-space-3xs));
   position: relative;
   display: inline-flex;
   box-sizing: border-box;
@@ -33,13 +49,17 @@ export const segmentedControlStyles = layer(
   min-block-size: var(--_h);
   padding: var(--_pad);
   border-radius: var(--itsm-radius-lg);
-  background-color: var(--itsm-colour-fill-secondary);
+  background-color: var(--itsm-colour-surface-sunken);
   isolation: isolate;
 }
 
 .itsm-SegmentedControl--sm {
   --_h: var(--itsm-control-height-sm);
-  border-radius: var(--itsm-radius-md);
+}
+
+/* On a sunken well the sunken track would disappear: it gains an edge. */
+:where(.itsm-Surface[data-tone="sunken"]) .itsm-SegmentedControl {
+  box-shadow: inset 0 0 0 var(--itsm-border-hair) var(--itsm-colour-border-subtle);
 }
 
 .itsm-SegmentedControl--fullWidth {
@@ -77,15 +97,15 @@ export const segmentedControlStyles = layer(
   min-block-size: calc(var(--_h) - 2 * var(--_pad));
   margin: 0;
   padding-block: 0;
-  padding-inline: var(--itsm-space-sm);
+  padding-inline: calc(var(--itsm-space-sm) - var(--itsm-border-hair));
   border: var(--itsm-border-hair) solid transparent;
   border-radius: calc(var(--itsm-radius-lg) - var(--_pad));
   background: transparent;
-  color: var(--itsm-colour-text-secondary);
+  color: var(--itsm-colour-text-muted);
   font-family: inherit;
-  font-size: var(--itsm-text-callout-size);
-  line-height: var(--itsm-text-callout-line);
-  letter-spacing: var(--itsm-text-callout-tracking);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  letter-spacing: var(--itsm-text-subheadline-tracking);
   font-weight: var(--itsm-font-weight-medium);
   text-decoration: none;
   white-space: nowrap;
@@ -99,10 +119,9 @@ export const segmentedControlStyles = layer(
 
 .itsm-SegmentedControl--sm .itsm-SegmentedControl__segment {
   padding-inline: calc(var(--itsm-space-xs) + var(--itsm-space-3xs));
-  border-radius: calc(var(--itsm-radius-md) - var(--_pad));
-  font-size: var(--itsm-text-subheadline-size);
-  line-height: var(--itsm-text-subheadline-line);
-  letter-spacing: var(--itsm-text-subheadline-tracking);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: var(--itsm-text-footnote-tracking);
 }
 
 .itsm-SegmentedControl__segment:hover:not([data-selected]):not([aria-disabled="true"]) {
@@ -147,11 +166,7 @@ export const segmentedControlStyles = layer(
 }
 
 .itsm-SegmentedControl__count {
-  font-size: var(--itsm-text-footnote-size);
-  line-height: var(--itsm-text-footnote-line);
-  font-weight: var(--itsm-font-weight-medium);
-  font-variant-numeric: tabular-nums;
-  color: var(--itsm-colour-text-muted);
+  flex: none;
 }
 
 /*
@@ -192,18 +207,15 @@ export const segmentedControlStyles = layer(
   border-radius: calc(var(--itsm-radius-lg) - var(--_pad));
   pointer-events: none;
 }
-.itsm-SegmentedControl--sm .itsm-SegmentedControl__thumb {
-  border-radius: calc(var(--itsm-radius-md) - var(--_pad));
-}
 
 .itsm-SegmentedControl__thumb,
 .itsm-SegmentedControl:not([data-ready]) .itsm-SegmentedControl__segment[data-selected] {
-  background-color: var(--itsm-colour-surface-overlay);
+  background-color: var(--itsm-colour-surface-raised);
   background-image: linear-gradient(
     light-dark(transparent, var(--itsm-colour-fill-pressed)),
     light-dark(transparent, var(--itsm-colour-fill-pressed))
   );
-  box-shadow: var(--itsm-elevation-xs), var(--itsm-elevation-sm), var(--itsm-edge-highlight);
+  box-shadow: var(--itsm-elevation-sm), var(--itsm-edge-highlight);
 }
 
 .itsm-SegmentedControl[data-ready] .itsm-SegmentedControl__thumb {

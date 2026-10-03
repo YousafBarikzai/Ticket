@@ -7,7 +7,10 @@ export interface ProgressRingProps {
   /** 0..1. */
   readonly value: number;
   readonly label: string;
-  readonly size?: 32 | 48 | 64 | 96;
+  /** 140 is the war room's ring: a 12 px stroke and the stat numeral in the middle. */
+  readonly size?: 32 | 48 | 64 | 96 | 140;
+  /** A fraction of 1, drawn as a tick across the ring (A8 §4.7) and named: "Updates on time: 15%, target 17%". */
+  readonly target?: number;
   /**
    * `auto` goes from accent to warning (from 75 %) to danger (from 90 %) as
    * the value rises, for time used against a limit. `neutral` is for a
@@ -22,7 +25,7 @@ export interface ProgressRingProps {
 }
 
 /** Stroke per size: thick enough to read at 32 px, never heavy at 96. */
-const STROKE: Readonly<Record<NonNullable<ProgressRingProps['size']>, number>> = { 32: 3, 48: 4, 64: 5, 96: 7 };
+const STROKE: Readonly<Record<NonNullable<ProgressRingProps['size']>, number>> = { 32: 3, 48: 4, 64: 5, 96: 7, 140: 12 };
 
 /** The tone `auto` resolves to for a value. */
 export function ringTone(value: number): 'accent' | 'warning' | 'danger' {
@@ -37,18 +40,28 @@ export function ringTone(value: number): 'accent' | 'warning' | 'danger' {
  * An image whose name states the value ("SLA time used: 62%"), so the ring is
  * never the only way to the number. The arc starts at twelve o'clock and runs
  * clockwise with round ends, on a track in the same weight; it moves to a new
- * value in `normal` time, and not at all under reduced motion.
+ * value in `normal` time, and not at all under reduced motion. A `target` is
+ * a 2 px tick in the marker navy across the ring, and part of its name.
  */
-export function ProgressRing({ value, label, size = 48, tone = 'accent', centerText, locale = DEFAULT_LOCALE, className }: ProgressRingProps): ReactNode {
+export function ProgressRing({ value, label, size = 48, target, tone = 'accent', centerText, locale = DEFAULT_LOCALE, className }: ProgressRingProps): ReactNode {
   const clamped = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
   const resolved = tone === 'auto' ? ringTone(clamped) : tone;
   const stroke = STROKE[size] ?? 4;
   const centre = size / 2;
   const radius = (size - stroke) / 2;
+  const goal = target !== undefined && Number.isFinite(target) ? Math.min(1, Math.max(0, target)) : undefined;
+  // The tick runs across the stroke and 2 px past it each side, at the target's angle from twelve o'clock.
+  const tick =
+    goal === undefined
+      ? null
+      : [radius - stroke / 2 - 2, radius + stroke / 2 + 2].map((r) => {
+          const angle = goal * 2 * Math.PI;
+          return [Math.round((centre + r * Math.sin(angle)) * 100) / 100, Math.round((centre - r * Math.cos(angle)) * 100) / 100] as const;
+        });
   return (
     <span
       role="img"
-      aria-label={`${label}: ${formatPercent(clamped, { locale })}`}
+      aria-label={`${label}: ${formatPercent(clamped, { locale })}${goal === undefined ? '' : `, target ${formatPercent(goal, { locale })}`}`}
       className={cx('itsm-ProgressRing', className)}
       data-size={size}
       data-tone={resolved}
@@ -68,6 +81,7 @@ export function ProgressRing({ value, label, size = 48, tone = 'accent', centerT
             transform={`rotate(-90 ${centre} ${centre})`}
           />
         ) : null}
+        {tick ? <line className="itsm-ProgressRing__target" x1={tick[0]![0]} y1={tick[0]![1]} x2={tick[1]![0]} y2={tick[1]![1]} /> : null}
       </svg>
       {centerText ? <span className="itsm-ProgressRing__text">{centerText}</span> : null}
     </span>

@@ -4,6 +4,14 @@ import { css, layer, mq } from '../styles/css.js';
  * `IconButton`: square, sized by the control-height tokens (28 / 36 / 44,
  * less in compact density, more on touch screens), colour-only feedback.
  *
+ * v3 (§2.14) gives it the button family's corners — the control radius (8)
+ * at 28 and 36 px, the `item` radius (10) at 44 — and its variants: `ghost`
+ * takes `surface.hover` under the pointer; `secondary` is the raised white
+ * button with a `border.soft` edge and the `xs` shadow (`surface.raisedAlt`
+ * and `border.interactive` under the pointer); `tinted` is `brand.subtle`.
+ * Unavailable is the disabled glyph, on the opaque sunken surface for the
+ * filled variants, never opacity.
+ *
  * On a coarse pointer an invisible `::after` grows the hit area to the large
  * control height (48 px on touch) without moving anything around it — the
  * 28 px toolbar button stays 28 px on screen and becomes a comfortable tap.
@@ -47,6 +55,7 @@ export const iconButtonStyles = layer(
 .itsm-IconButton--lg {
   inline-size: var(--itsm-control-height-lg);
   block-size: var(--itsm-control-height-lg);
+  border-radius: var(--itsm-radius-item);
 }
 
 .itsm-IconButton__icon {
@@ -55,7 +64,7 @@ export const iconButtonStyles = layer(
 
 /* Ghost: the toolbar default. */
 .itsm-IconButton--ghost:hover {
-  background-color: var(--itsm-colour-fill-hover);
+  background-color: var(--itsm-colour-surface-hover);
   color: var(--itsm-colour-text-primary);
 }
 .itsm-IconButton--ghost:active {
@@ -64,9 +73,14 @@ export const iconButtonStyles = layer(
 }
 
 .itsm-IconButton--secondary {
-  background-color: var(--itsm-colour-fill-secondary);
+  border-color: var(--itsm-colour-border-soft);
+  background-color: var(--itsm-colour-surface-raised);
   color: var(--itsm-colour-text-primary);
   box-shadow: var(--itsm-elevation-xs);
+}
+.itsm-IconButton--secondary:hover {
+  border-color: var(--itsm-colour-border-interactive);
+  background-color: var(--itsm-colour-surface-raisedAlt);
 }
 .itsm-IconButton--secondary:focus-visible {
   box-shadow: 0 0 0 var(--itsm-focus-offset) var(--itsm-colour-focusGap), var(--itsm-elevation-xs);
@@ -77,7 +91,6 @@ export const iconButtonStyles = layer(
   color: var(--itsm-colour-brand-subtleText);
 }
 
-.itsm-IconButton--secondary:hover,
 .itsm-IconButton--tinted:hover {
   background-image: linear-gradient(var(--itsm-colour-fill-hover), var(--itsm-colour-fill-hover));
 }
@@ -107,7 +120,8 @@ export const iconButtonStyles = layer(
 }
 .itsm-IconButton--secondary:disabled,
 .itsm-IconButton--tinted:disabled {
-  background-color: var(--itsm-colour-fill-secondary);
+  border-color: transparent;
+  background-color: var(--itsm-colour-surface-sunken);
 }
 
 ${mq.coarse} {

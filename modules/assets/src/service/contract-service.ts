@@ -10,6 +10,7 @@ import {
   recordAudit,
   transaction,
 } from '@itsm/platform';
+import { safeHrefSchema } from '@itsm/contracts/links/schemas';
 import { CONTRACT_KINDS, COST_PERIODS, assess, needsAttention, type Assessment } from '../domain/contracts.js';
 
 /**
@@ -28,7 +29,9 @@ export const supplierSchema = z.object({
   contactName: z.string().max(200).optional(),
   contactEmail: z.string().email().max(320).optional(),
   contactPhone: z.string().max(60).optional(),
-  supportUrl: z.string().url().max(2_000).optional(),
+  // Shown as a link to whoever chases the supplier, so `https:` or `mailto:`
+  // only (D23), in every tenant; `z.string().url()` also took `javascript:`.
+  supportUrl: safeHrefSchema.optional(),
   supportPhone: z.string().max(60).optional(),
 });
 
@@ -85,7 +88,8 @@ export const contractSchema = z.object({
   costPeriod: z.enum(COST_PERIODS).optional(),
   costCentre: z.string().max(60).optional(),
   ownerId: z.string().uuid().optional(),
-  documentUrl: z.string().url().max(2_000).optional(),
+  /** The signed copy, wherever it is filed: a link under the same rule as `supportUrl` (D23). */
+  documentUrl: safeHrefSchema.optional(),
 });
 
 export async function createContract(ctx: TenantContext, input: z.input<typeof contractSchema>) {

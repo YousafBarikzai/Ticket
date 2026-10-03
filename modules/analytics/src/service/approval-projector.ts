@@ -16,6 +16,9 @@ import * as dims from '../repo/dimension-repo.js';
 
 const PROJECTOR = 'approval';
 
+/** The outcome MOD-17 gives an approval its ticket took away (ADR-0059). */
+const WITHDRAWN = 'withdrawn';
+
 export async function refreshApprovalFact(
   ctx: TenantContext,
   tx: Tx,
@@ -40,9 +43,16 @@ export async function refreshApprovalFact(
     return;
   }
 
+  // A withdrawn approval (ADR-0059) ended because its ticket did, not because
+  // anyone decided it. It has no decider, and no turnaround: the time it sat
+  // measures how long the request lived, not how long an approver took, and
+  // counting it would flatter or blame a step for something it never did. The
+  // fact still keeps when it ended (`decidedAt`) and says how (`outcome`).
+  const decisionAt = request.outcome === WITHDRAWN ? null : request.decidedAt;
+
   // Whoever cast the deciding vote, rather than whoever was asked: an approval
   // routed to four people and answered by one is a fact about that one.
-  const lastDecision = request.decidedAt
+  const lastDecision = decisionAt
     ? await tx.approvalDecision.findFirst({
         where: { step: { requestId } },
         select: { approverId: true, actedById: true },
@@ -55,8 +65,8 @@ export async function refreshApprovalFact(
   const occurredAt = new Date(event.occurredAt);
   // Elapsed hours, not business hours: an approval that waits over a weekend
   // really did wait over the weekend, and the approver was not on a rota.
-  const turnaround = request.decidedAt
-    ? durationsBetween(request.requestedAt, request.decidedAt, TWENTY_FOUR_SEVEN).elapsedMinutes
+  const turnaround = decisionAt
+    ? durationsBetween(request.requestedAt, decisionAt, TWENTY_FOUR_SEVEN).elapsedMinutes
     : null;
 
   await dims.ensureUser(tx, ctx.tenantId, deciderId, occurredAt);

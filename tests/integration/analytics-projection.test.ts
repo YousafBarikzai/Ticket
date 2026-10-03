@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { transaction, withContext } from '@itsm/platform';
 import { checkTicketDrift, rebuildDay } from '@itsm/module-analytics';
+import { tickPartition } from '@itsm/module-sla';
 import { outboxPublisher } from '@itsm/module-integrations';
 import {
   closeHarness,
@@ -214,6 +215,72 @@ describe('the SLA projection', () => {
     // now" is a question about exactly those.
     expect(timers.every((timer) => ['running', 'met', 'breached'].includes(timer.outcome))).toBe(true);
     expect(timers.every((timer) => timer.startedDate !== null)).toBe(true);
+  });
+
+  it('says breached for a timer that breached and was then met, however it is projected', async () => {
+    // F1 (ADR-0057): an update timer that missed a cycle keeps running for
+    // the cadence and is stopped at resolution with `metAt` set and its state
+    // left `breached`. Before F1 a timer could not carry both, and the
+    // projector put met first; a replay would now turn that miss into a met.
+    const started = new Date(Date.now() - 1000);
+    const ticketId = await raiseTicket('Projector: an update that came too late');
+    const update = await read((tx) => tx.slaTimer.findFirst({ where: { ticketId, targetType: 'update' } }));
+    expect(update).not.toBeNull();
+
+    await read((tx) => tx.slaTimer.update({ where: { id: update!.id }, data: { dueAt: new Date(Date.now() - 1000) } }));
+    const context = ctx();
+    await withContext(context, () => tickPartition(context, update!.partition));
+    await drainEvents(tenant.id);
+
+    // The late reply restarts the cadence; the resolution stops the timer.
+    const reply = await request(`/api/v1/tickets/${ticketId}/comments`, {
+      method: 'POST',
+      token: tenant.people.agent!.token,
+      body: { body: 'Sorry for the wait.' },
+    });
+    expect(reply.status).toBe(201);
+    await drainEvents(tenant.id);
+    const resolved = await request(`/api/v1/tickets/${ticketId}/transitions`, {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: { to: 'resolved' },
+    });
+    expect(resolved.status).toBe(200);
+    await drainEvents(tenant.id);
+
+    const timer = await read((tx) => tx.slaTimer.findFirst({ where: { id: update!.id } }));
+    expect(timer!.breachedAt).not.toBeNull();
+    expect(timer!.metAt).not.toBeNull();
+
+    // A replay recomputes every fact from the rows as they stand now.
+    const replay = await request('/api/v1/analytics/replay', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: { from: started.toISOString() },
+    });
+    expect(replay.status).toBe(200);
+
+    const fact = await read((tx) => tx.factSlaTimer.findFirst({ where: { timerId: update!.id } }));
+    expect(fact!.outcome).toBe('breached');
+    // It stopped when the ticket resolved, not when the cycle was missed.
+    expect(fact!.stoppedAt).toEqual(timer!.metAt);
+  });
+
+  it('says cancelled for the timers of a cancelled ticket, which attainment then ignores', async () => {
+    const ticketId = await raiseTicket('Projector: withdrawn before anyone looked');
+    const cancelled = await request(`/api/v1/tickets/${ticketId}/transitions`, {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: { to: 'cancelled', reason: 'raised in error' },
+    });
+    expect(cancelled.status).toBe(200);
+    await drainEvents(tenant.id);
+
+    const facts = await read((tx) => tx.factSlaTimer.findMany({ where: { ticketId } }));
+    expect(facts.length).toBeGreaterThan(0);
+    // Before F1 these stayed `running` for ever, because a cancellation
+    // published nothing.
+    expect(facts.map((fact) => fact.outcome)).toEqual(facts.map(() => 'cancelled'));
   });
 });
 

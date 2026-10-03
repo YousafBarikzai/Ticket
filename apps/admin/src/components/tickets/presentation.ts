@@ -1,4 +1,4 @@
-import type { IconName, Tone } from '@itsm/ui';
+import { PRIORITY_LOOK as SHARED_PRIORITY_LOOK, ticketStateLook, type IconName, type Tone } from '@itsm/ui';
 import type { SlaTimer, Ticket, TicketFilter } from '@itsm/sdk';
 import { TICKET_STATUSES, TICKET_TYPES } from '../../rules/facts.js';
 
@@ -126,19 +126,6 @@ export function isFiltered(query: TicketQuery): boolean {
  * A ticket in words
  * ====================================================================== */
 
-type Category = 'open' | 'paused' | 'resolved' | 'closed';
-
-const CATEGORY_LOOK: Readonly<Record<Category, { readonly tone: Tone; readonly icon: IconName }>> = {
-  open: { tone: 'info', icon: 'dot' },
-  paused: { tone: 'neutral', icon: 'pause' },
-  resolved: { tone: 'success', icon: 'circle-check' },
-  closed: { tone: 'neutral', icon: 'archive' },
-};
-
-function categoryOf(value: string | null | undefined): Category {
-  return value === 'paused' || value === 'resolved' || value === 'closed' ? value : 'open';
-}
-
 /** `awaiting_parts` → "Awaiting parts": a tenant's own status still reads as words. */
 export function humanise(value: string): string {
   const words = value.replace(/[_-]+/g, ' ').trim();
@@ -149,8 +136,17 @@ export function statusLabel(status: string): string {
   return TICKET_STATUSES.find((entry) => entry.value === status)?.label ?? humanise(status);
 }
 
+/**
+ * A status as a pill, in the shared ticket-state look (D5, A7 §2.9): new is
+ * neutral with a dashed circle, open and in progress `info`, waiting and
+ * approval `hold`, resolved `success` — never amber, which is SLA risk. The
+ * words are the desk's own (`statusLabel`), so a tenant's status keeps its
+ * name; the tone and glyph come from the state, or its category for a
+ * status the shared map does not know.
+ */
 export function statusLook(status: string, category: string | null | undefined): { readonly label: string; readonly tone: Tone; readonly icon: IconName } {
-  return { label: statusLabel(status), ...CATEGORY_LOOK[categoryOf(category)] };
+  const look = ticketStateLook(status, category);
+  return { label: statusLabel(status), tone: look.tone, icon: look.icon };
 }
 
 export function typeLabel(type: string): string {
@@ -170,13 +166,15 @@ export function typeIcon(type: string): IconName {
   return TYPE_ICONS[type] ?? 'ticket';
 }
 
-/** P1 danger, P2 warning, P3 info, P4 neutral; the text is always shown, never colour alone. */
-export const PRIORITY_LOOK: Readonly<Record<string, { readonly label: string; readonly tone: Tone }>> = {
-  P1: { label: 'P1', tone: 'danger' },
-  P2: { label: 'P2', tone: 'warning' },
-  P3: { label: 'P3', tone: 'info' },
-  P4: { label: 'P4', tone: 'neutral' },
-};
+/**
+ * P1 danger, P2 `high` orange, P3 and P4 neutral: the shared priority tones
+ * (D5, A7 §2.9), so a P2 is never amber. The label is always shown, never
+ * colour alone. A `status` column's `map`, until the register draws
+ * `PriorityChip` (WP-80).
+ */
+export const PRIORITY_LOOK: Readonly<Record<string, { readonly label: string; readonly tone: Tone }>> = Object.fromEntries(
+  (['P1', 'P2', 'P3', 'P4'] as const).map((key) => [key, { label: key, tone: SHARED_PRIORITY_LOOK[key].tone }]),
+);
 
 export const PRIORITY_WORDS: Readonly<Record<string, string>> = { P1: 'Critical', P2: 'High', P3: 'Medium', P4: 'Low' };
 
@@ -256,11 +254,6 @@ export function plainText(description: string): string {
     .replace(/&amp;/g, '&')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-/** Where a ticket is worked: the workbench, same tab (SPEC §4.10 cross-app links). */
-export function workbenchHref(origin: string | undefined, number: string): string | undefined {
-  return origin ? `${origin.replace(/\/+$/, '')}/tickets/${encodeURIComponent(number)}` : undefined;
 }
 
 /* =========================================================================

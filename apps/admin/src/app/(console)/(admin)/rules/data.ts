@@ -90,18 +90,6 @@ export async function loadSampleSize(api: Admin, me: Me): Promise<number | null>
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 500 ? value : null;
 }
 
-/** The workbench's origin, for ticket links in test results; undefined when not configured. */
-export function workbenchOrigin(me: Me): string | undefined {
-  if (!holdsAny(me, ['ticket.read'])) return undefined;
-  const value = process.env.WORKBENCH_ORIGIN;
-  if (!value) return undefined;
-  try {
-    return new URL(value).origin;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * One rule and its versions, read once per request: the page and its
  * metadata both ask, and `cache()` makes that one call.

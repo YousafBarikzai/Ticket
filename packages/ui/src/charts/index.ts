@@ -7,14 +7,28 @@
  */
 export { AreaChart, type AreaChartProps } from './AreaChart.js';
 export { BarChart, type BarChartProps, type BarDatum } from './BarChart.js';
+export type { BarLabels, BarLayout, BarSeriesDef } from './BarChart.js';
+export { BulletBar, BulletList, measureBullet, type BulletBarProps, type BulletListProps, type BulletMeasure, type BulletRow } from './Bullet.js';
+export { CHART_HEIGHTS, ChartCard, type ChartCardProps, type ChartCardState } from './ChartCard.js';
 export { ChartFigure, type ChartFigureProps, type ChartFigureTable } from './ChartFigure.js';
+export { CHART_TABLE_DEFAULTS, type ChartTableCell, type ChartTableKind } from './ChartFigure.js';
+export type { ChartBand, ChartCommon, ChartEmptyReason, ChartMarker, ChartMarkerKind, ChartTarget, SeriesLook, SeriesStyle, TimeBucket } from './common.js';
+export { DistributionBar, type DistributionBarProps, type DistributionSegment } from './DistributionBar.js';
 export { DonutChart, type DonutChartProps, type DonutSegment } from './DonutChart.js';
+export { Gauge, gaugeArc, gaugeTone, gaugeZones, type GaugeBand, type GaugeProps, type GaugeRelativeBands, type GaugeTone } from './Gauge.js';
 export { LineChart, type ChartSeries, type LineChartProps } from './LineChart.js';
+export type { SeriesFill } from './LineChart.js';
+export { MARKER_TIER_HEIGHT, MarkerBackdrop, MarkerLayer, layoutMarkers, markerTableColumn, resolveBands, resolveMarkers, type MarkerAxis, type MarkerBackdropProps, type MarkerContext, type MarkerLayerProps, type MarkerLayout, type PlacedMarker, type ResolvedBand, type ResolvedMarker } from './markers.js';
+export { CHART_EMPTY_TEXT, ChartEmpty, ChartLegend, type ChartEmptyProps, type LegendItem, type LegendMark } from './parts.js';
 export { ProgressRing, type ProgressRingProps } from './ProgressRing.js';
 export { Sparkline, type SparklineProps } from './Sparkline.js';
 export { StatCard, type StatCardDelta, type StatCardProps } from './StatCard.js';
+export type { StatCardInfo } from './StatCard.js';
 export { StatGrid, type StatGridProps } from './StatGrid.js';
+export { asAtLabel, formatShortDate, inferBucket, localDateKey, markerPosition, type TodayPlacement } from './time.js';
+export { chartToneOutline, chartToneVar } from './tone.js';
 export type { ChartSlot, ChartTableMode } from './types.js';
+export type { ChartTone } from './types.js';
 /** "Rising, 12 → 18": the words a `Sparkline` is named by. */
 export { describeTrend } from './scale.js';
 // Deprecated: wrappers over `StatCard` and `StatGrid` until nothing imports them.

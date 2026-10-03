@@ -1,16 +1,17 @@
 'use client';
 
-import type { MouseEvent, ReactElement, ReactNode } from 'react';
+import { useId, type ReactElement, type ReactNode } from 'react';
 import { Icon } from '../icons/Icon.js';
-import { MenuContent, MenuHeading, MenuItem, MenuPortal, MenuRoot, MenuSeparator, MenuTrigger, dropdownMenuKit, type MenuItemSpec } from '../overlays/Menu.js';
+import { MenuContent, MenuGroup, MenuHeading, MenuItem, MenuPortal, MenuRoot, MenuSeparator, MenuTrigger, dropdownMenuKit, type MenuItemSpec } from '../overlays/Menu.js';
 import { MenuItems } from '../overlays/menu-items.js';
 import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import type { Prefs } from '../theme/prefs.js';
 import { useTheme } from '../theme/ThemeProvider.js';
 import { Avatar } from '../web/Avatar.js';
-import { appIcon } from './app-icons.js';
+import { SWITCH_AREA_LABEL } from './AreaList.js';
+import { AreaHomeRow, AreaMenuRows } from './AreaMenuPanel.js';
 import { setShortcutsDialogOpen } from './shortcuts.js';
-import type { UserMenuProps } from './UserMenu.js';
+import { DEMO_DETAILS_REQUEST_EVENT, DEMO_RESET_REQUEST_EVENT, type UserMenuProps } from './UserMenu.js';
 
 export interface UserMenuPanelProps extends UserMenuProps {
   readonly trigger: ReactElement;
@@ -20,15 +21,30 @@ export interface UserMenuPanelProps extends UserMenuProps {
   readonly formId: string;
 }
 
+/** The identity heading's avatar (A2 §8). */
+const IDENTITY_AVATAR_PX = 36;
+
+function dispatch(name: string): void {
+  window.dispatchEvent(new CustomEvent(name));
+}
+
 /**
  * The account menu's body, loaded on intent by `UserMenu` (this module is
- * where the Radix menu comes in).
+ * where the Radix menu comes in), in the order of v3 §3.7:
  *
- * The preferences are the person's own and act at once: *Appearance*
- * (Automatic · Light · Dark), *Increase contrast* (ticked while the device
- * asks for more contrast, until the person chooses), and *Density* in the
- * sidebar apps. Theme changes cross-fade where motion is allowed
- * (`ThemeProvider`).
+ * 1. who is signed in — and, in a demo, a "Demo" tag;
+ * 2. **Switch area**, first, whenever there is somewhere to switch to: the
+ *    same rows as the area menu (phones and the portal reach the other
+ *    areas here too);
+ * 3. the app's own entries (Profile, Approvals, *Your access*, Availability);
+ * 4. the person's preferences, which act at once: *Appearance*, *Increase
+ *    contrast* (ticked while the device asks for more contrast, until the
+ *    person chooses) and *Density* in the sidebar apps;
+ * 5. *Keyboard shortcuts…* and *Help*;
+ * 6. in a demo, the Demo group: *Reset demo data…* and *Demo details*, which
+ *    the demo bar answers (`itsm:demo-reset-request`,
+ *    `itsm:demo-details-request`), and "IT Service Management home";
+ * 7. *Sign out*, or *End demo*, a submit button for the frame's one form.
  */
 export function UserMenuPanel({
   trigger,
@@ -44,12 +60,17 @@ export function UserMenuPanel({
   shortcuts = false,
   help,
   signOut,
-  switcher,
+  areas,
+  demo,
 }: UserMenuPanelProps): ReactNode {
   const itsm = useOptionalItsm();
   const { prefs, setPrefs, resolvedTheme } = useTheme();
+  const areasId = useId();
+  const demoId = useId();
   const contrastOn = prefs.contrast === 'more' || (prefs.contrast === 'system' && resolvedTheme.startsWith('high-contrast'));
   const singleKeys = itsm?.features.singleKeyShortcuts ?? true;
+  const inDemo = areas?.demo === true;
+  const context = { kit: dropdownMenuKit, Link: itsm?.Link ?? null };
 
   const entries: MenuItemSpec[] = [];
   if (items && items.length > 0) entries.push(...items, { type: 'separator' });
@@ -94,29 +115,16 @@ export function UserMenuPanel({
       onSelect: () => setShortcutsDialogOpen(true),
     });
   }
-  if (help) entries.push({ id: 'help', label: 'Help', icon: 'help', href: help.href });
-  const others = (switcher ?? []).filter((entry) => entry.app !== itsm?.app);
-  if (others.length > 0) {
-    if (entries.length > 0 && entries[entries.length - 1]?.type !== 'separator') entries.push({ type: 'separator' });
-    entries.push({ type: 'label', label: 'Switch to' });
-    for (const entry of others) entries.push({ id: `app-${entry.app}`, label: entry.label, icon: appIcon(entry.app), href: entry.href });
-  }
+  if (help) entries.push({ id: 'help', label: help.label ?? 'Help', icon: 'help', href: help.href });
   while (entries.length > 0 && entries[entries.length - 1]?.type === 'separator') entries.pop();
 
-  const onSignOut = (event: MouseEvent<HTMLButtonElement>): void => {
-    if (!signOut.beforeSubmit) return;
-    // Ask first (queued items, local data); the native submission waits for the answer.
-    event.preventDefault();
-    onOpenChange(false);
-    const ask = signOut.beforeSubmit;
-    void ask().then(
-      (proceed) => {
-        const form = document.getElementById(formId);
-        if (proceed && form instanceof HTMLFormElement) form.requestSubmit();
-      },
-      () => undefined,
-    );
-  };
+  const demoEntries: MenuItemSpec[] = inDemo
+    ? [
+        { id: 'demo-reset', label: 'Reset demo data…', icon: 'history', onSelect: () => dispatch(demo?.resetEvent ?? DEMO_RESET_REQUEST_EVENT) },
+        { id: 'demo-details', label: 'Demo details', icon: 'info', onSelect: () => dispatch(DEMO_DETAILS_REQUEST_EVENT) },
+      ]
+    : [];
+  const signOutLabel = signOut.label ?? (inDemo ? 'End demo' : 'Sign out');
 
   return (
     <MenuRoot modal={false} open={open} onOpenChange={onOpenChange}>
@@ -124,22 +132,48 @@ export function UserMenuPanel({
       <MenuPortal>
         <MenuContent align="end" side="bottom" aria-label="Account" className="itsm-UserMenu__content">
           <MenuHeading className="itsm-UserMenu__identity">
-            <Avatar name={name} {...(initials ? { initials } : {})} size="md" decorative />
+            <Avatar name={name} {...(initials ? { initials } : {})} size={IDENTITY_AVATAR_PX} decorative />
             <span className="itsm-UserMenu__identityText">
-              <span className="itsm-UserMenu__identityName">{name}</span>
+              <span className="itsm-UserMenu__identityName">
+                {name}
+                {inDemo ? <span className="itsm-UserMenu__demoTag">Demo</span> : null}
+              </span>
               {detail ? <span className="itsm-UserMenu__identityDetail">{detail}</span> : null}
             </span>
           </MenuHeading>
           <MenuSeparator />
-          <MenuItems items={entries} context={{ kit: dropdownMenuKit, Link: itsm?.Link ?? null }} />
-          {entries.length > 0 ? <MenuSeparator /> : null}
-          <MenuItem asChild className="itsm-UserMenu__signOut" textValue={signOut.label ?? 'Sign out'}>
-            <button type="submit" form={formId} onClick={onSignOut}>
+          {areas?.visible ? (
+            <>
+              <MenuGroup className="itsm-Menu__group itsm-UserMenu__areas" aria-labelledby={areasId}>
+                <MenuHeading className="itsm-Menu__heading" id={areasId}>
+                  {SWITCH_AREA_LABEL}
+                </MenuHeading>
+                <AreaMenuRows model={areas} />
+              </MenuGroup>
+              <MenuSeparator />
+            </>
+          ) : null}
+          <MenuItems items={entries} context={context} />
+          {inDemo && areas ? (
+            <>
+              {entries.length > 0 ? <MenuSeparator /> : null}
+              <MenuGroup className="itsm-Menu__group" aria-labelledby={demoId}>
+                <MenuHeading className="itsm-Menu__heading" id={demoId}>
+                  Demo
+                </MenuHeading>
+                <MenuItems items={demoEntries} context={context} />
+                <AreaHomeRow model={areas} />
+              </MenuGroup>
+            </>
+          ) : null}
+          {entries.length > 0 || inDemo ? <MenuSeparator /> : null}
+          <MenuItem asChild className="itsm-UserMenu__signOut" textValue={signOutLabel}>
+            <button type="submit" form={formId}>
               <span className="itsm-Menu__leading" aria-hidden="true">
                 <Icon name="log-out" size="sm" />
               </span>
               <span className="itsm-Menu__text">
-                <span className="itsm-Menu__itemLabel">{signOut.label ?? 'Sign out'}</span>
+                <span className="itsm-Menu__itemLabel">{signOutLabel}</span>
               </span>
             </button>
           </MenuItem>

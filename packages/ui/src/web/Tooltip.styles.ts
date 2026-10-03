@@ -3,8 +3,11 @@ import { css, layer, mq } from '../styles/css.js';
 /**
  * `Tooltip` — the same bubble as `IconButton`'s own tooltip (web/Button
  * styles), drawn here for the Radix-hosted one so the two cannot be told
- * apart: `surface.inverse`, `footnote` medium, radius `md`, at most 240 px,
- * elevation `md`, a short fade on the entrance curve.
+ * apart: `surface.inverse` (v3 slate `#0F172A`), `footnote` medium in
+ * `text.inverse`, radius `md` (8 in v3), at most 240 px, elevation `md`, a
+ * short fade on the entrance curve (v3 §2.14). A shortcut's key caps inside
+ * it are drawn from the bubble's own text colour (`Kbd.styles.ts`), never
+ * as light keys on the dark bubble.
  *
  * A fade and nothing else, so reduced motion needs no rule of its own (the
  * duration token collapses). The z-index is set on the content: Radix

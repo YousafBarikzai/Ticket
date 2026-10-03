@@ -13,7 +13,7 @@ import {
   transaction,
 } from '@itsm/platform';
 import { assertTransition, isIncidentState, type IncidentState } from '../domain/lifecycle.js';
-import { reviewRequiredFor } from './major-incident-service.js';
+import { reviewRequiredFor, type IncidentClock } from './major-incident-service.js';
 
 /**
  * The post-incident review, and closing the incident.
@@ -54,13 +54,15 @@ export async function getReview(ctx: TenantContext, number: string) {
 }
 
 /** Edits the draft. Refused once published: a published review is a record. */
-export async function saveReview(ctx: TenantContext, number: string, input: z.input<typeof reviewSchema>) {
+export async function saveReview(ctx: TenantContext, number: string, input: z.input<typeof reviewSchema>, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.review.write');
   const parsed = reviewSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const { review } = await loadReview(tx, number);
     assertEditable(review);
+    if (at) assertNotBefore(at, review.createdAt, 'before_review', 'the review it belongs to was opened');
 
     const updated = await tx.postIncidentReview.update({
       where: { id: review.id },
@@ -72,19 +74,22 @@ export async function saveReview(ctx: TenantContext, number: string, input: z.in
         ...(parsed.whatDidNot !== undefined ? { whatDidNot: parsed.whatDidNot } : {}),
         ...(parsed.dueOn ? { dueOn: parsed.dueOn } : {}),
         status: review.status === 'draft' ? 'in_review' : review.status,
+        ...(at ? { updatedAt: at } : {}),
       },
     });
     return updated;
   });
 }
 
-export async function addAction(ctx: TenantContext, number: string, input: z.input<typeof actionSchema>) {
+export async function addAction(ctx: TenantContext, number: string, input: z.input<typeof actionSchema>, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.review.write');
   const parsed = actionSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const { review } = await loadReview(tx, number);
     assertEditable(review);
+    if (at) assertNotBefore(at, review.createdAt, 'before_review', 'the review it belongs to was opened');
 
     const action = await tx.actionItem.create({
       data: {
@@ -95,6 +100,7 @@ export async function addAction(ctx: TenantContext, number: string, input: z.inp
         ownerId: parsed.ownerId ?? null,
         dueOn: parsed.dueOn ?? null,
         status: 'open',
+        ...(at ? { createdAt: at, updatedAt: at } : {}),
       },
     });
     return action;
@@ -116,13 +122,15 @@ export const actionUpdateSchema = z.object({
  * happened and does not change, but whether somebody has done what they agreed
  * to is live for weeks afterwards and is the only part anybody checks later.
  */
-export async function updateAction(ctx: TenantContext, actionId: string, input: z.input<typeof actionUpdateSchema>) {
+export async function updateAction(ctx: TenantContext, actionId: string, input: z.input<typeof actionUpdateSchema>, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.review.write');
   const parsed = actionUpdateSchema.parse(input);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const action = await tx.actionItem.findFirst({ where: { id: actionId } });
     if (!action) throw new NotFoundError('action item', actionId);
+    if (at) assertNotBefore(at, action.createdAt, 'before_action', 'the action was agreed');
 
     const updated = await tx.actionItem.update({
       where: { id: actionId },
@@ -131,6 +139,7 @@ export async function updateAction(ctx: TenantContext, actionId: string, input: 
         ...(parsed.ownerId !== undefined ? { ownerId: parsed.ownerId } : {}),
         ...(parsed.dueOn !== undefined ? { dueOn: parsed.dueOn } : {}),
         ...(parsed.ticketId !== undefined ? { ticketId: parsed.ticketId } : {}),
+        ...(at ? { updatedAt: at } : {}),
       },
     });
     await recordAudit(tx, ctx, {
@@ -156,13 +165,24 @@ export async function updateAction(ctx: TenantContext, actionId: string, input: 
  * worth refusing over: unlike a root cause, an owner cannot be fudged into the
  * box to get past the check.
  */
-export async function publishAndClose(ctx: TenantContext, number: string) {
+export async function publishAndClose(ctx: TenantContext, number: string, clock: IncidentClock = {}) {
   authz.require(ctx, 'incident.review.publish');
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const { incident, review } = await loadReview(tx, number);
     const from: IncidentState = isIncidentState(incident.status) ? incident.status : 'declared';
     assertTransition(from, 'closed');
+    if (at) {
+      assertNotBefore(at, review.createdAt, 'before_review', 'the review was opened');
+      // Closing adds a line to the timeline, which only runs forwards.
+      const latest = await tx.majorIncidentUpdate.findFirst({
+        where: { incidentId: incident.id },
+        orderBy: { occurredAt: 'desc' },
+        select: { occurredAt: true },
+      });
+      if (latest) assertNotBefore(at, latest.occurredAt, 'out_of_order', "the incident's latest timeline entry");
+    }
 
     if (review.status === 'published') throw new ValidationError('this review has already been published');
 
@@ -181,14 +201,14 @@ export async function publishAndClose(ctx: TenantContext, number: string) {
       );
     }
 
-    const now = new Date();
+    const now = at ?? new Date();
     const published = await tx.postIncidentReview.update({
       where: { id: review.id },
-      data: { status: 'published', publishedAt: now, publishedBy: ctx.actor.id },
+      data: { status: 'published', publishedAt: now, publishedBy: ctx.actor.id, ...(at ? { updatedAt: at } : {}) },
     });
     const closed = await tx.majorIncident.update({
       where: { id: incident.id },
-      data: { status: 'closed', closedAt: incident.closedAt ?? now, version: { increment: 1 } },
+      data: { status: 'closed', closedAt: incident.closedAt ?? now, version: { increment: 1 }, ...(at ? { updatedAt: at } : {}) },
     });
 
     await tx.majorIncidentUpdate.create({
@@ -202,6 +222,7 @@ export async function publishAndClose(ctx: TenantContext, number: string) {
         statusFrom: from,
         statusTo: 'closed',
         authorId: ctx.actor.id,
+        ...(at ? { occurredAt: at } : {}),
       },
     });
 
@@ -316,5 +337,31 @@ async function loadReview(tx: Tx, number: string) {
 function assertEditable(review: { status: string }): void {
   if (review.status === 'published') {
     throw new ValidationError('this review is published; it is a record now and does not change');
+  }
+}
+
+/**
+ * A supplied clock, once it is known to be a real instant that has already
+ * happened (A4 §2.3, W2). A review written "tomorrow" would be a record of a
+ * conversation nobody has had.
+ */
+function pastInstant(at: Date): Date {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) {
+    throw new ValidationError('the time given is not a date', [{ field: 'at', code: 'invalid', message: 'not a date' }]);
+  }
+  if (at.getTime() > Date.now()) {
+    throw new ValidationError('a review cannot be dated in the future', [
+      { field: 'at', code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+  return at;
+}
+
+/** Refuses a step dated before the thing it follows. */
+function assertNotBefore(at: Date, floor: Date, code: string, what: string): void {
+  if (at < floor) {
+    throw new ValidationError(`this cannot be dated before ${what}`, [
+      { field: 'at', code, message: `must not be earlier than ${floor.toISOString()}` },
+    ]);
   }
 }

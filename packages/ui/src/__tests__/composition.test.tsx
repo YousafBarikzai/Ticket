@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
+import { crossAreaHref } from '@itsm/contracts/areas';
 import { act, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { announcerText, destroyAnnouncer, installAnnouncer } from '../a11y/announcer.js';
+import { FilterPills } from '../controls/FilterPills.js';
 import { SearchField } from '../controls/SearchField.js';
+import { SegmentedControl } from '../controls/SegmentedControl.js';
 import { DataTable } from '../data/DataTable.js';
 import { Form, FormActions } from '../formkit/Form.js';
 import { Sheet } from '../overlays/Sheet.js';
@@ -10,10 +13,12 @@ import { navigation, noun, resetLocation, ruleColumns, rules, UrlProvider, type 
 import { TestProvider } from '../provider/__tests__/support/provider.js';
 import { notify, resetNotifications } from '../provider/notify.js';
 import { resetRecentsForTesting } from '../provider/recents.js';
+import { useAreas } from '../shell/areas-context.js';
 import { PageHeader } from '../shell/PageHeader.js';
 import { resetShortcutsDialog } from '../shell/shortcuts.js';
 import { resetSidebarMemoryForTesting } from '../shell/Sidebar.js';
-import { createLocation, setViewport, sidebarProps } from '../shell/__tests__/support.js';
+import { TabNav } from '../shell/TabNav.js';
+import { adminAreas, createLocation, setViewport, sidebarProps } from '../shell/__tests__/support.js';
 import { componentStylesheet } from '../styles/index.js';
 import type { ActionSpec } from '../types.js';
 import { AppShell } from '../web/AppShell.js';
@@ -23,6 +28,7 @@ import { Dialog } from '../web/Dialog.js';
 import { EmptyState } from '../web/EmptyState.js';
 import { FormField } from '../web/FormField.js';
 import { Input } from '../web/Input.js';
+import { Tabs } from '../web/Tabs.js';
 import { expectNoViolations } from '../web/__tests__/support/audit.js';
 import { activeElement, cleanupDocument, click, focus, press, render, settle, typeInto } from '../web/__tests__/support/render.js';
 
@@ -137,7 +143,7 @@ describe('buttons in a dialog’s footer', () => {
             <Button variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" disabledReason="Needs a connection">
+            <Button variant="primary" disabledReason="Needs a connection" disabledIcon="lock">
               Publish
             </Button>
           </>
@@ -179,7 +185,44 @@ describe('buttons in a dialog’s footer', () => {
     const bubble = [...dialog.querySelectorAll<HTMLElement>('*')].find((node) => node.textContent === 'Needs a connection' && !node.hidden);
     expect(bubble).toBeTruthy();
     expect(activeElement()).toBe(publish);
+    // The lock is decoration beside the words; the name stays the label.
+    expect(publish.querySelector('.itsm-Button__lock')?.getAttribute('aria-hidden')).toBe('true');
+    expect(publish.textContent).toBe('Publish');
     await expectNoViolations(document.body);
+  });
+});
+
+describe('one count, four controls', () => {
+  it('draws and speaks a count the same in a tab, a route tab, a segment and a filter pill', () => {
+    const location = createLocation('/rules');
+    render(
+      <TestProvider>
+        <location.Provider>
+          <Tabs label="Sections" items={[{ id: 'a', label: 'Rules', count: 5, content: <p>Rules</p> }]} />
+          <TabNav label="Pages" items={[{ id: 'a', label: 'Rules', href: '/rules', count: 5 }]} />
+          <SegmentedControl label="Scope" mode="value" value="a" options={[{ value: 'a', label: 'Rules', count: 5 }]} />
+          <FilterPills label="Filter" mode="nav" value="a" options={[{ value: 'a', label: 'Rules', count: 5, href: '/rules' }]} />
+        </location.Provider>
+      </TestProvider>,
+    );
+    const spoken = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+      if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return '';
+      return [...node.childNodes].map(spoken).join('');
+    };
+    const controls = [
+      document.querySelector('[role="tab"]')!,
+      document.querySelector('.itsm-TabNav a')!,
+      document.querySelector('[role="radio"]')!,
+      document.querySelector('.itsm-FilterPills a')!,
+    ];
+    expect(controls.map((control) => spoken(control))).toEqual(['Rules, 5', 'Rules, 5', 'Rules, 5', 'Rules, 5']);
+    // The current one in each carries the accent count, at the small size.
+    for (const control of controls) {
+      const count = control.querySelector('.itsm-Count')!;
+      expect(count.getAttribute('data-size')).toBe('sm');
+      expect(count.getAttribute('data-tone')).toBe('accent');
+    }
   });
 });
 
@@ -293,6 +336,46 @@ describe('the bottom edge', () => {
     // Adding the two floats a bar a home indicator's height above a tab bar.
     expect(componentStylesheet).not.toMatch(/bottom-dock-height[^;]*\+\s*var\(--itsm-safe-area-bottom\)/);
     expect(componentStylesheet).not.toMatch(/safe-area-bottom\)[^;]*\+\s*var\(--itsm-bottom-dock-height/);
+  });
+});
+
+describe('frame ↔ page header ↔ sidebar', () => {
+  it('agree on the page: the sidebar’s current item, the top bar’s title and purpose, and the page’s hidden h1', async () => {
+    setViewport(1440);
+    const location = createLocation('/rules');
+    render(
+      <location.Provider>
+        <AppShell {...sidebarProps()}>
+          <PageHeader title="Rules" purpose="Route and update tickets as they arrive" primaryAction={{ id: 'new', label: 'New rule', href: '/rules/new' }} />
+        </AppShell>
+      </location.Provider>,
+    );
+    await settle();
+    expect(document.querySelector('.itsm-Sidebar [aria-current="page"]')?.textContent).toBe('Rules3, 3 drafts');
+    expect(document.querySelector('.itsm-AppTopBar__title')?.textContent).toBe('Rules');
+    expect(document.querySelector('.itsm-AppTopBar__purpose')?.textContent).toBe('Route and update tickets as they arrive');
+    const h1 = document.querySelector('main h1')!;
+    expect(h1.className).toContain('itsm-visually-hidden-focusable');
+    // The visible row keeps the page's action: "the title is in the top bar; content starts with a toolbar row".
+    expect(document.querySelector('main .itsm-PageHeader__actions [data-action="new"]')).not.toBeNull();
+  });
+
+  it('lets a page reach the other areas through the frame’s model, never an origin of its own', async () => {
+    function OpenInDesk(): ReactNode {
+      const areas = useAreas();
+      const href = areas ? crossAreaHref(areas, 'workbench', '/tickets/INC-000004') : null;
+      return href ? <a href={href}>Open in Service Desk</a> : null;
+    }
+    setViewport(1440);
+    const location = createLocation('/tickets');
+    render(
+      <location.Provider>
+        <AppShell {...sidebarProps({ areas: adminAreas })}>
+          <OpenInDesk />
+        </AppShell>
+      </location.Provider>,
+    );
+    expect(document.querySelector('main a')?.getAttribute('href')).toBe('https://desk.example/tickets/INC-000004');
   });
 });
 

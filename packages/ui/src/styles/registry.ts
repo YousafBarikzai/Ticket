@@ -48,8 +48,12 @@ import { toastStyles } from '../web/Toast.styles.js';
 import { tooltipStyles } from '../web/Tooltip.styles.js';
 import { areaChartStyles } from '../charts/AreaChart.styles.js';
 import { barChartStyles } from '../charts/BarChart.styles.js';
+import { bulletStyles } from '../charts/Bullet.styles.js';
+import { chartCardStyles } from '../charts/ChartCard.styles.js';
 import { chartFigureStyles } from '../charts/ChartFigure.styles.js';
+import { distributionBarStyles } from '../charts/DistributionBar.styles.js';
 import { donutChartStyles } from '../charts/DonutChart.styles.js';
+import { gaugeStyles } from '../charts/Gauge.styles.js';
 import { lineChartStyles } from '../charts/LineChart.styles.js';
 import { progressRingStyles } from '../charts/ProgressRing.styles.js';
 import { sparklineStyles } from '../charts/Sparkline.styles.js';
@@ -57,6 +61,7 @@ import { statCardStyles } from '../charts/StatCard.styles.js';
 import { statGridStyles } from '../charts/StatGrid.styles.js';
 import { checkboxGroupStyles } from '../controls/CheckboxGroup.styles.js';
 import { durationFieldStyles } from '../controls/DurationField.styles.js';
+import { filterPillsStyles } from '../controls/FilterPills.styles.js';
 import { numberFieldStyles } from '../controls/NumberField.styles.js';
 import { searchFieldStyles } from '../controls/SearchField.styles.js';
 import { segmentedControlStyles } from '../controls/SegmentedControl.styles.js';
@@ -69,11 +74,20 @@ import { loadMoreStyles } from '../data/LoadMore.styles.js';
 import { olderNewerStyles } from '../data/OlderNewer.styles.js';
 import { viewMenuStyles } from '../data/ViewMenu.styles.js';
 import { activityFeedStyles } from '../display/ActivityFeed.styles.js';
+import { attentionListStyles } from '../display/AttentionList.styles.js';
 import { avatarStackStyles } from '../display/AvatarStack.styles.js';
+import { countStyles } from '../display/Count.styles.js';
+import { dashboardGridStyles } from '../display/DashboardGrid.styles.js';
+import { deltaPillStyles } from '../display/DeltaPill.styles.js';
 import { descriptionListStyles } from '../display/DescriptionList.styles.js';
 import { disclosureStyles } from '../display/Disclosure.styles.js';
 import { fileChipStyles } from '../display/FileChip.styles.js';
+import { heroCardStyles } from '../display/HeroCard.styles.js';
+import { iconTileStyles } from '../display/IconTile.styles.js';
+import { kanbanStyles } from '../display/Kanban.styles.js';
+import { priorityChipStyles } from '../display/PriorityChip.styles.js';
 import { proseStyles } from '../display/Prose.styles.js';
+import { sectionHeaderStyles } from '../display/SectionHeader.styles.js';
 import { statusPillStyles } from '../display/StatusPill.styles.js';
 import { stepperStyles } from '../display/Stepper.styles.js';
 import { surfaceStyles } from '../display/Surface.styles.js';
@@ -99,14 +113,18 @@ import { confirmDialogStyles } from '../overlays/ConfirmDialog.styles.js';
 import { conflictDialogStyles } from '../overlays/ConflictDialog.styles.js';
 import { contextMenuStyles } from '../overlays/ContextMenu.styles.js';
 import { dateRangePickerStyles } from '../overlays/DateRangePicker.styles.js';
+import { infoTipStyles } from '../overlays/InfoTip.styles.js';
 import { menuStyles } from '../overlays/Menu.styles.js';
 import { personPickerStyles } from '../overlays/PersonPicker.styles.js';
 import { popoverStyles } from '../overlays/Popover.styles.js';
 import { sheetStyles } from '../overlays/Sheet.styles.js';
 import { splitButtonStyles } from '../overlays/SplitButton.styles.js';
 import { toasterStyles } from '../overlays/Toaster.styles.js';
+import { appTopBarStyles } from '../shell/AppTopBar.styles.js';
+import { areaSwitcherStyles } from '../shell/AreaSwitcher.styles.js';
 import { bottomDockStyles } from '../shell/BottomDock.styles.js';
 import { breadcrumbsStyles } from '../shell/Breadcrumbs.styles.js';
+import { demoBarStyles } from '../shell/DemoBar.styles.js';
 import { hierNavStyles } from '../shell/HierNav.styles.js';
 import { notificationCenterStyles } from '../shell/NotificationCenter.styles.js';
 import { pageHeaderStyles } from '../shell/PageHeader.styles.js';
@@ -114,8 +132,10 @@ import { routeFocusStyles } from '../shell/RouteFocus.styles.js';
 import { routeProgressStyles } from '../shell/RouteProgress.styles.js';
 import { searchTriggerStyles } from '../shell/SearchTrigger.styles.js';
 import { shortcutsDialogStyles } from '../shell/ShortcutsDialog.styles.js';
+import { signInLayoutStyles } from '../shell/SignInLayout.styles.js';
 import { skipLinksStyles } from '../shell/SkipLinks.styles.js';
 import { splitViewStyles } from '../shell/SplitView.styles.js';
+import { systemBarStyles } from '../shell/SystemBar.styles.js';
 import { tabBarStyles } from '../shell/TabBar.styles.js';
 import { tabNavStyles } from '../shell/TabNav.styles.js';
 import { topBarStyles } from '../shell/TopBar.styles.js';
@@ -152,6 +172,7 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'web/Kbd.styles.ts', css: kbdStyles },
   { module: 'a11y/Region.styles.ts', css: regionStyles },
   { module: 'display/Surface.styles.ts', css: surfaceStyles },
+  { module: 'display/IconTile.styles.ts', css: iconTileStyles },
   { module: 'feedback/Spinner.styles.ts', css: spinnerStyles },
   { module: 'feedback/Illustration.styles.ts', css: illustrationStyles },
 
@@ -196,6 +217,7 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'controls/DurationField.styles.ts', css: durationFieldStyles },
   { module: 'controls/TimeField.styles.ts', css: timeFieldStyles },
   { module: 'controls/CheckboxGroup.styles.ts', css: checkboxGroupStyles },
+  { module: 'controls/FilterPills.styles.ts', css: filterPillsStyles },
   { module: 'formkit/Form.styles.ts', css: formStyles },
   { module: 'formkit/FormSection.styles.ts', css: formSectionStyles },
   { module: 'formkit/FormErrorSummary.styles.ts', css: formErrorSummaryStyles },
@@ -210,6 +232,8 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'feedback/ConnectionStatus.styles.ts', css: connectionStatusStyles },
   { module: 'feedback/Skeletons.styles.ts', css: skeletonsStyles },
   { module: 'display/StatusPill.styles.ts', css: statusPillStyles },
+  { module: 'display/Count.styles.ts', css: countStyles },
+  { module: 'display/DeltaPill.styles.ts', css: deltaPillStyles },
   { module: 'display/AvatarStack.styles.ts', css: avatarStackStyles },
   { module: 'display/DescriptionList.styles.ts', css: descriptionListStyles },
   { module: 'display/Disclosure.styles.ts', css: disclosureStyles },
@@ -217,9 +241,16 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'display/Stepper.styles.ts', css: stepperStyles },
   { module: 'display/FileChip.styles.ts', css: fileChipStyles },
   { module: 'display/ActivityFeed.styles.ts', css: activityFeedStyles },
+  { module: 'display/SectionHeader.styles.ts', css: sectionHeaderStyles },
+  { module: 'display/DashboardGrid.styles.ts', css: dashboardGridStyles },
+  { module: 'display/HeroCard.styles.ts', css: heroCardStyles },
+  { module: 'display/PriorityChip.styles.ts', css: priorityChipStyles },
+  { module: 'display/AttentionList.styles.ts', css: attentionListStyles },
+  { module: 'display/Kanban.styles.ts', css: kanbanStyles },
   { module: 'overlays/Menu.styles.ts', css: menuStyles },
   { module: 'overlays/ContextMenu.styles.ts', css: contextMenuStyles },
   { module: 'overlays/Popover.styles.ts', css: popoverStyles },
+  { module: 'overlays/InfoTip.styles.ts', css: infoTipStyles },
   { module: 'overlays/Sheet.styles.ts', css: sheetStyles },
   { module: 'overlays/ConfirmDialog.styles.ts', css: confirmDialogStyles },
   { module: 'overlays/ConflictDialog.styles.ts', css: conflictDialogStyles },
@@ -240,6 +271,10 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'charts/BarChart.styles.ts', css: barChartStyles },
   { module: 'charts/DonutChart.styles.ts', css: donutChartStyles },
   { module: 'charts/ProgressRing.styles.ts', css: progressRingStyles },
+  { module: 'charts/Gauge.styles.ts', css: gaugeStyles },
+  { module: 'charts/Bullet.styles.ts', css: bulletStyles },
+  { module: 'charts/DistributionBar.styles.ts', css: distributionBarStyles },
+  { module: 'charts/ChartCard.styles.ts', css: chartCardStyles },
   { module: 'charts/ChartFigure.styles.ts', css: chartFigureStyles },
   { module: 'shell/TopBar.styles.ts', css: topBarStyles },
   { module: 'shell/TabBar.styles.ts', css: tabBarStyles },
@@ -254,13 +289,18 @@ export const styleRegistry: readonly RegisteredStyles[] = [
   { module: 'shell/RouteProgress.styles.ts', css: routeProgressStyles },
   { module: 'shell/RouteFocus.styles.ts', css: routeFocusStyles },
   { module: 'shell/SkipLinks.styles.ts', css: skipLinksStyles },
+  { module: 'shell/SystemBar.styles.ts', css: systemBarStyles },
+  { module: 'shell/DemoBar.styles.ts', css: demoBarStyles },
   { module: 'shell/ShortcutsDialog.styles.ts', css: shortcutsDialogStyles },
+  { module: 'shell/AreaSwitcher.styles.ts', css: areaSwitcherStyles },
+  { module: 'shell/AppTopBar.styles.ts', css: appTopBarStyles },
 
   // Patterns: composites built from the components above.
   { module: 'web/AppShell.styles.ts', css: appShellStyles },
   { module: 'data/FilterBar.styles.ts', css: filterBarStyles },
   { module: 'data/DataTable.styles.ts', css: dataTableStyles },
   { module: 'shell/PageHeader.styles.ts', css: pageHeaderStyles },
+  { module: 'shell/SignInLayout.styles.ts', css: signInLayoutStyles },
 
   { module: 'styles/utilities.styles.ts', css: utilityStyles },
 

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { transaction, withContext } from '@itsm/platform';
 import { planService, usageService } from '@itsm/module-tenancy';
+import { ticketService } from '@itsm/module-ticket';
 import { closeHarness, contextFor, createTestTenant, deleteTestTenant, drainEvents, request, type TestTenant } from '../support/harness.js';
 
 /**
@@ -107,9 +108,8 @@ describe('what the meters count', () => {
 
   it('does not count history a migration brought in', async () => {
     const before = (await meter('tickets')).value;
-    const { ticketService } = await import('@itsm/module-ticket');
     const context = ctx();
-    await withContext(context, () =>
+    const imported = await withContext(context, () =>
       ticketService.importTicket(context, {
         title: 'Raised in 2021, somewhere else',
         status: 'closed',
@@ -118,10 +118,100 @@ describe('what the meters count', () => {
         closedAt: new Date('2021-04-09T09:15:00Z'),
       }),
     );
+    // An import that names no channel is recorded exactly as before
+    // ADR-0056, and is marked as an import either way.
+    expect(imported.sourceChannel).toBe('import');
+    expect(imported.origin).toBe('import');
     await drainEvents(tenant.id);
     // A desk that moved in on the first of the month must not spend its
     // month's allowance on its own history (ADR-0038).
     expect((await meter('tickets')).value).toBe(before);
+  });
+
+  it('refuses import as the channel of a ticket raised through the API', async () => {
+    // `import` was a channel any caller could claim, and the meter leaves that
+    // channel out: live work nobody paid for. Now only the import path marks
+    // a ticket as an import, and it does so in `origin` (ADR-0056).
+    const before = (await meter('tickets')).value;
+    const refused = await request<{ detail: string; errors?: { field: string; message: string }[] }>('/api/v1/tickets', {
+      method: 'POST',
+      token: asAdmin(),
+      body: { type: 'incident', title: 'Claims to be history', priority: 'P3', sourceChannel: 'import' },
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body.errors?.find((error) => error.field === 'sourceChannel')?.message).toMatch(/import is not a channel a new ticket can claim/);
+    expect(await read((tx) => tx.ticket.count({ where: { title: 'Claims to be history' } }))).toBe(0);
+    await drainEvents(tenant.id);
+    expect((await meter('tickets')).value).toBe(before);
+  });
+
+  it('does not count an import that records the channel the work came in on', async () => {
+    const context = ctx();
+    await withContext(context, () => usageService.recompute(context));
+    const before = (await meter('tickets')).value;
+
+    // Raised by email today and brought in today: inside this month's period,
+    // so the marker is the only thing keeping it off the meter.
+    const imported = await withContext(context, () =>
+      ticketService.importTicket(context, {
+        title: 'Raised by email this morning, migrated this afternoon',
+        status: 'in_progress',
+        externalRef: `MAIL-${Date.now()}`,
+        sourceChannel: 'email',
+        createdAt: new Date(),
+      }),
+    );
+    expect(imported.sourceChannel).toBe('email');
+    expect(imported.origin).toBe('import');
+
+    await drainEvents(tenant.id);
+    expect((await meter('tickets')).value).toBe(before);
+    // The nightly rebuild counts from the rows and must agree.
+    await withContext(context, () => usageService.recompute(context));
+    expect((await meter('tickets')).value).toBe(before);
+  });
+
+  it('still leaves out history imported before the marker existed', async () => {
+    const context = ctx();
+    await withContext(context, () => usageService.recompute(context));
+    const before = (await meter('tickets')).value;
+
+    // A ticket imported before ADR-0056 carries the channel `import` and the
+    // column's default, `native`: the channel clause is what excludes it.
+    const imported = await withContext(context, () =>
+      ticketService.importTicket(context, {
+        title: 'Imported last year, before the marker',
+        status: 'in_progress',
+        externalRef: `PRE-0056-${Date.now()}`,
+        createdAt: new Date(),
+      }),
+    );
+    await read((tx) => tx.ticket.updateMany({ where: { id: imported.id }, data: { origin: 'native' } }));
+
+    await withContext(context, () => usageService.recompute(context));
+    expect((await meter('tickets')).value).toBe(before);
+  });
+
+  it('counts a ticket raised by email, which is native work', async () => {
+    const context = ctx();
+    await withContext(context, () => usageService.recompute(context));
+    const before = (await meter('tickets')).value;
+
+    const raised = await request<{ id: string }>('/api/v1/tickets', {
+      method: 'POST',
+      token: asAdmin(),
+      body: { type: 'incident', title: 'Raised from the shared mailbox', priority: 'P3', sourceChannel: 'email' },
+    });
+    expect(raised.status).toBe(201);
+    expect(await read((tx) => tx.ticket.findFirst({ where: { id: raised.body.id }, select: { origin: true, sourceChannel: true } }))).toEqual({
+      origin: 'native',
+      sourceChannel: 'email',
+    });
+
+    await drainEvents(tenant.id);
+    expect((await meter('tickets')).value).toBe(before + 1);
+    await withContext(context, () => usageService.recompute(context));
+    expect((await meter('tickets')).value).toBe(before + 1);
   });
 
   it('rebuilds every figure it can from the rows beneath it, and says which it cannot', async () => {

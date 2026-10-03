@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { DeploymentWarnings } from '../../../components/platform/DeploymentWarnings.js';
 import { requirePlatformOperator } from '../../../server/session.js';
 
 /**
@@ -26,8 +27,18 @@ import { requirePlatformOperator } from '../../../server/session.js';
  * None of this is the security boundary. The API refuses these calls without
  * `platform.tenant.manage` whatever this layout does — no role in the shipped
  * role seed holds it. This is the console not offering what it cannot deliver.
+ *
+ * Above every page, after the gate: the deployment's warnings (D24, SPEC v3
+ * §6.5) — the signing secret and the nightly demo build — which only an
+ * operator can fix and which nothing else on screen would show. Nothing is
+ * rendered when there are none.
  */
 export default async function PlatformLayout({ children }: { children: ReactNode }): Promise<ReactNode> {
-  await requirePlatformOperator();
-  return children;
+  const { api } = await requirePlatformOperator();
+  return (
+    <>
+      <DeploymentWarnings load={() => api.platform.deploymentWarnings()} />
+      {children}
+    </>
+  );
 }

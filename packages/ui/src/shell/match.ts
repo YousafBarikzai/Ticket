@@ -17,7 +17,7 @@
  * prefix, then the longer path — so exactly one item carries
  * `aria-current="page"`.
  */
-import type { NavItem, NavMatch, NavModel } from './nav.js';
+import type { NavItem, NavMatch, NavModel, RouteTitle } from './nav.js';
 
 /** The path part of an href: no query, no fragment, no trailing slash (except the root). */
 export function hrefPath(href: string): string {
@@ -108,4 +108,26 @@ export function currentItemId<T extends { readonly id: string; readonly href: st
 /** Whether any item asks about the query, so only then does a frame read it (it costs a Suspense boundary in Next). */
 export function needsSearch(items: readonly { readonly match?: NavMatch }[]): boolean {
   return items.some((item) => typeof item.match === 'object' && Object.keys(item.match.search ?? {}).length > 0);
+}
+
+/**
+ * Whether `pathname` fits a route pattern: literal segments, `[name]` for
+ * exactly one segment, `[...name]` for one or more to the end.
+ */
+export function matchesRoutePattern(pattern: string, pathname: string): boolean {
+  const want = hrefPath(pattern).split('/').filter(Boolean);
+  const have = normalise(pathname).split('/').filter(Boolean);
+  for (let index = 0; index < want.length; index++) {
+    const part = want[index]!;
+    if (/^\[\.\.\.[^\]]+\]$/.test(part)) return have.length > index;
+    if (index >= have.length) return false;
+    if (/^\[[^\]]+\]$/.test(part)) continue;
+    if (part !== have[index]) return false;
+  }
+  return want.length === have.length;
+}
+
+/** The first route title whose pattern fits the location, for a page under no nav item (A2 §5.2.3). */
+export function currentRouteTitle(routes: readonly RouteTitle[] | undefined, pathname: string): RouteTitle | null {
+  return routes?.find((route) => matchesRoutePattern(route.pattern, pathname)) ?? null;
 }

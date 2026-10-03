@@ -8,11 +8,38 @@
  * to prevent.
  */
 
-import type { LinkType } from '@itsm/contracts';
+import type { LinkType, TicketOrigin } from '@itsm/contracts';
+import type { DemoArea, DemoPersonaKey } from '@itsm/contracts/demo';
+
+/**
+ * RFC 9457 problem details, as the API sends them, with the shared demo's
+ * extension members (`demo`, `feature`, `category`, `limit`, `reason`,
+ * `retryAfterSec`). The contracts own the shape; it is named here so a page
+ * that reads `error.problem?.feature` imports it from the same place as the
+ * rest of what the API answers.
+ */
+export type { ProblemDetails, ProblemExtensions } from '@itsm/contracts';
 
 export interface Page<T> {
   data: T[];
   nextCursor: string | null;
+}
+
+/**
+ * A page of tickets, with the filters the server applied to it.
+ *
+ * Its own type rather than a field on every `Page`, because only the ticket
+ * list echoes its filters — and a field every page seemed to have, but only
+ * one ever filled in, would invite a check that is always false.
+ */
+export interface TicketPage extends Page<Ticket> {
+  /**
+   * The `filter[…]` names the server honoured, sorted (R2). A route drops a
+   * query key it does not know without a word and answers for everything, so
+   * a page that sent a newer filter checks it is listed here — `honoured()` —
+   * before trusting the rows. Absent from an API that predates the echo.
+   */
+  applied?: string[];
 }
 
 export interface Ticket {
@@ -34,6 +61,12 @@ export interface Ticket {
   categoryId: string | null;
   orgId: string | null;
   sourceChannel: string;
+  /**
+   * How the row arrived, not how the work did (ADR-0056): `import` for history
+   * written by an import or the demo's build, `native` for everything raised
+   * here. Absent from an API that predates it.
+   */
+  origin?: TicketOrigin;
   parentId: string | null;
   dueAt: string | null;
   resolvedAt: string | null;
@@ -125,6 +158,14 @@ export interface SlaTimer {
   warningsFired: number;
   metAt: string | null;
   breachedAt: string | null;
+  /**
+   * Which cycle of an update target this is (F1): the third update owed reads
+   * "Update 3 · next due 14:30". 1 for targets that run once. Absent from an
+   * API that predates update cycles.
+   */
+  cycle?: number;
+  /** When the current cycle began; null for the first, which began at `startedAt`. */
+  cycleStartedAt?: string | null;
 }
 
 export interface SlaTimers {
@@ -140,6 +181,41 @@ export interface Me {
   teamIds: string[];
   locale: string;
   timeZone: string;
+  /** Present only in a shared-demo session; a real account never carries it. */
+  demo?: MeDemo;
+}
+
+/**
+ * Who the visitor is exploring as, in the shared demo (`GET /me` in a demo
+ * session; ADR-0054).
+ *
+ * The persona strings a page shows come from `@itsm/contracts/demo`, keyed by
+ * `persona`; this says which one and which generation of the data it is.
+ */
+export interface MeDemo {
+  persona: DemoPersonaKey;
+  /** The area this session belongs to: each persona is minted by one app only. */
+  area: DemoArea;
+  /** The data's generation; it rises at every nightly or visitor reset. */
+  generation: number;
+  /** The fictional company's name, for copy that names it. */
+  company: string;
+  /**
+   * Every feature the shared demo turns off. A control for one of these is
+   * shown disabled with `demoDisabledSentence(feature)`, never hidden, so a
+   * visitor learns the feature exists. Strings rather than `DemoFeature`: a
+   * feature this release does not know may arrive from a newer API, and a
+   * page shows what it knows (`isDemoFeature` narrows).
+   */
+  disabledFeatures: string[];
+  /** Each persona's user id in this generation: "View as requester", the people a story names. */
+  personaUserIds: Record<DemoPersonaKey, string>;
+  /**
+   * The agent persona's teams. A Help Portal ticket is offered "Open in
+   * Service Desk" only when its `groupId` is one of these, because anywhere
+   * else Alex Morgan could not open it (X-B2).
+   */
+  agentTeamIds: string[];
 }
 
 export type ConfidenceBand = 'low' | 'medium' | 'high';
@@ -334,6 +410,48 @@ export interface SessionRow {
 export interface TicketCount {
   count: number;
   capped: boolean;
+  /** The `filter[…]` names the server honoured (R2); see `TicketPage.applied`. */
+  applied?: string[];
+}
+
+/**
+ * What `GET /tickets/counts` can break a set of tickets down by (R2g).
+ *
+ * `age` buckets are `under_1d`, `1d_3d`, `3d_7d`, `7d_30d`, `over_30d`;
+ * `sla` buckets are `breached`, `due_soon`, `due_later`, `no_target`,
+ * `paused`. Both read open and paused work unless the filter names
+ * categories. Every other dimension needs `filter[statusCategory]` within
+ * `open,paused`, a `filter[sla]`, or a created or resolved window of at most
+ * 400 days — or the route answers 422, because a whole-history scan is not a
+ * question a page should be able to ask by accident.
+ */
+export type TicketCountDimension = 'priority' | 'status' | 'statusCategory' | 'type' | 'group' | 'assignee' | 'service' | 'age' | 'sla';
+
+/**
+ * A grouped count. The groups always sum to `total`, and `total` is what
+ * `GET /tickets/count` answers for the same filter and reader, so a bar and
+ * the badge beside it cannot disagree.
+ */
+export interface TicketCountsBy {
+  groupBy: TicketCountDimension;
+  /**
+   * One entry per key, in the dimension's own order (P1…P4, the status
+   * lifecycle, the buckets as listed) or largest first for teams, people and
+   * services. `null` is "none": unassigned, no team, no service. Fixed
+   * dimensions list every key, zeros included.
+   */
+  groups: { key: string | null; count: number }[];
+  total: number;
+  applied: string[];
+}
+
+/** A configuration item a record touched, as `GET /records/:entityType/:entityId/cis` lists it. */
+export interface RecordCiRow {
+  /** How the record involved it: `affected`, `cause`, … */
+  role: string;
+  linkedAt: string;
+  /** Null when the item has since been deleted; the link outlives it. */
+  ci: { id: string; name: string; status: string; criticality: string; serviceId: string | null } | null;
 }
 
 export interface CategoryRow {

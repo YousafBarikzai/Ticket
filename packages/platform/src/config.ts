@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEMO_RESET_COOLDOWN_SECONDS } from '@itsm/contracts/demo';
 
 /**
  * Runtime configuration, validated once at boot. The process refuses to start
@@ -76,6 +77,58 @@ const schema = z.object({
 
   WORKER_QUEUES: z.string().default('*'),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().default(600),
+
+  /**
+   * How long one evaluated metric answer is reused, in seconds (A8 R4c). Off
+   * by default so tests and development always read fresh facts; the deploy
+   * sets 120 for the API, where the shared demo's dashboards would otherwise
+   * send every visitor's identical query to the database (Y-M2).
+   */
+  ANALYTICS_QUERY_CACHE_SECONDS: z.coerce.number().int().min(0).max(600).default(0),
+
+  /* ---------------------------------------------------------------------------
+   * The shared demo (SPEC v3 §4.9). Every value below is a code default except
+   * `DEMO_MODE`, which the deploy sets, so a deployment that never heard of the
+   * demo runs exactly as before. None of them is a secret.
+   *
+   * `DEMO_TENANT_SLUG` is deliberately not validated here: a bad slug must not
+   * stop production from starting. The boot interlock (`demoInterlock` in
+   * `demo.ts`) refuses it instead — demo tokens end, the status route says
+   * `misconfigured`, the worker skips its demo jobs — and says so loudly.
+   * ------------------------------------------------------------------------ */
+  DEMO_MODE: z.enum(['on', 'off']).default('off'),
+  DEMO_TENANT_SLUG: z.string().default('demo'),
+  /** The operator's own tenant (`infra/scripts/bootstrap.ts`); read here so the interlock can refuse to share it with the demo. */
+  BOOTSTRAP_TENANT_SLUG: z.string().optional(),
+  /** Visitors may reset the demo once per this window; the worker writes the cooldown key with the same value. */
+  DEMO_RESET_COOLDOWN_SECONDS: z.coerce.number().int().min(60).max(86_400).default(DEMO_RESET_COOLDOWN_SECONDS),
+  /** Writes per visit per minute (429 `rate_limited`). */
+  DEMO_WRITES_PER_MINUTE: z.coerce.number().int().positive().default(30),
+  /** Writes per visit in all (429 `demo_limit`, category `writes`). */
+  DEMO_WRITES_PER_SESSION: z.coerce.number().int().positive().default(500),
+  /** Writes per IP bucket per hour: a ten-person workshop behind one NAT stays well under it. */
+  DEMO_WRITES_PER_IP_HOUR: z.coerce.number().int().positive().default(2_000),
+  /**
+   * Demo-tenant writes per hour above which the API warns and refuses only the
+   * ten busiest buckets. Never a block on everyone: one attacker must not be
+   * able to switch the demo off for every prospect (Y-M1).
+   */
+  DEMO_WRITES_ALERT_PER_HOUR: z.coerce.number().int().positive().default(20_000),
+  /** Reads per IP bucket per minute (Y-M2): the per-visit budget alone lets one address open twenty visits. */
+  DEMO_READS_PER_IP_MINUTE: z.coerce.number().int().positive().default(1_200),
+  /** The generator's seed (A4 §1.15): one seed, one story, every night. */
+  DEMO_SEED: z.coerce.number().int().min(0).max(0xffff_ffff).default(20_261_002),
+  /** Tickets and their history scale with this; people and configuration do not. 0.2 in CI and the harness. */
+  DEMO_SCALE: z.coerce.number().min(0.1).max(1).default(1),
+  /** At least 60 for the previous-period deltas, at most 150 for the holiday table (A4 §3.11). */
+  DEMO_HISTORY_DAYS: z.coerce.number().int().min(60).max(150).default(120),
+  /** A build that runs longer is abandoned; equal to the reset lock's lifetime. */
+  DEMO_BUILD_TIMEOUT_SECONDS: z.coerce.number().int().min(60).max(3_600).default(900),
+  /**
+   * Batches the build replays and reprojects at once (R3). Two, not four: the
+   * build shares `worker-data` and the database with every real tenant.
+   */
+  DEMO_BUILD_PARALLELISM: z.coerce.number().int().min(1).max(8).default(2),
 });
 
 export type PlatformConfig = z.infer<typeof schema>;

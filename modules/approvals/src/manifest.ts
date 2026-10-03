@@ -17,8 +17,8 @@ export const approvalsManifest: ModuleManifest = registerModule({
     { key: 'approval.policy.manage', scopes: ['any'], description: 'Write, publish and delegate approval policies.' },
   ],
   events: {
-    publishes: ['approval.requested', 'approval.decided'],
-    consumes: ['ticket.created', 'user.deactivated'],
+    publishes: ['approval.requested', 'approval.decided', 'approval.cancelled'],
+    consumes: ['ticket.created', 'ticket.status.changed', 'user.deactivated'],
   },
   featureFlags: [],
   settings: [

@@ -10,10 +10,13 @@
  * shows.
  */
 export {
+  type DataCellKind,
   DataTable,
   type DataTableActivate,
+  type DataTableColumn,
   type DataTablePagination,
   type DataTableProps,
+  type OverdueRule,
 } from './DataTable.js';
 export type { CellKind, ColumnSpec, DataTableScope, FilterOption, FilterSpec, FilterValue } from './types.js';
 export {

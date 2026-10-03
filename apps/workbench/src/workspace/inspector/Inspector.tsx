@@ -13,21 +13,24 @@ import { CustomFieldRows, applicableFields } from './CustomFields.js';
 import { Details, FactsOnly, saveThrough } from './Details.js';
 import './inspector.css';
 import { fieldsQuery } from './queries.js';
+import { RequesterCard } from './RequesterCard.js';
 import { SlaSection } from './SlaSection.js';
 import { Tasks, tasksOf, tasksSummary } from './Tasks.js';
 import { TriageStrip, useTriage } from './Triage.js';
 
 /**
- * The ticket inspector (SPEC §6.2, X-12): a calm column of the ticket's
- * properties beside the conversation from 800 px of workspace, and the same
- * content in a non-modal sheet (`]`, "Show details") below that.
+ * The ticket inspector (SPEC §6.2, X-12; v3 §7.1.4, A6 §5.6.5): a column of
+ * cards beside the conversation from 800 px of workspace, and the same cards
+ * in a non-modal sheet (`]`, "Show details") below that.
  *
- * Sections, each a disclosure that remembers being opened or closed on this
- * device: **Details** and **SLA** open by default — who asked and the facts
- * that route the ticket, and the clocks — then Custom fields, Connections
- * (tags, watchers, related tickets), Tasks and Assist, closed until wanted.
- * AI triage sits on the rows it would change, with a strip at the top only
- * while suggestions wait.
+ * The cards, in a fixed order — the order a ticket is worked in: **1
+ * Requester** (who asked), **2 Service levels** (every timer as a bullet),
+ * **3 Suggested triage** (only while the AI has something to say), **4
+ * Details** (the facts that route it), **5 Custom fields**, **6 Related**
+ * (linked tickets and configuration items), **7 Tasks**, **8 Effort and
+ * watchers**, **9 Assist**. The first four open by default; the rest stay
+ * closed until wanted, and each remembers being opened or closed on this
+ * device. AI triage also sits on the rows it would change.
  *
  * Every change goes through the workspace's one writer (`useTicketWorkspace`),
  * so an edit here is optimistic, carries the version the person saw, and a
@@ -46,12 +49,19 @@ export interface InspectorProps {
 
 /** Assist is loaded when its section is first opened: most tickets are worked without it. */
 const LazyAssist = lazy(() => import('../assist/Assist.js'));
+/** So is Related, which reads two lists of its own (A6 §5.6.12). */
+const LazyRelated = lazy(() => import('./RelatedCard.js'));
+
+/** The Service levels card's id: the hero's SLA block opens and focuses it. */
+export const SLA_CARD_ID = 'ticket-sla';
 
 /** Where each section's open or closed state is remembered on this device. */
 export const SECTION_KEYS = {
+  requester: 'wb.inspector.requester',
   details: 'wb.inspector.details',
   sla: 'wb.inspector.sla',
   custom: 'wb.inspector.custom',
+  related: 'wb.inspector.related',
   connections: 'wb.inspector.connections',
   tasks: 'wb.inspector.tasks',
   assist: 'wb.inspector.assist',
@@ -96,6 +106,7 @@ function InspectorBody({ ws, mode }: { readonly ws: WorkspaceApi; readonly mode:
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   /* Connections and Assist read on first opening: most tickets are worked without them, and `j`/`k` should cost one read. */
   const [connectionsOpened, setConnectionsOpened] = useState(false);
+  const [relatedOpened, setRelatedOpened] = useState(false);
   const [assistOpened, setAssistOpened] = useState(false);
 
   /** "Review": opens Details and moves to the first suggestion's Accept. */
@@ -125,20 +136,24 @@ function InspectorBody({ ws, mode }: { readonly ws: WorkspaceApi; readonly mode:
 
   return (
     <div className="app-Insp" data-mode={mode}>
-      <TriageStrip triage={triage} onReview={review} summaryText={incidentSummary(ticket, link, locale, timeZone)} />
-
-      <Disclosure ref={detailsRef} summary="Details" defaultOpen persistKey={SECTION_KEYS.details} className="app-Insp__section">
-        <Details ws={ws} triage={triage} teams={teams} categories={categories} />
+      <Disclosure summary="Requester" defaultOpen persistKey={SECTION_KEYS.requester} className="app-Insp__section" data-card="requester">
+        <RequesterCard ws={ws} />
       </Disclosure>
 
       {timers !== null ? (
-        <Disclosure summary="SLA" defaultOpen persistKey={SECTION_KEYS.sla} className="app-Insp__section">
+        <Disclosure id={SLA_CARD_ID} summary="Service levels" defaultOpen persistKey={SECTION_KEYS.sla} className="app-Insp__section" data-card="sla">
           <SlaSection timers={timers} />
         </Disclosure>
       ) : null}
 
+      <TriageStrip triage={triage} onReview={review} summaryText={incidentSummary(ticket, link, locale, timeZone)} />
+
+      <Disclosure ref={detailsRef} summary="Details" defaultOpen persistKey={SECTION_KEYS.details} className="app-Insp__section" data-card="details">
+        <Details ws={ws} triage={triage} teams={teams} categories={categories} />
+      </Disclosure>
+
       {fields.length > 0 ? (
-        <Disclosure summary={<SectionSummary label="Custom fields" count={`${fields.length}`} />} persistKey={SECTION_KEYS.custom} className="app-Insp__section">
+        <Disclosure summary={<SectionSummary label="Custom fields" count={`${fields.length}`} />} persistKey={SECTION_KEYS.custom} className="app-Insp__section" data-card="custom">
           <CustomFieldRows
             fields={fields}
             ticket={ticket}
@@ -149,9 +164,30 @@ function InspectorBody({ ws, mode }: { readonly ws: WorkspaceApi; readonly mode:
       ) : null}
 
       <Disclosure
-        summary="Connections"
+        summary="Related"
+        persistKey={SECTION_KEYS.related}
+        className="app-Insp__section"
+        data-card="related"
+        onToggle={(event) => {
+          if (event.currentTarget.open) setRelatedOpened(true);
+        }}
+      >
+        {relatedOpened ? (
+          <Suspense fallback={<SkeletonText lines={2} size="callout" />}>
+            <LazyRelated ws={ws} />
+          </Suspense>
+        ) : null}
+      </Disclosure>
+
+      <Disclosure summary={<SectionSummary label="Tasks" count={tasksSummary(tasks)} />} persistKey={SECTION_KEYS.tasks} className="app-Insp__section" data-card="tasks">
+        <Tasks ws={ws} />
+      </Disclosure>
+
+      <Disclosure
+        summary="Effort and watchers"
         persistKey={SECTION_KEYS.connections}
         className="app-Insp__section"
+        data-card="effort"
         onToggle={(event) => {
           if (event.currentTarget.open) setConnectionsOpened(true);
         }}
@@ -159,15 +195,12 @@ function InspectorBody({ ws, mode }: { readonly ws: WorkspaceApi; readonly mode:
         {connectionsOpened ? <Connections ws={ws} /> : null}
       </Disclosure>
 
-      <Disclosure summary={<SectionSummary label="Tasks" count={tasksSummary(tasks)} />} persistKey={SECTION_KEYS.tasks} className="app-Insp__section">
-        <Tasks ws={ws} />
-      </Disclosure>
-
       {can.aiRead ? (
         <Disclosure
           summary={<SectionSummary label="Assist" icon />}
           persistKey={SECTION_KEYS.assist}
           className="app-Insp__section"
+          data-card="assist"
           onToggle={(event) => {
             if (event.currentTarget.open) setAssistOpened(true);
           }}

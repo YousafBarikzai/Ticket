@@ -50,6 +50,21 @@ export interface ModuleManifest {
   enabledByDefault: boolean;
   /** Can this module be turned off for a tenant? Foundations cannot. */
   optional: boolean;
+  /**
+   * Whom the module serves. `tenant` (the default) is a product feature: each
+   * tenant records it, lists it and may turn it on or off. `platform` is the
+   * deployment's own machinery — the shared demo's nightly rebuild is the
+   * first — which registers jobs like any module but is no tenant's to see:
+   * a customer's module list that read "Demo" would be describing our
+   * operations to them, and a toggle for it would be a switch they could not
+   * meaningfully use (A4 §2.3).
+   */
+  audience?: 'tenant' | 'platform';
+}
+
+/** Whether a tenant records, lists and may toggle this module; false for the platform's own. */
+export function isTenantModule(manifest: Pick<ModuleManifest, 'audience'>): boolean {
+  return (manifest.audience ?? 'tenant') === 'tenant';
 }
 
 const registry = new Map<string, ModuleManifest>();
@@ -61,6 +76,11 @@ export function registerModule(manifest: ModuleManifest): ModuleManifest {
 
 export function modules(): ModuleManifest[] {
   return [...registry.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** The modules a tenant can have: every registered module except the platform's own. */
+export function tenantModules(): ModuleManifest[] {
+  return modules().filter(isTenantModule);
 }
 
 export function moduleById(id: string): ModuleManifest | undefined {

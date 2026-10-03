@@ -57,6 +57,7 @@ interface QueryResponse {
   groups?: { key: string | null; label: string | null; value: number | null }[];
   source: 'facts' | 'rollup';
   metric: { key: string; unit: string };
+  target?: { value: number; unit: 'percent'; source: 'setting' | 'default' };
 }
 
 describe('metrics', () => {
@@ -351,5 +352,84 @@ describe('replaying the projection', () => {
   it('is an administrator\'s action', async () => {
     const response = await request('/api/v1/analytics/replay', { method: 'POST', token: tenant.people.lead!.token, body: {} });
     expect(response.status).toBe(403);
+  });
+});
+
+describe('the SLA attainment target (S1)', () => {
+  // Every attainment gauge and bullet draws this, so no page types in 90.
+  const ask = (token: string, body: unknown) => request<QueryResponse>('/api/v1/analytics/query', { method: 'POST', token, body });
+  const write = (value: unknown) =>
+    request('/api/v1/settings/sla.attainment.target', { method: 'PUT', token: tenant.people.admin!.token, body: { value } });
+
+  it('comes with an attainment answer as 90 per cent by default', async () => {
+    const response = await ask(tenant.people.admin!.token, { metricKey: 'sla.attainment', range: '30d' });
+    expect(response.status).toBe(200);
+    expect(response.body.metric.unit).toBe('percent');
+    expect(response.body.target).toEqual({ value: 90, unit: 'percent', source: 'default' });
+  });
+
+  it('reaches a team-scoped lead, who holds no setting permission', async () => {
+    const response = await ask(tenant.people.lead!.token, { metricKey: 'sla.attainment' });
+    expect(response.status).toBe(200);
+    expect(response.body.target).toEqual({ value: 90, unit: 'percent', source: 'default' });
+    const setting = await request(`/api/v1/settings/sla.attainment.target`, { token: tenant.people.lead!.token });
+    expect(setting.status).toBe(403);
+  });
+
+  it('comes with no other metric, a series and a breakdown of attainment included', async () => {
+    for (const metricKey of ['tickets.created', 'sla.breaches', 'tickets.breached']) {
+      const response = await ask(tenant.people.admin!.token, { metricKey });
+      expect(response.status, metricKey).toBe(200);
+      expect('target' in response.body, metricKey).toBe(false);
+    }
+    const series = await ask(tenant.people.admin!.token, { metricKey: 'sla.attainment', series: true });
+    expect(series.body.target?.value).toBe(90);
+    const breakdown = await ask(tenant.people.admin!.token, { metricKey: 'sla.attainment', groupBy: 'priority' });
+    expect(breakdown.body.target?.value).toBe(90);
+  });
+
+  it('is a setting between 50 and 100 per cent', async () => {
+    for (const refused of [49, 100.5, 101, '95', null]) {
+      const response = await write(refused);
+      expect(response.status, String(refused)).toBe(422);
+    }
+    const unchanged = await ask(tenant.people.admin!.token, { metricKey: 'sla.attainment' });
+    expect(unchanged.body.target).toEqual({ value: 90, unit: 'percent', source: 'default' });
+  });
+
+  it('follows the tenant\'s setting once it is written, for every reader', async () => {
+    expect((await write(95)).status).toBe(200);
+    for (const persona of ['admin', 'lead'] as const) {
+      const response = await ask(tenant.people[persona]!.token, { metricKey: 'sla.attainment' });
+      expect(response.body.target, persona).toEqual({ value: 95, unit: 'percent', source: 'setting' });
+    }
+    // The bounds themselves are allowed.
+    expect((await write(50)).status).toBe(200);
+    expect((await write(100)).status).toBe(200);
+    expect((await ask(tenant.people.admin!.token, { metricKey: 'sla.attainment' })).body.target?.value).toBe(100);
+    expect((await write(95)).status).toBe(200);
+  });
+
+  it('comes with the attainment widget of a rendered dashboard, and the forecast\'s answer', async () => {
+    const list = await request<{ data: { id: string; key: string }[] }>('/api/v1/analytics/dashboards', { token: tenant.people.admin!.token });
+    const overview = list.body.data.find((row) => row.key === 'service-desk')!;
+    const render = await request<{ widgets: { metricKey: string; result?: QueryResponse }[] }>(`/api/v1/analytics/dashboards/${overview.id}/render`, {
+      token: tenant.people.admin!.token,
+    });
+    expect(render.status).toBe(200);
+    const attainment = render.body.widgets.filter((widget) => widget.metricKey === 'sla.attainment');
+    expect(attainment.length).toBeGreaterThan(0);
+    for (const widget of attainment) expect(widget.result?.target).toEqual({ value: 95, unit: 'percent', source: 'setting' });
+    for (const widget of render.body.widgets.filter((one) => one.metricKey !== 'sla.attainment')) {
+      expect(widget.result && 'target' in widget.result, widget.metricKey).toBe(false);
+    }
+
+    const forecast = await request<{ result: QueryResponse }>('/api/v1/analytics/forecast', {
+      method: 'POST',
+      token: tenant.people.admin!.token,
+      body: { metricKey: 'sla.attainment', range: '30d', horizonDays: 7 },
+    });
+    expect(forecast.status).toBe(200);
+    expect(forecast.body.result.target?.value).toBe(95);
   });
 });

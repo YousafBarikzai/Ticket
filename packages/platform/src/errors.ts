@@ -1,4 +1,4 @@
-import type { ProblemDetails } from '@itsm/contracts';
+import type { ProblemDetails, ProblemExtensions } from '@itsm/contracts';
 
 /**
  * Typed domain errors. Services throw these; one handler in the API maps them
@@ -14,6 +14,21 @@ export abstract class DomainError extends Error {
     super(message);
     this.name = new.target.name;
     if (fieldErrors) this.fieldErrors = fieldErrors;
+  }
+
+  /**
+   * RFC 9457 extension members for this problem. Most errors have none; the
+   * shared demo's carry the facts a client words its sentence from (`feature`,
+   * `category`, `reason`), so what a visitor reads never depends on parsing
+   * the API's English (SPEC v3 §4.4).
+   */
+  problemExtensions(): ProblemExtensions | undefined {
+    return undefined;
+  }
+
+  /** The problem's `title`: the code in words, unless a subclass has a better one. */
+  problemTitle(): string {
+    return this.code.replace(/_/g, ' ');
   }
 }
 
@@ -79,6 +94,16 @@ export class RateLimitedError extends DomainError {
   constructor(public readonly retryAfterSeconds: number) {
     super('rate limit exceeded');
   }
+
+  /**
+   * The wait in the body as well as in `Retry-After`: a browser client behind
+   * the BFF proxy cannot always read a response header, and "Try again in
+   * 20 s" needs the number.
+   */
+  override problemExtensions(): ProblemExtensions | undefined {
+    if (!Number.isFinite(this.retryAfterSeconds)) return undefined;
+    return { retryAfterSec: Math.max(0, Math.ceil(this.retryAfterSeconds)) };
+  }
 }
 
 export class DependencyUnavailableError extends DomainError {
@@ -86,6 +111,22 @@ export class DependencyUnavailableError extends DomainError {
   readonly code = 'dependency_unavailable';
   constructor(dependency: string) {
     super(`${dependency} is unavailable`);
+  }
+}
+
+/**
+ * A query ran past the statement timeout its transaction set and the
+ * database stopped it. 503 rather than 500: nothing is broken, the request
+ * asked for more than this caller may spend at once, and the same request a
+ * moment later (or narrower) can succeed. Raised for shared-demo transactions,
+ * whose five-second limit keeps one visitor's heavy query from slowing every
+ * real tenant on the same database (Y-M2).
+ */
+export class QueryTimeoutError extends DomainError {
+  readonly status = 503;
+  readonly code = 'query_timeout';
+  constructor() {
+    super('the query took too long and was stopped; try a narrower request');
   }
 }
 
@@ -124,15 +165,34 @@ export class MissingTenantContextError extends DomainError {
   }
 }
 
+/**
+ * The extension members a problem may carry, in the order they are written.
+ * A subclass's `problemExtensions()` is read through this list, so it can add
+ * the members `problemDetailsSchema` knows and can never overwrite `status`,
+ * `type` or the correlation id.
+ */
+const EXTENSION_KEYS = ['demo', 'feature', 'category', 'limit', 'reason', 'retryAfterSec'] as const satisfies readonly (keyof ProblemExtensions)[];
+
+function extensionsOf(error: DomainError): ProblemExtensions {
+  const raw = error.problemExtensions();
+  if (!raw) return {};
+  const out: Record<string, unknown> = {};
+  for (const key of EXTENSION_KEYS) {
+    if (raw[key] !== undefined) out[key] = raw[key];
+  }
+  return out as ProblemExtensions;
+}
+
 export function toProblemDetails(error: unknown, correlationId: string, instance?: string): ProblemDetails {
   const base = { correlationId, ...(instance ? { instance } : {}) };
   if (error instanceof DomainError) {
     return {
       type: `https://docs.itsm.example/problems/${error.code}`,
-      title: error.code.replace(/_/g, ' '),
+      title: error.problemTitle(),
       status: error.status,
       detail: error.message,
       ...(error.fieldErrors ? { errors: error.fieldErrors } : {}),
+      ...extensionsOf(error),
       ...base,
     };
   }

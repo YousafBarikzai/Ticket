@@ -21,27 +21,35 @@ JSON cannot, because something reads it.
 | 2 | `worker-events` | `worker` | no | 2 | `WORKER_QUEUES=events` |
 | 2 | `worker-engine` | `worker` | no | 2 | `WORKER_QUEUES=engine` |
 | 2 | `worker-comms` | `worker` | no | 2 | `WORKER_QUEUES=comms`, `EMAIL_TRANSPORT`, `SMTP_URL` |
-| 2 | `worker-data` | `worker` | no | 1 | `WORKER_QUEUES=data` |
-| 3 | `api` | `api` | `api.` | 2 | `API_PORT`, `DATABASE_URL_APP`, `DATABASE_URL_PLATFORM`, `REDIS_URL`, `OIDC_ISSUER` |
-| 4 | `portal` | `portal` | `help.` | 2 | the three `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*`, `PORTAL_CHANNELS` |
-| 4 | `workbench` | `workbench` | `desk.` | 2 | the three `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*` |
-| 4 | `admin` | `admin` | `admin.` | 1 | the three `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*` |
+| 2 | `worker-data` | `worker` | no | 1 | `WORKER_QUEUES=data`, `DEMO_MODE` |
+| 3 | `api` | `api` | `api.` | 2 | `API_PORT`, `DATABASE_URL_APP`, `DATABASE_URL_PLATFORM`, `REDIS_URL`, `OIDC_ISSUER`, `DEMO_MODE` |
+| 4 | `portal` | `portal` | `help.` | 2 | the four `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*`, `PORTAL_CHANNELS`, `DEMO_MODE` |
+| 4 | `workbench` | `workbench` | `desk.` | 2 | the four `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*`, `DEMO_MODE` |
+| 4 | `admin` | `admin` | `admin.` | 1 | the four `*_ORIGIN`s, `API_BASE_URL`, `REDIS_URL`, `OIDC_*`, `DEMO_MODE` |
+| 4 | `site` | `site` | `www.` | 1 | the four `*_ORIGIN`s, `API_BASE_URL`, `DEMO_MODE` — nothing set by hand: no session, no database, no secret (`docs/runbooks/public-site.md`) |
 | — | `keycloak` | upstream image | `auth.` | 2 | own PostgreSQL |
 | — | `meilisearch` | upstream image | no | 1 | `MEILI_MASTER_KEY`, persistent volume |
 | — | `postgres`, `postgres-keycloak`, `redis` | managed | no | — | — |
 
-The three web applications hold no build-time configuration at all: there is no
-`NEXT_PUBLIC_` anything in `packages/bff` on purpose, so one image per commit
-runs unchanged in a preview, in staging and in production, and the only thing
-that differs is the environment it is given.
+The four web services — the three applications and the public site — hold no
+build-time configuration at all: there is no `NEXT_PUBLIC_` anything in
+`packages/bff` on purpose, and the site reads its origins per request, so one
+image per commit runs unchanged in a preview, in staging and in production, and
+the only thing that differs is the environment it is given.
 
-Every web application is given all three origins — `PORTAL_ORIGIN`,
-`WORKBENCH_ORIGIN` and `ADMIN_ORIGIN` — not only its own, because each one links
-to the others (the app switcher, "Open in Workbench", "View as requester", the
-portal links in an agent's reply). Each BFF still checks requests against its
-own origin only. The three share a phase and are deployed in two passes,
+Every web service is given all four origins — `PORTAL_ORIGIN`,
+`WORKBENCH_ORIGIN`, `ADMIN_ORIGIN` and `SITE_ORIGIN` — not only its own, because
+each one links to the others (the area switcher, "Open in Service Desk", the
+portal links in an agent's reply, and every link on the public site). Each BFF
+still checks requests against its own origin only, so `SITE_ORIGIN` is inert to
+the apps' origin checks. The four share a phase and are deployed in two passes,
 hostnames first and variables second, so none of them is given a sibling's
 origin before that sibling has one. The API is given none of them.
+
+`DEMO_MODE=on` is set on exactly the six services that read it — `api`,
+`worker-data`, `portal`, `workbench`, `admin` and `site` — and a test holds the
+catalogue to that list. Turning the demo off is changing all six to `off` and
+deploying.
 
 `PORTAL_CHANNELS` is set on the portal alone, from the GitHub variable of the
 same name (`email,teams,slack`, say). Unset or empty, the deploy leaves the
@@ -120,15 +128,23 @@ them is a workflow that could do them to the wrong environment.
 
    Each must be created **from an image, not from this GitHub repository**. A
    Railway service pointed at the repo tries to build it with Railpack, which
-   cannot pick one application out of a pnpm workspace holding three Next.js
+   cannot pick one application out of a pnpm workspace holding four Next.js
    apps, an API and a worker — and should not have to, because CI has already
    built, scanned and pushed the images. There is deliberately no root
    `Dockerfile`, `railway.json` or `nixpacks.toml` for it to find.
 
 5. **A registry credential**, because the GHCR packages are private by default.
    Railway needs a GitHub personal access token with `read:packages`, or the
-   packages need making public. Without it every deploy fails on the pull with
-   an authentication error that names neither the cause nor the fix.
+   packages need making public. A new package — `ticket/site`, the first time
+   its image is pushed — starts private too.
+
+   The deploy now asks first: before it touches Railway it checks that every
+   image it is about to set can be pulled anonymously. A refusal stops the
+   deploy, naming the package and the fix, but only for a service the deploy
+   would create; for a service that already exists it is a `::warning`,
+   because that service may hold a credential. If Railway pulls every image
+   with a credential, set the repository variable `DEPLOY_SKIP_PULL_CHECK` to
+   `1` and the check is skipped.
 6. **DNS and Cloudflare** for the subdomains in the table (doc 16 §2). The
    deploy creates the custom domain on the Railway side; the CNAME is yours.
 
@@ -238,7 +254,10 @@ triaged by JEV only once its list includes `us`.
   every run.
 
   What runs there now is `post-deploy-check.ts`: every public service answers
-  its health path, and the API reports which of its own dependencies it has. A
+  its health path, and the API reports which of its own dependencies it has.
+  Two things it reports without failing: the API's readiness `warnings` (the
+  public development signing secret) and the public site's links into each
+  app, read from its chooser page. A
   real ticket through a deployed API needs a tenant, a credential and a way to
   clean up after itself, and none of those exist yet. The walking skeleton is
   unchanged and still worth running — `pnpm skeleton`, against a local stack,

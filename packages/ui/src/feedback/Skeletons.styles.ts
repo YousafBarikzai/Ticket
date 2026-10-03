@@ -4,13 +4,17 @@ import { css, layer, mq } from '../styles/css.js';
  * The skeleton family: the frames the bones sit in, the page layouts, and the
  * delayed status.
  *
- * Framed placeholders — a card, a stat, a page's panel — are the same raised
- * surface as the thing they stand in for (`2xl` corners, `xs` elevation), and
- * fade in after the same 200 ms delay as the bones (`itsm-skeleton-reveal`,
- * from `web/Skeleton.styles.ts`), so nothing at all appears for a fast
- * response. Page layouts adapt to their container, not the window: a
- * dashboard's four stats are two by two in a narrow column, the inbox skeleton
- * drops its detail pane below 48 rem.
+ * Framed placeholders — a card, a chart card, a KPI tile, a page's panel —
+ * are the same surface as the thing they stand in for, at its final size: the
+ * v3 card's 1 px `border.subtle` edge with no resting shadow (border-first,
+ * v3 §2.9), radius 12 (the hero 16), the tile at 124 px, a chart card at the
+ * height it is given. They fade in after the same 200 ms delay as the bones
+ * (`itsm-skeleton-reveal`, from `web/Skeleton.styles.ts`), so nothing at all
+ * appears for a fast response. Page layouts adapt to their container, not
+ * the window: the dashboard's six tiles are two, three or six across like
+ * `StatGrid columns={6}`, its chart cards stack below 48 rem, the board shows
+ * as many columns as fit, and the inbox skeleton drops its detail pane below
+ * 48 rem.
  *
  * The status (SPEC §4.5): its words are `visibility: hidden` until an
  * animation with a zero duration and a delay flips them — the loading
@@ -71,9 +75,10 @@ export const skeletonsStyles = layer(
 .itsm-SkeletonStat,
 .itsm-SkeletonPage__panel {
   box-sizing: border-box;
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   border-radius: var(--itsm-radius-2xl);
   background: var(--itsm-colour-surface-raised);
-  box-shadow: var(--itsm-elevation-xs), var(--itsm-edge-highlight);
+  box-shadow: var(--itsm-edge-highlight);
   animation: itsm-skeleton-reveal var(--itsm-duration-normal) var(--itsm-easing-standard) 200ms both;
 }
 
@@ -82,14 +87,38 @@ export const skeletonsStyles = layer(
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-md);
-  padding: var(--itsm-space-lg);
+  padding: var(--itsm-card-padding);
+}
+
+.itsm-SkeletonCard__head,
+.itsm-SkeletonCard__lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+}
+
+.itsm-SkeletonChartCard__plot {
+  flex: 1 1 auto;
+  min-block-size: 6rem;
 }
 
 .itsm-SkeletonStat {
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-sm);
-  padding: var(--itsm-space-md) var(--itsm-space-lg);
+  min-block-size: 7.75rem;
+  padding: var(--itsm-space-md);
+}
+
+.itsm-SkeletonStat__value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs);
+}
+
+.itsm-SkeletonStat__context {
+  margin-block-start: auto;
 }
 
 /* ------------------------------------------------------------- Tables and lists */
@@ -238,7 +267,97 @@ export const skeletonsStyles = layer(
 .itsm-SkeletonPage__stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--itsm-space-md);
+  gap: var(--itsm-space-sm);
+}
+
+.itsm-SkeletonPage__dashboardToolbar {
+  min-block-size: 2.75rem;
+}
+
+.itsm-SkeletonPage__toolbarEnd {
+  margin-inline-start: auto;
+}
+
+.itsm-SkeletonPage__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-lg);
+  min-block-size: 10.5rem;
+  padding: var(--itsm-space-lg);
+  border-radius: var(--itsm-radius-3xl);
+}
+
+.itsm-SkeletonPage__panel.itsm-SkeletonPage__hero {
+  padding: var(--itsm-space-lg);
+}
+
+.itsm-SkeletonPage__heroAside {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--itsm-space-sm);
+  padding-inline-start: var(--itsm-space-lg);
+  border-inline-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+}
+
+.itsm-SkeletonPage__board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(15rem, 1fr)) repeat(2, 3.5rem);
+  gap: var(--itsm-space-sm);
+  align-items: start;
+  overflow: hidden;
+}
+
+.itsm-SkeletonPage__column,
+.itsm-SkeletonPage__strip {
+  box-sizing: border-box;
+  min-block-size: 16.25rem;
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-2xl);
+  background: var(--itsm-colour-surface-raisedAlt);
+  animation: itsm-skeleton-reveal var(--itsm-duration-normal) var(--itsm-easing-standard) 200ms both;
+}
+
+.itsm-SkeletonPage__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  padding: 0 var(--itsm-space-xs) var(--itsm-space-xs);
+}
+
+.itsm-SkeletonPage__columnHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-xs);
+  min-block-size: 2.75rem;
+  padding-inline: var(--itsm-space-2xs);
+}
+
+.itsm-SkeletonPage__ghostCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  padding: var(--itsm-space-sm) var(--itsm-space-sm) var(--itsm-space-sm) var(--itsm-space-md);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-item);
+  background: var(--itsm-colour-surface-raised);
+  box-shadow: var(--itsm-elevation-xs);
+}
+
+.itsm-SkeletonPage__ghostFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-start: var(--itsm-space-2xs);
+}
+
+.itsm-SkeletonPage__strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  padding-block: var(--itsm-space-sm);
 }
 
 .itsm-SkeletonPage__narrow {
@@ -318,9 +437,26 @@ export const skeletonsStyles = layer(
   display: none;
 }
 
-@container (min-width: 48rem) {
+@container (min-width: 35rem) {
   .itsm-SkeletonPage__stats {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 45rem) {
+  .itsm-SkeletonPage__stats,
+  .itsm-SkeletonPage__board {
+    gap: var(--itsm-space-md);
+  }
+}
+
+@container (min-width: 48rem) {
+  .itsm-SkeletonPage__hero {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+
+  .itsm-SkeletonPage__heroAside {
+    display: flex;
   }
 
   .itsm-SkeletonPage__columns {
@@ -337,6 +473,15 @@ export const skeletonsStyles = layer(
 }
 
 @container (min-width: 60rem) {
+  .itsm-SkeletonPage__stats {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .itsm-SkeletonPage__stats,
+  .itsm-SkeletonPage__board {
+    gap: var(--itsm-space-ml);
+  }
+
   .itsm-SkeletonPage__split {
     grid-template-columns: minmax(0, 1fr) var(--itsm-inspector-width);
   }
@@ -346,8 +491,11 @@ ${mq.forcedColors} {
   .itsm-SkeletonCard,
   .itsm-SkeletonStat,
   .itsm-SkeletonPage__panel,
+  .itsm-SkeletonPage__column,
+  .itsm-SkeletonPage__strip,
+  .itsm-SkeletonPage__ghostCard,
   .itsm-SkeletonStatus__still {
-    border: var(--itsm-hairline) solid CanvasText;
+    border: var(--itsm-border-hair) solid CanvasText;
   }
 }
 `,

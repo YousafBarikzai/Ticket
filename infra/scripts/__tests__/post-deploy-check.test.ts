@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { check, parseHosts, probesFor, readinessDetail } from '../post-deploy-check.js';
+import { anchorsIn, check, parseHosts, probesFor, readinessDetail, readinessWarnings, siteLinkWarnings } from '../post-deploy-check.js';
 
 /**
  * The check that replaced a check that could not run.
@@ -46,6 +46,12 @@ describe('what gets probed', () => {
     // calls healthy and this calls broken would be a week of confusion.
     expect(probesFor({ workbench: 'https://w' })[0]!.url).toBe('https://w/api/health');
     expect(probesFor({ admin: 'https://a' })[0]!.url).toBe('https://a/api/health');
+    expect(probesFor({ site: 'https://s' })[0]!.url).toBe('https://s/api/health');
+  });
+
+  it('probes the public site\'s liveness with the applications', () => {
+    const probes = probesFor({ ...HOSTS, site: 'https://site-x.up.railway.app' });
+    expect(probes.map((one) => `${one.service}:${one.kind}`)).toEqual(['api:live', 'portal:live', 'site:live', 'api:ready']);
   });
 
   it('refuses a public service it has not been taught about', () => {
@@ -123,5 +129,117 @@ describe('the hosts it is given', () => {
     // Defensible, and worth a test so it stays deliberate: `{}` means no public
     // service got a hostname, which the deploy would already have failed on.
     expect(probesFor({})).toEqual([]);
+  });
+});
+
+describe('the readiness warnings (D24)', () => {
+  it('turns the default signing secret into an annotation that names the runbook', () => {
+    expect(readinessWarnings({ status: 'ready', checks: { database: 'ok' }, warnings: ['dev_token_secret_default'] })).toEqual([
+      '::warning title=Signing secret::DEV_TOKEN_SECRET is the public development default on the API. See docs/runbooks/first-production-deploy.md, "The signing secret".',
+    ]);
+    expect(readinessWarnings({ warnings: ['dev_token_secret_short'] })[0]).toMatch(/shorter than 32 characters/);
+  });
+
+  it('says nothing when there are no warnings, and never interprets what it does not know', () => {
+    expect(readinessWarnings({ status: 'ready', checks: { database: 'ok' } })).toEqual([]);
+    expect(readinessWarnings(null)).toEqual([]);
+    expect(readinessWarnings({ warnings: 'dev_token_secret_default' })).toEqual([]);
+    // An unknown code is named, with anything that could write the log masked.
+    expect(readinessWarnings({ warnings: ['new_code', { code: 'x::error::y' }, 42] })).toEqual([
+      '::warning title=Readiness::The API reports a configuration warning: new_code.',
+      '::warning title=Readiness::The API reports a configuration warning: x??error??y.',
+    ]);
+  });
+
+  it('never fails the check: a 200 with warnings is a passing deployment', async () => {
+    const outcomes = await check(
+      { api: 'https://api-x.up.railway.app' },
+      answering(() => 200, () => ({ status: 'ready', checks: { database: 'ok', redis: 'ok', modules: 'ok' }, warnings: ['dev_token_secret_default'] })),
+    );
+    expect(outcomes.every((outcome) => outcome.ok)).toBe(true);
+    const ready = outcomes.find((outcome) => outcome.probe.kind === 'ready')!;
+    expect(readinessWarnings(ready.body)).toHaveLength(1);
+  });
+});
+
+describe('the public site\'s links (warn-only)', () => {
+  const ORIGINS = {
+    site: 'https://www.example.com',
+    portal: 'https://help.example.com',
+    workbench: 'https://desk.example.com',
+    admin: 'https://admin.example.com',
+  };
+
+  /** A chooser page as React renders it: attributes quoted, `&` written as `&amp;`. */
+  function chooser({ demo = true, missing = [] as string[], rel = 'nofollow' } = {}): string {
+    const apps = [
+      ['portal', 'employee'],
+      ['workbench', 'agent'],
+      ['admin', 'admin'],
+    ] as const;
+    const links = apps
+      .filter(([app]) => !missing.includes(app))
+      .flatMap(([app, persona]) => [
+        `<a href="${ORIGINS[app]}/api/session/login?account=1&amp;redirectTo=%2Fresume" class="app-AreaRow">x</a>`,
+        ...(demo ? [`<a rel="${rel}" data-persona="${persona}" href="${ORIGINS[app]}/demo?persona=${persona}&amp;demo=1">y</a>`] : []),
+      ]);
+    return `<!doctype html><html lang="en-GB" data-demo="${demo ? 'on' : 'off'}"><body><main>${links.join('')}</main></body></html>`;
+  }
+
+  function serving(html: string, status = 200): typeof fetch {
+    return vi.fn(async () => ({ ok: status === 200, status, text: async () => html }) as Response) as unknown as typeof fetch;
+  }
+
+  it('reads the chooser at /sign-in?start=demo', async () => {
+    const fetcher = serving(chooser());
+    expect(await siteLinkWarnings(ORIGINS, fetcher)).toEqual([]);
+    expect(vi.mocked(fetcher).mock.calls[0]![0]).toBe('https://www.example.com/sign-in?start=demo');
+  });
+
+  it('is silent when every app has its sign-in row and its role button', async () => {
+    expect(await siteLinkWarnings(ORIGINS, serving(chooser()))).toEqual([]);
+    expect(await siteLinkWarnings(ORIGINS, serving(chooser({ demo: false })))).toEqual([]);
+  });
+
+  it('names the origin the site is missing', async () => {
+    const warnings = await siteLinkWarnings(ORIGINS, serving(chooser({ missing: ['workbench'] })));
+    expect(warnings).toEqual([
+      '::warning title=Site links::The site has no sign-in link to the Service Desk (https://desk.example.com/api/session/login?account=1&redirectTo=%2Fresume). Is WORKBENCH_ORIGIN set on the site service?',
+      '::warning title=Site links::The demo is on but the site has no role button into the Service Desk (https://desk.example.com/demo?persona=agent&demo=1). Is WORKBENCH_ORIGIN set on the site service?',
+    ]);
+  });
+
+  it('flags a role button that would drop the Referer or invite a crawler', async () => {
+    const noreferrer = await siteLinkWarnings(ORIGINS, serving(chooser({ rel: 'nofollow noreferrer' })));
+    expect(noreferrer).toHaveLength(3);
+    expect(noreferrer[0]).toMatch(/rel="noreferrer", which stops \/demo from opening in one click/);
+    const followed = await siteLinkWarnings(ORIGINS, serving(chooser({ rel: '' })));
+    expect(followed.every((line) => line.includes('missing rel="nofollow"'))).toBe(true);
+    expect(followed).toHaveLength(3);
+  });
+
+  it('checks only the apps the deploy published, and nothing without a site', async () => {
+    expect(await siteLinkWarnings({ site: ORIGINS.site, portal: ORIGINS.portal }, serving(chooser({ missing: ['workbench', 'admin'] })))).toEqual([]);
+    const fetcher = serving('');
+    expect(await siteLinkWarnings({ api: 'https://api.example.com' }, fetcher)).toEqual([]);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('warns, and never throws, when the page is not there to read', async () => {
+    expect(await siteLinkWarnings(ORIGINS, serving('', 404))).toEqual([
+      "::warning title=Site links::https://www.example.com/sign-in?start=demo answered 404, so the site's links into the product were not checked.",
+    ]);
+    const down = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    expect((await siteLinkWarnings(ORIGINS, down))[0]).toMatch(/did not answer \(fetch failed\)/);
+  });
+
+  it('reads anchors the way a browser reads the attributes', () => {
+    expect(anchorsIn(`<a class="x" href="https://h/a?b=1&amp;c=2" rel="nofollow NoReferrer">t</a><a href='/x'>u</a><a name="n">v</a><A HREF=/y>w</A>`)).toEqual([
+      { href: 'https://h/a?b=1&c=2', rel: ['nofollow', 'noreferrer'] },
+      { href: '/x', rel: [] },
+      { href: '/y', rel: [] },
+    ]);
   });
 });

@@ -98,7 +98,23 @@ export interface TriageView {
   /** Only to read and dismiss (a ticket's type is fixed when it is raised). */
   readonly notes: readonly TriageSuggestionItem[];
   readonly warning: TriageSuggestionItem | null;
+  /**
+   * Written into the demo by its build, not by a provider (A4 §1.14, D13):
+   * the card says "Sample" so a visitor never mistakes it for a live call.
+   */
+  readonly sample: boolean;
 }
+
+/** The provider name the demo's build writes its triage decisions under. */
+export const SAMPLE_PROVIDER = 'sample';
+
+/** Whether a decision is one of the demo's samples rather than a provider's answer. */
+export function isSampleProvider(provider: string | null | undefined): boolean {
+  return provider === SAMPLE_PROVIDER;
+}
+
+/** What the "Sample" badge's info says (A6 §5.6.5 row 3). */
+export const SAMPLE_NOTE = 'This is a sample decision written into the demo; no AI provider was called.';
 
 export function triageView(triage: TriageSuggestion | null | undefined, handled: ReadonlySet<string> = new Set()): TriageView | null {
   if (!triage) return null;
@@ -120,7 +136,7 @@ export function triageView(triage: TriageSuggestion | null | undefined, handled:
     const row = rowOf(item.question);
     if (row && !handled.has(item.question)) applied[row] = item;
   }
-  const view: TriageView = { decisionId: triage.decisionId, acceptable, pending, applied, notes, warning };
+  const view: TriageView = { decisionId: triage.decisionId, acceptable, pending, applied, notes, warning, sample: isSampleProvider(triage.provider) };
   return isEmptyView(view) ? null : view;
 }
 

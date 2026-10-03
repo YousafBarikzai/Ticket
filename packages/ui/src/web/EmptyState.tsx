@@ -31,6 +31,12 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
   readonly onAction?: (id: string) => void;
   /** Anything that belongs under the description: the "Available offline" list of the offline page. */
   readonly children?: ReactNode;
+  /**
+   * `dashed` draws the state as a page-level placeholder: a 1 px dashed edge
+   * at a card's radius, for an empty page or a route that is not there
+   * (`(desk)/not-found.tsx`). `none` (default) inside a card or list.
+   */
+  readonly frame?: 'none' | 'dashed';
   readonly className?: string;
   readonly ref?: Ref<HTMLDivElement>;
 }
@@ -65,12 +71,15 @@ const illustrationTones: Readonly<Record<EmptyStateTone, IllustrationTone | unde
 /**
  * What a place looks like with nothing in it, and why — never a blank area.
  *
- * `sm`/`md`: a 32 px icon in a tinted circle, the title, one sentence and at
- * most one call to action (SPEC §4.10). `lg`: a line illustration for a whole
- * page — first run, offline, not found, forbidden. The tone picks the icon
- * and tint: a quiet grey for "nothing yet" and "no match", green for "all
- * done", red for an error, which is also `role="alert"` because it is news the
- * person did not ask for; an empty list after a deliberate filter is not.
+ * `md`: a 24 px icon in a 48 px tinted disc, the title, one sentence and at
+ * most one call to action; `sm` the same at 18 in 36, for a card or a table
+ * (v3 §2.13). `lg`: a line illustration for a whole page — first run,
+ * offline, not found, forbidden. The tone picks the icon and the disc's tint:
+ * the brand tint for "nothing yet" (the PMO look: an empty place is an
+ * invitation), a quiet grey for "no match", "no access" and "offline", green
+ * for "all done", red for an error, which is also `role="alert"` because it
+ * is news the person did not ask for; an empty list after a deliberate filter
+ * is not.
  *
  * A page never returns a bare empty state: the page header's `h1` always
  * renders, and this heading is a 2 (3 inside a card) beneath it.
@@ -87,6 +96,7 @@ export function EmptyState({
   secondaryAction,
   onAction,
   children,
+  frame = 'none',
   className,
   ref,
   ...rest
@@ -105,6 +115,7 @@ export function EmptyState({
       role={tone === 'error' ? 'alert' : undefined}
       data-size={size}
       data-tone={tone}
+      {...(frame === 'dashed' ? { 'data-frame': 'dashed' } : {})}
     >
       {drawing ? (
         <StateIllustration
@@ -115,7 +126,7 @@ export function EmptyState({
         />
       ) : (
         <span className="itsm-EmptyState__icon" aria-hidden="true">
-          <Icon name={icon ?? toneIcons[tone]} size={size === 'sm' ? 'xl' : '2xl'} />
+          <Icon name={icon ?? toneIcons[tone]} size={size === 'sm' ? 'md' : 'xl'} />
         </span>
       )}
       <div className="itsm-EmptyState__text">

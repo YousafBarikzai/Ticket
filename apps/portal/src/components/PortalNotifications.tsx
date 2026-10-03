@@ -8,7 +8,8 @@ import { api } from '../client/api.js';
 import { reportSessionEnded } from '../client/useAction.js';
 
 /**
- * The bell (SPEC §4.9, C §3.11), live through the frame's one stream.
+ * The bell (SPEC §4.9, C §3.11; v3 §2.15's `NotificationCenter`), live
+ * through the frame's one stream.
  *
  * The count comes from the same call the panel lists: fetched when the frame
  * mounts, again whenever a `notification` notice arrives or the stream
@@ -24,6 +25,9 @@ import { reportSessionEnded } from '../client/useAction.js';
 
 /** The panel shows the last 30; the badge counts every unread one. */
 const PAGE = 30;
+
+/** The panel's footer link, "Notification settings" (v3 §2.15): Profile's Notifications section. */
+export const NOTIFICATION_SETTINGS_HREF = '/profile#notifications';
 
 export function toNotificationItem(row: NotificationRow): NotificationItem {
   const subject = row.subject?.trim() || row.body.split('\n')[0]!.trim() || 'Notification';
@@ -89,5 +93,14 @@ export function PortalNotifications(): ReactNode {
     [refresh],
   );
 
-  return <NotificationCenter unread={unread} load={load} markRead={markRead} hrefFor={notificationHref} emptyText="You’re all caught up" />;
+  return (
+    <NotificationCenter
+      unread={unread}
+      load={load}
+      markRead={markRead}
+      hrefFor={notificationHref}
+      emptyText="You’re all caught up"
+      settingsHref={NOTIFICATION_SETTINGS_HREF}
+    />
+  );
 }

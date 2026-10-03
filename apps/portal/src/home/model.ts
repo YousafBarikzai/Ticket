@@ -1,12 +1,14 @@
 import type { ApprovalRequest, ArticleSummary, PublicComponentStatus, PublicStatus, Ticket } from '@itsm/sdk';
-import type { IconName, Tone } from '@itsm/ui';
-import { nextAction, yoursFirst } from '../tickets/presentation.js';
+import { COMPONENT_STATE_LOOK, type IconName, type StepperStep, type Tone } from '@itsm/ui';
+import { nextAction, PROGRESS_STEPS, progressOf, yoursFirst } from '../tickets/presentation.js';
 
 /**
- * Home, as data (SPEC §6.3 `/`, X-34): the greeting, the one list of the
- * person's requests with what needs them pinned first, the service status in
- * words, the popular answers and the channels line. Pure and server-safe, so
- * the page decides everything on the server and ships only what is drawn.
+ * Home, as data (SPEC §6.3 `/`, X-34; v3 §7.2, A6 §6.1): the greeting, the
+ * counts on the quick actions, the one list of the person's requests with
+ * what needs them pinned first, the service status in words and tones, the
+ * maintenance coming up, the popular answers with their views and helpful
+ * share, and the channels line. Pure and server-safe, so the page decides
+ * everything on the server and ships only what is drawn.
  */
 
 /* ---------------------------------------------------------------- Greeting */
@@ -85,7 +87,7 @@ export interface HomeRow {
   readonly action: RowAction;
   /** Only for the approvals row: where it leads, and how it reads. */
   readonly href?: string;
-  readonly approval?: { readonly count: number };
+  readonly approval?: { readonly count: number; /** When the longest-waiting one was asked (ISO): "oldest 1 day". */ readonly oldestAt: string };
 }
 
 /** Home shows this many rows at most; "See all" is always there for the rest. */
@@ -122,16 +124,18 @@ export function homeRows(tickets: readonly Ticket[], approvals: readonly Approva
       },
       action: 'review',
       href: `/approvals?open=${encodeURIComponent(`approval:${approval.id}`)}`,
-      approval: { count: 1 },
+      approval: { count: 1, oldestAt: approval.requestedAt },
     });
   } else if (waiting.length > 1) {
-    const latest = [...waiting].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0]!;
+    const byAsked = [...waiting].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+    const latest = byAsked[0]!;
+    const oldest = byAsked.at(-1)!;
     rows.push({
       key: 'approvals',
-      ticket: { number: '', type: 'request', title: `${waiting.length} requests need your approval`, status: 'pending_approval', updatedAt: latest.requestedAt },
+      ticket: { number: '', type: 'request', title: `${waiting.length} approvals need you`, status: 'pending_approval', updatedAt: latest.requestedAt },
       action: 'review',
       href: '/approvals',
-      approval: { count: waiting.length },
+      approval: { count: waiting.length, oldestAt: oldest.requestedAt },
     });
   }
 
@@ -148,15 +152,29 @@ export function homeRows(tickets: readonly Ticket[], approvals: readonly Approva
   return rows.slice(0, cap);
 }
 
-/* ---------------------------------------------------------- Service status */
+/**
+ * The mini stepper on a Home card (A6 §6.1.2): the request page's four
+ * stages (`PROGRESS_STEPS`, the same rule as `requests/model.ts` `stepsFor`)
+ * without dates — a card has room for where it is, not when. Here rather
+ * than imported from the request page's model, whose formatter import would
+ * bring a client entry into Home's server graph.
+ */
+export function miniSteps(status: string): StepperStep[] {
+  const progress = progressOf(status);
+  const cancelled = status === 'cancelled';
+  const finished = status === 'closed' || cancelled;
+  return PROGRESS_STEPS.map((label, index): StepperStep => {
+    let state: StepperStep['status'];
+    if (cancelled && index > 0 && index < 3) state = 'skipped';
+    else if (index < progress.current || (finished && index === progress.current)) state = 'complete';
+    else if (index === progress.current) state = 'current';
+    else state = 'upcoming';
+    const description = index === 1 && state === 'current' && progress.currentLabel !== label ? progress.currentLabel : undefined;
+    return { id: `step-${index}`, label: index === 3 && cancelled ? 'Withdrawn' : label, status: state, ...(description ? { description } : {}) };
+  });
+}
 
-const COMPONENT_WORDS: Record<PublicComponentStatus, { readonly label: string; readonly tone: Tone; readonly icon: IconName }> = {
-  operational: { label: 'Running', tone: 'success', icon: 'circle-check' },
-  degraded: { label: 'Degraded', tone: 'warning', icon: 'triangle-alert' },
-  partial_outage: { label: 'Partly down', tone: 'warning', icon: 'triangle-alert' },
-  major_outage: { label: 'Down', tone: 'danger', icon: 'circle-x' },
-  maintenance: { label: 'Maintenance', tone: 'info', icon: 'settings-2' },
-};
+/* ---------------------------------------------------------- Service status */
 
 export interface StatusLine {
   readonly label: string;
@@ -171,8 +189,17 @@ export interface StatusSummary {
   readonly components: readonly { readonly key: string; readonly name: string; readonly state: StatusLine }[];
 }
 
+/**
+ * A component's state as the one map draws it everywhere (X-B3, v3 §2.4):
+ * degraded is `high` orange — amber is SLA risk and nothing else — and an
+ * outage is red, so the same VPN outage has one colour in the Help Portal
+ * and in Administration. A state the map does not know is said as unknown,
+ * never guessed at.
+ */
 export function componentState(status: PublicComponentStatus | string): StatusLine {
-  return COMPONENT_WORDS[status as PublicComponentStatus] ?? { label: 'Unknown', tone: 'neutral', icon: 'circle-dashed' };
+  if (!Object.hasOwn(COMPONENT_STATE_LOOK, status)) return { label: 'Unknown', tone: 'neutral', icon: 'circle-dashed' };
+  const look = COMPONENT_STATE_LOOK[status as PublicComponentStatus];
+  return { label: look.label, tone: look.tone, icon: look.icon };
 }
 
 /** The status page in two lines of words: the overall state, and what is not running. */
@@ -184,11 +211,88 @@ export function statusSummary(status: PublicStatus): StatusSummary {
     status.overall === 'operational' && components.length === 0
       ? { label: 'All services running', tone: 'success', icon: 'circle-check' }
       : status.overall === 'maintenance'
-        ? { label: 'Planned maintenance', tone: 'info', icon: 'settings-2' }
-        : status.overall === 'major_outage'
+        ? { label: 'Planned maintenance', tone: 'info', icon: 'wrench' }
+        : status.overall === 'major_outage' || status.overall === 'partial_outage'
           ? { label: 'Some services are down', tone: 'danger', icon: 'circle-x' }
-          : { label: 'Some services have problems', tone: 'warning', icon: 'triangle-alert' };
+          : { label: 'Some services have problems', tone: 'high', icon: 'triangle-alert' };
   return { overall, components };
+}
+
+/**
+ * The tone of the status strip while an incident is open: the worst state
+ * among the components it affects (degraded `high`, an outage `danger`), and
+ * `high` when it names none — an open incident is never drawn as all well.
+ * A major or critical incident is `danger` whatever its components say.
+ */
+export function incidentTone(status: PublicStatus | null, incidentId: string): 'high' | 'danger' {
+  const incident = status?.incidents.find((candidate) => candidate.id === incidentId);
+  if (!incident) return 'high';
+  if (incident.impact === 'major' || incident.impact === 'critical') return 'danger';
+  const states = incident.components.map((key) => status?.components.find((component) => component.key === key)?.status);
+  return states.some((state) => state !== undefined && componentState(state).tone === 'danger') ? 'danger' : 'high';
+}
+
+/* ---------------------------------------------------------------- Coming up */
+
+export interface ComingUp {
+  readonly id: string;
+  readonly title: string;
+  /** "Wed 7 Oct, 19:00–21:00", where the person is. */
+  readonly when: string;
+  readonly startsAt: string;
+  /** The affected components, by name. */
+  readonly affects: readonly string[];
+  readonly inProgress: boolean;
+}
+
+/** How far ahead "Coming up" looks. */
+export const COMING_UP_DAYS = 14;
+
+function formatIn(date: Date, locale: string, timeZone: string, options: Intl.DateTimeFormatOptions): string {
+  try {
+    return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'UTC' }).format(date);
+  }
+}
+
+/** "Wed 7 Oct, 19:00–21:00", or with both days when it runs past midnight. */
+export function windowLabel(startsAt: string, endsAt: string, locale: string, timeZone: string): string {
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return startsAt;
+  const day: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' };
+  const time: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+  const sameDay = formatIn(start, 'en-GB', timeZone, { year: 'numeric', month: 'numeric', day: 'numeric' }) === formatIn(end, 'en-GB', timeZone, { year: 'numeric', month: 'numeric', day: 'numeric' });
+  const from = `${formatIn(start, locale, timeZone, day)}, ${formatIn(start, locale, timeZone, time)}`;
+  return sameDay ? `${from}–${formatIn(end, locale, timeZone, time)}` : `${from} – ${formatIn(end, locale, timeZone, day)}, ${formatIn(end, locale, timeZone, time)}`;
+}
+
+/**
+ * Planned maintenance from the status page that is under way or starts in the
+ * next fourteen days, soonest first (A6 §6.1.2 "Coming up"). Finished and
+ * cancelled windows are not news.
+ */
+export function comingUp(status: PublicStatus | null, now: Date, locale: string, timeZone: string, days = COMING_UP_DAYS): ComingUp[] {
+  if (!status) return [];
+  const horizon = now.getTime() + days * 86_400_000;
+  const names = new Map(status.components.map((component) => [component.key, component.name]));
+  return status.maintenance
+    .filter((window) => window.status === 'scheduled' || window.status === 'in_progress')
+    .filter((window) => {
+      const starts = Date.parse(window.startsAt);
+      const ends = Date.parse(window.endsAt);
+      return Number.isFinite(starts) && Number.isFinite(ends) && ends > now.getTime() && starts <= horizon;
+    })
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+    .map((window) => ({
+      id: window.id,
+      title: window.title,
+      when: windowLabel(window.startsAt, window.endsAt, locale, timeZone),
+      startsAt: window.startsAt,
+      affects: window.components.map((key) => names.get(key) ?? key),
+      inProgress: window.status === 'in_progress' || Date.parse(window.startsAt) <= now.getTime(),
+    }));
 }
 
 /* ---------------------------------------------------------- Popular answers */
@@ -196,16 +300,84 @@ export function statusSummary(status: PublicStatus): StatusSummary {
 export interface PopularAnswer {
   readonly key: string;
   readonly title: string;
+  readonly views: number;
+  /** The share who found it helpful (0–1), only when at least five people said either way. */
+  readonly helpfulShare: number | null;
 }
 
-/** The three most read published articles — or none, below three (a "popular" list of one is not a list). */
-export function popularAnswers(articles: readonly ArticleSummary[], count = 3): PopularAnswer[] {
+/** Fewer votes than this, and a share would be a guess. */
+export const HELPFUL_MIN_VOTES = 5;
+
+/**
+ * The four most read published articles — or none, below three (a "popular"
+ * list of one or two is not a list) — each with its views and, from five
+ * votes, the share who found it helpful.
+ */
+export function popularAnswers(articles: readonly ArticleSummary[], count = 4, atLeast = 3): PopularAnswer[] {
   const top = articles
     .filter((article) => article.status === 'published')
     .sort((a, b) => b.viewCount - a.viewCount || a.title.localeCompare(b.title, 'en-GB'))
     .slice(0, count)
-    .map((article) => ({ key: article.key, title: article.title }));
-  return top.length < count ? [] : top;
+    .map((article) => {
+      const votes = article.helpfulCount + article.unhelpfulCount;
+      return { key: article.key, title: article.title, views: article.viewCount, helpfulShare: votes >= HELPFUL_MIN_VOTES ? article.helpfulCount / votes : null };
+    });
+  return top.length < atLeast ? [] : top;
+}
+
+/** "412 views · 91 % found this helpful", in the person's locale. */
+export function answerFacts(answer: PopularAnswer, locale: string): string {
+  const views = `${new Intl.NumberFormat(locale).format(answer.views)} ${answer.views === 1 ? 'view' : 'views'}`;
+  if (answer.helpfulShare === null) return views;
+  const share = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(answer.helpfulShare);
+  return `${views} · ${share} found this helpful`;
+}
+
+/* ------------------------------------------------------------ Quick actions */
+
+export interface QuickCounts {
+  /** Open or waiting requests (not resolved); null when they could not be read. */
+  readonly open: number | null;
+  /** More than the page read: "20+ open". */
+  readonly openCapped: boolean;
+  /** Approvals waiting on them; null when they could not be read or may not be. */
+  readonly approvals: number | null;
+}
+
+/**
+ * The counts on the quick-action tiles, from reads the page makes anyway
+ * (A6 §6.1.2): open is everything not yet resolved — a request waiting for
+ * their word on a fix is already in "Your requests" with its own buttons.
+ */
+export function quickCounts(
+  tickets: { readonly data: readonly Pick<Ticket, 'statusCategory' | 'status'>[]; readonly nextCursor?: string | null } | null,
+  approvals: readonly ApprovalRequest[] | null,
+): QuickCounts {
+  const open = tickets ? tickets.data.filter((ticket) => ticket.statusCategory === 'open' || ticket.statusCategory === 'paused').length : null;
+  return { open, openCapped: Boolean(tickets?.nextCursor), approvals: approvals ? approvals.length : null };
+}
+
+/** "4 open", "20+ open", "Nothing open"; null when unknown, so the tile says nothing rather than 0. */
+export function openLabel(counts: QuickCounts): string | null {
+  if (counts.open === null) return null;
+  if (counts.openCapped) return `${counts.open}+ open`;
+  return counts.open === 0 ? 'Nothing open' : `${counts.open} open`;
+}
+
+/** "3 waiting", "Nothing waiting"; null when unknown. */
+export function approvalsLabel(counts: QuickCounts): string | null {
+  if (counts.approvals === null) return null;
+  return counts.approvals === 0 ? 'Nothing waiting' : `${counts.approvals} waiting`;
+}
+
+/** "1 day", "3 hours": how long the oldest approval has waited. */
+export function waitedFor(iso: string, now: Date): string {
+  const minutes = Math.max(0, Math.floor((now.getTime() - Date.parse(iso)) / 60_000));
+  if (!Number.isFinite(minutes) || minutes < 60) return 'under an hour';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
 /* ----------------------------------------------------------------- Channels */

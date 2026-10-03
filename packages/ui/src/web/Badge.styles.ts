@@ -1,5 +1,5 @@
 import { moreContrast, toneVariables } from '../display/tone.js';
-import { css, layer, mq } from '../styles/css.js';
+import { css, layer, mq, prefers } from '../styles/css.js';
 
 /**
  * `Badge`: a capsule in `footnote` type at weight 500 (SPEC §1.7), coloured
@@ -11,6 +11,12 @@ import { css, layer, mq } from '../styles/css.js';
  *   whatever surface it sits (audited on raised, canvas, sunken, overlay).
  *
  * The dot takes the stronger `solid` colour, so it is visible on the tint.
+ * The live dot (`data-state` on it, v3 §2.14) is 8 px in its state's border
+ * colour instead — `success` live, `warning` reconnecting, `neutral`
+ * offline, all at least 3:1 as UI marks — and a live one sends out a ring
+ * every 2 s on its own `::after` (transform and opacity only). Under reduced
+ * motion, the system's or the product's, the ring never runs: the dot and
+ * the words beside it still say "live".
  * Numbers are tabular so a count does not change width as it ticks. The
  * badge sits on the text's middle, so it lines up beside a title or a label
  * without a wrapper.
@@ -70,6 +76,49 @@ ${toneVariables('.itsm-Badge')}
   background: currentColor;
 }
 
+@keyframes itsm-Badge-live {
+  0% { opacity: 0.55; transform: scale(1); }
+  70%, 100% { opacity: 0; transform: scale(2.4); }
+}
+
+.itsm-Badge__dot[data-state] {
+  position: relative;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+}
+
+.itsm-Badge .itsm-Badge__dot[data-state="live"] {
+  background: var(--itsm-colour-success-border);
+}
+
+.itsm-Badge .itsm-Badge__dot[data-state="reconnecting"] {
+  background: var(--itsm-colour-warning-border);
+}
+
+.itsm-Badge .itsm-Badge__dot[data-state="offline"] {
+  background: var(--itsm-colour-neutral-border);
+}
+
+.itsm-Badge__dot[data-state="live"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--itsm-colour-success-border);
+  opacity: 0;
+  animation: itsm-Badge-live 2s var(--itsm-easing-standard) infinite;
+}
+
+${mq.reducedMotion} {
+  .itsm-Badge__dot[data-state="live"]::after {
+    animation: none;
+  }
+}
+
+${prefers.reducedMotion} .itsm-Badge__dot[data-state="live"]::after {
+  animation: none;
+}
+
 .itsm-Badge__icon {
   flex: none;
 }
@@ -80,7 +129,9 @@ ${mq.forcedColors} {
   .itsm-Badge {
     border: var(--itsm-hairline) solid CanvasText;
   }
-  .itsm-Badge__dot {
+  .itsm-Badge .itsm-Badge__dot,
+  .itsm-Badge .itsm-Badge__dot[data-state],
+  .itsm-Badge__dot[data-state="live"]::after {
     background: CanvasText;
   }
 }

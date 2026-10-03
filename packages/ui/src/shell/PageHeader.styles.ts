@@ -4,15 +4,20 @@ import { css, layer, mq } from '../styles/css.js';
  * `PageHeader`, in the patterns layer (it composes buttons, breadcrumbs and
  * route tabs).
  *
- * The title is `title1` (28/34, bold, tight tracking) — `largeTitle` for hub
- * pages — balanced across lines, and takes programmatic focus without a
- * ring. Beside it, at most one companion and the *View only* pill; at the
- * end, secondaries, the one primary, then ⋯. Below 768 px the secondaries
- * fold into ⋯ and the actions wrap under the title. The subtitle is `body`
- * in `text.secondary`, 60 characters wide at most.
+ * The title is `title1` in the display face — `largeTitle` for hub pages —
+ * balanced across lines, and takes programmatic focus without a ring. In the
+ * sidebar frame a hub page's title is in the top bar, so the `<h1>` is the
+ * visually hidden focus band (`data-title-in-bar`) and a header with nothing
+ * else to show takes no room. Beside the title, at most one companion and
+ * the *View only* pill; at the end, secondaries, the one primary, then ⋯.
+ * Below 768 px the secondaries fold into ⋯ and the actions wrap under the
+ * title. The purpose line, where the bar does not carry it, is 13/18
+ * `text.muted`; the subtitle is `body` in `text.secondary`, 60 characters
+ * wide at most.
  *
- * `sticky` pins the header under the frame's top bar, opaque on the page
- * colour, with a hairline and the `md` elevation once it is resting there.
+ * `sticky` pins the header under the frame's bars (`--_sticky-top`, the
+ * frame's `--itsm-frame-top`), opaque on the page colour, with a hairline and
+ * the `md` elevation once it is resting there.
  */
 export const pageHeaderStyles = layer(
   'patterns',
@@ -27,6 +32,13 @@ export const pageHeaderStyles = layer(
 .itsm-PageHeader[data-has-tabs] {
   gap: var(--itsm-space-sm);
 }
+/* The title is in the top bar: a header with nothing else to show takes no room. */
+.itsm-PageHeader[data-title-in-bar]:not(:has(.itsm-PageHeader__breadcrumbs, .itsm-PageHeader__back, .itsm-PageHeader__companion, .itsm-PageHeader__viewOnly, .itsm-PageHeader__context, .itsm-PageHeader__actions, .itsm-PageHeader__subtitle, .itsm-PageHeader__tabs)) {
+  margin-block-end: 0;
+}
+.itsm-PageHeader[data-title-in-bar] .itsm-PageHeader__heading:not(:has(.itsm-PageHeader__companion, .itsm-PageHeader__viewOnly)) {
+  flex: 0 1 auto;
+}
 .itsm-PageHeader[data-sticky] {
   position: sticky;
   inset-block-start: var(--_sticky-top, 0px);
@@ -36,7 +48,7 @@ export const pageHeaderStyles = layer(
   background: var(--itsm-colour-surface-raised);
   transition: box-shadow var(--itsm-duration-fast) var(--itsm-easing-standard);
 }
-.itsm-AppShell[data-variant="topnav"] .itsm-PageHeader[data-sticky] {
+.itsm-AppShell[data-variant] .itsm-PageHeader[data-sticky] {
   background: var(--itsm-colour-surface-canvas);
 }
 .itsm-PageHeader[data-stuck] {
@@ -84,6 +96,7 @@ export const pageHeaderStyles = layer(
   margin: 0;
   min-inline-size: 0;
   color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-text-title1-family);
   font-size: var(--itsm-text-title1-size);
   line-height: var(--itsm-text-title1-line);
   font-weight: var(--itsm-text-title1-weight);
@@ -195,6 +208,21 @@ export const pageHeaderStyles = layer(
 }
 .itsm-PageHeader__more:active {
   background-image: linear-gradient(var(--itsm-colour-fill-pressed), var(--itsm-colour-fill-pressed));
+}
+
+.itsm-PageHeader__context {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+}
+.itsm-PageHeader__purpose {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-regular);
+  text-wrap: pretty;
 }
 
 .itsm-PageHeader__subtitle {

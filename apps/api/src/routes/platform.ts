@@ -1,9 +1,52 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ForbiddenError, NotFoundError, metrics, modules, systemContext, withContext } from '@itsm/platform';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+  cache,
+  logger,
+  metrics,
+  modules,
+  readDeploymentWarnings,
+  systemContext,
+  withContext,
+} from '@itsm/platform';
 import { describeMeter, planService, tenantService, usageService } from '@itsm/module-tenancy';
 import { evalService, formatMicros, promptService } from '@itsm/module-ai';
 import { contextOf } from '../plugins/context.js';
+
+/**
+ * What an operator is told when a lifecycle or plan change names a demo
+ * tenant (Y-M13; SPEC v3 §4.7.7).
+ */
+export const DEMO_TENANT_MANAGED =
+  'this tenant is the shared demo, which its nightly build manages; use `pnpm platform demo pause` to take the demo offline';
+
+/**
+ * Refuses a lifecycle or plan change to a demo tenant: 409, before the
+ * service runs (Y-M13).
+ *
+ * The demo tenant is the build's, not an operator's. Suspending the live
+ * one makes the interlock answer every visitor `demo_reset`, and their app
+ * re-mints onto the same suspended tenant until the visit ends; the next
+ * swap then refuses a live tenant that is not active, backs off and freezes
+ * on yesterday's data. A plan or a region change would make the demo
+ * misrepresent the product until the nightly reset put it back. The
+ * operator's switch for the demo is `pnpm platform demo pause`, which
+ * survives deploys and undoes cleanly. Retired and building generations are
+ * refused the same way: the lifecycle purges them.
+ *
+ * A tenant that does not exist is left to the service, which answers 404.
+ */
+export async function refuseDemoTenant(tenantId: string): Promise<void> {
+  const tenant = await tenantService.findTenantById(tenantId);
+  if (tenant?.kind !== 'demo') return;
+  metrics.increment('demo_operator_refusals_total');
+  logger.warn('an operator lifecycle or plan change named a demo tenant; refused', { tenantId });
+  throw new ConflictError(DEMO_TENANT_MANAGED);
+}
 
 /**
  * The platform surface (`/api/platform/v1`).
@@ -42,6 +85,14 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tenants', async (request, reply) => {
     const input = tenantService.provisionTenantSchema.strict().parse(request.body);
+    // A demo tenant is made only by the demo build (A4), as a `seeding`
+    // generation it then swaps in. One made here would belong to nobody: no
+    // demo token names it, and it refuses every other kind of token (D25).
+    if (input.kind === 'demo') {
+      throw new ValidationError('demo tenants are created by the demo build, never through this route', [
+        { field: 'kind', code: 'demo_managed', message: 'Demo tenants are created by the demo build.' },
+      ]);
+    }
     const result = await tenantService.provisionTenant(input);
     reply.status(201);
     return result;
@@ -57,18 +108,22 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
    */
   app.put('/tenants/:id/ai-regions', async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    return tenantService.setAiRegions(id, tenantService.aiRegionsSchema.strict().parse(request.body));
+    const regions = tenantService.aiRegionsSchema.strict().parse(request.body);
+    await refuseDemoTenant(id);
+    return tenantService.setAiRegions(id, regions);
   });
 
   app.post('/tenants/:id/suspend', async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z.object({ reason: z.string().max(1000).optional() }).parse(request.body ?? {});
+    await refuseDemoTenant(id);
     await tenantService.suspendTenant(id, body.reason);
     return { id, status: 'suspended' };
   });
 
   app.post('/tenants/:id/resume', async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    await refuseDemoTenant(id);
     await tenantService.resumeTenant(id);
     return { id, status: 'active' };
   });
@@ -133,6 +188,7 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     const ctx = contextOf(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = z.object({ planKey: z.string().min(1).max(40) }).strict().parse(request.body);
+    await refuseDemoTenant(id);
     const tenant = await planService.assignPlan(ctx, id, body.planKey);
     return { id, planKey: tenant?.planKey ?? null };
   });
@@ -241,4 +297,17 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
   app.get('/ai/datasets', async () => ({ data: await evalService.listDatasets() }));
 
   app.get('/metrics-snapshot', async () => metrics.snapshot());
+
+  /**
+   * What is wrong with this deployment that nobody would otherwise see (D24,
+   * Y-M7; SPEC v3 §6.5): every service still signing with the public
+   * development secret, or with a short one, from `ops:config-warnings`, and
+   * the nightly demo build failing three times running, from `ops:demo`.
+   * `{ data: [{ service, codes, at, failure? }] }`, sorted by service; empty
+   * when all is well. The console's platform layout shows it as banners.
+   *
+   * Behind the same hook as everything here: the list names services and
+   * failures, which is operator business, never a tenant's.
+   */
+  app.get('/deployment-warnings', async () => ({ data: await readDeploymentWarnings(cache()) }));
 }

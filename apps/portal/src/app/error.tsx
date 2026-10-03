@@ -11,7 +11,11 @@ import { Button, StatusScreen } from '@itsm/ui';
  * Outside the frame, because the frame is what failed; inside the root
  * layout, so the stylesheet and the theme are already there. Try again
  * re-renders the layout; Sign out is offered because an account in a bad
- * state is one of the ways to get here.
+ * state is one of the ways to get here. The area is named as everywhere
+ * (D1, `AREAS.portal.name`), never as a bare "Help"; spelt here rather than
+ * imported, because this boundary is in every route's first load and the
+ * area model would add its module to all of them (`StatusScreen`'s lockup
+ * spells it the same way, for the same reason).
  */
 export default function RootError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }): ReactNode {
   useEffect(() => {
@@ -23,7 +27,7 @@ export default function RootError({ error, retry }: { error: Error & { digest?: 
       brand="portal"
       illustration="error"
       errorBoundary
-      title="Help couldn’t open"
+      title="The Help Portal couldn’t open"
       body={
         <>
           <p>Something went wrong on our side, or the service can’t be reached. Try again in a moment.</p>

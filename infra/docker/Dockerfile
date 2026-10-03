@@ -46,8 +46,8 @@ COPY tsconfig.json turbo.json ./
 #
 # Before the web applications existed this lived in `build`, and moving it out
 # is not tidying: `deps` is one layer that `build` and each `build-<app>` stage
-# start from, so a Dockerfile that produces six images resolves the workspace
-# once rather than six times.
+# start from, so a Dockerfile that produces seven images resolves the workspace
+# once rather than seven times.
 FROM source AS deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
@@ -117,7 +117,8 @@ ENV WORKER_QUEUES=*
 CMD ["node", "dist/worker.js"]
 
 # ---------------------------------------------------------------------------
-# The three web applications (docs/architecture/14 §1, 16 §1).
+# The three web applications and the public site (docs/architecture/14 §1,
+# 16 §1; ADR-0062).
 #
 # Next's `output: 'standalone'` traces what each app actually imports and emits
 # a directory that runs under a bare `node`, with no package manager, no pnpm
@@ -137,7 +138,8 @@ CMD ["node", "dist/worker.js"]
 # site that renders unstyled and 404s every asset:
 #   `.next/static`  — the hashed client bundles, served at `/_next/static`
 #   `public`        — the service worker built by `pnpm sw`, for the two apps
-#                     that have one (the console has none, by ADR-0049)
+#                     that have one (the console has none, by ADR-0049, and
+#                     the site has none, by ADR-0062)
 
 FROM deps AS build-portal
 RUN pnpm --filter @itsm/portal build
@@ -148,7 +150,10 @@ RUN pnpm --filter @itsm/workbench build
 FROM deps AS build-admin
 RUN pnpm --filter @itsm/admin build
 
-# What all three web images have in common, so the differences below are only
+FROM deps AS build-site
+RUN pnpm --filter @itsm/site build
+
+# What all four web images have in common, so the differences below are only
 # the differences.
 FROM runtime-base AS web-runtime
 ENV NODE_ENV=production
@@ -199,3 +204,17 @@ EXPOSE 3300
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "apps/admin/server.js"]
+
+# The public site (apps/site, ADR-0062). The console's shape: no `public`
+# directory (everything it serves is a route or a hashed static import, and a
+# COPY of a path that does not exist fails the build), no service worker, no
+# session, no credential. The same `web-runtime` base, so the same Trivy surface
+# as the applications: no npm, uid 10001, bound to `::`.
+FROM web-runtime AS site
+ENV PORT=3400
+COPY --from=build-site --chown=itsm:itsm /app/apps/site/.next/standalone ./
+COPY --from=build-site --chown=itsm:itsm /app/apps/site/.next/static ./apps/site/.next/static
+EXPOSE 3400
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/site/server.js"]

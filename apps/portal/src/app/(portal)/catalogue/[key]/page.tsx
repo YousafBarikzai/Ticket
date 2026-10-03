@@ -1,5 +1,5 @@
 import { cache, type ReactNode } from 'react';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ApiError, type CatalogueItem, type CatalogueItemDetail } from '@itsm/sdk';
 import { Button, EmptyState } from '@itsm/ui';
@@ -7,7 +7,7 @@ import { serviceHref } from '../../../../catalogue/group.js';
 import { RequestFlow } from '../../../../catalogue/RequestFlow.js';
 import { SectionProblem } from '../../../../home/SectionProblem.js';
 import { settle } from '../../../../home/settle.js';
-import { NOT_FOUND_METADATA, NotFoundScreen } from '../../../../components/NotFoundScreen.js';
+import { NOT_FOUND_METADATA } from '../../../../components/NotFoundScreen.js';
 import { mayOpen } from '../../../../navigation.js';
 import { apiFor, currentMe, heldPermissions, loginHref, requireSession } from '../../../../server/session.js';
 import '../catalogue.css';
@@ -41,8 +41,16 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
  * discoverable by the error it produces. Any other failure keeps the way back
  * and a heading, and says so with Retry.
  *
- * The catalogue list is read beside the item for the one thing the item does
- * not say — which service it sits under — and is allowed to fail.
+ * **Existence first** (SPEC §5.5, A4 §5.4). No `loading.tsx` or `<Suspense>`
+ * sits above this page, and the item is read before anything is drawn, so a
+ * missing item calls `notFound()` while nothing has been sent: the browser
+ * gets a real 404 and the frame's not-found screen, never a 200 that only
+ * looks missing.
+ *
+ * The catalogue list is read beside the item, and waited for with it, for
+ * the one thing the item does not say — which service it sits under — and is
+ * allowed to fail. It is not streamed: the service heads the page above the
+ * title and frames the request's summary, so arriving late it would move both.
  */
 export default async function CatalogueItemPage({ params }: { params: Params }): Promise<ReactNode> {
   const { key } = await params;
@@ -71,8 +79,7 @@ export default async function CatalogueItemPage({ params }: { params: Params }):
   const [item, list] = await Promise.all([settleItem(readItem(key)), settle(apiFor(session).catalogue())]);
 
   if (item.kind !== 'ok') {
-    // Returned, not thrown: the response is already streaming (see NotFoundScreen).
-    if (item.kind === 'missing') return <NotFoundScreen />;
+    if (item.kind === 'missing') notFound();
     if (item.kind === 'signed-out') redirect(await loginHref());
     return (
       <div className="app-Page app-ServiceRequest">

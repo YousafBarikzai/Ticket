@@ -183,9 +183,14 @@ export async function readCursors(tx: Tx) {
 // Counts, for the drift check and the rebuild.
 // ---------------------------------------------------------------------------
 
+/**
+ * Facts created in `[from, to)`: half-open, like the ticket side's
+ * `createdAfter`/`createdBefore` (R2), so the drift check counts both sides
+ * over exactly the same window and a ticket created at `to` is in neither.
+ */
 export async function countTicketFacts(tx: Tx, from?: Date, to?: Date): Promise<number> {
   return tx.factTicket.count({
-    where: from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {},
+    where: from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } } : {},
   });
 }
 

@@ -6,14 +6,15 @@
 Railway project: itsm-platform
 ├── environment: production   (region: EU West / Amsterdam; see D-01 for UK-at-rest options)
 │   ├── api (public)            ├── portal (public)     ├── workbench (public)   ├── admin (public)
-│   ├── keycloak (public)       ├── worker-events       ├── worker-engine        ├── worker-comms
+│   ├── site (public)           ├── keycloak (public)   ├── worker-events        ├── worker-engine
+│   ├── worker-comms
 │   ├── worker-data             ├── clamav              ├── otel-collector
 │   ├── postgres (managed)      ├── postgres-keycloak (managed)                  ├── redis (managed)
 ├── environment: staging       (same graph, smaller sizes, test IdPs, sandbox channel accounts)
-└── environment: preview-<pr>  (ephemeral: api, worker (all queues), portal, workbench, admin, keycloak-dev, postgres, redis, minio)
+└── environment: preview-<pr>  (ephemeral: api, worker (all queues), portal, workbench, admin, site, keycloak-dev, postgres, redis, minio)
 ```
 
-- Every service is a Docker image built by CI (multi-stage, Node 22 slim base, non-root, SBOM attached, Trivy-scanned before it is pushed). Nine images come from one `infra/docker/Dockerfile` by target: `api`, `worker`, `migrate`, `portal`, `workbench`, `admin`.
+- Every service is a Docker image built by CI (multi-stage, Node 22 slim base, non-root, SBOM attached, Trivy-scanned before it is pushed). Seven images come from one `infra/docker/Dockerfile` by target: `api`, `worker`, `migrate`, `portal`, `workbench`, `admin` and `site`, the public site (ADR-0062).
 - Start commands, health checks, replicas and the deployment order live in **`infra/railway/services.json`**, applied through the Railway API by `infra/scripts/railway-deploy.ts`. Not a `railway.json` per app: Railway reads its own config-as-code when Railway builds from the repository, and these services run images CI built, so a `railway.json` here would be a file nothing opens.
 - Public services use Railway custom domains fronted by Cloudflare with authenticated origin pulls; private services have no public networking.
 - Environment variables and secrets are managed in Railway per environment and referenced by the typed config schema; shared variables (database URLs) use Railway variable references.
@@ -21,7 +22,7 @@ Railway project: itsm-platform
 
 ## 2. Cloudflare configuration
 
-- DNS: `help`, `desk`, `admin`, `api`, `auth`, `status` records plus wildcard `*.help.<domain>` for tenant subdomains; custom customer domains via Cloudflare for SaaS (fallback origin = portal) *(PH-3)*.
+- DNS: `www` (the public site; or the bare domain), `help`, `desk`, `admin`, `api`, `auth`, `status` records plus wildcard `*.help.<domain>` for tenant subdomains; custom customer domains via Cloudflare for SaaS (fallback origin = portal) *(PH-3)*.
 - TLS full-strict; HSTS preload; TLS 1.2 minimum.
 - WAF managed rules; rate-limit rules for `/api/v1/auth/*`, `/api/v1/channels/*`, `/status/*/subscribe`; bot fight mode for public pages.
 - Cache rules: static assets (`/_next/static/*`, fonts, images) cached at the edge; API and app HTML bypass the cache.
@@ -44,11 +45,13 @@ Turborepo remote cache (Vercel or self-hosted on Railway) keeps stage 1–2 fast
 
 **What stage 4 does not yet run, and this says so rather than implying it.** Playwright core journeys, axe against a whole page, Lighthouse, a k6 run, a ZAP baseline and an EAS mobile build are all in the table above as intent; none exists in this repository. The preview runs `infra/scripts/walking-skeleton.ts`, which drives a real ticket through the deployed API and is the strongest thing that does exist (doc 18 §3). `packages/ui` runs axe against every component in jsdom (ADR-0046); a full-page audit needs a browser and belongs with the browser suite when there is one.
 
+**Every image is checked as pullable before Railway is touched.** GHCR creates a new package private and Railway pulls anonymously, so the deploy first asks the registry, as an anonymous puller would, for every image it is about to set. A refusal stops the deploy only for a service the deploy would create (the public site's first deploy is the case it exists for); for a service that already exists it is a warning, because that service may pull with a registry credential. `vars.DEPLOY_SKIP_PULL_CHECK=1` turns the check off. The deploy publishes each web service's address (`site-url` is the one to share) and the post-deploy check probes all of them, warning — never failing — when the public site is missing a link into an app, or when the API reports the default signing secret.
+
 **Every deploy job is gated.** `vars.DEPLOY_DOMAIN` and `secrets.RAILWAY_TOKEN` must both be set; until they are, `deploy.yml` builds, scans and pushes the images on every push and then prints the deploy plan it would have run instead of failing for the want of a credential.
 
 ## 4. Deployment mechanics
 
-- **Order:** `migrate` (`prisma migrate deploy` as `app_owner`) → `seed`, in previews only → `worker-*` → `api` → the three web apps. Workers first so new consumers exist before new events appear; the API's readiness check confirms the migration version. This is the `phase` field in `infra/railway/services.json`, and it is asserted by a test rather than only described here — every worker before the API, the API before every application.
+- **Order:** `migrate` (`prisma migrate deploy` as `app_owner`) → `seed`, in previews only → `worker-*` → `api` → the three web apps and the public site, in one phase deployed in two passes (every hostname first, then every service's variables), because each carries the others' origins. Workers first so new consumers exist before new events appear; the API's readiness check confirms the migration version. This is the `phase` field in `infra/railway/services.json`, and it is asserted by a test rather than only described here — every worker before the API, the API before every application.
 - **Rolling deploys** with health checks; Railway keeps the previous deployment for instant rollback (application rollback = redeploy previous image; migrations are forward-only, hence expand/contract).
 - **Feature flags** hide unfinished work; trunk-based development with squash merges; no release branches.
 - **Configuration and realm** changes are code: `infra/keycloak/realm.json` is resolved for the environment and applied by `infra/scripts/keycloak-realm.ts --apply` on every deploy, as a partial import with `ifResourceExists: OVERWRITE` so the second deploy of an environment changes what the first one set. Its redirect URIs are derived from the same service catalogue the deploy reads, so the URI Keycloak accepts and the origin the application is served on cannot drift apart. Alert rules and dashboards are not yet applied by CI.

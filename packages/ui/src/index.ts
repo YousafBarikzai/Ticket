@@ -94,9 +94,13 @@ export { BrandMark, Icon, type BrandMarkProps, type IconProps } from './icons/in
 /* -------------------------------------------------------------------- Actions */
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './web/Button.js';
 export { IconButton, type IconButtonProps } from './web/IconButton.js';
+export { InfoTipTrigger, type InfoTipContent, type InfoTipTriggerProps } from './web/InfoTipTrigger.js';
 export { Kbd, type KbdProps } from './web/Kbd.js';
 
 /* --------------------------------------------------------------------- Inputs */
+// `controls/*` and `display/*` are re-exported module by module, as
+// `feedback/*` is below, so Next's barrel optimisation reaches the defining
+// module in one hop and a server page ships only the client islands it uses.
 export { Input, type InputProps } from './web/Input.js';
 export { Textarea, type TextareaProps } from './web/Textarea.js';
 export { Select, type SelectOption, type SelectOptionGroup, type SelectProps } from './web/Select.js';
@@ -104,22 +108,13 @@ export { Checkbox, type CheckboxProps } from './web/Checkbox.js';
 export { RadioGroup, type RadioGroupProps, type RadioOption } from './web/RadioGroup.js';
 export { Switch, type SwitchConfirm, type SwitchProps } from './web/Switch.js';
 export { Tabs, type TabItem, type TabsProps } from './web/Tabs.js';
-export {
-  CheckboxGroup,
-  DurationField,
-  NumberField,
-  SearchField,
-  SegmentedControl,
-  TimeField,
-  type CheckboxGroupOption,
-  type CheckboxGroupProps,
-  type DurationFieldProps,
-  type NumberFieldProps,
-  type SearchFieldProps,
-  type SegmentedControlProps,
-  type SegmentedOption,
-  type TimeFieldProps,
-} from './controls/index.js';
+export { CheckboxGroup, type CheckboxGroupOption, type CheckboxGroupProps } from './controls/CheckboxGroup.js';
+export { DurationField, type DurationFieldProps } from './controls/DurationField.js';
+export { FilterPills, type FilterPillOption, type FilterPillsProps } from './controls/FilterPills.js';
+export { NumberField, type NumberFieldProps } from './controls/NumberField.js';
+export { SearchField, type SearchFieldProps } from './controls/SearchField.js';
+export { SegmentedControl, type SegmentedControlProps, type SegmentedOption } from './controls/SegmentedControl.js';
+export { TimeField, type TimeFieldProps } from './controls/TimeField.js';
 
 /* ------------------------------------------------------------------- Form kit */
 // The field context, for an application control that should label and
@@ -169,6 +164,7 @@ export { Skeleton, SkeletonText, type SkeletonProps, type SkeletonTextProps } fr
 // server component importing `StatusScreen` through the feedback barrel made
 // every client component that barrel re-exports — the connection pill, the
 // global banner — part of the route's first load.
+export { AutoSubmitForm, type AutoSubmitFormProps } from './feedback/AutoSubmitForm.js';
 export { Banner, type BannerProps } from './feedback/Banner.js';
 export { ConnectionStatus, type ConnectionAttentionItem, type ConnectionStatusProps } from './feedback/ConnectionStatus.js';
 export { GlobalBanner, type GlobalBannerProps } from './feedback/GlobalBanner.js';
@@ -179,6 +175,7 @@ export { ProgressBar, type ProgressBarProps } from './feedback/ProgressBar.js';
 export {
   SkeletonAvatar,
   SkeletonCard,
+  SkeletonChartCard,
   SkeletonConversation,
   SkeletonList,
   SkeletonPage,
@@ -186,6 +183,7 @@ export {
   SkeletonTable,
   type SkeletonAvatarProps,
   type SkeletonCardProps,
+  type SkeletonChartCardProps,
   type SkeletonConversationProps,
   type SkeletonListProps,
   type SkeletonPageProps,
@@ -227,37 +225,30 @@ export {
   type TimelineProps,
 } from './web/Timeline.js';
 export { RelativeTime, type RelativeTimeProps } from './format/RelativeTime.js';
-export {
-  ActivityFeed,
-  AvatarStack,
-  // A ticket channel as a glyph and a word ("email" → Email, mail), for charts and lists that name channels.
-  channelInfo,
-  DescriptionList,
-  Disclosure,
-  FileChip,
-  isDisclosureKey,
-  Prose,
-  StatusPill,
-  Stepper,
-  Surface,
-  type ActivityActor,
-  type ActivityFeedProps,
-  type ActivityItem,
-  type AvatarStackPerson,
-  type AvatarStackProps,
-  type ChannelInfo,
-  type DescriptionItem,
-  type DescriptionListProps,
-  type DisclosureProps,
-  type FileChipProps,
-  type FileChipState,
-  type ProseProps,
-  type StatusPillProps,
-  type StepStatus,
-  type StepperProps,
-  type StepperStep,
-  type SurfaceProps,
-} from './display/index.js';
+export { ActivityFeed, type ActivityActor, type ActivityFeedProps, type ActivityItem } from './display/ActivityFeed.js';
+export { AttentionList, type AttentionItem, type AttentionListProps, type AttentionSeverity, type AttentionTab } from './display/AttentionList.js';
+export { AttentionRowActions, type AttentionRowActionsProps } from './display/AttentionRowActions.js';
+export { AvatarStack, type AvatarStackPerson, type AvatarStackProps } from './display/AvatarStack.js';
+// A ticket channel as a glyph and a word ("email" → Email, mail), for charts and lists that name channels.
+export { channelInfo, type ChannelInfo } from './display/channel.js';
+export { Count, type CountProps } from './display/Count.js';
+export { DashboardGrid, GridItem, type DashboardGridProps, type GridItemProps, type GridSpan } from './display/DashboardGrid.js';
+export { DeltaPill, type DeltaPillProps } from './display/DeltaPill.js';
+export { DescriptionList, type DescriptionItem, type DescriptionListProps } from './display/DescriptionList.js';
+export { Disclosure, type DisclosureProps } from './display/Disclosure.js';
+export { isDisclosureKey } from './display/disclosure-keys.js';
+export { FileChip, type FileChipProps, type FileChipState } from './display/FileChip.js';
+export { HeroCard, type HeroAside, type HeroCardProps, type HeroChip, type HeroDimension, type HeroProgress, type HeroTone, type HeroTrend, type HeroVerdict } from './display/HeroCard.js';
+export { HeroWhy, type HeroWhyItem, type HeroWhyProps } from './display/HeroWhy.js';
+export { IconTile, type IconTileProps, type IconTileSize } from './display/IconTile.js';
+export { KanbanCard, KanbanColumn, type KanbanCardProps, type KanbanColumnProps, type KanbanDropState, type KanbanStripe } from './display/Kanban.js';
+export { PriorityChip, SignalBars, type PriorityChipProps, type SignalBarsProps } from './display/PriorityChip.js';
+export { Prose, type ProseProps } from './display/Prose.js';
+export { SectionHeader, type SectionHeaderProps } from './display/SectionHeader.js';
+export { StatusPill, type StatusPillProps } from './display/StatusPill.js';
+export { Stepper, type StepStatus, type StepperProps, type StepperStep } from './display/Stepper.js';
+export { Surface, type SurfaceProps } from './display/Surface.js';
+export { APPROVAL_STATE_LOOK, approvalStateLook, COMPONENT_STATE_LOOK, MAJOR_INCIDENT_LOOK, PRIORITY_LOOK, priorityLook, PROBLEM_STATE_LOOK, SLA_STATE_LOOK, STATUS_CATEGORY_LOOK, TICKET_STATE_LOOK, ticketStateLook, ticketTypeLook, TYPE_LOOK, type ApprovalStateKey, type ComponentStateKey, type PriorityKey, type PriorityLook, type ProblemStateKey, type SlaStateKey, type StateLook, type StatusCategoryKey, type TicketStateKey, type TicketTypeKey } from './display/ticket-states.js';
 
 /* ----------------------------------------------------------------- Deprecated
  *

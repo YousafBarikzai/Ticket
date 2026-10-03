@@ -20,6 +20,7 @@ import {
   type FormDefinition,
   type FormValues,
 } from '@itsm/contracts';
+import { refineSafeLinks } from '@itsm/contracts/links/schemas';
 
 /**
  * MOD-02 forms.
@@ -43,7 +44,11 @@ export const formDocumentSchema = z.object({
     properties: z.record(z.unknown()),
     required: z.array(z.string()).optional(),
   }),
-  ui: z.object({ elements: z.array(z.unknown()) }),
+  // Instructions carry links, and a requester opening the form follows them,
+  // so every `href` in the elements is `https:` or `mailto:` (D23), in every
+  // tenant. Packs import through this schema too, so a pack cannot bring in a
+  // link a builder could not type.
+  ui: z.object({ elements: z.array(z.unknown()).superRefine(refineSafeLinks) }),
 });
 
 export const createFormSchema = z.object({

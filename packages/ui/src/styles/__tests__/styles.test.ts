@@ -82,11 +82,49 @@ describe('the assembled stylesheet', () => {
   it('offers every step of the type ramp as a utility class', () => {
     const utilities = styleRegistry.find((entry) => entry.module === 'styles/utilities.styles.ts')!.css;
     for (const style of Object.keys(textRamp)) {
+      const rule = utilities.slice(utilities.indexOf(`.itsm-text-${style} {`));
+      const body = rule.slice(0, rule.indexOf('}'));
       expect(utilities, style).toContain(`.itsm-text-${style} {`);
-      expect(utilities, style).toContain(`font-size: var(--itsm-text-${style}-size);`);
-      expect(utilities, style).toContain(`letter-spacing: var(--itsm-text-${style}-tracking);`);
+      // The family and the word spacing travel with the size: Jakarta without
+      // its word spacing is the run-together title the spec fixes.
+      expect(body, style).toContain(`font-family: var(--itsm-text-${style}-family);`);
+      expect(body, style).toContain(`font-size: var(--itsm-text-${style}-size);`);
+      expect(body, style).toContain(`letter-spacing: var(--itsm-text-${style}-tracking);`);
+      expect(body, style).toContain(`word-spacing: var(--itsm-text-${style}-word-spacing);`);
+      // Only the kicker is drawn in capitals (D6).
+      expect(body.includes('text-transform'), style).toBe(style === 'kicker');
     }
+    expect(utilities).toMatch(/\.itsm-text-kicker \{[^}]*text-transform: uppercase;/);
+    expect(utilities).toMatch(/\.itsm-text-id \{[^}]*font-variant-numeric: slashed-zero tabular-nums;/);
     expect(utilities.startsWith('@layer itsm.utilities {')).toBe(true);
+  });
+
+  it('shows a visually hidden heading as a band while it has keyboard focus', () => {
+    const utilities = styleRegistry.find((entry) => entry.module === 'styles/utilities.styles.ts')!.css;
+    const hidden = utilities.match(/\.itsm-visually-hidden-focusable:not\(:focus-visible\) \{([^}]*)\}/);
+    expect(hidden).not.toBeNull();
+    expect(hidden![1]).toContain('clip-path: inset(50%);');
+    const shown = utilities.match(/\.itsm-visually-hidden-focusable:focus-visible \{([^}]*)\}/);
+    expect(shown).not.toBeNull();
+    // A 28px band in the primary text, 600 13/18 (SPEC-v3 §2.9, X-m19).
+    expect(shown![1]).toContain('min-block-size: 1.75rem;');
+    expect(shown![1]).toContain('color: var(--itsm-colour-text-primary);');
+    expect(shown![1]).toContain('font-size: var(--itsm-text-subheadline-size);');
+    expect(shown![1]).toContain('line-height: var(--itsm-text-subheadline-line);');
+    expect(shown![1]).toContain('font-weight: 600;');
+    expect(shown![1]).not.toContain('clip-path');
+  });
+
+  it('re-themes navy surfaces in the base layer: their text, and a focus ring that reads on navy', () => {
+    const base = styleRegistry.find((entry) => entry.module === 'styles/base.styles.ts')!.css;
+    const hero = base.match(/\n:where\(\[data-surface="hero"\]\) \{([^}]*)\}/);
+    expect(hero).not.toBeNull();
+    expect(hero![1]).toContain('--itsm-colour-border-focus: var(--itsm-colour-hero-accent);');
+    expect(hero![1]).toContain('--itsm-colour-focusGap: var(--itsm-colour-hero-surface);');
+    expect(hero![1]).toContain('color: var(--itsm-colour-hero-text);');
+    // Forced colours keep the system's own focus colour, navy or not.
+    const forced = base.slice(base.indexOf('@media (forced-colors: active) {'));
+    expect(forced).toMatch(/\[data-surface="hero"\][^}]*--itsm-colour-border-focus: Highlight;/);
   });
 
   it('resets the body: no margin, the canvas colour and the family', () => {
@@ -107,6 +145,20 @@ describe('the assembled stylesheet', () => {
       '.itsm-visually-hidden',
     ]) {
       expect(componentStylesheet, name).toContain(name);
+    }
+  });
+
+  it('edges every card class with a 1px border.subtle, the only thing that separates a card from the canvas', () => {
+    // Light canvas and card differ by 1.07:1 by design (SPEC-v3 §2.9, §2.11):
+    // depth is border-first, so a card class without its border vanishes.
+    // All four have their v3 styles (WP-14, WP-16, WP-18 and WP-26), so none
+    // is waiting any more.
+    const border = /border:\s*(?:var\(--itsm-border-hair\)|1px)\s+solid\s+var\(--itsm-colour-border-subtle\)/;
+    for (const card of ['.itsm-Card', '.itsm-StatCard', '.itsm-DataTable__frame', '.itsm-KanbanColumn']) {
+      const escaped = card.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rule = componentStylesheet.match(new RegExp(`(?:^|\\n)\\s*${escaped} \\{([^}]*)\\}`));
+      expect(rule?.[1], `${card} must have a rule of its own`).toBeDefined();
+      expect(rule![1], `${card} must declare a 1px border.subtle`).toMatch(border);
     }
   });
 

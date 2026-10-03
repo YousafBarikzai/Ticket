@@ -548,6 +548,9 @@ model FactTicket {
   @@index([tenantId, teamId, createdDate])
   @@index([tenantId, serviceId, createdDate])
   @@index([tenantId, status, createdDate])
+  // Instant-bounded windows (drift checks, arrivals) read `created_at`, which
+  // the `created_date` indexes above cannot serve.
+  @@index([tenantId, createdAt])
   @@map("fact_ticket")
 }
 
@@ -3657,6 +3660,12 @@ model SlaTimer {
   nextWarningAt DateTime? @map("next_warning_at") @db.Timestamptz(6)
   metAt         DateTime? @map("met_at") @db.Timestamptz(6)
   breachedAt    DateTime? @map("breached_at") @db.Timestamptz(6)
+  /// An `update` target restarts on every agent reply (F1, ADR-0057): the
+  /// cycle counts on this row rather than as new rows, so reporting keeps one
+  /// fact per ticket and target. `cycleStartedAt` is null until the first
+  /// restart; cycle 1 began at `startedAt`.
+  cycle         Int       @default(1)
+  cycleStartedAt DateTime? @map("cycle_started_at") @db.Timestamptz(6)
   /// hash(ticket_id) % 16: the scheduler scans one partition per tick job.
   partition     Int       @default(0)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -3906,6 +3915,10 @@ model Tenant {
   status          String    @default("provisioning")
   parentTenantId  String?   @map("parent_tenant_id") @db.Uuid
   region          String    @default("eu-west")
+  /// 'standard' for a real customer, 'demo' for the shared demo (D25). Fixed
+  /// at insert: a database trigger refuses any change, and the application
+  /// role cannot write this table at all (20261002100000_v3_tenant_kind).
+  kind            String    @default("standard")
   /// Where this tenant's prompts may be processed. Empty means "wherever this
   /// tenant's own data lives" — the safe reading, and the one that needs no
   /// backfill guess for a tenant provisioned before the policy existed.
@@ -3980,6 +3993,60 @@ model TenantProvisioningJob {
 
   @@index([tenantId])
   @@map("tenant_provisioning_job")
+}
+
+/// The shared demo's generation ledger (D12, D19; A4 §3.4).
+///
+/// One row per attempt to build the demo's next generation: the nightly
+/// rebuild, a visitor's reset, an operator's. A PLATFORM table, like the
+/// tenant directory it describes: the column is `demo_tenant_id`,
+/// deliberately not `tenant_id`, so row-level security leaves the ledger
+/// alone and the query extension does not try to scope it (it is in
+/// `PLATFORM_MODELS`). The platform role writes it; the application role may
+/// only read it (`reassert_role_revokes()`).
+///
+/// No foreign key to `tenant`: a purged generation's tenant row is deleted,
+/// and its ledger row is the record that it existed.
+///
+/// One index Prisma cannot express lives only in the migration
+/// (20261002140000_v3_demo_generation): `demo_generation_succeeded`, unique on
+/// `generation` WHERE `status` IN ('live', 'retired', 'purged'), so two builds
+/// can never both go live as the same generation, while failed attempts at a
+/// number may repeat.
+model DemoGeneration {
+  id               String    @id @db.Uuid
+  /// Strictly increasing across generations that went live; equals the
+  /// tenant's `settings.demo.generation` and `demo:live.generation`.
+  generation       Int
+  demoTenantId     String    @map("demo_tenant_id") @db.Uuid
+  /// building | failed | live | retired | purged
+  status           String
+  /// initial | scheduled | catch-up | manual | operator
+  reason           String
+  /// 1 + the earlier attempts with the same job key, so a retried build gets a
+  /// job id BullMQ has not seen (Y-B3).
+  attempt          Int       @default(1)
+  seed             Int
+  /// T0: the instant the generation's story is told from.
+  anchor           DateTime  @db.Timestamptz(6)
+  scale            Decimal   @db.Decimal(4, 2)
+  generatorVersion String    @map("generator_version")
+  planHash         String?   @map("plan_hash")
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz(6)
+  swappedAt        DateTime? @map("swapped_at") @db.Timestamptz(6)
+  retiredAt        DateTime? @map("retired_at") @db.Timestamptz(6)
+  purgedAt         DateTime? @map("purged_at") @db.Timestamptz(6)
+  buildMs          Int?      @map("build_ms")
+  stepMs           Json      @default("{}") @map("step_ms")
+  checks           Json      @default("{}")
+  /// { step, message, at } for a failed attempt.
+  failure          Json?
+  /// Audit rows the purge left behind (the trail is append-only, D19).
+  auditRetained    Int?      @map("audit_retained")
+
+  @@index([status, startedAt(sort: Desc)], map: "demo_generation_status_idx")
+  @@map("demo_generation")
 }
 
 /// Organisations are a soft boundary INSIDE a tenant: nested, with a
@@ -4125,6 +4192,10 @@ model Ticket {
   categoryId     String?   @map("category_id") @db.Uuid
   sourceChannel  String    @default("api") @map("source_channel")
   channelRef     String?   @map("channel_ref")
+  /// How the row reached the database, as distinct from how the work reached
+  /// the desk: `native` or `import` (CHECK constraint). Only the import path
+  /// writes `import`, and the ticket meter leaves those out (ADR-0056).
+  origin         String    @default("native")
   parentId       String?   @map("parent_id") @db.Uuid
   slaPolicyId    String?   @map("sla_policy_id") @db.Uuid
   dueAt          DateTime? @map("due_at") @db.Timestamptz(6)
@@ -4151,6 +4222,11 @@ model Ticket {
 
   @@unique([tenantId, number])
   @@index([tenantId, statusCategory, priority, dueAt])
+  // "Breached" and "due soon" (R2 `filter[sla]`, `filter[due…]`) are open
+  // work by due time; the index above needs a priority to reach `due_at`.
+  @@index([tenantId, statusCategory, dueAt])
+  // `filter[resolvedAfter|resolvedBefore]` windows (R2).
+  @@index([tenantId, resolvedAt])
   @@index([tenantId, assigneeId, statusCategory])
   @@index([tenantId, groupId, statusCategory, createdAt(sort: Desc)])
   @@index([tenantId, requesterId, createdAt(sort: Desc)])

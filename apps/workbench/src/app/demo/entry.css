@@ -1,0 +1,78 @@
+/*
+ * The column of the pages outside the frame that sit on `SignInLayout`:
+ * `/demo`, `/sign-in` and `/signed-out` (v3 §4.6; A3 §6.2, §6.6, §6.7).
+ *
+ * Arrangement only, like `globals.css`: every colour, size and face is a
+ * design-system custom property, so these pages change with the tokens and
+ * the site's chooser, which draws the same layout, stays their twin. Here
+ * beside `/demo` because the three pages are the demo's and the sign-in's,
+ * and only they import it.
+ */
+
+.app-Entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  text-align: start;
+}
+
+.app-Entry__title {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-family: var(--itsm-text-title1-family);
+  font-size: var(--itsm-text-title1-size);
+  line-height: var(--itsm-text-title1-line);
+  font-weight: var(--itsm-text-title1-weight);
+  letter-spacing: var(--itsm-text-title1-tracking);
+  text-wrap: balance;
+}
+
+.app-Entry__body {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+}
+
+.app-Entry__body strong {
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Entry__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: var(--itsm-space-2xs) 0 0;
+}
+
+.app-Entry__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
+  margin: 0;
+}
+
+.app-Entry__links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Entry__link {
+  color: var(--itsm-colour-text-link);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-underline-offset: 0.2em;
+}
+
+.app-Entry__note {
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}

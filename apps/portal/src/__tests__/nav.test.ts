@@ -1,7 +1,8 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ADMINISTRATION_GATE, AREAS, SERVICE_DESK_GATE, buildAreaModel } from '@itsm/contracts/areas';
 import {
   PRIMARY_NAV,
   ROUTES,
@@ -14,7 +15,6 @@ import {
   portalFrame,
   routeFor,
   showsNewRequest,
-  switcherFor,
   type PortalCan,
 } from '../navigation.js';
 
@@ -30,6 +30,9 @@ import {
  *     with a count, and a count on *Me* and the avatar.
  *   - The tab bar is five tabs at most, with labels short enough for 320 px.
  *   - *New request* is not offered where the page already has it.
+ *   - Who may use the other areas is `@itsm/contracts/areas`' to say (v3
+ *     §3.2): the rules that were `switcherFor`'s are rows of that package's
+ *     `areas.test.ts` now, and this file holds the portal to having no copy.
  */
 
 const appDir = fileURLToPath(new URL('../app/', import.meta.url));
@@ -202,22 +205,18 @@ describe('New request in the top bar (X-84)', () => {
   });
 });
 
-describe('the app switcher (staff only)', () => {
-  const origins = { workbench: 'https://desk.example', admin: 'https://admin.example' };
+describe('the other areas (v3 §3.1–§3.2)', () => {
+  const source = readFileSync(fileURLToPath(new URL('../navigation.ts', import.meta.url)), 'utf8');
 
-  it('is empty for a requester', () => {
-    expect(switcherFor(new Set(['ticket.create', 'ticket.read', 'approval.read']), origins)).toEqual([]);
+  it('keeps no copy of the area gates or the v2 switcher here', () => {
+    expect(source).not.toMatch(/switcherFor|AppSwitcherItem|WORKBENCH_PERMISSIONS|ADMIN_PERMISSIONS/);
+    for (const key of [...SERVICE_DESK_GATE, ...ADMINISTRATION_GATE]) expect(source, key).not.toContain(`'${key}'`);
   });
 
-  it('lists the workbench for an agent, and the console for an administrator, this app first', () => {
-    expect(switcherFor(new Set(['ticket.update']), origins)).toEqual([
-      { app: 'portal', label: 'Help', href: '/' },
-      { app: 'workbench', label: 'Workbench', href: 'https://desk.example' },
-    ]);
-    expect(switcherFor(new Set(['ticket.assign', 'audit.read']), origins).map((item) => item.app)).toEqual(['portal', 'workbench', 'admin']);
-  });
-
-  it('leaves out an application whose origin the deployment has not set', () => {
-    expect(switcherFor(new Set(['ticket.update', 'audit.read']), { admin: ' ' })).toEqual([]);
+  it('names the portal as the one table does: a requester sees the "Help Portal" lockup and nothing to switch to', () => {
+    const model = buildAreaModel({ app: 'portal', held: ['ticket.create', 'ticket.read', 'approval.read'], session: { kind: 'oidc' }, origins: {} });
+    expect(model.visible).toBe(false);
+    expect(model.areas.map((area) => area.name)).toEqual([AREAS.portal.name]);
+    expect(AREAS.portal.name).toBe('Help Portal');
   });
 });

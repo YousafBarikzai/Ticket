@@ -1,7 +1,9 @@
 /*
- * The ticket inspector (SPEC §6.2, X-12): a calm column of properties beside
- * the conversation, or the same content in a sheet. Imported by the inspector
- * itself, so only the ticket's routes carry it.
+ * The ticket inspector (SPEC §6.2, X-12; v3 §7.1.4, A6 §5.6.5): a column of
+ * cards beside the conversation, or the same cards in a sheet — each white,
+ * radius 12, padding 16, with a 600 14/20 Inter head (a title under 16 px is
+ * Inter, D4) that opens and closes. Imported by the inspector itself, so only
+ * the ticket's routes carry it.
  *
  * Arrangement only: every colour, space, size and duration is a design-system
  * custom property. Unlayered, so it wins over the design system's
@@ -19,17 +21,28 @@
   letter-spacing: var(--itsm-text-callout-tracking);
 }
 
-/* ---- Sections -------------------------------------------------------------- */
+/* ---- Cards ------------------------------------------------------------------ */
 
-.app-Insp__section + .app-Insp__section {
-  padding-block-start: var(--itsm-space-xs);
-  border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+/* Border-first depth, no resting shadow (v3 §2.9). */
+.app-Insp__section,
+.app-Insp > .app-Triage {
+  box-sizing: border-box;
+  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border-radius: var(--itsm-radius-xl);
+  background: var(--itsm-colour-surface-raised);
 }
 
-/* The rows line up with the section's name rather than under its chevron: the column is narrow. */
+.app-Insp__section > .itsm-Disclosure__summary {
+  font-size: var(--itsm-text-subheadline-size);
+  font-weight: var(--itsm-font-weight-semibold);
+  line-height: var(--itsm-text-subheadline-line);
+}
+
+/* The rows line up with the card's title rather than under its chevron: the column is narrow. */
 .app-Insp__section > .itsm-Disclosure__content {
   padding-inline-start: 0;
-  padding-block: var(--itsm-space-2xs) var(--itsm-space-xs);
+  padding-block: var(--itsm-space-xs) var(--itsm-space-2xs);
 }
 
 .app-Insp__summary {
@@ -170,9 +183,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-xs);
-  padding: var(--itsm-space-sm);
-  border-radius: var(--itsm-radius-xl);
-  background: var(--itsm-colour-surface-sunken);
+}
+
+/* "Sample" (D13): a neutral pill and its ⓘ, after the line it qualifies. */
+.app-Triage__sample {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-3xs);
+  margin-inline-start: var(--itsm-space-2xs);
 }
 
 .app-Triage__head {
@@ -318,20 +336,109 @@
   border-block-start: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
 }
 
-.app-InspSla__row[data-headline] .itsm-SlaClock {
+.app-InspSla__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-3xs) var(--itsm-space-xs);
+}
+
+.app-InspSla__name {
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-InspSla__row[data-headline] .app-InspSla__name {
   font-size: var(--itsm-text-body-size);
 }
 
-.app-InspSla__when {
-  margin: 0;
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-footnote-size);
-  line-height: var(--itsm-text-footnote-line);
-  font-variant-numeric: tabular-nums;
+/* ---- Related ------------------------------------------------------------------ */
+
+.app-Related {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-md);
 }
 
-.app-InspSla__row[data-state='breached'] .app-InspSla__when {
-  color: var(--itsm-colour-danger-subtleText);
+.app-Related__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-2xs);
+}
+
+.app-Related__heading {
+  margin: 0;
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-text-subheadline-weight);
+}
+
+.app-Related__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Related__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--itsm-space-3xs) var(--itsm-space-xs);
+  align-items: baseline;
+}
+
+.app-Related__type {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+}
+
+.app-Related__number {
+  justify-self: start;
+  color: var(--itsm-colour-text-link);
+  font-family: var(--itsm-text-id-family);
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-decoration: none;
+}
+
+.app-Related__number:hover {
+  text-decoration: underline;
+}
+
+.app-Related__title,
+.app-Related__pill {
+  grid-column: 2;
+  justify-self: start;
+  min-inline-size: 0;
+}
+
+.app-Related__title {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--itsm-colour-text-primary);
+}
+
+.app-Related__row[data-kind='ci'] .app-Related__title {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.app-Related__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--itsm-space-2xs);
+  padding-block-start: var(--itsm-space-3xs);
+}
+
+.app-Connections__effort {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Connections ------------------------------------------------------------ */
@@ -357,8 +464,7 @@
 }
 
 .app-Connections__tags,
-.app-Connections__people,
-.app-Connections__links {
+.app-Connections__people {
   display: flex;
   gap: var(--itsm-space-2xs);
   margin: 0;
@@ -370,8 +476,7 @@
   flex-wrap: wrap;
 }
 
-.app-Connections__people,
-.app-Connections__links {
+.app-Connections__people {
   flex-direction: column;
 }
 
@@ -379,40 +484,6 @@
   display: flex;
   align-items: center;
   gap: var(--itsm-space-xs);
-}
-
-.app-Connections__link {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0 var(--itsm-space-xs);
-  align-items: baseline;
-}
-
-.app-Connections__linkType {
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-footnote-size);
-}
-
-.app-Connections__linkNumber {
-  justify-self: start;
-  color: var(--itsm-colour-text-link);
-  font-variant-numeric: tabular-nums slashed-zero;
-  text-decoration: none;
-}
-
-.app-Connections__linkNumber:hover {
-  text-decoration: underline;
-}
-
-.app-Connections__linkTitle,
-.app-Connections__linkStatus {
-  grid-column: 2;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-footnote-size);
 }
 
 .app-Connections__actions {

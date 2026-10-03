@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import { crossAreaTicketHref } from '@itsm/contracts/areas';
 import { Card, SegmentedControl } from '@itsm/ui';
 import { PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../../components/Forbidden.js';
 import { DecisionsView, type DecisionRowView } from '../../../../../components/ai-triage/DecisionsView.js';
 import { decisionView, decisionsCsvFileName, decisionsWithin, rangeFrom } from '../../../../../components/ai-triage/decisions.js';
-import { holds, holdsAny } from '../../../../../permissions.js';
+import { holds } from '../../../../../permissions.js';
 import { read } from '../../../../../server/read.js';
-import { pageAccess } from '../../../../../server/session.js';
-import { modeViewOnly, originOf, rangeOptions, reachable, triageTabs } from '../data.js';
+import { currentAreas, pageAccess } from '../../../../../server/session.js';
+import { modeViewOnly, rangeOptions, reachable, triageTabs } from '../data.js';
 import '../../../../../components/ai-triage/ai-triage.css';
 import '../../../../../components/integrations/integrations.css';
 
@@ -39,9 +40,10 @@ export default async function DecisionsPage({ searchParams }: { readonly searchP
     </div>
   );
 
-  const [decisions, tickets] = await Promise.all([
+  const [decisions, tickets, areas] = await Promise.all([
     read(() => api.observe.ai.decisions({ purpose: 'triage', limit: PAGE })),
     holds(me, 'ticket.read') ? read(() => api.observe.tickets({ limit: 200, sort: '-createdAt' })) : Promise.resolve(null),
+    currentAreas(),
   ]);
   if (!decisions.ok) {
     return (
@@ -55,16 +57,13 @@ export default async function DecisionsPage({ searchParams }: { readonly searchP
 
   const now = Date.now();
   const byId = new Map(tickets?.ok ? tickets.value.data.map((ticket) => [ticket.id, { number: ticket.number, title: ticket.title }] as const) : []);
-  const workbench = originOf(process.env.WORKBENCH_ORIGIN);
-  const worksTickets = holdsAny(me, ['ticket.update', 'ticket.comment.internal']);
+  const teamOf = new Map(tickets?.ok ? tickets.value.data.map((ticket) => [ticket.id, ticket.groupId] as const) : []);
   const rows: DecisionRowView[] = decisionsWithin(decisions.value, days, now).map((row) => {
     const view = decisionView(row, byId);
+    // The Service Desk when it is listed (in a demo, only for Alex's teams, X-B2); else the console's drawer.
     const href =
-      workbench && worksTickets
-        ? `${workbench}/tickets/${encodeURIComponent(view.ticketNumber ?? view.ticketId)}`
-        : view.ticketNumber
-          ? reachable(me, `/tickets?open=ticket:${encodeURIComponent(view.ticketNumber)}`)
-          : undefined;
+      crossAreaTicketHref(areas, { number: view.ticketNumber ?? view.ticketId, groupId: teamOf.get(view.ticketId) ?? null }) ??
+      (view.ticketNumber ? reachable(me, `/tickets?open=ticket:${encodeURIComponent(view.ticketNumber)}`) : undefined);
     return { ...view, ...(href ? { ticketHref: href } : {}) };
   });
 

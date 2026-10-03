@@ -14,8 +14,9 @@ export type AvailabilityStatus = (typeof STATUSES)[number];
 
 export const STATUS_LOOK: Readonly<Record<string, { readonly label: string; readonly tone: Tone; readonly icon: IconName }>> = {
   available: { label: 'Available', tone: 'success', icon: 'circle-check' },
-  busy: { label: 'Busy', tone: 'warning', icon: 'clock' },
-  away: { label: 'Away', tone: 'info', icon: 'moon' },
+  // At work but not free: neutral with its own glyph, never amber (D5, X-m26); away is `hold`, paused.
+  busy: { label: 'Busy', tone: 'neutral', icon: 'minus-circle' },
+  away: { label: 'Away', tone: 'hold', icon: 'moon' },
   off_shift: { label: 'Off shift', tone: 'neutral', icon: 'dot' },
   left: { label: 'Left', tone: 'neutral', icon: 'log-out' },
 };

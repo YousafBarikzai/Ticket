@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ConflictError,
+  DemoDisabledError,
   ForbiddenError,
   NotFoundError,
   authz,
@@ -65,8 +66,18 @@ async function loadVisible(tx: Tx, ctx: TenantContext, id: string): Promise<Dash
   return row;
 }
 
-/** Changing a shared dashboard is management; changing your own is yours. */
-function requireEditable(ctx: TenantContext, row: DashboardRow): void {
+/**
+ * Changing a shared dashboard is management; changing your own is yours.
+ *
+ * In the shared demo the seeded dashboards are read-only for everybody
+ * (A3 §7.5): they are the Overview and Insights every visitor opens next, so
+ * one visitor's edit would be the next prospect's first impression. Checked
+ * before the permission, so the visitor reads why ("changing the shared demo
+ * dashboards is turned off") rather than being told to ask for a role. A
+ * dashboard a visitor made is theirs to change, within the demo's cap.
+ */
+export function requireEditable(ctx: TenantContext, row: Pick<DashboardRow, 'ownerId' | 'seeded'>): void {
+  if (ctx.demo && row.seeded) throw new DemoDisabledError('shared-dashboards');
   if (row.ownerId === null) {
     authz.require(ctx, 'analytics.manage');
     return;

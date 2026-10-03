@@ -1,26 +1,32 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import { ApiError, type SessionRow } from '@itsm/sdk';
-import { Avatar, Badge, Icon } from '@itsm/ui';
+import { Avatar, Badge, Banner, Icon } from '@itsm/ui';
+import { AreaList } from '@itsm/ui/shell';
 import { AppLink } from '../../AppLink.js';
 import { SectionProblem } from '../../../home/SectionProblem.js';
 import { settle } from '../../../home/settle.js';
 import { approvalsWaitingLabel } from '../../../navigation.js';
 import { AppearanceSettings } from '../../../profile/AppearanceSettings.js';
-import { languageName, organisationLines, otherChannels, sectionsFor, settingsOf, zonePlace, zoneWords } from '../../../profile/model.js';
+import { DEMO_NOTIFICATIONS_NOTE, languageName, organisationLines, otherChannels, sectionsFor, settingsOf, zonePlace, zoneWords } from '../../../profile/model.js';
 import { NotificationSettings } from '../../../profile/NotificationSettings.js';
 import { readDirectoryEntry } from '../../../profile/server.js';
 import { SignedInDevices } from '../../../profile/SignedInDevices.js';
 import { ZoneClock } from '../../../profile/ZoneClock.js';
-import { apiFor, currentApprovals, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
+import { isDemo } from '../../../server/demo.js';
+import { apiFor, currentApprovals, currentAreas, currentMe, heldPermissions, requireSession } from '../../../server/session.js';
 import '../../../profile/profile.css';
 
 export const metadata: Metadata = { title: 'Profile' };
 export const dynamic = 'force-dynamic';
 
 /**
- * Profile (SPEC §6.3 `/profile`, F40) — the Me tab on a phone, an anchor list
- * beside the sections on a wide screen.
+ * Profile (SPEC §6.3 `/profile`, F40; v3 §7.2) — the Me tab on a phone, an
+ * anchor list beside the sections on a wide screen.
+ *
+ * **Switch area** comes first for anyone with more than one area and in every
+ * demo visit (v3 §3.6, A2 §6.4): on a phone this is where the other areas
+ * are, and it costs no client code (`AreaList` is a server component).
  *
  * **Account** says who the person is in words: their name and address, their
  * organisation by name, their teams by name, their language and their time
@@ -32,6 +38,10 @@ export const dynamic = 'force-dynamic';
  * Then a permanent row to **Approvals** for anyone who approves (with the
  * count the avatar carries), **Notifications** (saved as they change),
  * **Appearance** on this device, and the **Devices** signed in.
+ *
+ * In a demo visit **Devices** is left out — the personas are shared, and one
+ * visitor must not see or end another's sessions (the API refuses it anyway)
+ * — and Notifications says they stay in the bell.
  *
  * Every read starts together and each section fails on its own: a profile
  * that cannot load one part is still worth showing, and says which.
@@ -45,13 +55,18 @@ export default async function ProfilePage(): Promise<ReactNode> {
   const held = heldPermissions(me);
   const api = apiFor(session);
   const approver = held.has('approval.read');
+  const demo = isDemo(me);
 
-  const [preferences, sessions, directory, approvals] = await Promise.all([
+  const [areas, preferences, sessions, directory, approvals] = await Promise.all([
+    currentAreas(),
     settle(api.notificationPreferences()),
-    api.sessions().then(
-      (value): SessionsRead => ({ ok: true, value }),
-      (error: unknown): SessionsRead => ({ ok: false, unsupported: error instanceof ApiError && (error.status === 403 || error.status === 404) }),
-    ),
+    // A demo visit never lists sessions: there is nothing of the visitor's own to show.
+    demo
+      ? Promise.resolve<SessionsRead>({ ok: false, unsupported: true })
+      : api.sessions().then(
+          (value): SessionsRead => ({ ok: true, value }),
+          (error: unknown): SessionsRead => ({ ok: false, unsupported: error instanceof ApiError && (error.status === 403 || error.status === 404) }),
+        ),
     readDirectoryEntry(session, me),
     approver ? currentApprovals() : Promise.resolve(null),
   ]);
@@ -60,8 +75,8 @@ export default async function ProfilePage(): Promise<ReactNode> {
   const name = me.actor.displayName?.trim() || 'You';
   const zone = zoneWords(me.timeZone, now, me.locale);
   const organisations = organisationLines(me.organisations);
-  const showDevices = sessions.ok || !sessions.unsupported;
-  const sections = sectionsFor({ approvals: approver, devices: showDevices });
+  const showDevices = !demo && (sessions.ok || !sessions.unsupported);
+  const sections = sectionsFor({ areas: areas.visible, approvals: approver, devices: showDevices });
   const waiting = approvals?.length ?? 0;
 
   const facts: { readonly id: string; readonly label: string; readonly value: ReactNode }[] = [
@@ -111,6 +126,12 @@ export default async function ProfilePage(): Promise<ReactNode> {
         </nav>
 
         <div className="app-Profile__sections">
+          {areas.visible ? (
+            <section id="areas" className="app-Profile__section" aria-labelledby="areas-heading">
+              <AreaList model={areas} headingId="areas-heading" />
+            </section>
+          ) : null}
+
           <section id="account" className="app-Profile__section" aria-labelledby="account-heading">
             <h2 id="account-heading" className="app-Profile__heading">
               Account
@@ -168,6 +189,7 @@ export default async function ProfilePage(): Promise<ReactNode> {
             <h2 id="notifications-heading" className="app-Profile__heading">
               Notifications
             </h2>
+            {demo ? <Banner tone="info" live={false} title={DEMO_NOTIFICATIONS_NOTE} /> : null}
             {preferences.ok ? (
               <NotificationSettings
                 initial={settingsOf(preferences.value)}

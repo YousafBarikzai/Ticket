@@ -6,15 +6,27 @@
  * `web/`, where the applications import them from today.
  */
 export { ActivityFeed, type ActivityActor, type ActivityFeedProps, type ActivityItem } from './ActivityFeed.js';
+export { AttentionList, type AttentionItem, type AttentionListProps, type AttentionSeverity, type AttentionTab } from './AttentionList.js';
+export { AttentionRowActions, type AttentionRowActionsProps } from './AttentionRowActions.js';
 export { AvatarStack, type AvatarStackPerson, type AvatarStackProps } from './AvatarStack.js';
 export { channelInfo, channelPhrase, type ChannelInfo } from './channel.js';
+export { Count, type CountProps } from './Count.js';
+export { DashboardGrid, GridItem, type DashboardGridProps, type GridItemProps, type GridSpan } from './DashboardGrid.js';
 export { dayHeading, dayKey } from './dates.js';
+export { DeltaPill, type DeltaPillProps } from './DeltaPill.js';
 export { DescriptionList, type DescriptionItem, type DescriptionListProps } from './DescriptionList.js';
 export { Disclosure, type DisclosureProps } from './Disclosure.js';
 export { disclosureStorageKey, isDisclosureKey } from './disclosure-keys.js';
 export { FileChip, type FileChipProps, type FileChipState } from './FileChip.js';
+export { HeroCard, type HeroAside, type HeroCardProps, type HeroChip, type HeroDimension, type HeroProgress, type HeroTone, type HeroTrend, type HeroVerdict } from './HeroCard.js';
+export { HeroWhy, type HeroWhyItem, type HeroWhyProps } from './HeroWhy.js';
+export { IconTile, type IconTileProps, type IconTileSize } from './IconTile.js';
+export { KanbanCard, KanbanColumn, type KanbanCardProps, type KanbanColumnProps, type KanbanDropState, type KanbanStripe } from './Kanban.js';
+export { PriorityChip, SignalBars, type PriorityChipProps, type SignalBarsProps } from './PriorityChip.js';
 export { Prose, type ProseProps } from './Prose.js';
+export { SectionHeader, type SectionHeaderProps } from './SectionHeader.js';
 export { StatusPill, type StatusPillProps } from './StatusPill.js';
 export { Stepper, stepStatusText, type StepStatus, type StepperProps, type StepperStep } from './Stepper.js';
 export { Surface, type SurfaceElevation, type SurfacePadding, type SurfaceProps, type SurfaceRadius, type SurfaceTone } from './Surface.js';
+export { APPROVAL_STATE_LOOK, approvalStateLook, COMPONENT_STATE_LOOK, MAJOR_INCIDENT_LOOK, PRIORITY_LOOK, priorityLook, PROBLEM_STATE_LOOK, SLA_STATE_LOOK, STATUS_CATEGORY_LOOK, TICKET_STATE_LOOK, ticketStateLook, ticketTypeLook, TYPE_LOOK, type ApprovalStateKey, type ComponentStateKey, type PriorityKey, type PriorityLook, type ProblemStateKey, type SlaStateKey, type StateLook, type StatusCategoryKey, type TicketStateKey, type TicketTypeKey } from './ticket-states.js';
 export { statusIcon, toneFromIntent } from './tone.js';

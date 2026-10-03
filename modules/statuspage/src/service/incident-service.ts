@@ -1,6 +1,19 @@
 import { z } from 'zod';
 import { events } from '@itsm/contracts';
-import { NotFoundError, ValidationError, authz, enqueue, metrics, newId, publish, recordAudit, transaction, type TenantContext, type Tx } from '@itsm/platform';
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+  authz,
+  enqueue,
+  metrics,
+  newId,
+  publish,
+  recordAudit,
+  transaction,
+  type TenantContext,
+  type Tx,
+} from '@itsm/platform';
 import {
   IMPACTS,
   INCIDENT_STATUSES,
@@ -190,12 +203,23 @@ export async function postUpdate(
  * Resolves, once. Delivery is unordered and at least once, so the resolution
  * can arrive from two directions — the public "resolved" update and the
  * `incident.major.resolved` event — and whichever is second finds it done.
+ *
+ * `now` is when it was resolved (A4 §2.3), as `postUpdate` already takes it;
+ * omitted, the present, exactly as before.
  */
-export async function resolveIncident(ctx: TenantContext, tx: Tx, incidentId: string, body: string, source: 'major_incident' | 'manual', sourceRef?: string | null) {
+export async function resolveIncident(
+  ctx: TenantContext,
+  tx: Tx,
+  incidentId: string,
+  body: string,
+  source: 'major_incident' | 'manual',
+  sourceRef?: string | null,
+  now?: Date,
+) {
   const incident = await tx.statusIncident.findFirst({ where: { id: incidentId } });
   if (!incident) throw new NotFoundError('status incident', incidentId);
   if (incident.status === 'resolved') return null;
-  return postUpdate(ctx, tx, incidentId, { status: 'resolved', body, source, sourceRef: sourceRef ?? null });
+  return postUpdate(ctx, tx, incidentId, { status: 'resolved', body, source, sourceRef: sourceRef ?? null }, now);
 }
 
 // ---- The operator's door ----------------------------------------------------
@@ -393,6 +417,238 @@ export async function updateMaintenanceByHand(ctx: TenantContext, windowId: stri
 export async function listMaintenance(ctx: TenantContext) {
   authz.require(ctx, 'statuspage.read');
   return transaction(ctx, (tx) => tx.maintenanceWindow.findMany({ orderBy: { startsAt: 'desc' }, take: 50 }));
+}
+
+// ---------------------------------------------------------------------------
+// History imports (A4 §1.9.6, §2.3)
+//
+// The shared demo's page carries three past incidents, the live one and two
+// maintenance windows, and it is written by the build rather than mirrored
+// from the desk (E5). The doors above cannot write it: each line they post
+// queues the subscribers' e-mail, which a tenant being built refuses
+// (A4 §2.4 Q2), and announces a webhook event, which a line from last month
+// is not. These write the same rows those doors write, dated when each thing
+// happened, and set nothing off: no event, no job, no subscriber told. The
+// components are recomputed for the present, because the page shows them as
+// they are now.
+// ---------------------------------------------------------------------------
+
+export const importedLineSchema = z.object({
+  /** What the line moved the incident to; omitted, it stays where it was. */
+  status: z.enum(INCIDENT_STATUSES).optional(),
+  body: z.string().min(1).max(5000),
+  /** When it was posted. */
+  at: z.coerce.date(),
+});
+
+export const importIncidentSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    impact: z.enum(IMPACTS).default('minor'),
+    componentKeys: z.array(z.string()).max(50).default([]),
+    /** The major incident behind it, when there was one. */
+    majorIncidentId: z.string().uuid().nullable().optional(),
+    /** The page's timeline, oldest first. The first line opened the incident, as `investigating` unless it says otherwise. */
+    updates: z.array(importedLineSchema).min(1).max(100),
+  })
+  .strict();
+export type ImportIncidentInput = z.input<typeof importIncidentSchema>;
+
+export const importMaintenanceSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    body: z.string().max(5000).nullable().optional(),
+    componentKeys: z.array(z.string()).max(50).default([]),
+    startsAt: z.coerce.date(),
+    endsAt: z.coerce.date(),
+    /** Omitted, where the window stands now: scheduled, in progress or completed. */
+    status: z.enum(MAINTENANCE_STATUSES).optional(),
+    /** The change the window is for, so a later re-schedule of that change moves this notice. */
+    changeId: z.string().uuid().nullable().optional(),
+    /** When it was announced. */
+    at: z.coerce.date(),
+  })
+  .strict();
+export type ImportMaintenanceInput = z.input<typeof importMaintenanceSchema>;
+
+export interface ImportOptions {
+  /** The audit row's reason, e.g. the demo build's `DEMO_BUILD_REASON`. */
+  reason?: string;
+}
+
+const importOptionsSchema = z.object({ reason: z.string().min(1).max(500).optional() }).strict();
+
+/** Refuses an instant that is not a date, or that has not happened yet: a history records the past. */
+function pastInstantProblem(at: Date, field: string): { field: string; code: string; message: string } | null {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) return { field, code: 'invalid', message: 'not a date' };
+  if (at.getTime() > Date.now()) return { field, code: 'in_future', message: 'must not be later than now' };
+  return null;
+}
+
+/**
+ * Writes one past (or still open) incident onto the page with its whole
+ * timeline, each line posted when it was. The incident ends in the status its
+ * last line left it in; it is resolved at the line that resolved it, as the
+ * live door records it. One audit row. Nothing is announced and nobody is
+ * e-mailed.
+ */
+export async function importIncident(ctx: TenantContext, input: ImportIncidentInput, options: ImportOptions = {}) {
+  authz.require(ctx, 'statuspage.manage');
+  const parsed = importIncidentSchema.parse(input);
+  const settings = importOptionsSchema.parse(options);
+
+  const problems: { field: string; code: string; message: string }[] = [];
+  parsed.updates.forEach((line, index) => {
+    const problem = pastInstantProblem(line.at, `updates.${index}.at`);
+    if (problem) problems.push(problem);
+    else if (index > 0 && line.at < parsed.updates[index - 1]!.at) {
+      problems.push({ field: `updates.${index}.at`, code: 'out_of_order', message: 'the timeline must run oldest first' });
+    }
+  });
+  if (problems.length > 0) throw new ValidationError('the imported timeline does not hold together', problems);
+
+  // The status after each line, and when it was resolved: the same rule as
+  // `postUpdate`, which stamps `resolvedAt` whenever a line moves it there.
+  let status: IncidentStatus = parsed.updates[0]!.status ?? 'investigating';
+  let resolvedAt: Date | null = status === 'resolved' ? parsed.updates[0]!.at : null;
+  const lines = parsed.updates.map((line, index) => {
+    if (index > 0 && line.status && line.status !== status) {
+      status = line.status;
+      if (status === 'resolved') resolvedAt = line.at;
+    }
+    return { status, body: line.body, at: line.at };
+  });
+  const opened = lines[0]!;
+  const last = lines.at(-1)!;
+
+  return transaction(ctx, async (tx) => {
+    const page = await loadPage(tx, ctx);
+    const componentIds = await componentIdsForKeys(tx, parsed.componentKeys);
+    const majorIncidentId = parsed.majorIncidentId ?? null;
+    if (majorIncidentId) {
+      const source = await tx.majorIncident.findFirst({ where: { id: majorIncidentId }, select: { id: true } });
+      if (!source) throw new NotFoundError('major incident', majorIncidentId);
+      // One page incident per major incident, as the mirror keeps it.
+      const onPage = await tx.statusIncident.findFirst({ where: { majorIncidentId }, select: { id: true } });
+      if (onPage) throw new ConflictError('that major incident is already on the page', { statusIncidentId: onPage.id });
+    }
+
+    const incident = await tx.statusIncident.create({
+      data: {
+        id: newId(),
+        tenantId: ctx.tenantId,
+        pageId: page.id,
+        majorIncidentId,
+        title: parsed.title,
+        impact: parsed.impact,
+        status: last.status,
+        componentIds,
+        startedAt: opened.at,
+        resolvedAt,
+        createdBy: ctx.actor.id,
+        createdAt: opened.at,
+        updatedAt: last.at,
+      },
+    });
+    const updates = lines.map((line) => ({
+      id: newId(),
+      tenantId: ctx.tenantId,
+      incidentId: incident.id,
+      status: line.status,
+      body: line.body,
+      source: 'manual',
+      sourceRef: null,
+      postedAt: line.at,
+      postedBy: ctx.actor.id,
+    }));
+    await tx.statusUpdate.createMany({ data: updates });
+    await recomputeComponents(tx, componentIds);
+
+    await recordAudit(tx, ctx, {
+      action: 'statuspage.incident.imported',
+      targetType: 'status_incident',
+      targetId: incident.id,
+      after: {
+        title: parsed.title,
+        impact: parsed.impact,
+        status: last.status,
+        componentKeys: parsed.componentKeys,
+        majorIncidentId,
+        startedAt: opened.at.toISOString(),
+        resolvedAt: resolvedAt === null ? null : (resolvedAt as Date).toISOString(),
+        updates: updates.length,
+      },
+      ...(settings.reason ? { reason: settings.reason } : {}),
+    });
+    metrics.increment('status_incidents_imported_total');
+    return { incident, updates };
+  });
+}
+
+/**
+ * Writes one maintenance window onto the page as it was announced. Its status
+ * is where the window stands now unless the import says otherwise (a window
+ * that was cancelled). A change's window is the change's one notice, so a
+ * second import for the same change is refused rather than added. One audit
+ * row; nothing announced and nobody e-mailed.
+ */
+export async function importMaintenance(ctx: TenantContext, input: ImportMaintenanceInput, options: ImportOptions = {}) {
+  authz.require(ctx, 'statuspage.manage');
+  const parsed = importMaintenanceSchema.parse(input);
+  const settings = importOptionsSchema.parse(options);
+  if (parsed.endsAt <= parsed.startsAt) throw new ValidationError('a maintenance window must end after it starts');
+  const problem = pastInstantProblem(parsed.at, 'at');
+  if (problem) throw new ValidationError('a maintenance window cannot be announced in the future', [problem]);
+
+  return transaction(ctx, async (tx) => {
+    const page = await loadPage(tx, ctx);
+    const componentIds = await componentIdsForKeys(tx, parsed.componentKeys);
+    const changeId = parsed.changeId ?? null;
+    if (changeId) {
+      const change = await tx.change.findFirst({ where: { id: changeId }, select: { id: true } });
+      if (!change) throw new NotFoundError('change', changeId);
+      const existing = await tx.maintenanceWindow.findFirst({ where: { changeId }, select: { id: true } });
+      if (existing) throw new ConflictError('that change already has a maintenance window on the page', { maintenanceId: existing.id });
+    }
+
+    const status = parsed.status ?? maintenanceStatusAt({ startsAt: parsed.startsAt, endsAt: parsed.endsAt, status: 'scheduled' }, new Date());
+    const window = await tx.maintenanceWindow.create({
+      data: {
+        id: newId(),
+        tenantId: ctx.tenantId,
+        pageId: page.id,
+        changeId,
+        title: parsed.title,
+        body: parsed.body ?? null,
+        componentIds,
+        startsAt: parsed.startsAt,
+        endsAt: parsed.endsAt,
+        status,
+        createdBy: ctx.actor.id,
+        createdAt: parsed.at,
+        updatedAt: parsed.at,
+      },
+    });
+    await recomputeComponents(tx, componentIds);
+
+    await recordAudit(tx, ctx, {
+      action: 'statuspage.maintenance.imported',
+      targetType: 'maintenance_window',
+      targetId: window.id,
+      after: {
+        title: parsed.title,
+        status,
+        componentKeys: parsed.componentKeys,
+        changeId,
+        startsAt: parsed.startsAt.toISOString(),
+        endsAt: parsed.endsAt.toISOString(),
+        announcedAt: parsed.at.toISOString(),
+      },
+      ...(settings.reason ? { reason: settings.reason } : {}),
+    });
+    metrics.increment('status_maintenance_imported_total');
+    return window;
+  });
 }
 
 export { componentsForServices };

@@ -3,6 +3,7 @@ import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Ticket } from '@itsm/sdk';
 import type { CommandItem } from '@itsm/ui';
+import { buildAreaModel } from '@itsm/contracts/areas';
 import { defaultPrefs } from '@itsm/ui/theme';
 import {
   TICKET_NUMBER_PATTERN,
@@ -13,6 +14,7 @@ import {
 } from '../client/palette.js';
 import { DeskHotkeys } from '../components/DeskShell.js';
 import { VIEWS } from '../inbox/views.js';
+import { deskDestinations, switchAreaCommands } from '../navigation.js';
 import { cleanupDocument, render } from './support/render.js';
 
 /**
@@ -36,10 +38,14 @@ function press(key: string, target: Element = document.activeElement ?? document
   return event;
 }
 
+const AGENT = new Set(['ticket.read', 'ticket.update', 'ticket.create']);
+const ORIGINS = { portal: 'https://help.example', workbench: 'https://desk.example', admin: 'https://admin.example', site: 'https://itsm.example' };
+
 function mountHotkeys(overrides: Partial<Parameters<typeof DeskHotkeys>[0]> = {}) {
   const props = {
     canReadTickets: true,
     canCreate: true,
+    destinations: deskDestinations(AGENT),
     navigate: vi.fn(),
     openNewTicket: vi.fn(),
     openSearch: vi.fn(),
@@ -59,6 +65,18 @@ describe('the frame’s keys', () => {
       expect(navigate).toHaveBeenLastCalledWith(path);
     }
     expect(navigate).toHaveBeenCalledTimes(6);
+  });
+
+  it('goes to the Overview with g o (v3 §1.5, D14), and has no g b while the Board is pending', () => {
+    const navigate = vi.fn();
+    mountHotkeys({ navigate });
+    press('g');
+    press('o');
+    expect(navigate).toHaveBeenLastCalledWith('/overview');
+    navigate.mockClear();
+    press('g');
+    press('b');
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('opens the new-ticket sheet with c, only for someone who can raise one', () => {
@@ -105,7 +123,7 @@ describe('the frame’s keys', () => {
   });
 
   it('keeps every chord distinct and clear of the workspace’s single keys', () => {
-    const chords = VIEWS.map((view) => view.shortcut);
+    const chords = [...VIEWS.map((view) => view.shortcut), 'g o', 'g b'];
     expect(new Set(chords).size).toBe(chords.length);
     for (const chord of chords) expect(chord).toMatch(/^g [a-z]$/);
   });
@@ -119,6 +137,8 @@ function deps(overrides: Partial<DeskPaletteDeps> = {}): DeskPaletteDeps {
     canSetAvailability: true,
     canReadPeople: true,
     teams: [{ id: '9b2c1a40-1111-4a2b-8c3d-0123456789ab', name: 'Network' }],
+    destinations: deskDestinations(AGENT),
+    switchArea: switchAreaCommands(buildAreaModel({ app: 'workbench', held: ['ticket.update', 'rules.rule.read'], session: { kind: 'oidc' }, origins: ORIGINS })),
     prefs: defaultPrefs,
     setPrefs: vi.fn(),
     openNewTicket: vi.fn(),
@@ -136,12 +156,52 @@ function items(providers: ReturnType<typeof deskCommandProviders>, id: string): 
 }
 
 describe('the palette (SPEC §5.5)', () => {
-  it('lists the views with their chords, then the teams, under Go to', () => {
+  it('lists the Overview, the views with their chords, then the teams, under Go to — and no Board while it is pending', () => {
     const goTo = items(deskCommandProviders(deps()), 'go');
-    expect(goTo.slice(0, 6).map((item) => [item.label, item.shortcut, item.href])).toEqual(
+    expect(goTo[0]).toMatchObject({ label: 'Overview', shortcut: 'g o', href: '/overview' });
+    expect(goTo.slice(1, 7).map((item) => [item.label, item.shortcut, item.href])).toEqual(
       VIEWS.map((view) => [view.label, view.shortcut, `/inbox/${view.id}`]),
     );
-    expect(goTo[6]).toMatchObject({ label: 'Network', href: '/inbox/team/9b2c1a40-1111-4a2b-8c3d-0123456789ab' });
+    expect(goTo[7]).toMatchObject({ label: 'Network', href: '/inbox/team/9b2c1a40-1111-4a2b-8c3d-0123456789ab' });
+    expect(goTo).toHaveLength(8);
+    expect(goTo.some((item) => item.label === 'Board')).toBe(false);
+  });
+
+  it('lists "Go to Board" last once the Board ships', () => {
+    const board = { id: 'board', label: 'Board', href: '/board', icon: 'columns-3' as const, shortcut: 'g b', keywords: ['kanban'] };
+    const goTo = items(deskCommandProviders(deps({ destinations: [...deskDestinations(AGENT), board] })), 'go');
+    expect(goTo.at(-1)).toMatchObject({ label: 'Board', shortcut: 'g b', href: '/board' });
+  });
+
+  it('offers the other areas under Switch area, after Go to and Create (A2 §10.3)', () => {
+    const providers = deskCommandProviders(deps());
+    expect(providers.map((provider) => provider.id).slice(0, 4)).toEqual(['go', 'number', 'create', 'areas']);
+    const group = providers.find((provider) => provider.id === 'areas')!;
+    expect(group.group).toBe('Switch area');
+    expect(group.items!.map((item) => [item.label, item.href])).toEqual([
+      ['Switch to Help Portal', 'https://help.example/resume'],
+      ['Switch to Administration', 'https://admin.example/resume'],
+    ]);
+    expect(group.items![0]!.description).toBe('Get help, request things and follow your requests');
+    expect(group.items![1]!.keywords).toEqual(expect.arrayContaining(['switch area', 'admin', 'settings']));
+  });
+
+  it('in a demo, names who each area opens as and offers the way home (D11, D18)', () => {
+    const areas = buildAreaModel({ app: 'workbench', held: [], session: { kind: 'demo', persona: 'agent' }, origins: ORIGINS });
+    const switchArea = switchAreaCommands(areas);
+    expect(switchArea.map((item) => item.label)).toEqual(['Switch to Help Portal', 'Switch to Administration', 'IT Service Management home']);
+    expect(switchArea[0]).toMatchObject({
+      description: "You'll continue as Emma Clarke, Finance Manager",
+      href: 'https://help.example/demo?persona=employee&demo=1&redirectTo=%2Fresume',
+    });
+    expect(switchArea[0]!.keywords).toContain('Emma Clarke');
+    expect(switchArea[2]).toMatchObject({ href: 'https://itsm.example/' });
+  });
+
+  it('has no Switch area group for a person with one area', () => {
+    const lone = switchAreaCommands(buildAreaModel({ app: 'workbench', held: [], session: { kind: 'oidc' }, origins: { workbench: ORIGINS.workbench } }));
+    expect(lone).toEqual([]);
+    expect(deskCommandProviders(deps({ switchArea: lone })).map((provider) => provider.id)).not.toContain('areas');
   });
 
   it('offers creating, preferences and help, each doing what it says', () => {
@@ -178,7 +238,7 @@ describe('the palette (SPEC §5.5)', () => {
     expect(ids).not.toContain('tickets');
     expect(ids).not.toContain('people');
     expect(items(providers, 'preferences').some((item) => item.id === 'pref:availability')).toBe(false);
-    expect(deskCommandProviders(deps({ canReadTickets: false })).map((provider) => provider.id)).toEqual(['create', 'preferences', 'help']);
+    expect(deskCommandProviders(deps({ canReadTickets: false })).map((provider) => provider.id)).toEqual(['create', 'areas', 'preferences', 'help']);
   });
 
   it('pins "Open INC-000123" for a ticket number, however it is typed', async () => {

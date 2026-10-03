@@ -9,7 +9,9 @@ import { MenuItems, type MenuKit } from './menu-items.js';
 
 /**
  * One entry in a menu, as data. Items with `href` navigate; items with
- * `onSelect` act; a `disabledReason` is shown, not hidden in a tooltip.
+ * `onSelect` act; a `disabledReason` is shown, not hidden in a tooltip. An
+ * item may carry a third line (`detail`) and say it is the current one
+ * (`current`), as the area switcher's rows do (A2 §5.3.2).
  */
 export type MenuItemSpec =
   | {
@@ -19,6 +21,17 @@ export type MenuItemSpec =
       icon?: IconName;
       shortcut?: string;
       description?: string;
+      /**
+       * A third line under the description — the area menu's persona line,
+       * "You'll continue as Emma Clarke, Finance Manager". Part of the item's
+       * description for assistive technology.
+       */
+      detail?: string;
+      /**
+       * The item is where the person already is: a trailing check in the
+       * accent and `aria-current="true"` (the area menu's current area).
+       */
+      current?: boolean;
       href?: string;
       tone?: 'default' | 'danger';
       disabled?: boolean;

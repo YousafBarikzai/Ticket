@@ -1,4 +1,6 @@
 import type { MetadataRoute } from 'next';
+import { AREAS, PRODUCT_NAME } from '@itsm/contracts/areas';
+import { colour } from '@itsm/ui/tokens';
 
 /**
  * The web app manifest (doc 14 §5; SPEC §5.4, F33).
@@ -18,18 +20,22 @@ import type { MetadataRoute } from 'next';
  * The shortcuts are the two things people open the app to do: tell us about
  * something (the report page, which also works offline and queues), and see
  * where their requests have got to.
+ *
+ * The names are the area's and the product's (v3 §3.1, D1): "Help Portal —
+ * IT Service Management", "Help Portal" under the icon.
  */
 export default function manifest(): MetadataRoute.Manifest {
+  const canvas = colour.apple.surface.canvas;
   return {
     id: '/',
-    name: 'Help — IT service desk',
-    short_name: 'Help',
+    name: `${AREAS.portal.name} — ${PRODUCT_NAME}`,
+    short_name: AREAS.portal.name,
     description: 'Report something, ask for something, and see where it got to.',
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#F5F5F7',
-    theme_color: '#F5F5F7',
+    background_color: canvas,
+    theme_color: canvas,
     lang: 'en-GB',
     dir: 'ltr',
     categories: ['business', 'productivity'],

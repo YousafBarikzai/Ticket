@@ -180,11 +180,11 @@ export function ProblemState({
       // A plain link, not the app's `Link`: signing in is a full navigation
       // through the identity provider, and must not be prefetched.
       <a href={signInHref} className={`itsm-Button itsm-Button--primary itsm-Button--${buttonSize}`}>
-        <span className="itsm-Button__label">{messages.signInAgain}</span>
+        <span className="itsm-Button__label">{description.remedyLabel ?? messages.signInAgain}</span>
       </a>
     ) : (
       <Button variant="primary" size={buttonSize} onClick={() => window.location.reload()}>
-        {messages.signInAgain}
+        {description.remedyLabel ?? messages.signInAgain}
       </Button>
     );
   } else if (description.remedy === 'reload') {

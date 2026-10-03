@@ -10,7 +10,8 @@ import { api } from '../client/api.js';
 import { deskKeys } from '../client/query-client.js';
 
 /**
- * The bell (SPEC §4.9, C §2.7), live through the frame's one stream.
+ * The bell (SPEC §4.9, C §2.7; v3 §2.15), live through the frame's one
+ * stream.
  *
  * The badge's count comes from the same call the panel lists, fetched once
  * when the frame mounts and again whenever a `notification` notice arrives or
@@ -19,6 +20,10 @@ import { deskKeys } from '../client/query-client.js';
  * emergency: a danger dot, pinned first in the panel, announced once, and a
  * persistent toast with *Open*, because it is the one notification that must
  * not wait for somebody to look at the sidebar.
+ *
+ * The panel's footer links the person's notification settings, which live on
+ * the Help Portal's profile (`settingsHref`, from the frame's links); in a
+ * demo there is none, because the Help Portal opens as somebody else.
  */
 
 /** The panel shows the last 30; the badge counts every unread one. */
@@ -26,13 +31,17 @@ const PAGE = 30;
 
 const key = deskKeys.notifications();
 
-export function toNotificationItem(row: NotificationRow): NotificationItem {
+/** The row as the API sends it, with the ticket's number once the API carries it (WP-26's open issue: today only the id). */
+type InboxRow = NotificationRow & { readonly ticketNumber?: string | null };
+
+export function toNotificationItem(row: InboxRow): NotificationItem {
   const subject = row.subject?.trim() || row.body.split('\n')[0]!.trim() || 'Notification';
   return {
     id: row.id,
     subject,
     ...(row.body && row.body.trim() !== subject ? { body: row.body } : {}),
     ...(row.ticketId ? { ticketId: row.ticketId } : {}),
+    ...(row.ticketNumber ? { ticketNumber: row.ticketNumber } : {}),
     eventType: row.eventType,
     createdAt: row.createdAt,
     readAt: row.readAt,
@@ -44,7 +53,12 @@ export function notificationHref(item: Pick<NotificationItem, 'ticketId'>): stri
   return item.ticketId ? `/tickets/${encodeURIComponent(item.ticketId)}` : '/inbox';
 }
 
-export function DeskNotifications(): ReactNode {
+export interface DeskNotificationsProps {
+  /** "Notification settings" in the panel's footer; none without it. */
+  readonly settingsHref?: string;
+}
+
+export function DeskNotifications({ settingsHref }: DeskNotificationsProps = {}): ReactNode {
   const client = useQueryClient();
   const { router } = useItsm();
 
@@ -106,6 +120,7 @@ export function DeskNotifications(): ReactNode {
       markRead={markRead}
       hrefFor={notificationHref}
       emptyText="You’re all caught up"
+      {...(settingsHref ? { settingsHref } : {})}
     />
   );
 }

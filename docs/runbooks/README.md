@@ -8,6 +8,7 @@ to tell it worked; it does not explain the architecture.
 |---|---|
 | [Standing production up for the first time](first-production-deploy.md) | Once per environment, before anything can be deployed at all |
 | [Deploy and roll back](deploy-and-rollback.md) | Every release, and when one goes wrong |
+| [The public site](public-site.md) | Before the first deploy that includes it, moving it to your domain, a deploy stopped at the pull pre-flight, a `Site links` warning |
 | [Queue replay and outbox reconciliation](queue-replay.md) | Outbox lag alert, dead-letter growth, Redis loss |
 | [Database restore](database-restore.md) | Data loss, a bad migration, the phase restore rehearsal |
 | [Tenant lifecycle](tenant-lifecycle.md) | Provisioning, suspending, exporting or deleting a tenant |

@@ -78,3 +78,18 @@ describe('recording a session with the API', () => {
     ).resolves.toBeNull();
   });
 });
+
+describe('a demo token', () => {
+  it('is never recorded: a shared persona has no sessions to list, and nothing is sent', async () => {
+    const fetchImpl = answering(new Response(JSON.stringify(RECORDED), { status: 201 }));
+    const reasons: string[] = [];
+    const result = await recordSession(config, `itsmdemo_${'x'.repeat(43)}`, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      onFailure: (reason) => reasons.push(reason),
+    });
+    expect(result).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    // Not a failure either: there is nothing to report.
+    expect(reasons).toEqual([]);
+  });
+});

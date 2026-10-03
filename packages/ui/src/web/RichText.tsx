@@ -1,5 +1,6 @@
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
 import type { RichBlock, RichInline } from '@itsm/contracts';
+import { isSafeHref } from '@itsm/contracts/links';
 import { cx } from './cx.js';
 
 /**
@@ -35,6 +36,14 @@ export interface RichTextProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chi
 
 function inline(run: RichInline, key: number): ReactNode {
   if ('href' in run) {
+    // Only `https:` and `mailto:` become links (D23). The API has refused
+    // anything else since v3, but documents stored before that — or written
+    // around the API — can still hold `javascript:`, `data:` or `http:`. Such
+    // a link keeps its words and loses its target: the reader sees the text,
+    // and nothing they click can run script in their session. The check is
+    // the zod-free predicate the API's schema is built on, so the two cannot
+    // disagree about what is safe.
+    if (!isSafeHref(run.href)) return <span key={key}>{run.text}</span>;
     // `rel` on every authored link: a document from the database may link
     // anywhere, and `noopener` is what stops the target reaching back through
     // `window.opener`.

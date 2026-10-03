@@ -4,12 +4,18 @@ import { moreContrast, toneRules } from './tone.js';
 /**
  * `Banner`, and the reason text any feedback action can carry.
  *
- * `inline` is the tone's tint behind primary text with the icon in the tone's
- * own text colour — both pairs audited (SPEC §1.2) — at a card's inner radius.
- * `subtle` is an opaque sunken well with a hairline, and only the icon in
- * colour, for a notice that should not compete with the content round it.
- * Neither has a border in the standard themes (depth, not borders, §1.1); both
- * gain a tone-coloured outline where the person asked for more contrast.
+ * `inline` (v3, A1 §7.15) is the tone's tint behind primary text, edged by
+ * the tone's border at 40 % — the edge is decoration, which is what
+ * `color-mix` is allowed for — with the 16 px icon in the tone's own text
+ * colour; every pair is audited (§2.11). `subtle` is an opaque sunken well
+ * with a hairline, and only the icon in colour, for a notice that should not
+ * compete with the content round it. Both take the full tone border where
+ * the person asked for more contrast.
+ *
+ * Radius 12 (`xl`), padding 10 / 12 / 10 / 14, 13/20 text: the title 600 in
+ * `text.primary`, the body in `text.secondary`, and an optional kicker over
+ * them — 11/16 600 uppercase in the tone's text colour, one of the five
+ * places D6 allows capitals (`uppercase-guard.test.ts`).
  *
  * The body sits beside its action on a wide banner and wraps under it on a
  * narrow one — flex wrapping rather than a breakpoint, because a banner's
@@ -23,8 +29,9 @@ ${toneRules('.itsm-Banner')}
 .itsm-Banner {
   display: flex;
   align-items: flex-start;
-  gap: var(--itsm-space-sm);
-  padding: var(--itsm-space-sm) var(--itsm-space-md);
+  gap: calc(var(--itsm-space-xs) + var(--itsm-space-3xs));
+  padding: calc(var(--itsm-space-xs) + var(--itsm-space-3xs)) var(--itsm-space-sm) calc(var(--itsm-space-xs) + var(--itsm-space-3xs)) calc(var(--itsm-space-sm) + var(--itsm-space-3xs));
+  border: var(--itsm-border-hair) solid color-mix(in srgb, var(--_itsm-tone-border) 40%, transparent);
   border-radius: var(--itsm-radius-xl);
   background: var(--_itsm-tone-subtle);
   color: var(--itsm-colour-text-primary);
@@ -34,12 +41,13 @@ ${toneRules('.itsm-Banner')}
 }
 
 .itsm-Banner[data-variant="subtle"] {
+  border-color: var(--itsm-colour-border-subtle);
   background: var(--itsm-colour-surface-sunken);
-  box-shadow: inset 0 0 0 var(--itsm-hairline) var(--itsm-colour-border-subtle);
 }
 
 .itsm-Banner__icon {
-  margin-block: calc((var(--itsm-text-callout-line) - var(--itsm-icon-md)) / 2);
+  flex: none;
+  margin-block: calc((var(--itsm-text-callout-line) - var(--itsm-icon-sm)) / 2);
   color: var(--_itsm-tone-text);
 }
 
@@ -59,6 +67,17 @@ ${toneRules('.itsm-Banner')}
   flex-direction: column;
   gap: var(--itsm-space-3xs);
   overflow-wrap: anywhere;
+}
+
+.itsm-Banner__kicker {
+  margin: 0;
+  font-family: var(--itsm-text-kicker-family);
+  font-size: var(--itsm-text-kicker-size);
+  line-height: var(--itsm-text-kicker-line);
+  font-weight: var(--itsm-text-kicker-weight);
+  letter-spacing: var(--itsm-text-kicker-tracking);
+  text-transform: uppercase;
+  color: var(--_itsm-tone-text);
 }
 
 .itsm-Banner__title {
@@ -125,11 +144,11 @@ ${toneRules('.itsm-Banner')}
   color: var(--itsm-colour-text-muted);
 }
 
-${moreContrast((scope) => `${scope} .itsm-Banner { box-shadow: inset 0 0 0 var(--itsm-hairline) var(--_itsm-tone-border); }`)}
+${moreContrast((scope) => `${scope} .itsm-Banner { border-color: var(--_itsm-tone-border); }`)}
 
 ${mq.forcedColors} {
   .itsm-Banner {
-    border: var(--itsm-hairline) solid CanvasText;
+    border-color: CanvasText;
   }
 
   .itsm-Banner__dismiss {

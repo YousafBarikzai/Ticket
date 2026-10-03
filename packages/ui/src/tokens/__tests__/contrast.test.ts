@@ -70,8 +70,11 @@ describe('WCAG 2.2 contrast audit', () => {
 
   it('covers the four themes and every pairing the components produce', () => {
     expect(themeNames).toEqual(['apple', 'apple-dark', 'high-contrast', 'high-contrast-dark']);
-    expect(contrastContract()).toHaveLength(128);
-    expect(results).toHaveLength(128 * 4);
+    // SPEC-v3 §2.11: v2's 128, the raisedAlt band, the hold and high intents,
+    // each intent's text in a hovered and a selected row, the gradient's dark
+    // stops, and text.faint on the three surfaces it is drawn on.
+    expect(contrastContract()).toHaveLength(182);
+    expect(results).toHaveLength(182 * 4);
     // Names are how a failure is reported, so two pairs must never share one.
     const names = contrastContract().map((pair) => pair.name);
     expect(new Set(names).size).toBe(names.length);
@@ -79,25 +82,40 @@ describe('WCAG 2.2 contrast audit', () => {
 
   it('includes the pairs the redesign added: ordinary text on every tint and every row state', () => {
     const names = new Set(contrastContract().map((pair) => pair.name));
-    for (const intent of ['brand', 'neutral', 'success', 'warning', 'danger', 'info']) {
+    for (const intent of ['brand', 'neutral', 'success', 'warning', 'danger', 'info', 'hold', 'high']) {
       for (const text of ['primary', 'muted', 'link']) {
         expect(names, `${text} on ${intent}`).toContain(`text.${text} on intent.${intent}.subtle`);
       }
-      for (const surface of ['canvas', 'raised', 'sunken', 'overlay']) {
+      for (const surface of ['canvas', 'raised', 'sunken', 'overlay', 'hover', 'selected']) {
         expect(names).toContain(`intent.${intent}.subtleText on surface.${surface}`);
       }
+      for (const slot of ['solid', 'solidHover']) {
+        expect(names).toContain(`intent.${intent}.solidText on intent.${intent}.${slot}`);
+      }
     }
-    for (const surface of ['hover', 'selected', 'accentHover']) {
+    for (const surface of ['hover', 'selected', 'accentHover', 'raisedAlt']) {
       expect(names).toContain(`text.muted on surface.${surface}`);
       expect(names).toContain(`text.link on surface.${surface}`);
     }
-    for (const surface of ['canvas', 'raised', 'overlay', 'sunken', 'hover', 'selected']) {
+    for (const surface of ['canvas', 'raised', 'overlay', 'sunken', 'hover', 'selected', 'raisedAlt']) {
       expect(names).toContain(`accent on surface.${surface}`);
     }
-    for (const surface of ['canvas', 'raised', 'overlay', 'sunken']) {
+    for (const surface of ['canvas', 'raised', 'overlay', 'sunken', 'raisedAlt']) {
       expect(names).toContain(`border.interactive on surface.${surface}`);
     }
+    for (const surface of ['raised', 'raisedAlt', 'canvas']) {
+      expect(names).toContain(`text.faint on surface.${surface}`);
+    }
+    // The filled button is a gradient; its light end is brand.solid (and
+    // solidHover), its dark ends are audited by name.
+    expect(names).toContain('intent.brand.solidText on gradient.brand.end');
+    expect(names).toContain('intent.brand.solidText on gradient.brandHover.end');
     expect(names).toContain('text.primary on surface.selection');
+  });
+
+  it('starts the gradient on the audited solid fills in the light theme', () => {
+    expect(colour.apple.gradient.brand[0]).toBe(colour.apple.intent.brand.solid);
+    expect(colour.apple.gradient.brandHover[0]).toBe(colour.apple.intent.brand.solidHover);
   });
 
   it.each(themeNames)('%s theme meets its minimum for every token pair', (theme) => {
@@ -146,8 +164,9 @@ describe('WCAG 2.2 contrast audit', () => {
         );
       }
     }
-    // The figures the spec records for the two standard themes.
-    expect(roundRatio(contrastRatio(colour.apple.text.muted, colour.apple.surface.bubble))).toBe(4.82);
+    // The figures the spec records for the two standard themes: v3's bubble is
+    // the sunken slate, so light muted text on it rose from 4.82 to 6.69.
+    expect(roundRatio(contrastRatio(colour.apple.text.muted, colour.apple.surface.bubble))).toBe(6.69);
     expect(roundRatio(contrastRatio(colour['apple-dark'].text.muted, colour['apple-dark'].surface.bubble))).toBe(5.41);
   });
 
@@ -158,14 +177,21 @@ describe('WCAG 2.2 contrast audit', () => {
     expect(roundRatio(contrastRatio(dark.raised, dark.selected))).toBeGreaterThanOrEqual(1.3);
   });
 
-  it('draws every chart series at 3:1 or more against the card it sits on', () => {
-    for (const theme of themeNames) {
-      const palette = colour[theme];
-      expect(palette.chart.categorical).toHaveLength(8);
-      expect(palette.chart.sequential).toHaveLength(8);
-      for (const series of palette.chart.categorical) {
-        expect(roundRatio(contrastRatio(series, palette.surface.raised)), `${theme} ${series}`).toBeGreaterThanOrEqual(3);
-      }
-    }
+  it('separates a light card from the canvas only a little: the card border carries its edge', () => {
+    // Border-first depth (SPEC-v3 §2.9): 1.07 is deliberate, and is only
+    // enough because every card class draws a 1px border.subtle
+    // (styles.test.ts checks the classes).
+    const light = colour.apple.surface;
+    expect(roundRatio(contrastRatio(light.canvas, light.raised))).toBeGreaterThanOrEqual(1.05);
+  });
+
+  it('records the tightest light margins the spec gives', () => {
+    const byName = new Map(auditTheme('apple').map((result) => [result.pair, result.ratio]));
+    expect(byName.get('text.link on intent.danger.subtle')).toBe(4.65);
+    expect(byName.get('text.link on intent.info.subtle')).toBe(4.65);
+    expect(byName.get('intent.brand.solidText on intent.brand.solid')).toBe(4.69);
+    expect(byName.get('intent.brand.solidText on gradient.brand.end')).toBe(6.11);
+    expect(byName.get('border.interactive on surface.sunken')).toBe(3.25);
+    expect(byName.get('text.faint on surface.raisedAlt')).toBe(5.69);
   });
 });

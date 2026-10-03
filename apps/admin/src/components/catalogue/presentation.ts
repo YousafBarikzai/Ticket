@@ -1,5 +1,5 @@
 import type { FormDefinition } from '@itsm/contracts/forms';
-import type { IconName, Tone } from '@itsm/ui';
+import { PRIORITY_LOOK as SHARED_PRIORITY_LOOK, type IconName, type Tone } from '@itsm/ui';
 import { countQuestions, fromDocument } from './questions.js';
 
 /**
@@ -112,7 +112,8 @@ export function formState(row: { readonly status: string; readonly version: numb
 export const FORM_STATE_LOOK: Readonly<Record<FormState, { readonly label: string; readonly tone: Tone; readonly icon: IconName }>> = {
   draft: { label: 'Draft', tone: 'neutral', icon: 'circle-dashed' },
   live: { label: 'Live', tone: 'success', icon: 'circle-check' },
-  changes: { label: 'Unpublished changes', tone: 'warning', icon: 'pencil' },
+  // Work in progress, not a risk: `info`, so amber stays SLA risk and due soon (D5, A7 §2.9).
+  changes: { label: 'Unpublished changes', tone: 'info', icon: 'pencil' },
 };
 
 /** "Live · v3", "Draft", "Unpublished changes". */
@@ -153,16 +154,18 @@ export function formView(row: {
 export const REQUEST_STATE_LOOK: Readonly<Record<RequestTypeState, { readonly label: string; readonly tone: Tone; readonly icon: IconName }>> = {
   draft: { label: 'Draft', tone: 'neutral', icon: 'circle-dashed' },
   live: { label: 'Live', tone: 'success', icon: 'circle-check' },
-  changes: { label: 'Unpublished changes', tone: 'warning', icon: 'pencil' },
+  changes: { label: 'Unpublished changes', tone: 'info', icon: 'pencil' },
   retired: { label: 'Retired', tone: 'neutral', icon: 'archive' },
 };
 
-export const PRIORITY_LOOK: Readonly<Record<string, { readonly label: string; readonly tone: Tone }>> = {
-  P1: { label: 'P1 · Critical', tone: 'danger' },
-  P2: { label: 'P2 · High', tone: 'warning' },
-  P3: { label: 'P3 · Medium', tone: 'info' },
-  P4: { label: 'P4 · Low', tone: 'neutral' },
-};
+/**
+ * A request type's default priority as a pill, in the shared priority tones
+ * (D5): P1 danger, P2 `high` orange — never amber, which is SLA risk — and
+ * P3 and P4 neutral, with the words always shown.
+ */
+export const PRIORITY_LOOK: Readonly<Record<string, { readonly label: string; readonly tone: Tone }>> = Object.fromEntries(
+  (['P1', 'P2', 'P3', 'P4'] as const).map((key) => [key, { label: `${key} · ${SHARED_PRIORITY_LOOK[key].words}`, tone: SHARED_PRIORITY_LOOK[key].tone }]),
+);
 
 export const PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const;
 

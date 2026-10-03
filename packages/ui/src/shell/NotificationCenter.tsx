@@ -9,12 +9,24 @@ import { cx } from '../web/cx.js';
 import { IconButton } from '../web/IconButton.js';
 import { fetchModule, lazyModule, useIdlePrefetch } from './lazy.js';
 
+/**
+ * What a notification is about, which picks its tile (v3 §2.15): an SLA
+ * warning is amber, a breach red, an approval the fuchsia of every wait, a
+ * reply indigo, a major incident solid red; an assignment and anything else
+ * take the product's own tint.
+ */
+export type NotificationKind = 'sla_warning' | 'breach' | 'approval' | 'reply' | 'major_incident' | 'assigned' | 'update';
+
 export interface NotificationItem {
   readonly id: string;
   readonly subject: string;
   readonly body?: string;
   readonly ticketId?: string;
+  /** The ticket's number ("INC-004101"), shown in the row's meta line; `ticketId` is the key a link is built from. */
+  readonly ticketNumber?: string;
   readonly eventType: string;
+  /** Overrides the kind worked out from `eventType`, for events whose type says nothing (imported samples). */
+  readonly kind?: NotificationKind;
   /** ISO 8601. */
   readonly createdAt: string;
   readonly readAt?: string | null;
@@ -31,11 +43,22 @@ export interface NotificationCenterProps {
   /** Client only. */
   hrefFor(item: NotificationItem): string;
   readonly emptyText?: string;
+  /** The panel's footer link, "Notification settings": the portal's Profile, the desk's account settings. None without it. */
+  readonly settingsHref?: string;
   readonly className?: string;
 }
 
-/** The event that makes a notification an emergency: an SLA breached on a ticket someone leads. */
-export const EMERGENCY_EVENT = 'sla.breached.lead';
+/**
+ * The event that makes a notification an emergency: an SLA breached.
+ *
+ * A notification row keeps the event it was sent for (`eventType` is the
+ * event's own type, `sla.timer.breached`), not the key of the rule that sent
+ * it: `sla.breached.lead` is the default rule, marked `isEmergency`, and no
+ * row ever carries it. Before v3 this constant held the rule key, so neither
+ * the desk's persistent breach toast nor the bells' danger dot ever lit. The
+ * inbox row has no urgency flag of its own, so the event type is the signal.
+ */
+export const EMERGENCY_EVENT = 'sla.timer.breached';
 
 /** The panel, fetched on intent (it is built on the Radix popover and sheet). */
 const panelModule = lazyModule(() => import('./NotificationPanel.js'));
@@ -54,20 +77,22 @@ export function resetEmergencyAnnouncement(): void {
 }
 
 /**
- * The bell and its panel: events from the server — assignments, mentions,
- * approvals, SLA warnings — grouped by day, unread ones marked, with *Mark all
- * as read*. A popover (400 px, `material.popover`) at 768 px and up; a sheet
- * from the bottom below.
+ * The bell and its panel (v3 §2.15, X-M13): events from the server —
+ * assignments, replies, approvals, SLA warnings and breaches, major
+ * incidents — under "Today" and "Earlier", each row a link with a tile toned
+ * by its kind, unread ones marked, with *Mark all read*. A 380 px popover at
+ * 768 px and up; a sheet from the bottom below. The panel is its own chunk,
+ * fetched on intent, so the bell costs the frame almost nothing.
  *
  * The count on the bell caps at "99+", and the bell's name carries it
  * ("Notifications, 3 unread"). An SLA breach on a ticket the person leads is
- * an emergency: a danger dot on the bell, the item pinned first in the panel,
- * and one assertive announcement — once, however many bells the page draws.
+ * an emergency: a danger dot on the bell, the row first in its section, and
+ * one assertive announcement — once, however many bells the page draws.
  *
  * Toasts are for the results of the person's own actions; everything else
  * the server has to say comes here.
  */
-export function NotificationCenter({ unread, emergency = false, load, markRead, hrefFor, emptyText, className }: NotificationCenterProps): ReactNode {
+export function NotificationCenter({ unread, emergency = false, load, markRead, hrefFor, emptyText, settingsHref, className }: NotificationCenterProps): ReactNode {
   const itsm = useOptionalItsm();
   const messages = itsm?.messages ?? defaultMessages;
   const bell = useRef<HTMLButtonElement | null>(null);
@@ -137,6 +162,7 @@ export function NotificationCenter({ unread, emergency = false, load, markRead, 
           unread={count}
           onUnreadChange={setCount}
           {...(emptyText ? { emptyText } : {})}
+          {...(settingsHref ? { settingsHref } : {})}
         />
       ) : null}
     </span>

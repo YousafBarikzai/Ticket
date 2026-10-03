@@ -33,6 +33,7 @@ export {
   type TransitionEffects,
 } from './domain/state-machine.js';
 export { importTicketSchema, importCommentSchema, importTicket, importComments, type ImportTicketInput, type ImportCommentInput } from './service/ticket-service.js';
+export { BATCH_AUDIT_MAX, IMPORT_CHUNK_MAX, importLinks, importTickets, type ImportEventInput, type ImportLinkInput, type ImportLinksOptions, type ImportLinksResult, type ImportTaskInput, type ImportTicketsOptions } from './service/import-tickets.js';
 export type {
   ChannelTicketInput,
   AutomatedChange,

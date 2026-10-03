@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { act, forwardRef, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FormDefinition } from '@itsm/contracts/forms';
+import { buildAreaModel } from '@itsm/contracts/areas';
 import { structuralVariables, themeVariables } from '@itsm/ui/tokens';
 
 vi.mock('server-only', () => ({}));
@@ -551,9 +552,11 @@ describe('the request-type sheet', () => {
   const service = { id: 's1', key: 'hardware', name: 'Hardware', description: null, status: 'active', ownerId: null, owner: null, groupId: null, teamName: null };
 
   it('publishes a new request type and its questions after one confirmation, in order', async () => {
+    const areas = buildAreaModel({ app: 'admin', held: ['catalogue.manage'], session: { kind: 'oidc' }, origins: { portal: 'https://help.test' } });
     render(
       <Frame>
-        <RequestTypeSheet target={{ kind: 'new', serviceKey: 'hardware' }} onClose={() => undefined} services={[service]} types={[]} forms={[]} teams={null} canEditQuestions />
+        <RequestTypeSheet target={{ kind: 'new', serviceKey: 'hardware' }} onClose={() => undefined} services={[service]} types={[]} forms={[]} teams={null} canEditQuestions areas={areas} />
+        <Toaster />
       </Frame>,
     );
     const sheet = document.querySelector('[role="dialog"]')!;
@@ -570,12 +573,31 @@ describe('the request-type sheet', () => {
 
     await clickAsync(buttonNamed(sheet, 'Publish')!);
     const confirm = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].find((element) => text(element).includes('Publish Laptop request?'))!;
-    expect(text(confirm)).toContain('Requesters will see this in the portal immediately.');
+    expect(text(confirm)).toContain('Requesters will see this in the Help Portal immediately.');
     expect(text(confirm)).toContain('Its question goes live');
     expect(calls).toEqual([]);
     await clickAsync(buttonNamed(confirm, 'Publish')!);
     expect(calls.map((call) => call.split(' ')[0])).toEqual(['createForm', 'publishForm', 'createRequestType', 'publishRequestType']);
     expect(calls[2]).toContain('"formKey":"laptop-request"');
+    // The toast offers the Help Portal by its name (A2 §3.7: "Open in Help Portal", was "Open portal").
+    const toast = [...document.querySelectorAll('button')].filter((button) => /Open (in Help Portal|portal)/.test(text(button)));
+    expect(toast.map((button) => text(button))).toEqual(['Open in Help Portal']);
+  });
+
+  it('offers no Help Portal link after publishing when the areas are not known', async () => {
+    render(
+      <Frame>
+        <RequestTypeSheet target={{ kind: 'new', serviceKey: 'hardware' }} onClose={() => undefined} services={[service]} types={[]} forms={[]} teams={null} canEditQuestions />
+        <Toaster />
+      </Frame>,
+    );
+    const sheet = document.querySelector('[role="dialog"]')!;
+    type(sheet.querySelector<HTMLInputElement>('input[name="name"]')!, 'Desk phone');
+    await clickAsync(buttonNamed(sheet, 'Publish')!);
+    const confirm = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].find((element) => text(element).includes('Publish Desk phone?'))!;
+    await clickAsync(buttonNamed(confirm, 'Publish')!);
+    expect(text(document.body)).toContain('Desk phone is live');
+    expect([...document.querySelectorAll('button')].some((button) => text(button) === 'Open in Help Portal')).toBe(false);
   });
 
   it('refuses to save without a name, and says so in a summary that links to the field', async () => {

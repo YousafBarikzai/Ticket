@@ -41,6 +41,24 @@ import { checkSchedule } from '../domain/windows.js';
  * next outage.
  */
 
+/**
+ * When a step on the change happened, for a history written after the fact
+ * (A4 §2.3, W2): the shared demo's forty-two changes were raised, approved,
+ * scheduled, carried out and closed over the four months before the build,
+ * and the change calendar, the closure figures and the retrospective debt are
+ * all read from those moments. Omitted, every write is exactly what it was,
+ * dated now.
+ *
+ * The CAB's own answer reaches a change through the `approval.decided`
+ * handler. A history written into a quiet tenant runs no handlers, so it
+ * records that answer with `transition(…, { to: 'approved' | 'rejected' },
+ * { at })` at the instant the approval was decided.
+ */
+export interface ChangeClock {
+  /** When it happened. Never in the future, and never before the change was raised. */
+  at?: Date;
+}
+
 export const createChangeSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(20_000).optional(),
@@ -61,10 +79,11 @@ export const createChangeSchema = z.object({
   plannedEndAt: z.coerce.date().optional(),
 });
 
-export async function createChange(ctx: TenantContext, input: z.input<typeof createChangeSchema>) {
+export async function createChange(ctx: TenantContext, input: z.input<typeof createChangeSchema>, clock: ChangeClock = {}) {
   authz.require(ctx, 'change.raise');
   const parsed = createChangeSchema.parse(input);
   assertPlannedPeriod(parsed.plannedStartAt, parsed.plannedEndAt);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     let templateId: string | null = null;
@@ -123,6 +142,7 @@ export async function createChange(ctx: TenantContext, input: z.input<typeof cre
         ...plans,
         plannedStartAt: parsed.plannedStartAt ?? null,
         plannedEndAt: parsed.plannedEndAt ?? null,
+        ...(at ? { createdAt: at, updatedAt: at } : {}),
       },
     });
 
@@ -145,13 +165,15 @@ export async function createChange(ctx: TenantContext, input: z.input<typeof cre
  * "approved because no policy applied" is written down, so it is
  * distinguishable from a change that slipped past one.
  */
-export async function submitChange(ctx: TenantContext, number: string) {
+export async function submitChange(ctx: TenantContext, number: string, clock: ChangeClock = {}) {
   authz.require(ctx, 'change.raise');
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const change = await loadByNumber(tx, number);
     const from = stateOf(change);
     assertTransition(from, 'submitted');
+    if (at) assertNotBeforeRaised(at, change);
 
     const kind = (CHANGE_KINDS as readonly string[]).includes(change.kind) ? (change.kind as ChangeKind) : 'normal';
     if (kind !== 'emergency' && !change.backoutPlan) {
@@ -167,11 +189,14 @@ export async function submitChange(ctx: TenantContext, number: string) {
     let to: ChangeState = route.to;
 
     if (route.needsApproval) {
-      const request = await requestApproval(ctx, tx, {
-        subjectType: 'change',
+      const approval = {
+        subjectType: 'change' as const,
         subjectId: change.id,
         facts: { change: { kind, risk: change.risk, impact: change.impact, serviceId: change.serviceId } },
-      });
+      };
+      // The CAB was asked when the change was submitted, so its step opens
+      // and falls due from then (MOD-17's own clock).
+      const request = at ? await requestApproval(ctx, tx, approval, { at }) : await requestApproval(ctx, tx, approval);
       if (request) {
         approvalRequestId = request.id;
       } else {
@@ -191,6 +216,7 @@ export async function submitChange(ctx: TenantContext, number: string) {
         approvalRequestId,
         approvalNote,
         version: { increment: 1 },
+        ...(at ? { updatedAt: at } : {}),
       },
     });
 
@@ -248,15 +274,17 @@ export const scheduleSchema = z.object({
  * changes as emergencies — trading a small governance win for a large hole in
  * the record.
  */
-export async function scheduleChange(ctx: TenantContext, number: string, input: z.input<typeof scheduleSchema>) {
+export async function scheduleChange(ctx: TenantContext, number: string, input: z.input<typeof scheduleSchema>, clock: ChangeClock = {}) {
   authz.require(ctx, 'change.implement');
   const parsed = scheduleSchema.parse(input);
   assertPlannedPeriod(parsed.plannedStartAt, parsed.plannedEndAt);
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const change = await loadByNumber(tx, number);
     const from = stateOf(change);
     assertTransition(from, 'scheduled');
+    if (at) assertNotBeforeRaised(at, change);
 
     const windows = await tx.changeWindow.findMany({ where: { status: 'active' } });
     const verdict = checkSchedule(
@@ -280,6 +308,7 @@ export async function scheduleChange(ctx: TenantContext, number: string, input: 
         plannedStartAt: parsed.plannedStartAt,
         plannedEndAt: parsed.plannedEndAt,
         version: { increment: 1 },
+        ...(at ? { updatedAt: at } : {}),
       },
     });
 
@@ -318,20 +347,23 @@ export const transitionSchema = z.object({
   notes: z.string().max(10_000).optional(),
 });
 
-export async function transition(ctx: TenantContext, number: string, input: z.input<typeof transitionSchema>) {
+export async function transition(ctx: TenantContext, number: string, input: z.input<typeof transitionSchema>, clock: ChangeClock = {}) {
   authz.require(ctx, 'change.implement');
   const parsed = transitionSchema.parse(input);
   if (!isChangeState(parsed.to)) throw new ValidationError(`unknown change state: ${parsed.to}`);
   const to: ChangeState = parsed.to;
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const change = await loadByNumber(tx, number);
     const from = stateOf(change);
     assertTransition(from, to);
     if (from === to) return change;
+    if (at) assertNotBeforeRaised(at, change);
 
-    const now = new Date();
+    const now = at ?? new Date();
     const data: Record<string, unknown> = { status: to, version: { increment: 1 } };
+    if (at) data.updatedAt = at;
     if (to === 'implementing') data.actualStartAt = change.actualStartAt ?? now;
     if (to === 'review') data.actualEndAt = now;
     if (to === 'closed') {
@@ -387,8 +419,9 @@ export async function transition(ctx: TenantContext, number: string, input: z.in
  * implementing one, because the person who made the emergency change at 3am is
  * exactly the person who should not be signing it off at 9am.
  */
-export async function approveRetrospectively(ctx: TenantContext, number: string, note?: string) {
+export async function approveRetrospectively(ctx: TenantContext, number: string, note?: string, clock: ChangeClock = {}) {
   authz.require(ctx, 'change.approve.retrospective');
+  const at = clock.at === undefined ? undefined : pastInstant(clock.at);
 
   return transaction(ctx, async (tx) => {
     const change = await loadByNumber(tx, number);
@@ -399,14 +432,16 @@ export async function approveRetrospectively(ctx: TenantContext, number: string,
     if (change.requestedBy && change.requestedBy === ctx.actor.id) {
       throw new ValidationError('an emergency change is not approved by the person who made it');
     }
+    if (at) assertNotBeforeRaised(at, change);
 
     const approved = await tx.change.update({
       where: { id: change.id },
       data: {
-        retrospectiveApprovedAt: new Date(),
+        retrospectiveApprovedAt: at ?? new Date(),
         retrospectiveApprovedBy: ctx.actor.id,
         approvalNote: note ?? change.approvalNote,
         version: { increment: 1 },
+        ...(at ? { updatedAt: at } : {}),
       },
     });
     await recordAudit(tx, ctx, {
@@ -482,4 +517,30 @@ async function loadByNumber(tx: Tx, number: string) {
 
 function stateOf(change: { status: string }): ChangeState {
   return isChangeState(change.status) ? change.status : 'draft';
+}
+
+/**
+ * A supplied clock, once it is known to be a real instant that has already
+ * happened. A history records the past; a change closed "tomorrow" would
+ * report an outcome nobody has seen yet.
+ */
+function pastInstant(at: Date): Date {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) {
+    throw new ValidationError('the time given is not a date', [{ field: 'at', code: 'invalid', message: 'not a date' }]);
+  }
+  if (at.getTime() > Date.now()) {
+    throw new ValidationError('a change cannot be dated in the future', [
+      { field: 'at', code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+  return at;
+}
+
+/** Refuses a step dated before the change it belongs to was raised. */
+function assertNotBeforeRaised(at: Date, change: { createdAt: Date }): void {
+  if (at < change.createdAt) {
+    throw new ValidationError('nothing can happen to a change before it was raised', [
+      { field: 'at', code: 'before_change', message: `must not be earlier than ${change.createdAt.toISOString()}` },
+    ]);
+  }
 }

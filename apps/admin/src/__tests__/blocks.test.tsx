@@ -110,7 +110,7 @@ describe('lifecycle words', () => {
   it('names each state in words with a tone and an icon', () => {
     expect(lifecycle('published')).toEqual({ label: 'Live', tone: 'success', icon: 'circle-check' });
     expect(lifecycle('archived').label).toBe('Retired');
-    expect(lifecycle('waiting')).toMatchObject({ label: 'Waiting', tone: 'warning' });
+    expect(lifecycle('waiting')).toMatchObject({ label: 'Waiting', tone: 'hold' });
     expect(lifecycle('pending_third_party')).toMatchObject({ label: 'Pending third party', tone: 'neutral' });
     expect(lifecycle(null).label).toBe('Unknown');
     expect(publishState('published', true).label).toBe('Unpublished changes');

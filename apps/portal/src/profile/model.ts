@@ -112,7 +112,7 @@ export interface ChannelSetting {
  * for those would save, answer 200 and deliver nothing.
  */
 export const CHANNELS: readonly { readonly channel: Channel; readonly label: string; readonly description: string; readonly icon: IconName }[] = [
-  { channel: 'inapp', label: 'In the portal', description: 'Shows in the bell at the top.', icon: 'bell' },
+  { channel: 'inapp', label: 'In the Help Portal', description: 'Shows in the bell at the top.', icon: 'bell' },
   { channel: 'email', label: 'Email', description: 'Sent to the address your organisation holds for you.', icon: 'mail' },
 ];
 
@@ -190,6 +190,13 @@ export function sessionsInOrder(sessions: readonly SessionRow[]): SessionRow[] {
   return [...sessions].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
 }
 
+/**
+ * Notifications in a demo visit (v3 §7.2, A6 §6.10): the shared demo sends
+ * nothing out of the product — A3's egress guards keep every notice in-app —
+ * so the page says so above the settings.
+ */
+export const DEMO_NOTIFICATIONS_NOTE = 'In this shared demo, notifications appear in the bell only';
+
 /* ---------------------------------------------------------------- Sections */
 
 export interface ProfileSection {
@@ -197,9 +204,15 @@ export interface ProfileSection {
   readonly label: string;
 }
 
-/** The page's sections, in order, for the anchor list beside them on a wide screen. */
-export function sectionsFor(options: { readonly approvals: boolean; readonly devices: boolean }): ProfileSection[] {
+/**
+ * The page's sections, in order, for the anchor list beside them on a wide
+ * screen. "Switch area" comes first for anyone with more than one area, and
+ * in every demo visit (v3 §3.6, A2 §6.4): the Me tab is where a phone finds
+ * the other areas.
+ */
+export function sectionsFor(options: { readonly areas?: boolean; readonly approvals: boolean; readonly devices: boolean }): ProfileSection[] {
   return [
+    ...(options.areas ? [{ id: 'areas', label: 'Switch area' }] : []),
     { id: 'account', label: 'Account' },
     ...(options.approvals ? [{ id: 'approvals', label: 'Approvals' }] : []),
     { id: 'notifications', label: 'Notifications' },

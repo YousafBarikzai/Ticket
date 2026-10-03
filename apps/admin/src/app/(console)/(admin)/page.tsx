@@ -61,7 +61,10 @@ export default async function CommandCentrePage({
   const params = await searchParams;
   const range = volumeRange(single(params.range));
   const forceSetup = single(params.setup) === '1';
-  const workbench = originOf(process.env.WORKBENCH_ORIGIN);
+  // Needs attention reads the request's areas itself (`currentAreas()`), so its
+  // Service Desk links go through `crossAreaHref`; the cards' v2 `workbench`
+  // prop is no longer read and goes with WP-55's rebuild of the cards.
+  const workbench = undefined;
   const now = new Date();
   const hello = greeting(me.actor.displayName, now, me.timeZone);
   const withheld = withheldNav(me);
@@ -179,14 +182,4 @@ export default async function CommandCentrePage({
 
 function single(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
-}
-
-/** An origin from the environment, without a trailing slash; nothing when unset or not a URL (C1). */
-function originOf(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  try {
-    return new URL(value).origin;
-  } catch {
-    return undefined;
-  }
 }

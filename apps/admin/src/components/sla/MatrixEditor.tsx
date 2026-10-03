@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import type { PriorityMatrixRow } from '@itsm/sdk';
-import { Button } from '@itsm/ui';
+import { Button, PRIORITY_LOOK as SHARED_PRIORITY_LOOK } from '@itsm/ui';
 import { ConfirmDialog } from '@itsm/ui/overlays';
 import { api } from '../../client/api.js';
 import { useOnline } from '../../client/live.js';
@@ -24,12 +24,12 @@ import {
 import { HeatGrid, type HeatGridOption } from './HeatGrid.js';
 import { DirtyBar } from './DirtyBar.js';
 
-/** P1 danger, P2 warning, P3 info, P4 neutral: the chip's text always says which. */
+/** P1 danger, P2 `high` orange, P3 and P4 neutral (D5): the shared priority tones, and the chip's text always says which. */
 export const PRIORITY_OPTIONS: readonly HeatGridOption[] = PRIORITIES.map((priority, index) => ({
   value: priority,
   label: priority,
   description: PRIORITY_LABELS[priority],
-  tone: (['danger', 'warning', 'info', 'neutral'] as const)[index]!,
+  tone: SHARED_PRIORITY_LOOK[priority].tone,
   shortcut: String(index + 1),
 }));
 

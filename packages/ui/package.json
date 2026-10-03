@@ -21,6 +21,7 @@
     "./workbench": "./src/workbench/index.ts"
   },
   "scripts": {
+    "contrast:report": "tsx scripts/contrast-report.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. --project unit packages/ui"
   },

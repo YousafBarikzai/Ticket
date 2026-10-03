@@ -46,6 +46,9 @@
 }
 
 .app-Results__sectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
   margin: 0;
   font-size: var(--itsm-text-title3-size);
   line-height: var(--itsm-text-title3-line);

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import { crossAreaHref } from '@itsm/contracts/areas';
 import type { Ticket } from '@itsm/sdk';
 import { PageHeader } from '@itsm/ui/shell';
 import { Forbidden } from '../../../../components/Forbidden.js';
@@ -15,10 +16,10 @@ import {
   ticketRow,
   type TicketDetail,
 } from '../../../../components/tickets/presentation.js';
-import { holds, holdsAny } from '../../../../permissions.js';
+import { holds } from '../../../../permissions.js';
 import { resolvePeople } from '../../../../server/people.js';
 import { read } from '../../../../server/read.js';
-import { pageAccess } from '../../../../server/session.js';
+import { currentAreas, pageAccess } from '../../../../server/session.js';
 import '../../../../components/tickets/tickets.css';
 
 export const metadata: Metadata = { title: 'Tickets' };
@@ -28,8 +29,8 @@ type SearchParams = Record<string, string | string[] | undefined>;
 
 /**
  * Tickets (SPEC §6.1, X-13): every ticket on the desk, across every team —
- * an administrator's question the workbench does not answer — read-only and
- * one click from the workbench, where tickets are worked.
+ * an administrator's question the Service Desk does not answer — read-only
+ * and one click from the Service Desk, where tickets are worked.
  *
  * The query string is the state: `status` (the scope, Open by default; the
  * legacy `open|paused|resolved|closed` values unchanged), `q`, `priority`,
@@ -54,7 +55,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
   }
   const drawerNumber = drawerTicket(params.open);
 
-  const [page, teams, services, detail] = await Promise.all([
+  const [page, teams, services, detail, areas] = await Promise.all([
     read(() => api.observe.tickets(ticketFilter(query))),
     read(() => api.tenant.teams()),
     holds(me, 'catalogue.manage') ? read(() => api.configure.catalogue.services()) : Promise.resolve(null),
@@ -70,6 +71,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
           return { ticket, sla };
         })
       : Promise.resolve(null),
+    currentAreas(),
   ]);
 
   const tickets: readonly Ticket[] = page.ok ? page.value.data : [];
@@ -93,9 +95,8 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
     initialDetail = detailOf(ticket, Object.fromEntries(involved.map((id) => [id, nameOf(id)])), sla);
   }
 
-  const workbench = originOf(process.env.WORKBENCH_ORIGIN);
-  // The workbench is where tickets are worked; the button is for people who work there.
-  const worksTickets = holdsAny(me, ['ticket.update', 'ticket.comment.internal']);
+  // The Service Desk is where tickets are worked: listed only for people who work there, or in a demo (A2 §3.2).
+  const inbox = crossAreaHref(areas, 'workbench', '/inbox');
   const assigneeOption =
     query.assignee && query.assignee !== 'me' && query.assignee !== 'none' ? { value: query.assignee, label: nameOf(query.assignee) ?? 'Unknown person' } : undefined;
 
@@ -103,8 +104,8 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
     <div className="app-Page app-Tickets">
       <PageHeader
         title="Tickets"
-        {...(page.ok && tickets.length === 0 && query.scope === 'all' && !isFiltered(query) ? { subtitle: 'Every ticket on the desk. Open one to work it in the workbench.' } : {})}
-        {...(workbench && worksTickets ? { primaryAction: { id: 'workbench', label: 'Open workbench', href: `${workbench}/inbox`, variant: 'primary' as const, icon: 'inbox' as const } } : {})}
+        {...(page.ok && tickets.length === 0 && query.scope === 'all' && !isFiltered(query) ? { subtitle: 'Every ticket on the desk. Open one to work it in the Service Desk.' } : {})}
+        {...(inbox ? { primaryAction: { id: 'workbench', label: 'Open Service Desk', href: inbox, variant: 'primary' as const, icon: 'inbox' as const } } : {})}
       />
       <TicketsView
         rows={tickets.map((ticket) => ticketRow(ticket, nameOf, (id) => (id ? (teamName.get(id) ?? null) : null)))}
@@ -116,20 +117,10 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
         {...(serviceOptions ? { services: serviceOptions } : {})}
         {...(assigneeOption ? { assigneeOption } : {})}
         people={namesById}
-        {...(workbench && worksTickets ? { workbenchOrigin: workbench } : {})}
+        areas={areas}
         {...(initialDetail ? { initialDetail } : {})}
         filtered={isFiltered(query)}
       />
     </div>
   );
-}
-
-/** An origin from the environment, without a trailing slash; nothing when unset or not a URL (C1). */
-function originOf(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  try {
-    return new URL(value).origin;
-  } catch {
-    return undefined;
-  }
 }

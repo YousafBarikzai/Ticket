@@ -6,11 +6,13 @@ import { ItsmProvider } from '@itsm/ui';
 import { cleanupDocument, clickAsync, render, submit, type } from './support/render.js';
 
 /**
- * `/report` (SPEC §6.3, D17, Y-1.3.5): "How can we help?" as a page — for
- * the manifest shortcut, a link, and *New request* offline. The same two
- * steps as the sheet under the page's own heading; gated on `ticket.create`;
- * `?q=` starts the details; the status page read on the server feeds "Is it
- * this?"; and the flow queues when there is no network.
+ * `/report` (SPEC §6.3, D17, Y-1.3.5; v3 §7.2, WP-49): "How can we help?" as
+ * a page — for the manifest shortcut, a link, and *New request* offline. The
+ * same three steps as the sheet (Describe · Details · Review, under a small
+ * Stepper) beneath the page's own heading; gated on `ticket.create`; `?q=`
+ * starts the details; the status page read on the server feeds "Is it
+ * this?"; the flow queues when there is no network, and ends on the panel
+ * the server draws when there is.
  */
 
 vi.mock('server-only', () => ({}));
@@ -33,6 +35,14 @@ vi.mock('../app/AppLink.js', () => ({
     void prefetch;
     return <a ref={ref} {...props} />;
   }),
+}));
+
+vi.mock('../help/actions.js', () => ({
+  renderSentPanel: async (input: { number: string }) => (
+    <section aria-labelledby="sent-test" data-sent="">
+      <h2 id="sent-test">Request sent: {input.number}</h2>
+    </section>
+  ),
 }));
 
 vi.mock('../client/api.js', () => ({
@@ -143,12 +153,29 @@ function button(name: string): HTMLElement {
   return found;
 }
 
+/** Details → review → Send report, through each step's own form. */
+async function sendFromDetails(): Promise<void> {
+  const details = document.querySelector('form');
+  if (!(details instanceof HTMLFormElement)) throw new Error('no form');
+  await submit(details);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(document.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('review');
+  const review = document.querySelector('form.app-HelpReview');
+  if (!(review instanceof HTMLFormElement)) throw new Error('no review');
+  await submit(review);
+}
+
 describe('/report', () => {
   it('is “Report an issue”: heading, title and the flow’s first step, with the caret in its one field', async () => {
     expect(metadata).toEqual({ title: 'Report an issue' });
     await open();
     expect(document.querySelector('h1')?.textContent).toBe('Report an issue');
-    expect(text()).toContain('Step 1 of 2 · Describe it');
+    expect(text()).toContain('Step 1 of 3 · Describe it');
+    // The step header: three steps, the first current.
+    const steps = [...document.querySelectorAll('.app-HelpFlow__steps .itsm-Stepper__step')];
+    expect(steps.map((step) => step.getAttribute('data-status'))).toEqual(['current', 'upcoming', 'upcoming']);
     expect(document.activeElement).toBe(field('What do you need help with?'));
     expect(document.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('describe');
   });
@@ -163,7 +190,7 @@ describe('/report', () => {
 
   it('starts at the details with ?q= as the title', async () => {
     await open({ q: '  printer jammed  ' });
-    expect(text()).toContain('Step 2 of 2 · Add the details');
+    expect(text()).toContain('Step 2 of 3 · Add the details');
     expect(field('Title').value).toBe('printer jammed');
   });
 
@@ -177,9 +204,7 @@ describe('/report', () => {
 
   it('queues the report when there is no network, and says so on the page', async () => {
     await open({ q: 'Laptop will not start' });
-    const form = document.querySelector('form');
-    if (!(form instanceof HTMLFormElement)) throw new Error('no form');
-    await submit(form);
+    await sendFromDetails();
     await vi.waitFor(() => expect(text()).toContain('Saved on this device'));
     expect(fetches).toBeGreaterThanOrEqual(1);
     expect((button('Back to Home') as HTMLAnchorElement).getAttribute('href')).toBe('/');
@@ -190,10 +215,9 @@ describe('/report', () => {
   it('goes Home when they are done', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ number: 'INC-000200' }), { status: 201 }));
     await open({ q: 'Screen flickers' });
-    const form = document.querySelector('form');
-    if (!(form instanceof HTMLFormElement)) throw new Error('no form');
-    await submit(form);
-    await vi.waitFor(() => expect(text()).toContain('We’ve got it · INC-000200'));
+    await sendFromDetails();
+    await vi.waitFor(() => expect(text()).toContain('Request sent: INC-000200'));
+    expect(document.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('sent');
     await clickAsync(button('Done'));
     expect(router.push).toHaveBeenCalledWith('/');
   });

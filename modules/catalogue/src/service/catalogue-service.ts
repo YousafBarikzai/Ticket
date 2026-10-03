@@ -16,7 +16,13 @@ import { events, exprSchema, type FormDefinition, type FormValues } from '@itsm/
 import { ticketService } from '@itsm/module-ticket';
 import { approvalService } from '@itsm/module-approvals';
 import { isEntitled, type RequesterFacts } from '../domain/entitlement.js';
+import { NO_ANSWERS_DESCRIPTION, describeAnswers, userAnswerIds } from '../domain/describe-answers.js';
 import { currentVersion, validateSubmission } from './form-service.js';
+
+// Exported through the service so the demo build (`importSubmission`'s
+// callers) writes request descriptions with the very function a live
+// submission uses, and history reads like today (A4 §5.3).
+export { describeAnswers, userAnswerIds } from '../domain/describe-answers.js';
 
 /**
  * MOD-05 service catalogue and request fulfilment.
@@ -296,7 +302,15 @@ export async function updateRequestType(ctx: TenantContext, key: string, patch: 
 
 /** The facts an entitlement is evaluated against, for the signed-in person. */
 export async function factsFor(tx: Tx, ctx: TenantContext): Promise<RequesterFacts> {
-  const userId = ctx.actor.id;
+  return requesterFacts(tx, ctx.actor.id ?? null, ctx.organisationIds[0] ?? null);
+}
+
+/**
+ * The same facts for a named person: the signed-in requester, or the person
+ * an imported submission was made by. `orgId` is the organisation the request
+ * was raised in, where the caller knows it; otherwise the person's own.
+ */
+async function requesterFacts(tx: Tx, userId: string | null, orgId: string | null): Promise<RequesterFacts> {
   const user = userId ? await tx.user.findFirst({ where: { id: userId } }) : null;
 
   const memberships = userId ? await tx.teamMembership.findMany({ where: { userId } }) : [];
@@ -310,7 +324,7 @@ export async function factsFor(tx: Tx, ctx: TenantContext): Promise<RequesterFac
 
   return {
     userId,
-    orgId: ctx.organisationIds[0] ?? user?.primaryOrgId ?? null,
+    orgId: orgId ?? user?.primaryOrgId ?? null,
     primaryOrgId: user?.primaryOrgId ?? null,
     teamKeys: teams.map((team) => team.key),
     roleKeys: roles.map((role) => role.key),
@@ -410,12 +424,18 @@ export async function submitRequest(
 
     let accepted: FormValues = {};
     let formVersionId: string | null = null;
+    let description = NO_ANSWERS_DESCRIPTION;
 
     if (item.formKey) {
       const form = await currentVersion(tx, item.formKey);
       if (!form) throw new ValidationError('the form for this request is no longer published');
 
       const definition = form.version.document as unknown as FormDefinition;
+      // The body is `z.record(z.unknown())`: an answer of the wrong JSON type
+      // (an object where text was asked for) is refused here, as the import
+      // path refuses it, rather than stored and described as "[object Object]".
+      const misfits = answerTypeErrors(definition, answers, (name) => name.replace(/^answers\./, ''));
+      if (misfits.length > 0) throw new ValidationError('some answers need attention', misfits);
       const outcome = validateSubmission(definition, answers, { user: facts as never });
       if (!outcome.ok) {
         throw new ValidationError(
@@ -425,6 +445,7 @@ export async function submitRequest(
       }
       accepted = outcome.accepted;
       formVersionId = form.version.id;
+      description = describeAnswers(definition, accepted, await displayNames(tx, userAnswerIds(definition, accepted)));
     }
 
     // Everything that routes or prioritises the ticket comes from the item, not
@@ -432,7 +453,7 @@ export async function submitRequest(
     const service = await tx.service.findFirst({ where: { id: item.serviceId } });
     const ticket = await ticketService.createRequestFromCatalogue(ctx, tx, {
       title: item.name,
-      description: describeAnswers(accepted),
+      description,
       requesterId,
       serviceId: item.serviceId,
       groupId: item.groupId ?? service?.groupId ?? null,
@@ -493,13 +514,316 @@ export async function submitRequest(
   });
 }
 
-/** A readable summary of the answers, for the ticket description. */
-function describeAnswers(answers: FormValues): string {
-  const entries = Object.entries(answers);
-  if (entries.length === 0) return 'Raised from the service catalogue.';
-  return entries
-    .map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(', ') : String(value ?? '')}`)
-    .join('\n');
+// ---------------------------------------------------------------------------
+// Imported submissions (the shared demo's history, A4 §2.3 and §5.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * One catalogue submission as it was made, for a request whose ticket was
+ * imported. `at` is when it was submitted — the moment its ticket was raised,
+ * or later, never earlier.
+ */
+export const importSubmissionSchema = z
+  .object({
+    requestTypeKey: z.string().min(1).max(64),
+    ticketId: z.string().uuid(),
+    answers: z.record(z.unknown()),
+    submittedBy: z.string().uuid(),
+    at: z.coerce.date(),
+  })
+  .strict();
+export type ImportSubmissionInput = z.input<typeof importSubmissionSchema>;
+
+/**
+ * The most submissions a chunk audited as one batch may hold, so its audit
+ * row can name each ticket: the trail keeps at most 50 entries of any list
+ * (`redact` in `@itsm/platform`), the same bound the ticket import keeps.
+ */
+export const SUBMISSION_BATCH_MAX = 50;
+
+export interface ImportSubmissionsOptions {
+  /**
+   * `row` (the default): one `request.submission.imported` audit row per
+   * submission. `batch`: one `request.submissions.imported.batch` row for the
+   * call, in the caller's transaction (D19).
+   */
+  audit?: 'row' | 'batch';
+  /** What the batch row calls the chunk, e.g. "demo g42 submissions 0401-0450". */
+  label?: string;
+  /** The audit rows' reason, e.g. the demo build's `DEMO_BUILD_REASON`. */
+  reason?: string;
+}
+
+const importSubmissionsOptionsSchema = z
+  .object({
+    audit: z.enum(['row', 'batch']).default('row'),
+    label: z.string().min(1).max(200).optional(),
+    reason: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+
+export interface ImportedSubmission {
+  submissionId: string;
+  ticketId: string;
+  ticketNumber: string;
+  formVersionId: string;
+  /** What `validateSubmission` kept: only answers a visible field could hold, defaults applied. */
+  answers: FormValues;
+  /** The answers as a person reads them — what a live submission writes as the ticket's description. */
+  description: string;
+}
+
+/**
+ * Writes the `form_submission` row of a request whose ticket was imported,
+ * checked against the item's published form exactly as a live submission is.
+ *
+ * Imported tickets are raised by `importTickets`, which knows nothing of the
+ * catalogue, so without this the history's requests have no answers behind
+ * them: the Help Portal's request page, the approver's view of what was asked
+ * and the catalogue's per-item counts all read `form_submission`. The answers
+ * are validated as the requester's — the visibility rules evaluate their facts
+ * and `at` stands for "now" — so a history cannot hold an answer the form would
+ * have refused, and what is stored is what a live submission stores. The
+ * returned description is `describeAnswers` on those answers: the caller
+ * imports the ticket with it (and the accepted answers as its `custom`), so
+ * history and live requests read alike.
+ *
+ * Nothing is set off. No `request.submitted` event (a workflow could start
+ * fulfilling a request finished months ago), no approval — the history writes
+ * its approvals with `requestApproval`'s clock, only where its story had one —
+ * and no enqueue, so it runs inside the demo build's quiet window. It refuses
+ * a ticket that was not imported: a live request's submission is written when
+ * it is raised, and nothing may add a second one or put one on an incident.
+ */
+export async function importSubmission(
+  ctx: TenantContext,
+  tx: Tx,
+  input: ImportSubmissionInput,
+  options: ImportSubmissionsOptions = {},
+): Promise<ImportedSubmission> {
+  const [imported] = await importSubmissions(ctx, tx, [input], options);
+  return imported!;
+}
+
+/**
+ * A chunk of imported submissions on the caller's transaction, in order. With
+ * `audit: 'batch'` the chunk writes one audit row naming every ticket.
+ */
+export async function importSubmissions(
+  ctx: TenantContext,
+  tx: Tx,
+  inputs: ImportSubmissionInput[],
+  options: ImportSubmissionsOptions = {},
+): Promise<ImportedSubmission[]> {
+  authz.require(ctx, 'catalogue.manage');
+  const parsed = z.array(importSubmissionSchema).max(200).parse(inputs);
+  const settings = importSubmissionsOptionsSchema.parse(options);
+  if (settings.audit === 'batch' && parsed.length > SUBMISSION_BATCH_MAX) {
+    throw new ValidationError(`a chunk audited as one batch holds at most ${SUBMISSION_BATCH_MAX} submissions, so its audit row can name each ticket`);
+  }
+  const seen = new Set<string>();
+  parsed.forEach((input, index) => {
+    if (seen.has(input.ticketId)) {
+      throw new ValidationError('a ticket appears twice in this import', [
+        { field: `${index}.ticketId`, code: 'duplicate', message: input.ticketId },
+      ]);
+    }
+    seen.add(input.ticketId);
+  });
+  if (parsed.length === 0) return [];
+
+  const reason = settings.reason ?? null;
+  const written: ImportedSubmission[] = [];
+  for (const [index, input] of parsed.entries()) {
+    const prefix = parsed.length > 1 ? `${index}.` : '';
+    const submission = await insertImportedSubmission(tx, ctx, input, prefix);
+    written.push(submission);
+    if (settings.audit === 'row') {
+      await recordAudit(tx, ctx, {
+        action: 'request.submission.imported',
+        targetType: 'ticket',
+        targetId: submission.ticketId,
+        after: {
+          requestType: input.requestTypeKey,
+          number: submission.ticketNumber,
+          submittedBy: input.submittedBy,
+          at: input.at.toISOString(),
+        },
+        ...(reason ? { reason } : {}),
+      });
+    }
+  }
+
+  if (settings.audit === 'batch') {
+    await recordAudit(tx, ctx, {
+      action: 'request.submissions.imported.batch',
+      targetType: 'import_batch',
+      targetId: newId(),
+      after: {
+        label: settings.label ?? null,
+        count: written.length,
+        first: written[0]!.ticketNumber,
+        last: written.at(-1)!.ticketNumber,
+        tickets: written.map((each) => each.ticketNumber),
+      },
+      ...(reason ? { reason } : {}),
+    });
+  }
+  return written;
+}
+
+/** Checks one imported submission against its ticket and its form, then writes it. */
+async function insertImportedSubmission(
+  tx: Tx,
+  ctx: TenantContext,
+  input: z.infer<typeof importSubmissionSchema>,
+  prefix: string,
+): Promise<ImportedSubmission> {
+  const field = (name: string) => `${prefix}${name}`;
+  // A history records what already happened.
+  if (input.at.getTime() > Date.now()) {
+    throw new ValidationError('a submission cannot be dated in the future', [
+      { field: field('at'), code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+
+  const item = await tx.requestType.findFirst({ where: { key: input.requestTypeKey } });
+  if (!item) throw new NotFoundError('request type', input.requestTypeKey);
+  if (!item.formKey) {
+    throw new ValidationError(`the item ${item.key} has no form, so there is nothing to submit`, [
+      { field: field('requestTypeKey'), code: 'no_form', message: item.key },
+    ]);
+  }
+  const form = await currentVersion(tx, item.formKey);
+  if (!form) {
+    throw new ValidationError(`the form ${item.formKey} is not published`, [
+      { field: field('requestTypeKey'), code: 'not_published', message: item.formKey },
+    ]);
+  }
+
+  const ticket = await tx.ticket.findFirst({
+    where: { id: input.ticketId, deletedAt: null },
+    select: { id: true, number: true, type: true, origin: true, createdAt: true },
+  });
+  if (!ticket) throw new NotFoundError('ticket', input.ticketId);
+  if (ticket.origin !== 'import') {
+    throw new ConflictError(`${ticket.number} was raised here, so its submission is the one written when it was raised`);
+  }
+  if (ticket.type !== 'request') {
+    throw new ValidationError(`${ticket.number} is not a request, so it has no catalogue submission`, [
+      { field: field('ticketId'), code: 'not_a_request', message: ticket.type },
+    ]);
+  }
+  if (input.at < ticket.createdAt) {
+    throw new ValidationError(`a submission cannot come before ${ticket.number} was raised`, [
+      { field: field('at'), code: 'before_ticket', message: `the ticket was raised at ${ticket.createdAt.toISOString()}` },
+    ]);
+  }
+  const already = await tx.formSubmission.findFirst({ where: { ticketId: ticket.id }, select: { id: true } });
+  if (already) throw new ConflictError(`${ticket.number} already has a submission`);
+
+  const submitter = await tx.user.findFirst({ where: { id: input.submittedBy, deletedAt: null }, select: { id: true } });
+  if (!submitter) {
+    throw new ValidationError('the person who submitted it is not in this directory', [
+      { field: field('submittedBy'), code: 'not_found', message: input.submittedBy },
+    ]);
+  }
+
+  const definition = form.version.document as unknown as FormDefinition;
+  const misfits = answerTypeErrors(definition, input.answers, field);
+  if (misfits.length > 0) throw new ValidationError(`the answers for ${ticket.number} need attention`, misfits);
+
+  // The requester's own facts, and the moment it was submitted as "now", so a
+  // condition reads what it read then.
+  const facts = await requesterFacts(tx, input.submittedBy, null);
+  const outcome = validateSubmission(definition, input.answers as FormValues, { user: facts as never, now: input.at.toISOString() });
+  if (!outcome.ok) {
+    throw new ValidationError(
+      `the answers for ${ticket.number} need attention`,
+      Object.entries(outcome.errors).map(([name, message]) => ({ field: field(`answers.${name}`), code: 'invalid', message })),
+    );
+  }
+
+  const submissionId = newId();
+  await tx.formSubmission.create({
+    data: {
+      id: submissionId,
+      tenantId: ctx.tenantId,
+      requestTypeId: item.id,
+      formVersionId: form.version.id,
+      ticketId: ticket.id,
+      submittedBy: input.submittedBy,
+      answers: outcome.accepted as never,
+      createdAt: input.at,
+    },
+  });
+
+  return {
+    submissionId,
+    ticketId: ticket.id,
+    ticketNumber: ticket.number,
+    formVersionId: form.version.id,
+    answers: outcome.accepted,
+    description: describeAnswers(definition, outcome.accepted, await displayNames(tx, userAnswerIds(definition, outcome.accepted))),
+  };
+}
+
+/**
+ * Answers whose JSON type is not the one their question holds.
+ *
+ * `validateSubmission` checks a value's length, pattern and options, but takes
+ * its type on trust from the browser that built it. A request body can say
+ * anything, and an import has no browser at all:
+ * its answers come from a file or a generator, and an object where text was
+ * asked for would be stored as it came and described as "[object Object]" —
+ * or, shaped like `{ href }`, be a link in content nobody authored (D23). So
+ * both the live submit and the import check each answer against its
+ * question's type first.
+ */
+function answerTypeErrors(
+  definition: FormDefinition,
+  answers: Readonly<Record<string, unknown>>,
+  field: (name: string) => string,
+): { field: string; code: string; message: string }[] {
+  const problems: { field: string; code: string; message: string }[] = [];
+  for (const [name, value] of Object.entries(answers)) {
+    const property = definition.schema.properties[name];
+    if (!property || value === null || value === undefined) continue;
+    const fits =
+      property.type === 'string'
+        ? typeof value === 'string'
+        : property.type === 'number'
+          ? typeof value === 'number' && Number.isFinite(value)
+          : property.type === 'integer'
+            ? Number.isInteger(value)
+            : property.type === 'boolean'
+              ? typeof value === 'boolean'
+              : Array.isArray(value) && value.every((each) => typeof each === 'string');
+    if (!fits) {
+      problems.push({ field: field(`answers.${name}`), code: 'wrong_type', message: `the question holds ${ANSWER_TYPES[property.type]}` });
+    }
+  }
+  return problems;
+}
+
+const ANSWER_TYPES: Record<string, string> = {
+  string: 'text',
+  number: 'a number',
+  integer: 'a whole number',
+  boolean: 'yes or no',
+  array: 'a list of choices',
+};
+
+/**
+ * The display names of the people a request's `user` questions were answered
+ * with, so the description names them rather than printing their ids. Read in
+ * the submission's own transaction, under the tenant's row-level security: an
+ * id from another tenant simply is not found, and reads as "Unknown person".
+ */
+async function displayNames(tx: Tx, ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
+  if (ids.length === 0) return new Map();
+  const people = await tx.user.findMany({ where: { id: { in: [...ids] } }, select: { id: true, displayName: true } });
+  return new Map(people.map((person) => [person.id.toLowerCase(), person.displayName]));
 }
 
 /**

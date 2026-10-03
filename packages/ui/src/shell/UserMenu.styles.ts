@@ -4,12 +4,13 @@ import { css, layer, mq } from '../styles/css.js';
  * `UserMenu`: the account button and its menu's extras (the menu itself is
  * `Menu`'s surface and items).
  *
- * `--avatar`: the avatar alone, a round target with a ring of `fill.hover`
- * on hover. `--row`: the sidebar footer's full-width row — avatar, name in
- * `callout` 500, organisation in `footnote` `text.secondary`, and the ⇅
+ * `--avatar`: the 30 px avatar alone, a round target with `surface.hover`
+ * behind it on hover. `--row`: the sidebar foot's user card (A2 §5.3.5) —
+ * avatar, name in 600 13/18, line 2 in 400 11.5/15 `text.faint`, and the ⇅
  * chevron that says a menu opens here. A count (the portal's approvals) sits
  * on the avatar's corner, ringed in the surface colour so it reads on any
- * backdrop.
+ * backdrop. In the menu, the identity heading carries a 36 px avatar and, in
+ * a demo, a small "Demo" tag.
  */
 export const userMenuStyles = layer(
   'components',
@@ -36,7 +37,7 @@ export const userMenuStyles = layer(
 }
 .itsm-UserMenu:hover,
 .itsm-UserMenu[aria-expanded="true"] {
-  background: var(--itsm-colour-fill-hover);
+  background: var(--itsm-colour-surface-hover);
 }
 .itsm-UserMenu:active {
   background: var(--itsm-colour-fill-pressed);
@@ -90,27 +91,35 @@ export const userMenuStyles = layer(
   white-space: nowrap;
 }
 .itsm-UserMenu__name {
-  font-weight: var(--itsm-font-weight-medium);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-semibold);
 }
 .itsm-UserMenu__detail {
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-footnote-size);
-  line-height: var(--itsm-text-footnote-line);
+  color: var(--itsm-colour-text-faint);
+  font-size: 0.71875rem;
+  line-height: 0.9375rem;
+  font-weight: var(--itsm-font-weight-regular);
 }
 
 .itsm-UserMenu--row {
+  gap: 0.625rem;
   inline-size: 100%;
-  padding: var(--itsm-space-2xs);
-  border-radius: var(--itsm-radius-lg);
+  padding: 0.4375rem var(--itsm-space-xs);
+  border-radius: var(--itsm-radius-item);
 }
 .itsm-UserMenu__chevron {
   flex: none;
   margin-inline-start: auto;
-  color: var(--itsm-colour-text-secondary);
+  color: var(--itsm-colour-text-faint);
 }
 
 .itsm-UserMenu__content {
   min-inline-size: 16rem;
+}
+.itsm-UserMenu__content:has(.itsm-UserMenu__areas) {
+  inline-size: 20rem;
 }
 .itsm-UserMenu__identity {
   display: flex;
@@ -124,6 +133,9 @@ export const userMenuStyles = layer(
   min-inline-size: 0;
 }
 .itsm-UserMenu__identityName {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
   overflow: hidden;
   color: var(--itsm-colour-text-primary);
   font-size: var(--itsm-text-callout-size);
@@ -140,6 +152,17 @@ export const userMenuStyles = layer(
   font-weight: var(--itsm-font-weight-regular);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.itsm-UserMenu__demoTag {
+  flex: none;
+  padding: 0 var(--itsm-space-2xs);
+  border-radius: var(--itsm-radius-sm);
+  background: var(--itsm-colour-brand-subtle);
+  color: var(--itsm-colour-brand-subtleText);
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+  font-weight: var(--itsm-font-weight-semibold);
 }
 
 button.itsm-UserMenu__signOut {

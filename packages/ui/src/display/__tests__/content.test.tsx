@@ -10,11 +10,14 @@ import { RichText } from '../../web/RichText.js';
 import { Table, type TableColumn } from '../../web/Table.js';
 import { tableStyles } from '../../web/Table.styles.js';
 import { Tile, TileGrid } from '../../web/Tile.js';
+import { AttentionList } from '../AttentionList.js';
 import { AvatarStack } from '../AvatarStack.js';
 import { DescriptionList } from '../DescriptionList.js';
 import { Disclosure } from '../Disclosure.js';
 import { disclosureStorageKey } from '../disclosure-keys.js';
 import { FileChip } from '../FileChip.js';
+import { KanbanCard, KanbanColumn } from '../Kanban.js';
+import { PriorityChip } from '../PriorityChip.js';
 import { Prose } from '../Prose.js';
 import { StatusPill } from '../StatusPill.js';
 import { Stepper } from '../Stepper.js';
@@ -31,7 +34,20 @@ describe('server-safe display components', () => {
       <Surface>x</Surface>,
       <Badge tone="info">x</Badge>,
       <StatusPill label="Open" tone="info" />,
+      <StatusPill label="Waiting on requester" tone="hold" icon="pause" meta="3" />,
+      <PriorityChip priority="P2" words />,
       <Avatar name="Ada Lovelace" status="online" />,
+      <Avatar kind="unassigned" size="sm" ring />,
+      <AttentionList
+        label="Needs you"
+        tabs={[{ id: 'all', label: 'All', count: 1, href: '/overview', current: true }]}
+        items={[{ id: 'a', severity: 'danger', ref: 'INC-000123', title: 'VPN drops', href: '/tickets/1', owner: null, due: { label: 'Yesterday', overdue: true, slip: '+1d' } }]}
+        rowActions={[{ id: 'open', label: 'Open', href: '/tickets/1' }]}
+      />,
+      <KanbanColumn id="in_progress" title="In progress" tone="info" icon="clock" count={1}>
+        <KanbanCard href="/tickets/1" refId="INC-000123" title="VPN drops" priority="P1" assignee={null} due={{ label: 'Today' }} stripe="warning" />
+      </KanbanColumn>,
+      <KanbanColumn id="closed" title="Closed" tone="neutral" icon="archive" count={41} folded foldHref="/board?open=closed" />,
       <AvatarStack people={[{ name: 'Ada' }, { name: 'Grace' }, { name: 'Alan' }, { name: 'Edsger' }, { name: 'Barbara' }]} />,
       <DescriptionList items={[{ id: 'p', label: 'Priority', value: 'P2' }]} />,
       <Disclosure summary="More">x</Disclosure>,

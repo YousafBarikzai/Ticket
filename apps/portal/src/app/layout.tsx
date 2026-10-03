@@ -1,12 +1,14 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import { AREAS } from '@itsm/contracts/areas';
 import { uiStylesheetVersion } from '@itsm/ui/styles';
 import { themeInitScript } from '@itsm/ui/theme';
-import { interExt, interLatin } from './fonts.js';
+import { colour } from '@itsm/ui/tokens';
+import { interExt, interLatin, jakartaExt, jakartaLatin } from './fonts.js';
 import './globals.css';
 
 /**
- * The document (SPEC §3.4, D2, D3).
+ * The document (SPEC §3.4, D2, D3; v3 §3.1 names).
  *
  * The portal is what somebody opens when something has already gone wrong,
  * often on a phone, often on a bad connection — a page that flashes white or
@@ -26,16 +28,20 @@ import './globals.css';
  *      fallback, so the swap does not move text.
  *
  * No session and no provider here: the providers live in the `(portal)` group
- * layout, so `/offline`, `/sign-in` and `/signed-out` stay static and light
- * (D11). `suppressHydrationWarning` is for the attributes the script adds,
+ * layout, so `/offline` stays static and `/demo`, `/sign-in` and
+ * `/signed-out` stay light — they read this browser's cookies, never the API (v3
+ * §1.5). `suppressHydrationWarning` is for the attributes the script adds,
  * which the server cannot know.
  */
 
+/** The area's name, from the one table (D1): the tab's suffix, the installed app's name. */
+const NAME = AREAS.portal.name;
+
 export const metadata: Metadata = {
-  title: { default: 'Help', template: '%s · Help' },
+  title: { default: NAME, template: `%s · ${NAME}` },
   description: 'Report something, ask for something, and see where it got to.',
-  applicationName: 'Help',
-  appleWebApp: { capable: true, title: 'Help', statusBarStyle: 'default' },
+  applicationName: NAME,
+  appleWebApp: { capable: true, title: NAME, statusBarStyle: 'default' },
   // Behind a session; nothing here belongs in an index.
   robots: { index: false, follow: false },
 };
@@ -46,16 +52,16 @@ export const viewport: Viewport = {
   // Edge to edge on phones: the tab bar pads itself for the home indicator.
   viewportFit: 'cover',
   colorScheme: 'light dark',
-  // The canvas colour of each scheme, so the browser's own chrome matches the page.
+  // The canvas colour of each scheme, from the tokens, so the browser's own chrome matches the page.
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#F5F5F7' },
-    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+    { media: '(prefers-color-scheme: light)', color: colour.apple.surface.canvas },
+    { media: '(prefers-color-scheme: dark)', color: colour['apple-dark'].surface.canvas },
   ],
 };
 
 export default function RootLayout({ children }: { children: ReactNode }): ReactNode {
   return (
-    <html lang="en-GB" className={`${interLatin.variable} ${interExt.variable}`} suppressHydrationWarning>
+    <html lang="en-GB" className={`${interLatin.variable} ${interExt.variable} ${jakartaLatin.variable} ${jakartaExt.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript({ app: 'portal' }) }} />
         <link rel="stylesheet" href={`/itsm-ui.css?v=${uiStylesheetVersion}`} precedence="itsm" />

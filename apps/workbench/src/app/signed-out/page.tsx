@@ -1,53 +1,45 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
-import { Banner, StatusScreen } from '@itsm/ui';
+import { bff, deploymentOrigins } from '../../bff.js';
+import { currentSession } from '../../server/session.js';
+import { demoBarClock } from '../demo/clock.js';
+import { SignedOutScreen } from './SignedOutScreen.js';
+import '../demo/entry.css';
 
 export const metadata: Metadata = { title: 'Signed out' };
 export const dynamic = 'force-dynamic';
 
-/**
- * Where a sign-out lands, and where a failed sign-in lands (SPEC §6.1).
- *
- * The reason is shown because the alternative — bouncing somebody back to
- * the sign-in page with no explanation — produces a loop the person cannot
- * tell from a broken application. The text is only ever one of this app's
- * own messages: the identity provider's `error_description` is never echoed
- * here, since it is written about our client, not to this reader.
- *
- * "Sign in again" is a plain link (the status screen draws no client-side
- * links): it goes through the identity provider, and nothing should prefetch
- * a sign-in.
- */
-/** The BFF's reasons are phrases ("that sign-in link is incomplete"); shown as a sentence. */
-function sentence(text: string): string {
-  const trimmed = text.trim();
-  const capital = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+function first(value: string | string[] | undefined): string | null {
+  const found = Array.isArray(value) ? value[0] : value;
+  return typeof found === 'string' && found !== '' ? found : null;
 }
 
+/**
+ * Where a sign-out lands, and where a failed sign-in lands (v3 §4.6.3; A3
+ * §6.7): codes in the query, words on the page (`SignedOutScreen`). The
+ * restored account's name is read from the session the BFF handed back
+ * (§4.5 O2), never from the link.
+ */
 export default async function SignedOutPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
   const params = await searchParams;
-  const reason = typeof params.reason === 'string' ? params.reason.slice(0, 300) : null;
-
+  const demo = first(params.demo) === '1';
+  const restored = demo && first(params.restored) === '1';
+  const session = restored ? await currentSession() : null;
+  const signedInAs = session && session.kind !== 'demo' ? session.displayName : null;
   return (
-    <StatusScreen
-      brand="workbench"
-      illustration={reason ? 'error' : 'success'}
-      title={reason ? 'That sign-in didn’t finish' : 'You’re signed out'}
-      body={
-        reason ? (
-          <Banner tone="danger" title="What happened">
-            {sentence(reason)}
-          </Banner>
-        ) : (
-          'Your session on this device has ended.'
-        )
-      }
-      actions={[{ id: 'sign-in', label: 'Sign in again', href: '/api/session/login', variant: 'primary' }]}
+    <SignedOutScreen
+      demo={demo}
+      restored={restored}
+      reason={first(params.reason)}
+      signedInAs={signedInAs}
+      mode={bff.config.demo !== null}
+      origins={deploymentOrigins()}
+      ownOrigin={bff.config.appOrigin}
+      clock={demoBarClock()}
     />
   );
 }

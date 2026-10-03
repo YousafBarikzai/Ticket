@@ -17,11 +17,11 @@ import { css, layer, mq, prefers } from '../styles/css.js';
  *   composited rather than repainted.
  * - **Static under reduced motion**, the operating system's or the product's.
  *
- * The bone is `fill.secondary` — grey on white and on the canvas, lighter
- * grey on black, solid in the high-contrast themes. The highlight is the
- * card colour in a light scheme and a white veil in a dark one, chosen with
- * `light-dark()` from the scheme the theme sets; both are decoration, which is
- * what `color-mix` is allowed for (SPEC §3.3 rule 9).
+ * The bone is `surface.sunken` and the sweep is the PMO's band, `sunken →
+ * hover → sunken` (v3 §2.13): a soft lighter stripe that starts and ends in
+ * the bone's own colour, so its edges never show. Both are surface tokens,
+ * so every theme — dark and high contrast included — gets a bone that reads
+ * on its cards and canvas with no per-theme rule.
  */
 export const skeletonStyles = layer(
   'components',
@@ -37,14 +37,13 @@ export const skeletonStyles = layer(
 }
 
 .itsm-Skeleton {
-  --_itsm-shimmer: light-dark(color-mix(in srgb, var(--itsm-colour-surface-raised) 72%, transparent), var(--itsm-colour-fill-hover));
   position: relative;
   display: block;
   flex-shrink: 0;
   max-inline-size: 100%;
   overflow: hidden;
   border-radius: var(--itsm-radius-sm);
-  background: var(--itsm-colour-fill-secondary);
+  background: var(--itsm-colour-surface-sunken);
   animation: itsm-skeleton-reveal var(--itsm-duration-normal) var(--itsm-easing-standard) 200ms both;
 }
 
@@ -53,7 +52,7 @@ export const skeletonStyles = layer(
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, var(--_itsm-shimmer), transparent);
+  background: linear-gradient(90deg, var(--itsm-colour-surface-sunken) 0%, var(--itsm-colour-surface-hover) 40%, var(--itsm-colour-surface-sunken) 80%);
   animation: itsm-skeleton-sweep 1.6s linear 200ms 6;
 }
 

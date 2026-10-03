@@ -44,13 +44,26 @@ export const createUserSchema = z.object({
   locale: z.string().max(20).default('en-GB'),
   timeZone: z.string().max(60).default('Europe/London'),
   isExternal: z.boolean().default(false),
+  /**
+   * When the person joined, for a directory brought in from elsewhere: an
+   * import or the seed (the shared demo's colleagues, A4 §2.3). Without it the
+   * People page says that everybody joined the day the tenant was built.
+   * Refused from any other source — an administrator adding somebody, a
+   * sign-in or SCIM is the moment that person joins, and a back-dated account
+   * would misstate when access began.
+   */
+  createdAt: z.coerce.date().optional(),
 });
 /** The caller supplies what they know; the schema fills in the defaults. */
 export type CreateUserInput = z.input<typeof createUserSchema>;
 
+/** The sources whose rows may say when the person joined (`createdAt`). */
+export const HISTORY_SOURCES = ['import', 'seed'] as const;
+
 export async function createUser(ctx: TenantContext, input: CreateUserInput, source: 'admin' | 'jit' | 'import' | 'seed' | 'scim' = 'admin') {
   const parsed = createUserSchema.parse(input);
   if (source === 'admin' || source === 'scim') authz.require(ctx, 'identity.user.manage');
+  const joined = parsed.createdAt === undefined ? undefined : joinedAt(parsed.createdAt, source);
 
   return transaction(ctx, async (tx) => {
     const email = parsed.email.toLowerCase();
@@ -72,6 +85,10 @@ export async function createUser(ctx: TenantContext, input: CreateUserInput, sou
         isExternal: parsed.isExternal,
         createdBy: ctx.actor.id,
         updatedBy: ctx.actor.id,
+        // A joining date given by the source is also the row's last change:
+        // nothing has happened to the account since it arrived. Omitted, both
+        // columns keep the database's own clock, as before.
+        ...(joined ? { createdAt: joined, updatedAt: joined } : {}),
       },
     });
 
@@ -79,7 +96,10 @@ export async function createUser(ctx: TenantContext, input: CreateUserInput, sou
       action: 'user.provisioned',
       targetType: 'user',
       targetId: id,
-      after: { email, displayName: parsed.displayName, source },
+      // The audit row is written now whatever the account says, so a supplied
+      // joining date is named in it: a reader can see the date came from the
+      // source rather than from this moment.
+      after: { email, displayName: parsed.displayName, source, ...(joined ? { createdAt: joined.toISOString() } : {}) },
     });
     await publish(tx, ctx, {
       definition: events.userProvisioned,
@@ -89,6 +109,25 @@ export async function createUser(ctx: TenantContext, input: CreateUserInput, sou
 
     return user;
   });
+}
+
+/**
+ * The joining date a source supplied, once it is known to be one that may
+ * supply it and to be in the past. A history records what already happened,
+ * so a date after now is a mistake in the source, not a plan.
+ */
+function joinedAt(createdAt: Date, source: string): Date {
+  if (!(HISTORY_SOURCES as readonly string[]).includes(source)) {
+    throw new ValidationError('only an import or the seed can say when a person joined', [
+      { field: 'createdAt', code: 'not_allowed', message: 'a person added here joins now' },
+    ]);
+  }
+  if (createdAt.getTime() > Date.now()) {
+    throw new ValidationError('a person cannot have joined in the future', [
+      { field: 'createdAt', code: 'in_future', message: 'must not be later than now' },
+    ]);
+  }
+  return createdAt;
 }
 
 /**
@@ -429,11 +468,41 @@ export async function revokeRole(ctx: TenantContext, assignmentId: string) {
   });
 }
 
-export async function createTeam(ctx: TenantContext, input: { key: string; name: string; orgId: string; type?: string }) {
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Creates a team, optionally on a business calendar.
+ *
+ * The calendar is the team's working week. Analytics measures how long a
+ * team takes against it (the ticket projector reads `team.calendarId`), and
+ * an SLA policy in `group` mode clocks the team's tickets by it; without one
+ * both measure around the clock, so a ticket raised at 17:30 on a Friday
+ * reads as two days late on Monday morning. The shared demo's five teams are
+ * all on the UK office calendar (A4 §1.2). A calendar that does not exist is
+ * refused rather than stored: the readers fall back to 24/7 without a word,
+ * so a wrong id would be a silent error in every report.
+ */
+export async function createTeam(
+  ctx: TenantContext,
+  input: { key: string; name: string; orgId: string; type?: string; calendarId?: string | null },
+) {
   authz.require(ctx, 'identity.org.manage');
+  const calendarId = input.calendarId ?? null;
+  if (calendarId !== null && !UUID_PATTERN.test(calendarId)) {
+    throw new ValidationError('the calendar must be given by its id', [
+      { field: 'calendarId', code: 'invalid', message: 'not a calendar id' },
+    ]);
+  }
   return transaction(ctx, async (tx) => {
     const existing = await tx.team.findFirst({ where: { key: input.key } });
     if (existing) throw new ConflictError(`a team with the key ${input.key} already exists`);
+    // Read under the tenant's row-level security, so another tenant's
+    // calendar is simply not found.
+    if (calendarId !== null && !(await tx.businessCalendar.findFirst({ where: { id: calendarId }, select: { id: true } }))) {
+      throw new ValidationError('there is no business calendar with that id', [
+        { field: 'calendarId', code: 'not_found', message: calendarId },
+      ]);
+    }
     const team = await tx.team.create({
       data: {
         id: newId(),
@@ -443,9 +512,15 @@ export async function createTeam(ctx: TenantContext, input: { key: string; name:
         name: input.name,
         type: input.type ?? 'support_group',
         createdBy: ctx.actor.id,
+        ...(calendarId !== null ? { calendarId } : {}),
       },
     });
-    await recordAudit(tx, ctx, { action: 'team.created', targetType: 'team', targetId: team.id, after: { key: input.key, name: input.name } });
+    await recordAudit(tx, ctx, {
+      action: 'team.created',
+      targetType: 'team',
+      targetId: team.id,
+      after: { key: input.key, name: input.name, ...(calendarId !== null ? { calendarId } : {}) },
+    });
     return team;
   });
 }

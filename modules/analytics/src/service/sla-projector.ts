@@ -32,6 +32,7 @@ interface TimerSource {
   state: string;
   metAt: Date | null;
   breachedAt: Date | null;
+  updatedAt: Date;
 }
 
 async function loadTimer(tx: Tx, timerId: string): Promise<TimerSource | null> {
@@ -48,8 +49,36 @@ async function loadTimer(tx: Tx, timerId: string): Promise<TimerSource | null> {
       state: true,
       metAt: true,
       breachedAt: true,
+      updatedAt: true,
     },
   }) as Promise<TimerSource | null>;
+}
+
+/**
+ * One verdict per timer, in a fixed precedence (F1 U7, ADR-0057):
+ * cancelled > breached > met > running.
+ *
+ * Cancelled first, because a cancelled timer is no promise at all and
+ * attainment must not count it either way. Breached over met, because an
+ * `update` timer that missed a cycle keeps running for the cadence and is
+ * stopped with `metAt` at resolution: it was still missed. Before F1 a timer
+ * could not carry both, so met came first; now the order is the rule.
+ */
+export function timerOutcome(timer: Pick<TimerSource, 'state' | 'metAt' | 'breachedAt'>): 'cancelled' | 'breached' | 'met' | 'running' {
+  if (timer.state === 'cancelled') return 'cancelled';
+  if (timer.breachedAt) return 'breached';
+  if (timer.metAt) return 'met';
+  return 'running';
+}
+
+/**
+ * When the timer stopped, or null while it runs. A cancelled timer has no
+ * column of its own for the instant; nothing writes the row after it is
+ * cancelled, so its last update is that instant.
+ */
+export function timerStoppedAt(timer: Pick<TimerSource, 'state' | 'metAt' | 'breachedAt' | 'updatedAt'>): Date | null {
+  if (timer.state === 'cancelled') return timer.updatedAt;
+  return timer.metAt ?? timer.breachedAt ?? null;
 }
 
 /**
@@ -94,8 +123,8 @@ export async function refreshTimerFact(
 
   const occurredAt = new Date(event.occurredAt);
   const calendar = await calendarFor(tx, timer.calendarId);
-  const stoppedAt = timer.metAt ?? timer.breachedAt ?? null;
-  const outcome = timer.metAt ? 'met' : timer.breachedAt ? 'breached' : 'running';
+  const stoppedAt = timerStoppedAt(timer);
+  const outcome = timerOutcome(timer);
   const paused = await pausedMinutesFor(tx, timerId, calendar, stoppedAt ?? occurredAt);
   const elapsed = durationsBetween(timer.startedAt, stoppedAt ?? occurredAt, calendar);
 

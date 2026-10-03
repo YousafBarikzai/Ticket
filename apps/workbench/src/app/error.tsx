@@ -4,6 +4,14 @@ import { useEffect, type ReactNode } from 'react';
 import { Button, StatusScreen } from '@itsm/ui';
 
 /**
+ * The area's name in the title, as `AREAS.workbench.name` (D1, v3 §3.1).
+ * Spelt out: this boundary is in every route's first load, and the areas
+ * module's tables would come with an import. `demo-pages.test.tsx` holds the
+ * copy to the contract.
+ */
+const ROOT_ERROR_TITLE = 'The Service Desk couldn’t open';
+
+/**
  * The frame itself could not be drawn — the API is unreachable, or reading
  * the signed-in person failed for a reason other than an ended session
  * (which redirects) or a suspended workspace (which has its own screen).
@@ -23,7 +31,7 @@ export default function RootError({ error, retry }: { error: Error & { digest?: 
       brand="workbench"
       illustration="error"
       errorBoundary
-      title="Workbench couldn’t open"
+      title={ROOT_ERROR_TITLE}
       body={
         <>
           <p>Something went wrong on our side, or the service can’t be reached. Try again in a moment.</p>

@@ -1,6 +1,7 @@
 import type { EventEnvelope } from '@itsm/contracts';
 import { authz, handlersFor, logger, metrics, transaction, type TenantContext } from '@itsm/platform';
 import { analyticsManifest } from '../manifest.js';
+import { bumpQueryVersion } from './query-cache.js';
 import { rebuildRange } from './rebuild-service.js';
 
 /**
@@ -69,6 +70,10 @@ export async function replayProjection(
   // followed by a rebuild of the days it could have touched.
   if (replayed > 0) {
     await rebuildRange(ctx, options.from ?? new Date(Date.UTC(2020, 0, 1)), options.to ?? new Date());
+    // Once more, after everything has committed (A8 R4c): the handlers bump
+    // once per batch, at its first event, so this is what makes the last
+    // batch's facts the ones every cached answer is measured against.
+    await bumpQueryVersion(ctx.tenantId);
   }
 
   metrics.increment('analytics_replayed_events_total', {}, replayed);

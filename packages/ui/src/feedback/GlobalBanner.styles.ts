@@ -4,13 +4,18 @@ import { moreContrast, toneRules } from './tone.js';
 /**
  * `GlobalBanner`: an edge-to-edge strip in the tone's tint, its content set in
  * from the page gutter so it lines up with the page below it, at least a
- * large control's height tall so its action and close button have room.
+ * large control's height (44) tall so its action and close button have room.
  *
- * A hairline of the tone's own colour along the bottom edge separates it from
- * the page without a shadow (it is part of the column, not floating over it);
- * the line is decoration, which is what `color-mix` is allowed for (SPEC §3.3
- * rule 9). One that appears while somebody is working (`data-live`) fades in —
- * opacity only, so nothing below it moves twice.
+ * A 3 px bar in the tone's border colour marks its inline start (v3, A1
+ * §7.15), drawn by `::before` so it mirrors in a right-to-left locale and
+ * moves nothing; `emphasis="strong"` (a major incident) paints it in the
+ * tone's solid colour and the title in the tone's text colour. A hairline of
+ * the tone at 40 % along the bottom edge separates the strip from the page
+ * without a shadow (it is part of the column, not floating over it); the
+ * line is decoration, which is what `color-mix` is allowed for. The kicker is
+ * the uppercase `kicker` style in the tone's text colour, one of the five
+ * places D6 allows capitals. One that appears while somebody is working
+ * (`data-live`) fades in — opacity only, so nothing below it moves twice.
  */
 export const globalBannerStyles = layer(
   'components',
@@ -18,12 +23,31 @@ export const globalBannerStyles = layer(
 ${toneRules('.itsm-GlobalBanner')}
 
 .itsm-GlobalBanner {
+  position: relative;
   background: var(--_itsm-tone-subtle);
   color: var(--itsm-colour-text-primary);
   box-shadow: inset 0 calc(var(--itsm-hairline) * -1) 0 color-mix(in srgb, var(--_itsm-tone-border) 40%, transparent);
   font-size: var(--itsm-text-callout-size);
   line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-medium);
   letter-spacing: var(--itsm-text-callout-tracking);
+}
+
+.itsm-GlobalBanner::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  background: var(--_itsm-tone-border);
+}
+
+.itsm-GlobalBanner[data-emphasis="strong"]::before {
+  background: var(--_itsm-tone-solid);
+}
+
+.itsm-GlobalBanner[data-emphasis="strong"] .itsm-GlobalBanner__title {
+  color: var(--_itsm-tone-text);
 }
 
 .itsm-GlobalBanner[data-live] {
@@ -39,7 +63,8 @@ ${toneRules('.itsm-GlobalBanner')}
 }
 
 .itsm-GlobalBanner__icon {
-  margin-block: calc((var(--itsm-control-height-sm) - var(--itsm-icon-md)) / 2);
+  flex: none;
+  margin-block: calc((var(--itsm-control-height-sm) - var(--itsm-icon-sm)) / 2);
   color: var(--_itsm-tone-text);
 }
 
@@ -58,6 +83,17 @@ ${toneRules('.itsm-GlobalBanner')}
   margin: 0;
   padding-block: calc((var(--itsm-control-height-sm) - var(--itsm-text-callout-line)) / 2);
   overflow-wrap: anywhere;
+}
+
+.itsm-GlobalBanner__kicker {
+  margin-inline-end: var(--itsm-space-2xs);
+  font-family: var(--itsm-text-kicker-family);
+  font-size: var(--itsm-text-kicker-size);
+  line-height: var(--itsm-text-kicker-line);
+  font-weight: var(--itsm-text-kicker-weight);
+  letter-spacing: var(--itsm-text-kicker-tracking);
+  text-transform: uppercase;
+  color: var(--_itsm-tone-text);
 }
 
 .itsm-GlobalBanner__title {
@@ -116,6 +152,10 @@ ${moreContrast((scope) => `${scope} .itsm-GlobalBanner { box-shadow: inset 0 cal
 ${mq.forcedColors} {
   .itsm-GlobalBanner {
     border-block-end: var(--itsm-hairline) solid CanvasText;
+  }
+
+  .itsm-GlobalBanner::before {
+    background: CanvasText;
   }
 
   .itsm-GlobalBanner__dismiss {

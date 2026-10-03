@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TestProvider, testRouter } from '../../provider/__tests__/support/provider.js';
 import { cleanupDocument, click, render } from '../../web/__tests__/support/render.js';
 import { Banner } from '../Banner.js';
+import { bannerStyles } from '../Banner.styles.js';
 import { DISMISSAL_PREFIX, isDismissalKey, resetDismissals } from '../dismissal.js';
 import { GlobalBanner } from '../GlobalBanner.js';
+import { globalBannerStyles } from '../GlobalBanner.styles.js';
 import { InlineAlert } from '../InlineAlert.js';
 
 /*
@@ -24,6 +26,12 @@ afterEach(() => {
 const text = (element: Element | null | undefined): string => element?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 const button = (root: ParentNode, name: string): HTMLButtonElement | undefined =>
   Array.from(root.querySelectorAll('button')).find((element) => (element.getAttribute('aria-label') ?? text(element)) === name);
+
+/** The declarations of every top-level rule whose selector is exactly `selector`, in `css`. */
+function rule(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return [...css.matchAll(new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`, 'g'))].map((match) => match[1]).join('\n');
+}
 
 describe('Banner', () => {
   it('is a polite status by default, an alert only when asked, and silent when told', () => {
@@ -158,6 +166,49 @@ describe('Banner', () => {
   });
 });
 
+describe('Banner v3', () => {
+  it('puts a kicker over the title, in its own element, so only the kicker is set in capitals', () => {
+    const { container } = render(
+      <Banner tone="danger" kicker="Major incident" title="MI-0004 · VPN sign-in failures for remote staff">
+        Mitigating · Next update 14:52
+      </Banner>,
+    );
+    const content = container.querySelector('.itsm-Banner__content')!;
+    expect(Array.from(content.children).map((child) => child.className)).toEqual(['itsm-Banner__kicker', 'itsm-Banner__title', 'itsm-Banner__body']);
+    expect(text(content.querySelector('.itsm-Banner__kicker'))).toBe('Major incident');
+    // The words are written in sentence case; the stylesheet draws the capitals.
+    expect(rule(bannerStyles, '.itsm-Banner__kicker')).toContain('text-transform: uppercase;');
+    expect(rule(bannerStyles, '.itsm-Banner__title')).not.toContain('text-transform');
+    expect(render(<Banner tone="info" title="No kicker" />).container.querySelector('.itsm-Banner__kicker')).toBeNull();
+  });
+
+  it('takes the hold and high tones, each with its own icon', () => {
+    const { container } = render(
+      <div>
+        <Banner tone="hold" title="Waiting on the requester" />
+        <Banner tone="high" title="Raised to P2" />
+      </div>,
+    );
+    const banners = Array.from(container.querySelectorAll('.itsm-Banner'));
+    expect(banners.map((banner) => banner.getAttribute('data-tone'))).toEqual(['hold', 'high']);
+    expect(banners.map((banner) => banner.querySelector('svg')?.getAttribute('data-icon'))).toEqual(['pause', 'flag']);
+    expect(bannerStyles).toContain('.itsm-Banner[data-tone="hold"]');
+    expect(bannerStyles).toContain('.itsm-Banner[data-tone="high"]');
+  });
+
+  it('is a 12 px card with a 40 % tone edge, 10/12/10/14 padding and a 16 px icon', () => {
+    const box = rule(bannerStyles, '.itsm-Banner');
+    expect(box).toContain('border-radius: var(--itsm-radius-xl);');
+    expect(box).toContain('border: var(--itsm-border-hair) solid color-mix(in srgb, var(--_itsm-tone-border) 40%, transparent);');
+    expect(box).toContain(
+      'padding: calc(var(--itsm-space-xs) + var(--itsm-space-3xs)) var(--itsm-space-sm) calc(var(--itsm-space-xs) + var(--itsm-space-3xs)) calc(var(--itsm-space-sm) + var(--itsm-space-3xs));',
+    );
+    expect(render(<Banner tone="info" title="a" />).container.querySelector('.itsm-Banner__icon')?.getAttribute('data-size')).toBe('sm');
+    // Where the person asked for more contrast, the edge takes the full tone border.
+    expect(bannerStyles).toContain(':root[data-itsm-theme="high-contrast"] .itsm-Banner { border-color: var(--_itsm-tone-border); }');
+  });
+});
+
 describe('GlobalBanner', () => {
   it('maps live to the role, and has no close button without a dismissKey', () => {
     const { container } = render(
@@ -195,6 +246,32 @@ describe('GlobalBanner', () => {
     expect(view.container.querySelector('.itsm-GlobalBanner')).toBeNull();
     view.unmount();
     expect(render(<GlobalBanner tone="danger" title="Major incident" dismissKey="incident-42" />).container.innerHTML).toBe('');
+  });
+});
+
+describe('GlobalBanner v3', () => {
+  it('reads the kicker before the title, as one sentence', () => {
+    const { container } = render(
+      <GlobalBanner tone="danger" emphasis="strong" kicker="Major incident" title="Email is delayed" body="We're working on it." live={false} />,
+    );
+    const strip = container.querySelector<HTMLElement>('.itsm-GlobalBanner')!;
+    expect(text(strip)).toBe('Major incident Email is delayed We\'re working on it.');
+    expect(strip.querySelector('.itsm-GlobalBanner__text')?.firstElementChild?.className).toBe('itsm-GlobalBanner__kicker');
+    expect(rule(globalBannerStyles, '.itsm-GlobalBanner__kicker')).toContain('text-transform: uppercase;');
+  });
+
+  it('marks its start with a 3 px bar in the tone, solid for a major incident', () => {
+    const subtle = render(<GlobalBanner tone="warning" title="Your access changed" />).container.querySelector<HTMLElement>('.itsm-GlobalBanner')!;
+    expect(subtle.dataset.emphasis).toBe('subtle');
+    const strong = render(<GlobalBanner tone="danger" emphasis="strong" title="Major incident" />).container.querySelector<HTMLElement>('.itsm-GlobalBanner')!;
+    expect(strong.dataset.emphasis).toBe('strong');
+    const bar = rule(globalBannerStyles, '.itsm-GlobalBanner::before');
+    expect(bar).toContain('inset-inline-start: 0;');
+    expect(bar).toContain('inline-size: 3px;');
+    expect(bar).toContain('background: var(--_itsm-tone-border);');
+    expect(rule(globalBannerStyles, '.itsm-GlobalBanner[data-emphasis="strong"]::before')).toContain('background: var(--_itsm-tone-solid);');
+    expect(rule(globalBannerStyles, '.itsm-GlobalBanner__inner')).toContain('min-block-size: var(--itsm-control-height-lg);');
+    expect(rule(globalBannerStyles, '.itsm-GlobalBanner__inner')).toContain('padding: var(--itsm-space-xs) var(--itsm-page-gutter);');
   });
 });
 

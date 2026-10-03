@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
+import { AREAS } from '@itsm/contracts/areas';
 import { StatusScreen } from '@itsm/ui';
 import { uiStylesheet } from '@itsm/ui/styles';
 import { AvailableOffline } from './AvailableOffline.js';
@@ -18,7 +19,8 @@ export const dynamic = 'force-static';
  * renders unstyled — as the old one did, borrowing the portal's classes —
  * reads as broken exactly when somebody needs it to be calm. It says what is
  * true and what is still possible, because "you are offline" on its own
- * reads as "stop".
+ * reads as "stop". The lockup names the area (D1) and the way back is its
+ * home, the Overview.
  */
 export default function OfflinePage(): ReactNode {
   return (
@@ -26,6 +28,7 @@ export default function OfflinePage(): ReactNode {
       <style dangerouslySetInnerHTML={{ __html: uiStylesheet() }} />
       <StatusScreen
         brand="workbench"
+        brandName={AREAS.workbench.name}
         illustration="offline"
         title="You’re offline"
         body={
@@ -34,7 +37,7 @@ export default function OfflinePage(): ReactNode {
             <AvailableOffline />
           </>
         }
-        actions={[{ id: 'inbox', label: 'Back to inbox', href: '/inbox', variant: 'primary' }]}
+        actions={[{ id: 'home', label: 'Go to Overview', href: AREAS.workbench.home, variant: 'primary' }]}
       />
     </>
   );

@@ -42,6 +42,13 @@ function Harness({ mode, onValueChange }: { readonly mode: SegmentedControlProps
 }
 
 const radios = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('[role="radio"]')];
+
+/** What a screen reader hears: the text, less anything hidden from assistive technology. */
+function spoken(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return '';
+  return [...node.childNodes].map(spoken).join('');
+}
 const checkedLabel = (): string | undefined => radios().find((radio) => radio.getAttribute('aria-checked') === 'true')?.textContent ?? undefined;
 
 describe('SegmentedControl', () => {
@@ -155,11 +162,32 @@ describe('SegmentedControl', () => {
     });
   });
 
-  it('reads a count after its label, capped at 99+', () => {
+  it('reads a count after its label through the shared Count: 99+ for the eye, "more than 99" for the ear', () => {
     render(<Harness mode="value" />);
     const forward = radios()[3]!;
-    expect(forward.querySelector('.itsm-SegmentedControl__count')?.textContent).toBe('99+');
-    expect(forward.textContent).toBe('Forward, 99+');
+    const count = forward.querySelector('.itsm-SegmentedControl__count')!;
+    expect(count.classList.contains('itsm-Count')).toBe(true);
+    expect(count.getAttribute('data-size')).toBe('sm');
+    expect(count.querySelector('[aria-hidden="true"]')?.textContent).toBe('99+');
+    expect(spoken(forward)).toBe('Forward, more than 99');
+  });
+
+  it('draws the selected segment’s count in the accent tone and draws nothing for a null count', () => {
+    render(
+      <SegmentedControl
+        label="Scope"
+        mode="value"
+        value="open"
+        options={[
+          { value: 'open', label: 'Open', count: 4 },
+          { value: 'mine', label: 'Mine', count: 2 },
+          { value: 'all', label: 'All', count: null },
+        ]}
+      />,
+    );
+    const counts = radios().map((radio) => radio.querySelector('.itsm-Count')?.getAttribute('data-tone') ?? null);
+    expect(counts).toEqual(['accent', 'neutral', null]);
+    expect(spoken(radios()[0]!)).toBe('Open, 4');
   });
 
   it('reserves each label’s bold width and draws the selected segment itself until the thumb is placed', () => {
@@ -191,7 +219,7 @@ describe('SegmentedControl', () => {
       expect(root.classList.contains('itsm-SegmentedControl--wrap')).toBe(true);
       // Nothing about the links changes: still a named nav with the current one marked.
       expect(root.tagName).toBe('NAV');
-      expect(root.querySelector('[aria-current="page"]')?.textContent).toBe('Needs you, 1');
+      expect(spoken(root.querySelector('[aria-current="page"]')!)).toBe('Needs you, 1');
       expect(segmentedControlStyles).toMatch(/\.itsm-SegmentedControl--wrap \.itsm-SegmentedControl__list \{\s*display: flex;\s*flex-wrap: wrap;/);
       // Equal from nothing where there is room, never narrower than the words.
       expect(segmentedControlStyles).toMatch(/\.itsm-SegmentedControl--wrap \.itsm-SegmentedControl__list > li,\s*\.itsm-SegmentedControl--wrap \.itsm-SegmentedControl__list > \.itsm-SegmentedControl__segment \{\s*flex: 1 1 0;\s*min-inline-size: max-content;/);
@@ -208,6 +236,22 @@ describe('SegmentedControl', () => {
       render(<SegmentedControl label="Composer mode" mode="value" options={OPTIONS} value="reply" wrap />);
       expect(document.querySelector('.itsm-SegmentedControl--wrap [role="radiogroup"]')).not.toBeNull();
     });
+  });
+
+  it('sits on an opaque sunken track with a raised thumb (v3 §2.14), and gains an edge on a sunken well', () => {
+    const rule = (selector: string): string => {
+      const start = segmentedControlStyles.indexOf(`${selector} {`);
+      return start < 0 ? '' : segmentedControlStyles.slice(start, segmentedControlStyles.indexOf('}', start));
+    };
+    expect(rule('.itsm-SegmentedControl')).toContain('background-color: var(--itsm-colour-surface-sunken)');
+    expect(rule('.itsm-SegmentedControl')).toContain('border-radius: var(--itsm-radius-lg)');
+    expect(segmentedControlStyles).not.toContain('fill-secondary');
+    expect(segmentedControlStyles).toMatch(/\.itsm-SegmentedControl__thumb,[^{]*\{\s*background-color: var\(--itsm-colour-surface-raised\);[^}]*box-shadow: var\(--itsm-elevation-sm\)/);
+    expect(rule(':where(.itsm-Surface[data-tone="sunken"]) .itsm-SegmentedControl')).toContain('var(--itsm-colour-border-subtle)');
+    // Unselected labels are 500 13/18 muted; the selected one is primary at 600.
+    expect(rule('.itsm-SegmentedControl__segment')).toContain('color: var(--itsm-colour-text-muted)');
+    expect(rule('.itsm-SegmentedControl__segment')).toContain('font-size: var(--itsm-text-subheadline-size)');
+    expect(rule('.itsm-SegmentedControl__segment[data-selected]')).toContain('font-weight: var(--itsm-font-weight-semibold)');
   });
 
   it('moves its tab stop to a selection made elsewhere', () => {

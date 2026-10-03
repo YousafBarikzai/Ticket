@@ -2,10 +2,11 @@
 
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import type { AreaId, AreaModel } from '@itsm/contracts/areas';
 import { useLiveState } from '@itsm/pwa/live';
 import { Button } from '@itsm/ui';
-import { TopNavShell, type AppSwitcherItem } from '@itsm/ui/shell';
+import { TopNavShell, type DemoBarProps } from '@itsm/ui/shell';
 import { useTheme } from '@itsm/ui/theme';
 import { api } from '../client/api.js';
 import type { PortalPaletteDeps } from '../client/palette.js';
@@ -14,12 +15,14 @@ import { showsNewRequest, type PortalCan, type PortalFrameModel } from '../navig
 import { PortalNotifications } from './PortalNotifications.js';
 
 /**
- * The portal frame (SPEC §5.4, D7, D17): the design system's top-nav shell
- * (`TopNavShell` — `AppShell variant="topnav"` without the sidebar variant in
- * the first load) — a glass top bar with the brand, the four pills (Home, My requests,
- * Services, Knowledge), search (⌘K), *New request*, the connection pill, the
- * bell and the avatar menu — and below 768 px the docked tab bar with *Me*
- * as its fifth tab.
+ * The portal frame (SPEC §5.4, D7, D17; v3 §3.6–§3.8): the design system's
+ * top-nav shell (`TopNavShell` — `AppShell variant="topnav"` without the
+ * sidebar variant in the first load) — a 56 px top bar with the product mark,
+ * the visible area switcher "Help Portal ⌄" (a lockup for a requester with
+ * one area), the four pills (Home, My requests, Services, Knowledge), search
+ * (⌘K), *New request*, the connection pill, the bell and the account menu —
+ * below 768 px the docked tab bar with *Me* as its fifth tab, and in a demo
+ * visit the demo bar above it all.
  *
  * Rendered by the `(portal)` layout with plain data (names, the navigation
  * model, permission booleans); everything that is a function lives here, on
@@ -81,6 +84,8 @@ const LazyConnectionPill = dynamic(() => loadStatus().then((module) => module.Co
 const LazyConnectionBanner = dynamic(() => loadStatus().then((module) => module.ConnectionBanner), { ssr: false });
 const LazyConfirmDialog = dynamic(() => import('@itsm/ui/overlays').then((module) => module.ConfirmDialog), { ssr: false });
 const LazyDialog = dynamic(() => import('@itsm/ui/overlays').then((module) => module.Dialog), { ssr: false });
+// Rendered on the server too (the bar is in the HTML), but an async chunk: only a demo visit renders it.
+const LazySessionDemoBar = dynamic(() => import('../app/demo/session-bar.js'));
 
 /** A component that is mounted the first time it is wanted, and stays mounted (so it can animate closed). */
 function useWanted(): [boolean, boolean, (open: boolean) => void] {
@@ -176,35 +181,70 @@ function submitSignOut(): void {
   (form as HTMLFormElement).requestSubmit();
 }
 
-/** `/api/session/login?redirectTo=<this page>`, kept current as the person moves around. */
-function useSignInHref(): string {
+/**
+ * `/api/session/login?redirectTo=<this page>`, kept current as the person
+ * moves around. In a demo visit it carries `demo=1` (`signInAgainHref`'s
+ * shape), so the BFF reopens the demo on this page rather than sending a
+ * visitor to an identity provider they have no account with (§4.5 L2–L3).
+ */
+export function signInHrefFor(here: string, demo: boolean): string {
+  return `/api/session/login?redirectTo=${encodeURIComponent(here)}${demo ? '&demo=1' : ''}`;
+}
+
+function useSignInHref(demo: boolean): string {
   const pathname = usePathname();
-  const [href, setHref] = useState('/api/session/login');
+  const [href, setHref] = useState(demo ? '/api/session/login?demo=1' : '/api/session/login');
   useEffect(() => {
-    const here = `${window.location.pathname}${window.location.search}`;
-    setHref(`/api/session/login?redirectTo=${encodeURIComponent(here)}`);
-  }, [pathname]);
+    setHref(signInHrefFor(`${window.location.pathname}${window.location.search}`, demo));
+  }, [pathname, demo]);
   return href;
 }
 
 /* ------------------------------------------------------------------ Frame */
 
+/** What the layout hands the frame for a demo visit. */
+export interface PortalDemoFrame {
+  /**
+   * The bar's facts — the clock, the persona, the generation — computed on
+   * the server. The bar itself is loaded only when this is given, as an async
+   * chunk (`app/demo/session-bar.tsx`): its two islands are client code a
+   * real tenant's pages must not carry.
+   */
+  readonly bar: Omit<DemoBarProps, 'variant' | 'areas'>;
+  /**
+   * What the session-ended dialog says when the visit ends (§4.6.2's `ended`
+   * row: `DEMO_COPY.sessionEnded`, `.continueDemo`). Passed rather than
+   * imported, because a value from `@itsm/contracts/demo` would bring its
+   * whole frozen table into every route's first load.
+   */
+  readonly ended: { readonly title: string; readonly description: string; readonly action: string };
+}
+
 export interface PortalShellProps {
+  /** Line 2 (`detail`): the demo persona's title, else the organisation, else the workspace. */
   readonly user: { readonly id: string | null; readonly name: string; readonly detail?: string };
-  readonly tenantName?: string;
+  /**
+   * The person's areas (`currentAreas()`, built on the server): the switcher
+   * or the lockup, the account menu's Switch area group, the palette's, and
+   * `demo` — which makes the frame a demo visit's (End demo, the Demo group).
+   */
+  readonly areas: AreaModel;
+  /** Each listed area's search words (`AREAS[…].keywords`, D1: "ticketing" finds the Service Desk), for the palette. */
+  readonly areaKeywords?: Readonly<Partial<Record<AreaId, readonly string[]>>>;
   readonly frame: PortalFrameModel;
-  readonly switcher: readonly AppSwitcherItem[];
   readonly can: PortalCan;
   readonly approvalsWaiting: number;
   /** When the server drew this page (ISO), for the offline banner. */
   readonly renderedAt: string;
+  /** A demo visit's own parts (v3 §3.8, §4.6.2), from the layout; absent outside one. */
+  readonly demo?: PortalDemoFrame;
   readonly children: ReactNode;
 }
 
-export function PortalShell({ user, tenantName, frame, switcher, can, approvalsWaiting, renderedAt, children }: PortalShellProps): ReactNode {
+export function PortalShell({ user, areas, areaKeywords, frame, can, approvalsWaiting, renderedAt, demo, children }: PortalShellProps): ReactNode {
   const { prefs, setPrefs } = useTheme();
   const pathname = usePathname();
-  const signInHref = useSignInHref();
+  const signInHref = useSignInHref(areas.demo);
   useIdlePrefetch(PREFETCH);
 
   /* "How can we help?" and the palette, each loaded on first use. */
@@ -269,11 +309,8 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
       return true;
     }
   }, []);
-  const signOut = useCallback(() => {
-    void beforeSignOut().then((ok) => {
-      if (ok) submitSignOut();
-    });
-  }, [beforeSignOut]);
+  // The frame's sign-out form asks `beforeSignOut` itself, whatever submits it (v3 §3.7).
+  const signOut = useCallback(() => submitSignOut(), []);
   const closeDiscard = useCallback((ok: boolean) => {
     discardAnswer.current?.(ok);
     discardAnswer.current = null;
@@ -285,6 +322,8 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
     () => ({
       can,
       nav: frame.nav.sections.flatMap((section) => section.items),
+      areas,
+      ...(areaKeywords ? { areaKeywords } : {}),
       approvalsWaiting,
       prefs,
       setPrefs,
@@ -294,7 +333,7 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
       searchRequests: async (query) => (await api.myTickets({ q: query, limit: 3 })).data,
       services: async () => (await api.catalogue()).data,
     }),
-    [can, frame.nav, approvalsWaiting, prefs, setPrefs, openHelp, signOut],
+    [can, frame.nav, areas, areaKeywords, approvalsWaiting, prefs, setPrefs, openHelp, signOut],
   );
 
   const banner =
@@ -303,7 +342,15 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
   return (
     <HelpFlowContext value={helpFlow}>
       <TopNavShell
-        brand={{ name: 'Help', ...(tenantName ? { tenant: tenantName } : {}), href: '/', app: 'portal', ...(switcher.length > 1 ? { switcher } : {}) }}
+        areas={areas}
+        brand={{ href: '/', ...(areas.workspace ? { workspace: areas.workspace } : {}) }}
+        systemBar={
+          demo ? (
+            <Suspense fallback={null}>
+              <LazySessionDemoBar {...demo.bar} variant="session" areas={areas} />
+            </Suspense>
+          ) : undefined
+        }
         nav={frame.nav}
         search={{ placeholder: 'Search', shortcut: 'mod+k' }}
         onOpenSearch={openPalette}
@@ -361,15 +408,15 @@ export function PortalShell({ user, tenantName, frame, switcher, can, approvalsW
             role="alertdialog"
             initialFocusRef={signInRef}
             size="sm"
-            title="Your session ended"
-            description="Sign in again to carry on. What you were writing is kept on this device."
+            title={demo?.ended.title ?? 'Your session ended'}
+            description={demo?.ended.description ?? 'Sign in again to carry on. What you were writing is kept on this device.'}
             footer={
               <>
                 <Button variant="secondary" onClick={() => setEnded('background')}>
                   Not now
                 </Button>
                 <Button ref={signInRef} variant="primary" onClick={signIn}>
-                  Sign in again
+                  {demo?.ended.action ?? 'Sign in again'}
                 </Button>
               </>
             }

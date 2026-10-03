@@ -1,9 +1,10 @@
 import { css, layer, mq } from '../styles/css.js';
 
 /**
- * `Select`: the shared field box (`Input.styles.ts`) with the browser's arrow
- * replaced by the registry chevron, which sits over the select's end padding
- * and lets the pointer through to it.
+ * `Select`: the shared field box (`Input.styles.ts`: 36 px, control radius,
+ * halo focus) with the browser's arrow replaced by the registry chevron in
+ * `text.muted` (v3 §2.14), which sits over the select's end padding and lets
+ * the pointer through to it.
  */
 export const selectStyles = layer(
   'components',
@@ -42,12 +43,20 @@ export const selectStyles = layer(
   inset-block-start: 50%;
   inset-inline-end: var(--itsm-space-sm);
   translate: 0 -50%;
-  color: var(--itsm-colour-text-secondary);
+  color: var(--itsm-colour-text-muted);
   pointer-events: none;
 }
 
 .itsm-SelectField--sm .itsm-SelectField__chevron {
   inset-inline-end: calc(var(--itsm-space-xs) + var(--itsm-space-3xs));
+}
+
+.itsm-SelectField--lg .itsm-SelectField__chevron {
+  inset-inline-end: var(--itsm-space-md);
+}
+
+.itsm-Select--lg {
+  padding-inline-end: calc(var(--itsm-space-md) + var(--itsm-icon-sm) + var(--itsm-space-xs));
 }
 
 .itsm-Select:disabled + .itsm-SelectField__chevron {

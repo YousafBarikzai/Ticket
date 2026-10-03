@@ -106,6 +106,44 @@ describe('my tickets', () => {
   });
 });
 
+describe('counting my tickets', () => {
+  it('counts on the count route, filtered to the reader', async () => {
+    const { calls, client } = recording({ count: 3, capped: false, applied: ['requester', 'statusCategory'] });
+    const answer = await client.myTicketCount({ statusCategory: 'open,paused', limit: 10 });
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname).toBe('/api/v1/tickets/count');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ 'filter[statusCategory]': 'open,paused', 'filter[requester]': 'me' });
+    expect(answer).toEqual({ count: 3, capped: false, applied: ['requester', 'statusCategory'] });
+  });
+
+  it('forces `requester=me` even when a caller passes somebody else', async () => {
+    // A tile that counted another person's tickets would show a number about
+    // somebody the reader has no business knowing about.
+    const { calls, client } = recording({ count: 0, capped: false });
+    await client.myTicketCount({ requester: 'somebody-else', statusCategory: 'resolved' } as never);
+    expect(new URL(calls[0]!.url).searchParams.get('filter[requester]')).toBe('me');
+    expect(calls[0]!.url).not.toContain('somebody-else');
+  });
+
+  it('carries the R2 windows, so "Resolved · 30 days" is one call', async () => {
+    const { calls, client } = recording({ count: 0, capped: false });
+    await client.myTicketCount({ resolvedAfter: new Date(Date.UTC(2026, 8, 3)) });
+    expect(new URL(calls[0]!.url).searchParams.get('filter[resolvedAfter]')).toBe('2026-09-03T00:00:00.000Z');
+  });
+
+  it('breaks my tickets down on the grouped route, still filtered to me', async () => {
+    const { calls, client } = recording({ groupBy: 'statusCategory', groups: [], total: 0, applied: ['requester'] });
+    await client.myTicketCounts('statusCategory', { requester: 'somebody-else', createdAfter: '2026-01-01T00:00:00Z' } as never);
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname).toBe('/api/v1/tickets/counts');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      'filter[requester]': 'me',
+      'filter[createdAfter]': '2026-01-01T00:00:00Z',
+      groupBy: 'statusCategory',
+    });
+  });
+});
+
 describe('replying and reopening', () => {
   it('sends a requester’s message as public, always, and says it came from the portal', async () => {
     const { calls, client } = recording({ id: 'c-1' });

@@ -220,8 +220,12 @@ describe('the sheet', () => {
     expect(preview.textContent).toContain('Choose both to see the priority');
     choose(control<HTMLSelectElement>('Impact'), 'high');
     choose(control<HTMLSelectElement>('Urgency'), 'medium');
-    expect(preview.querySelector('[aria-hidden="true"]')?.textContent).toBe('Usually → P2 · High');
-    expect(preview.textContent).toContain('Priority will usually be P2, High');
+    // The priority as a chip with its bars, as everywhere else on the desk (A6 §5.7), spoken in words.
+    expect(preview.querySelector('[aria-hidden="true"]')?.textContent).toBe('Usually → ');
+    expect(preview.querySelector('.itsm-PriorityChip')?.getAttribute('data-priority')).toBe('P2');
+    expect(preview.querySelector('.itsm-PriorityChip .itsm-visually-hidden')?.textContent).toBe('Priority 2, high');
+    // What a screen reader hears: the hidden words, in order.
+    expect([...preview.querySelectorAll('.itsm-visually-hidden')].map((node) => node.textContent).join('')).toBe('Usually: Priority 2, high');
     expect(dialog().textContent).toContain('your desk’s own may differ');
     // Without `sla.policy.read` the matrix is not asked for at all.
     expect(wire.calls.some((call) => call.url.endsWith('/priority-matrix'))).toBe(false);
@@ -234,7 +238,30 @@ describe('the sheet', () => {
     await until(() => expect(wire.calls.some((call) => call.url.endsWith('/priority-matrix'))).toBe(true));
     choose(control<HTMLSelectElement>('Impact'), 'high');
     choose(control<HTMLSelectElement>('Urgency'), 'medium');
-    await until(() => expect(dialog().querySelector('.app-NewTicket__preview [aria-hidden="true"]')?.textContent).toBe('→ P1 · Critical'));
+    await until(() => expect(dialog().querySelector('.app-NewTicket__preview .itsm-PriorityChip')?.getAttribute('data-priority')).toBe('P1'));
+    expect(dialog().querySelector('.app-NewTicket__preview')?.textContent).not.toContain('Usually');
+  });
+
+  it('renders no attach control, in a real session or the demo (RV4: the strip-list locks uploads at the API)', async () => {
+    for (const person of [AGENT, { ...AGENT, demo: { persona: 'agent', area: 'workbench', generation: 7, company: 'Northwind Traders (UK)', disabledFeatures: ['uploads', 'ai'], personaUserIds: { employee: 'e', agent: 'a', admin: 'd' }, agentTeamIds: [TEAM] } } as Me]) {
+      world.me = person;
+      await mount();
+      await flush(2);
+      expect(dialog().querySelector('input[type="file"]')).toBeNull();
+      expect(dialog().querySelector('[data-icon="paperclip"]')).toBeNull();
+      expect([...dialog().querySelectorAll('button')].some((button) => /attach|upload/i.test(button.textContent ?? ''))).toBe(false);
+      cleanupDocument();
+    }
+  });
+
+  it('says the demo’s cap in the contract’s words above the footer, never the service’s own detail', async () => {
+    const sentence = "To keep this shared demo tidy for everyone, each visit can raise 25 tickets. You've reached that limit.";
+    world.creates = [() => ({ status: 429, body: { type: 'https://itsm.example/problems/demo_limit', title: 'Demo limit reached', status: 429, detail: sentence, correlationId: 'c' } })];
+    await mount();
+    type(control('Title'), 'One too many');
+    await submit(form());
+    await until(() => expect(dialog().querySelector('.app-NewTicket__failure')?.textContent).toContain(sentence));
+    expect(dialog().querySelector('.app-NewTicket__failure')?.textContent).toContain('Demo limit reached');
   });
 
   it('asks for a title before sending anything', async () => {

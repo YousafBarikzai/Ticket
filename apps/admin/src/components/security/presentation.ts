@@ -20,8 +20,9 @@ export const SEVERITIES: readonly Severity[] = ['critical', 'high', 'medium', 'l
 
 export const SEVERITY_LOOK: Readonly<Record<Severity, { readonly label: string; readonly tone: Tone; readonly icon: IconName; readonly rank: number }>> = {
   critical: { label: 'Critical', tone: 'danger', icon: 'circle-x', rank: 0 },
-  high: { label: 'High', tone: 'danger', icon: 'triangle-alert', rank: 1 },
-  medium: { label: 'Medium', tone: 'warning', icon: 'circle-alert', rank: 2 },
+  // Critical red, high orange, medium and low neutral told apart by their glyphs (D5, A7 §2.9).
+  high: { label: 'High', tone: 'high', icon: 'triangle-alert', rank: 1 },
+  medium: { label: 'Medium', tone: 'neutral', icon: 'circle-alert', rank: 2 },
   low: { label: 'Low', tone: 'neutral', icon: 'info', rank: 3 },
 };
 

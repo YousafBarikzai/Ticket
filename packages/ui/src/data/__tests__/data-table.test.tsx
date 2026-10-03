@@ -6,8 +6,17 @@ import { componentStylesheet } from '../../styles/index.js';
 import { resetNotifications } from '../../provider/notify.js';
 import { activeElement, cleanupDocument, click, focus, pointerDown, press, render, settle, typeInto } from '../../web/__tests__/support/render.js';
 import { DataTable, type DataTableProps } from '../DataTable.js';
+import { FilterChip } from '../FilterChip.js';
+import { filterChipStyles } from '../FilterChip.styles.js';
 import { dataTableStyles } from '../DataTable.styles.js';
+import type { DataTableColumn } from '../DataTable.js';
+import { slipText } from '../cells/DueCell.js';
+import { slaReading } from '../cells/SlaCell.js';
+import { systemBarStyles } from '../../shell/SystemBar.styles.js';
+import { unknownVariables } from '../../styles/css.js';
+import { structuralVariables } from '../../tokens/css.js';
 import type { ColumnSpec } from '../types.js';
+import { expectNoViolations } from '../../web/__tests__/support/audit.js';
 import { navigation, noun, resetLocation, ruleColumns, rules, statusFilter, UrlProvider, type Navigation, type Rule } from './support/table.js';
 
 vi.mock('../../web/IconButtonTooltip.js', () => ({ IconButtonTooltip: () => null }));
@@ -615,7 +624,9 @@ describe('groups and live rows', () => {
     const { container } = mount({ groupBy: { field: 'event', label: (row) => (row.event === 'created' ? 'When a ticket is created' : 'When a ticket changes') } });
     const bodies = container.querySelectorAll('tbody');
     expect(bodies).toHaveLength(2);
-    expect([...bodies].map((body) => body.querySelector('th[scope="colgroup"]')?.textContent)).toEqual(['When a ticket is created2', 'When a ticket changes2']);
+    // The label, then a Count: its digits for the eye, ", 2" for the ear.
+    expect([...bodies].map((body) => body.querySelector('th[scope="colgroup"]')?.textContent)).toEqual(['When a ticket is created2, 2', 'When a ticket changes2, 2']);
+    expect(bodies[0]!.querySelector('th[scope="colgroup"] .itsm-Count')).not.toBeNull();
   });
 
   it('flashes rows a live update touched, and stops', async () => {
@@ -673,5 +684,300 @@ describe('long lists', () => {
     await settle(50);
     expect(activeElement()?.textContent).toBe('Rule 400');
     Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * v3 (§2.14, A1 §7.11): the frame, the header band, the sticky offset, the
+ * bar, and the cell kinds.
+ * ---------------------------------------------------------------------- */
+
+/** One rule of the stylesheet, by its exact selector. */
+function rule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return dataTableStyles.match(new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`))?.[1] ?? '';
+}
+
+/** A cell's words as a screen reader reads them: `aria-hidden` parts left out. */
+function spoken(element: Element): string {
+  const copy = element.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+describe('v3 frame and header', () => {
+  it('draws the frame with a 1 px border.subtle and radius 12, and no resting shadow', () => {
+    const frame = rule('.itsm-DataTable__frame');
+    expect(frame).toContain('border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);');
+    expect(frame).toContain('border-radius: var(--itsm-radius-2xl);');
+    expect(frame).not.toContain('box-shadow');
+  });
+
+  it('gives the frame up to a Card bleed: no border, the card’s corners', () => {
+    const { container } = mount({ bleed: true });
+    expect(container.querySelector('.itsm-DataTable')?.hasAttribute('data-bleed')).toBe(true);
+    expect(rule('.itsm-DataTable[data-bleed] > .itsm-DataTable__frame')).toContain('border: 0;');
+    cleanupDocument();
+    expect(mount().container.querySelector('.itsm-DataTable')?.hasAttribute('data-bleed')).toBe(false);
+  });
+
+  it('marks the header band, and draws it 36 px on surface.raisedAlt in 600 12/16 text.muted', () => {
+    const { container } = mount();
+    expect(container.querySelector('thead')?.classList.contains('itsm-DataTable__head')).toBe(true);
+    const head = rule('.itsm-DataTable__head :is(th, td)');
+    expect(head).toContain('background: var(--itsm-colour-surface-raisedAlt);');
+    expect(head).toContain('color: var(--itsm-colour-text-muted);');
+    expect(head).toContain('font-size: var(--itsm-text-footnote-size);');
+    expect(head).toContain('line-height: var(--itsm-text-footnote-line);');
+    expect(head).toContain('font-weight: var(--itsm-font-weight-semibold);');
+    expect(head).toContain('block-size: var(--_header);');
+    expect(rule('.itsm-DataTable')).toContain('--_header: 2.25rem;');
+  });
+
+  it('sticks the header under the top bar, and under the system bar at 48rem and up', () => {
+    // The one offset line: the frame's top, which is the system bar's offset plus the top bar.
+    expect(rule('.itsm-DataTable')).toContain('--_sticky-top: calc(var(--itsm-frame-top));');
+    expect(rule('.itsm-DataTable__head :is(th, td)')).toContain('inset-block-start: var(--_sticky-top);');
+    expect(dataTableStyles.match(/--_sticky-top:[^;]*;/g)).toEqual(['--_sticky-top: calc(var(--itsm-frame-top));', '--_sticky-top: 0px;']);
+    expect(dataTableStyles).not.toContain('topbar-height');
+    expect(structuralVariables()['--itsm-frame-top']).toBe('calc(var(--itsm-system-bar-h) + var(--itsm-topbar-height))');
+    // The system bar sets that offset only at desktop widths, where it is sticky.
+    expect(systemBarStyles).toMatch(/@media \(min-width: 48rem\) \{\s*:root:has\(\.itsm-SystemBar\) \{\s*--itsm-system-bar-h: var\(--itsm-system-bar-height\);/);
+    // Inside a dialog or a sheet the header sticks to the panel's own top.
+    expect(dataTableStyles).toMatch(/:where\(\[role="dialog"\], \[role="alertdialog"\]\) \.itsm-DataTable \{\s*--_sticky-top: 0px;/);
+  });
+
+  it('shows a sortable header’s chevrons at 55 %, and a sorted one’s arrow in text.primary', () => {
+    const { header } = mount();
+    expect(header('Name').querySelector('.itsm-DataTable__sortIcon')?.getAttribute('data-icon')).toBe('chevrons-up-down');
+    click(header('Name').querySelector('button')!);
+    expect(header('Name').querySelector('.itsm-DataTable__sortIcon')?.getAttribute('data-icon')).toBe('arrow-up');
+    expect(rule('.itsm-DataTable__sortIcon')).toContain('opacity: 0.55;');
+    expect(rule('.itsm-DataTable__sort[data-active] .itsm-DataTable__sortIcon')).toContain('color: var(--itsm-colour-text-primary);');
+  });
+
+  it('rows: the density’s height, 6 px padding, 13/20 text.secondary over border.divider', () => {
+    const cells = rule('.itsm-DataTable__table > tbody > tr > :is(td, th)');
+    expect(cells).toContain('block-size: var(--itsm-row-height);');
+    expect(cells).toContain('padding-block: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs));');
+    expect(cells).toContain('color: var(--itsm-colour-text-secondary);');
+    expect(cells).toContain('var(--itsm-colour-border-divider)');
+    expect(rule('.itsm-DataTable__table')).toContain('font-size: var(--itsm-text-callout-size);');
+  });
+
+  it('reads only variables the tokens emit, and no colour literals', () => {
+    expect(unknownVariables(dataTableStyles)).toEqual([]);
+    expect(dataTableStyles).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/);
+  });
+});
+
+describe('v3 critical rows', () => {
+  it('draws a 3 px bar in the tone of the row’s mapped field, and the current row’s accent over it', () => {
+    const { container } = mount({ accent: { field: 'status', map: { live: 'success', archived: 'danger' } }, currentKeys: ['after-hours'] });
+    const rows = [...container.querySelectorAll<HTMLTableRowElement>('tbody tr')];
+    expect(rows.map((row) => row.getAttribute('data-accent'))).toEqual(['success', null, 'success', 'danger']);
+    expect(rows[2]!.hasAttribute('data-current')).toBe(true);
+    expect(rule('.itsm-DataTable__row[data-accent="danger"]')).toContain('--_bar: var(--itsm-colour-danger-border);');
+    expect(rule('.itsm-DataTable__row[data-accent="hold"]')).toContain('--_bar: var(--itsm-colour-hold-border);');
+    // Later in the sheet than every tone, so the open row's accent wins.
+    expect(dataTableStyles.indexOf('.itsm-DataTable__row[data-current] { --_bar')).toBeGreaterThan(dataTableStyles.indexOf('[data-accent="high"]'));
+    const bar = rule('.itsm-DataTable__row:is([data-current], [data-accent]) > :first-child::before');
+    expect(bar).toContain('inset-inline-start: 0;');
+    expect(bar).toContain('inline-size: var(--_bar-width);');
+    expect(rule('.itsm-DataTable')).toContain('--_bar-width: calc(var(--itsm-border-thick) + 1px);');
+    // Never an inset shadow, which would not mirror in right-to-left.
+    expect(dataTableStyles).not.toMatch(/box-shadow: inset calc/);
+  });
+});
+
+describe('v3 cell kinds', () => {
+  interface Ticket extends Record<string, unknown> {
+    readonly number: string;
+    readonly title: string;
+    readonly type: string;
+    readonly priority: string;
+    readonly status: string;
+    readonly statusCategory: string;
+    readonly dueAt: string | null;
+    readonly sla: { readonly state: string; readonly remainingMinutes: number | null; readonly dueAt?: string } | null;
+    readonly assignee: { readonly displayName: string } | null;
+  }
+  const hour = 3_600_000;
+  const now = Date.now();
+  const tickets: readonly Ticket[] = [
+    { number: 'INC-004101', title: 'VPN down', type: 'incident', priority: 'P1', status: 'in_progress', statusCategory: 'open', dueAt: new Date(now - 4 * 24 * hour - hour).toISOString(), sla: { state: 'breached', remainingMinutes: null, dueAt: new Date(now - 2 * hour - 60_000).toISOString() }, assignee: { displayName: 'Alex Morgan' } },
+    { number: 'REQ-003201', title: 'New laptop', type: 'request', priority: 'P3', status: 'resolved', statusCategory: 'resolved', dueAt: new Date(now - 2 * 24 * hour).toISOString(), sla: { state: 'met', remainingMinutes: null }, assignee: null },
+    { number: 'INC-004102', title: 'Printer jam', type: 'incident', priority: 'p2', status: 'pending_requester', statusCategory: 'paused', dueAt: new Date(now + 3 * 24 * hour).toISOString(), sla: { state: 'running', remainingMinutes: 43 }, assignee: null },
+    { number: 'QNA-000301', title: 'How do I', type: 'kiosk_visit', priority: 'P4', status: 'new', statusCategory: 'open', dueAt: null, sla: null, assignee: null },
+  ];
+  const columns: readonly DataTableColumn[] = [
+    { id: 'number', header: 'Number', field: 'number', kind: 'mono' },
+    { id: 'title', header: 'Title', field: 'title', kind: 'title', href: '/tickets/{number}' },
+    { id: 'type', header: 'Type', field: 'type', kind: 'type', sortable: 'page' },
+    { id: 'priority', header: 'Priority', field: 'priority', kind: 'priority' },
+    { id: 'status', header: 'Status', field: 'status', kind: 'status' },
+    { id: 'due', header: 'Due', field: 'dueAt', kind: 'due', overdueWhen: { field: 'statusCategory', notIn: ['resolved', 'closed'] }, sortable: 'page' },
+    { id: 'sla', header: 'SLA', field: 'sla', kind: 'sla' },
+    { id: 'assignee', header: 'Assignee', field: 'assignee', kind: 'person', empty: 'Unassigned' },
+  ];
+
+  function table(props: Partial<DataTableProps<Ticket>> = {}) {
+    const rendered = render(
+      <UrlProvider nav={nav}>
+        <DataTable<Ticket> caption="Tickets" columns={columns} rows={tickets} rowKey="number" search={{ placeholder: 'Search', mode: 'client' }} {...props} />
+      </UrlProvider>,
+    );
+    const cell = (row: number, kind: string): HTMLElement => rendered.container.querySelectorAll('tbody tr')[row]!.querySelector<HTMLElement>(`[data-kind="${kind}"]`)!;
+    return { ...rendered, cell };
+  }
+
+  it('due: a past date on an open row turns red with its slip, spoken as how late it is', async () => {
+    const { cell } = table();
+    await settle();
+    const late = cell(0, 'due');
+    expect(late.querySelector('.itsm-DataTable__due')?.hasAttribute('data-overdue')).toBe(true);
+    expect(late.querySelector('.itsm-DataTable__slip')?.textContent).toBe('+4d');
+    expect(late.querySelector('time')?.getAttribute('dateTime')).toBe(tickets[0]!.dueAt);
+    expect(spoken(late)).toMatch(/, 4 days overdue$/);
+    // Resolved: the date is history, not a slip.
+    expect(cell(1, 'due').querySelector('.itsm-DataTable__due')?.hasAttribute('data-overdue')).toBe(false);
+    // Not due yet.
+    expect(cell(2, 'due').querySelector('.itsm-DataTable__slip')).toBeNull();
+    // No date: the dash, read as "Not set".
+    expect(cell(3, 'due').querySelector('.itsm-DataTable__empty')?.textContent).toBe('—Not set');
+    expect(rule('.itsm-DataTable__due[data-overdue]')).toContain('color: var(--itsm-colour-danger-subtleText);');
+    expect(rule('.itsm-DataTable__due[data-overdue]')).toContain('font-weight: var(--itsm-font-weight-semibold);');
+  });
+
+  it('due: the slip in whole units, and every past date late without a rule', () => {
+    expect([slipText(0.2), slipText(20), slipText(61), slipText(25 * 60), slipText(4 * 24 * 60 + 5)]).toEqual(['+1m', '+20m', '+1h', '+1d', '+4d']);
+    const { cell } = table({ columns: columns.map((column) => (column.id === 'due' ? { id: 'due', header: 'Due', field: 'dueAt', kind: 'due' } : column)) });
+    expect(cell(1, 'due').querySelector('.itsm-DataTable__due')?.hasAttribute('data-overdue')).toBe(true);
+  });
+
+  it('due: sorts as a date — newest first from the header, as every date column does — with blanks last', () => {
+    const { container } = table();
+    const due = [...container.querySelectorAll<HTMLElement>('thead th')].find((cell) => cell.textContent?.startsWith('Due'))!;
+    click(due.querySelector('button')!);
+    expect(due.getAttribute('aria-sort')).toBe('descending');
+    expect([...container.querySelectorAll('tbody [data-kind="mono"] code')].map((cell) => cell.textContent)).toEqual(['INC-004102', 'REQ-003201', 'INC-004101', 'QNA-000301']);
+  });
+
+  it('type: a sunken chip with the type’s glyph and words, and a search finds the rows of a type', () => {
+    const { cell, container } = table();
+    const chip = cell(0, 'type').querySelector('.itsm-DataTable__type')!;
+    expect(chip.textContent).toBe('Incident');
+    expect(chip.querySelector('svg')?.getAttribute('data-icon')).toBe('circle-alert');
+    expect(chip.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(cell(1, 'type').textContent).toBe('Request');
+    // A type the map does not know keeps its own words.
+    expect(cell(3, 'type').textContent).toBe('Kiosk visit');
+    const type = rule('.itsm-DataTable__type');
+    expect(type).toContain('background: var(--itsm-colour-surface-sunken);');
+    expect(type).toContain('block-size: 1.375rem;');
+    expect(type).toContain('border-radius: var(--itsm-radius-sm);');
+    typeInto(container.querySelector<HTMLInputElement>('input[type="search"]')!, 'Incident');
+    return settle(400).then(() => {
+      expect([...container.querySelectorAll('tbody [data-kind="mono"] code')].map((element) => element.textContent)).toEqual(['INC-004101', 'INC-004102']);
+    });
+  });
+
+  it('priority: the signal-bar chip for P1–P4, spoken in words; a mapped column keeps its own', () => {
+    const { cell } = table();
+    const p1 = cell(0, 'priority').querySelector('.itsm-PriorityChip')!;
+    expect(p1.getAttribute('data-priority')).toBe('P1');
+    expect(spoken(p1)).toBe('Priority 1, critical');
+    expect(cell(2, 'priority').querySelector('.itsm-PriorityChip')?.getAttribute('data-priority')).toBe('P2');
+    cleanupDocument();
+    const mapped = table({ columns: [{ id: 'priority', header: 'Priority', field: 'priority', kind: 'priority', map: { P1: { label: 'P1 · Critical', tone: 'danger' } } }] });
+    expect(mapped.cell(0, 'priority').querySelector('.itsm-PriorityChip')).toBeNull();
+    expect(mapped.cell(0, 'priority').textContent).toContain('P1 · Critical');
+  });
+
+  it('status: a canonical ticket state takes its D5 look when the column has no words of its own', () => {
+    const { cell } = table();
+    const pill = cell(2, 'status').querySelector('.itsm-StatusPill')!;
+    expect(pill.textContent).toContain('Waiting on requester');
+    expect(pill.getAttribute('data-tone')).toBe('hold');
+  });
+
+  it('sla: a small pill from SLA_STATE_LOOK, never a ring', () => {
+    const { cell, container } = table();
+    expect(cell(0, 'sla').textContent).toContain('Breached 2 h ago');
+    expect(cell(0, 'sla').querySelector('.itsm-StatusPill')?.getAttribute('data-tone')).toBe('danger');
+    expect(cell(1, 'sla').textContent).toContain('Met');
+    const soon = cell(2, 'sla').querySelector('.itsm-StatusPill')!;
+    expect(soon.textContent).toContain('Due in 43 min');
+    expect(soon.getAttribute('data-tone')).toBe('warning');
+    expect(container.querySelector('tbody [class*="Ring"], tbody .itsm-SlaClock')).toBeNull();
+    expect(slaReading('running', 190, null, 'en-GB')).toEqual({ key: 'on_track', label: 'Due in 3 h' });
+    expect(slaReading('running', 26 * 60 + 30, null, 'en-GB')).toEqual({ key: 'on_track', label: 'Due in 1 d 3 h' });
+    expect(slaReading('running', 0, null, 'en-GB')).toEqual({ key: 'due_soon', label: 'Due now' });
+    expect(slaReading('paused', null, null, 'en-GB')).toEqual({ key: 'paused', label: 'SLA paused' });
+    expect(slaReading('breached', null, null, 'en-GB')).toEqual({ key: 'breached', label: 'Breached' });
+  });
+
+  it('person: a 24 px avatar beside the name, and the dashed avatar beside the column’s word for nobody', () => {
+    const { cell } = table();
+    expect(cell(0, 'person').querySelector('.itsm-Avatar')?.getAttribute('data-size')).toBe('sm');
+    const nobody = cell(1, 'person');
+    expect(nobody.querySelector('.itsm-Avatar')?.getAttribute('data-kind')).toBe('unassigned');
+    expect(nobody.querySelector('.itsm-DataTable__empty')?.textContent).toBe('Unassigned');
+    // The avatar adds nothing to announce; the word says it (the card layout's column label aside).
+    expect(spoken(nobody).replace(/^Assignee: /, '')).toBe('Unassigned');
+  });
+
+  it('mono: the id style, muted, with a slashed zero', () => {
+    const mono = rule('.itsm-DataTable__mono');
+    expect(mono).toContain('font-family: var(--itsm-text-id-family);');
+    expect(mono).toContain('font-variant-numeric: slashed-zero tabular-nums;');
+    expect(mono).toContain('color: var(--itsm-colour-text-muted);');
+  });
+
+  it('passes axe with every v3 kind, critical rows and a current row', async () => {
+    const { container } = table({ accent: { field: 'priority', map: { P1: 'danger' } }, currentKeys: ['INC-004102'] });
+    await settle();
+    await expectNoViolations(container);
+  });
+});
+
+describe('v3 active-filter chips', () => {
+  const chipRule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return filterChipStyles.match(new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`))?.[1] ?? '';
+  };
+
+  it('is a 26 px capsule: quiet when inactive, surface.accentHover with an accent edge at 28 % when active', () => {
+    const base = chipRule('.itsm-FilterChip,\n.itsm-FilterBar__toggle');
+    expect(base).toContain('min-block-size: 1.625rem;');
+    expect(base).toContain('--_chip-edge: var(--itsm-colour-border-soft);');
+    expect(base).toContain('font-size: var(--itsm-text-footnote-size);');
+    const active = chipRule('.itsm-FilterChip[data-active],\n.itsm-FilterBar__toggle[aria-pressed="true"]');
+    expect(active).toContain('--_chip-bg: var(--itsm-colour-surface-accentHover);');
+    expect(active).toContain('--_chip-edge: color-mix(in srgb, var(--itsm-colour-accent) 28%, transparent);');
+    expect(chipRule('.itsm-FilterChip__clear')).toContain('inline-size: 1.25rem;');
+    expect(chipRule('.itsm-FilterBar__clearAll')).toContain('color: var(--itsm-colour-text-link);');
+    expect(unknownVariables(filterChipStyles)).toEqual([]);
+  });
+
+  it('takes danger.subtle for a filter that narrows to trouble', async () => {
+    const { container } = render(
+      <FilterChip label="SLA" valueLabel="Breached" active tone="danger" onClear={() => undefined}>
+        <p>Options</p>
+      </FilterChip>,
+    );
+    const chip = container.querySelector('.itsm-FilterChip')!;
+    expect(chip.getAttribute('data-tone')).toBe('danger');
+    expect(chip.querySelector('.itsm-FilterChip__trigger')?.textContent).toBe('SLA: Breached');
+    expect(chip.querySelector('.itsm-FilterChip__clear')?.getAttribute('aria-label')).toBe('Remove filter SLA: Breached');
+    expect(chipRule('.itsm-FilterChip[data-active][data-tone="danger"]')).toContain('--_chip-bg: var(--itsm-colour-danger-subtle);');
+    await expectNoViolations(container);
+    cleanupDocument();
+    const plain = render(
+      <FilterChip label="Status" active={false}>
+        <p>Options</p>
+      </FilterChip>,
+    );
+    expect(plain.container.querySelector('.itsm-FilterChip')?.hasAttribute('data-tone')).toBe(false);
   });
 });

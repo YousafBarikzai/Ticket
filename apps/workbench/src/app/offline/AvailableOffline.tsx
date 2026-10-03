@@ -17,6 +17,7 @@ import { VIEWS, viewRefFromPath } from '../../inbox/views.js';
 
 export function offlineLabel(path: string): string | null {
   const url = new URL(path, 'https://workbench.invalid');
+  if (url.pathname === '/overview') return 'Overview';
   const ref = viewRefFromPath(url.pathname);
   if (ref?.kind === 'view') {
     const label = VIEWS.find((view) => view.id === ref.id)!.label;
@@ -53,7 +54,7 @@ export function AvailableOffline(): ReactNode {
         Available offline
       </h2>
       {pages.length === 0 ? (
-        <p className="app-Offline__empty">Nothing from the workbench is saved on this device yet. Pages you open are kept for next time.</p>
+        <p className="app-Offline__empty">Nothing from the Service Desk is saved on this device yet. Pages you open are kept for next time.</p>
       ) : (
         <ul className="app-Offline__list">
           {pages.map((page) => (

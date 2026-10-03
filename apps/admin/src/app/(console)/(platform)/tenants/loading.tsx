@@ -1,8 +1,35 @@
 import type { ReactNode } from 'react';
-import { PlatformSkeleton } from '../../../../components/platform/Skeletons.js';
-import '../../../../components/platform/platform.css';
+import { Skeleton, SkeletonStat, SkeletonTable } from '@itsm/ui';
 
-/** Below the `(platform)` layout's gate, so a non-operator still gets a real 404 (Y-1.3.3). */
+/**
+ * Tenants while it loads: the register template (A7 §2.6 T2) — the toolbar,
+ * 5 KPI tiles, the filter pills and the table's rows, at their final
+ * heights and revealed only after 200 ms. The status is the table's, spoken
+ * once after a second.
+ *
+ * Below the `(platform)` layout's gate, so a non-operator still gets a real
+ * 404 rather than a streamed 200 (Y-1.3.3).
+ */
 export default function Loading(): ReactNode {
-  return <PlatformSkeleton kind="tenants" />;
+  return (
+    <div className="itsm-SkeletonPage" data-variant="register">
+      <div className="itsm-SkeletonPage__toolbar" aria-hidden="true">
+        <Skeleton width="min(18rem, 100%)" height="var(--itsm-control-height-md)" radius="lg" />
+        <Skeleton className="itsm-SkeletonPage__toolbarEnd" width="7.5rem" height="var(--itsm-control-height-md)" radius="lg" />
+      </div>
+      <div className="itsm-SkeletonPage__stats" aria-hidden="true">
+        {Array.from({ length: 5 }, (_, index) => (
+          <SkeletonStat key={index} />
+        ))}
+      </div>
+      <div className="itsm-SkeletonPage__toolbar" aria-hidden="true">
+        <Skeleton width="6rem" height="var(--itsm-control-height-sm)" radius="pill" />
+        <Skeleton width="7rem" height="var(--itsm-control-height-sm)" radius="pill" />
+        <Skeleton width="5.5rem" height="var(--itsm-control-height-sm)" radius="pill" />
+      </div>
+      <div className="itsm-SkeletonPage__panel">
+        <SkeletonTable rows={8} columns={5} label="Loading tenants…" />
+      </div>
+    </div>
+  );
 }

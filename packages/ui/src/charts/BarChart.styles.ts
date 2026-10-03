@@ -1,20 +1,30 @@
 import { moreContrast } from '../feedback/tone.js';
 import { css, layer, mq, prefers } from '../styles/css.js';
-import { textureRules } from './texture-css.js';
+import { textureImages, textureVariables } from './texture-css.js';
+
+const hatch = (ink: string): string => textureImages(ink)[2]!;
 
 /**
  * `BarChart`: vertical columns with a value axis, horizontal bars with the
  * value at the tip, and the `list` of label · bar · value rows.
  *
- * The marks follow the chart rules (SPEC §4.8): bars at most 24 px thick
+ * The marks follow the chart rules (A8 §4.8): bars at most 24 px thick
  * (list bars 8 px), a 4 px rounded data end and a square baseline, a 2 px
  * surface gap between stacked parts — the gap is real space, not a stroke —
  * and one colour for one series. Rows line up across the chart because the
  * value column is sized in `ch` from the widest value, so every bar starts
- * and scales from the same place.
+ * and scales from the same place. Grouped columns share 70 % of their band,
+ * 2 px apart. Colour comes from the kit's shared slot, tone and style rules;
+ * a `neutralSoft` part draws the outline its tone asks for, and a hatched
+ * part ("Other · n", "unassigned", a forecast) is hatched in every theme.
  *
- * With more contrast (and in forced colours) each stacked part carries the
- * hatch of its slot as well as its colour.
+ * Part labels are each part's own size container: a label shows only where
+ * its part is at least 28 px long, on a chip of the card's colour, so the
+ * text keeps its contrast whatever the part's colour. Totals sit above
+ * their columns. One reveal grows the bars from their baseline.
+ *
+ * With more contrast (and in forced colours) every slot and tone wears its
+ * hatch as well as its colour.
  */
 export const barChartStyles = layer(
   'components',
@@ -36,6 +46,51 @@ export const barChartStyles = layer(
   min-inline-size: 0;
   min-block-size: 0;
   background: var(--_itsm-series);
+  box-shadow: inset 0 0 0 1px var(--_itsm-series-edge, transparent);
+}
+
+.itsm-BarChart[data-labels="segments"] .itsm-BarChart__segment {
+  container: itsm-bar / inline-size;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.itsm-BarChart[data-labels="segments"] .itsm-BarChart__column .itsm-BarChart__segment {
+  container-type: size;
+}
+
+.itsm-BarChart__segmentLabel {
+  display: none;
+  padding-inline: var(--itsm-space-3xs);
+  border-radius: var(--itsm-radius-xs);
+  background: var(--_itsm-chart-surface);
+  color: var(--itsm-colour-text-primary);
+}
+
+@container itsm-bar (min-width: 28px) {
+  .itsm-BarChart[data-layout="rows"] .itsm-BarChart__segmentLabel { display: block; }
+}
+
+@container itsm-bar (min-height: 28px) {
+  .itsm-BarChart__column .itsm-BarChart__segmentLabel { display: block; }
+}
+
+.itsm-BarChart__segmentLabel,
+.itsm-BarChart__total {
+  font-size: var(--itsm-text-caption-size);
+  line-height: var(--itsm-text-caption-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The dashed target across each row's track, at the same place in every row. */
+.itsm-BarChart__target {
+  position: absolute;
+  inset-block: calc(-1 * var(--itsm-space-2xs));
+  inset-inline-start: calc(var(--_itsm-target) * (100% - var(--_itsm-track-pad, 0px)));
+  border-inline-start: 1px dashed var(--itsm-colour-text-secondary);
 }
 
 /* Rows: the list and horizontal bars --------------------------------------- */
@@ -159,7 +214,8 @@ export const barChartStyles = layer(
   grid-column: 2;
   grid-row: 1;
   block-size: 1.25rem;
-  padding-inline-end: calc(var(--_itsm-value-column) + var(--itsm-space-xs));
+  --_itsm-track-pad: calc(var(--_itsm-value-column) + var(--itsm-space-xs));
+  padding-inline-end: var(--_itsm-track-pad);
 }
 
 .itsm-BarChart[data-layout="rows"] .itsm-BarChart__value {
@@ -262,7 +318,7 @@ export const barChartStyles = layer(
 
 .itsm-BarChart__columns {
   position: absolute;
-  inset: var(--itsm-space-xs) 0 0;
+  inset: var(--_itsm-plot-top) 0 0;
   display: flex;
   margin: 0;
   padding: 0;
@@ -279,9 +335,42 @@ export const barChartStyles = layer(
 }
 
 .itsm-BarChart__column .itsm-BarChart__bar {
+  position: relative;
   flex-direction: column-reverse;
   inline-size: min(1.5rem, 64%);
   block-size: calc(var(--_itsm-bar) * 100%);
+}
+
+/* Grouped: up to three bars side by side in 70 % of the band, 2 px apart. */
+.itsm-BarChart__group {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--itsm-border-thick);
+  inline-size: 70%;
+  block-size: 100%;
+}
+
+.itsm-BarChart__group > .itsm-BarChart__bar {
+  flex: 0 1 1.5rem;
+  inline-size: auto;
+  min-inline-size: 0;
+}
+
+.itsm-BarChart__total {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline: -1rem;
+  padding-block-end: var(--itsm-space-3xs);
+  color: var(--itsm-colour-text-secondary);
+  text-align: center;
+}
+
+.itsm-BarChart__overlay {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .itsm-BarChart__column .itsm-BarChart__segment {
@@ -320,16 +409,51 @@ export const barChartStyles = layer(
 }
 
 /* Reading (interactive): the bar being read stays; the rest step back. */
-.itsm-ChartReader[data-reading] [data-point]:not([data-active]) > .itsm-BarChart__bar,
-.itsm-ChartReader[data-reading] [data-point]:not([data-active]) > .itsm-BarChart__track > .itsm-BarChart__bar {
+.itsm-ChartReader[data-reading] [data-point]:not([data-active]) .itsm-BarChart__bar {
   opacity: 0.4;
 }
 
-${moreContrast((scope) => textureRules(scope, '.itsm-BarChart__segment', 'var(--_itsm-chart-surface)'))}
+/* One reveal on first paint, from the baseline (A8 §6.4). */
+@keyframes itsm-bar-grow {
+  from { transform: scaleX(0); }
+}
 
+@keyframes itsm-column-grow {
+  from { transform: scaleY(0); }
+}
+
+.itsm-BarChart[data-reveal] .itsm-BarChart__row .itsm-BarChart__bar {
+  transform-origin: 0 50%;
+  animation: itsm-bar-grow var(--itsm-duration-reveal) var(--itsm-easing-entrance);
+}
+
+.itsm-BarChart__row .itsm-BarChart__bar:dir(rtl) {
+  transform-origin: 100% 50%;
+}
+
+.itsm-BarChart[data-reveal] .itsm-BarChart__column .itsm-BarChart__bar {
+  transform-origin: 50% 100%;
+  animation: itsm-column-grow var(--itsm-duration-reveal) var(--itsm-easing-entrance);
+}
+
+${textureVariables('.itsm-BarChart__segment')}
+
+${moreContrast(
+  (scope) => `${scope} .itsm-BarChart__segment { --_itsm-ink: var(--_itsm-chart-surface); background: var(--_itsm-texture, none), var(--_itsm-series); }`,
+)}
+
+/* After the contrast rules, so a hatched part keeps its hatch there too. */
+.itsm-BarChart :is(.itsm-BarChart__segment, .itsm-ChartLegend__key)[data-pattern="hatch"] {
+  background: ${hatch('var(--_itsm-chart-surface)')}, var(--_itsm-series);
+}
+
+/* As specific as the reveal, and after it, so reduced motion wins. */
 ${mq.reducedMotion} {
   .itsm-BarChart__bar {
     transition: none;
+  }
+  .itsm-BarChart[data-reveal] :is(.itsm-BarChart__row, .itsm-BarChart__column) .itsm-BarChart__bar {
+    animation: none;
   }
 }
 
@@ -337,17 +461,30 @@ ${prefers.reducedMotion} .itsm-BarChart__bar {
   transition: none;
 }
 
+${prefers.reducedMotion} .itsm-BarChart[data-reveal] :is(.itsm-BarChart__row, .itsm-BarChart__column) .itsm-BarChart__bar {
+  animation: none;
+}
+
+/*
+ * Forced colours: as specific as the contrast rules and after them, because
+ * a system high-contrast theme usually asks for more contrast as well.
+ */
 ${mq.forcedColors} {
-  .itsm-BarChart__segment {
+  :root .itsm-BarChart .itsm-BarChart__segment {
     forced-color-adjust: none;
-    background: Canvas;
+    --_itsm-ink: CanvasText;
+    background: var(--_itsm-texture, none), Canvas;
     box-shadow: inset 0 0 0 1px CanvasText;
   }
-  .itsm-BarChart__segment[data-slot="1"],
-  .itsm-BarChart__segment[data-slot="other"] {
+  :root .itsm-BarChart .itsm-BarChart__segment[data-slot="1"] {
     background: CanvasText;
   }
-${textureRules('  ', '.itsm-BarChart__segment', 'CanvasText', 'Canvas')}
+  :root .itsm-BarChart :is(.itsm-BarChart__segment, .itsm-ChartLegend__key)[data-pattern] {
+    background: ${hatch('CanvasText')}, Canvas;
+  }
+  .itsm-BarChart__overlay {
+    forced-color-adjust: none;
+  }
   .itsm-BarChart__gridline {
     forced-color-adjust: none;
     background: GrayText;

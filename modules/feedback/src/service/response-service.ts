@@ -8,6 +8,7 @@ import {
   buildPermissionSet,
   createContext,
   digest,
+  isDemoTenant,
   metrics,
   newId,
   publish,
@@ -39,11 +40,26 @@ export interface OpenedInvitation {
   expiresAt: Date;
 }
 
-/** Resolves a signed link to the invitation it opens, with the reason when it does not. */
+/**
+ * Resolves a signed link to the invitation it opens, with the reason when it
+ * does not.
+ *
+ * Throws `NotFoundError` for a link into the shared demo (E12, Y-M5). No
+ * genuine one exists — E2 suppresses every invitation e-mail — so a link that
+ * verifies was forged, with a signing secret left at its default, from an
+ * invitation id the demo's administrator persona can read. This door runs
+ * outside the API's demo policy (no session, no caps, no budgets), and every
+ * visitor sees the satisfaction scores it would write, so it is shut before
+ * the invitation is read: 404 at both the page and the answer, and no row.
+ */
 export async function openByToken(token: string, now: Date = new Date()): Promise<{ ok: true; opened: OpenedInvitation; ctx: TenantContext } | { ok: false; reason: string }> {
   const verdict = verifyToken(token, now);
   if (!verdict.ok) return { ok: false, reason: verdict.reason };
   if (verdict.payload.kind !== 'survey_invitation') return { ok: false, reason: 'malformed' };
+  if (await isDemoTenant(verdict.payload.tenantId)) {
+    metrics.increment('demo_egress_suppressed_total', { choke: 'E12' });
+    throw new NotFoundError('survey invitation');
+  }
 
   // The person the link was sent to, with no permissions: the token is the
   // whole of their authority and it reaches exactly one row.
@@ -164,7 +180,10 @@ export async function record(
   return { responseId, score: outcome.score, thanks: document.thanks ?? 'Thank you.' };
 }
 
-/** The email-link door: verify, then record as the recipient. */
+/**
+ * The email-link door: verify, then record as the recipient. A link into the
+ * shared demo is a 404 and writes nothing (E12, through `openByToken`).
+ */
 export async function respondByToken(token: string, answers: FormValues, via: 'portal' | 'email' = 'portal', now: Date = new Date()) {
   const opened = await openByToken(token, now);
   if (!opened.ok) throw new ForbiddenError(`this survey link is ${opened.reason === 'expired' ? 'no longer valid' : 'not valid'}`);

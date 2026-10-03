@@ -11,12 +11,16 @@ import { css, layer, mq, prefers } from '../styles/css.js';
  * `[data-state="closed"]`; the durations are tokens, which collapse to 1ms
  * under reduced motion, so nothing is ever held open waiting.
  *
- * Opaque, never glass (D6): `surface.overlay` on a blurred scrim, radius
- * `3xl`, elevation `xl` (a 2 px ring in the high-contrast themes). A
- * transparent hairline border is invisible until forced-colours mode paints
- * it, which is the outline those users need once shadows are gone. Below
- * 768 px the dialog rises from the bottom edge as a sheet (X-96), with the
- * safe area kept clear of its buttons.
+ * Opaque, never glass (D6): `surface.overlay` on the scrim (`rgba(15,23,42,
+ * .40)` in light, blurred), radius `3xl` (16), elevation `xl` (a 2 px ring in
+ * the high-contrast themes), no squircle — bordered corners render the same
+ * in every browser (v3 §2.9). Padding is `28px 28px 24px` (v3 §2.14); the
+ * title is `title2`; the close button is 34 px, 12 px in from the top and
+ * end corner. A transparent hairline border is invisible until
+ * forced-colours mode paints it, which is the outline those users need once
+ * shadows are gone. Below 768 px the dialog rises from the bottom edge as a
+ * sheet (X-96) with its top corners rounded, the safe area kept clear of its
+ * buttons.
  *
  * Motion (SPEC §1.9): the scrim fades over `normal`; the panel scales from
  * 0.97 and fades in over `normal` on the entrance curve and leaves over
@@ -57,6 +61,9 @@ export const dialogStyles = layer(
 }
 
 .itsm-Dialog {
+  /* 28 px: the dialog's inline and top padding (v3 §2.14); the bottom is 24. */
+  --_pad: calc(var(--itsm-space-lg) + var(--itsm-space-2xs));
+  --_close: 2.125rem;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -81,15 +88,12 @@ export const dialogStyles = layer(
 .itsm-Dialog--sm { inline-size: min(100%, var(--itsm-sheet-sm)); }
 .itsm-Dialog--lg { inline-size: min(100%, 50rem); }
 
-@supports (corner-shape: squircle) {
-  .itsm-Dialog { corner-shape: squircle; }
-}
-
 .itsm-Dialog__header {
   display: flex;
   align-items: flex-start;
   gap: var(--itsm-space-sm);
-  padding: var(--itsm-space-lg) var(--itsm-space-lg) var(--itsm-space-sm);
+  /* The end keeps clear of the close button in its corner. */
+  padding: var(--_pad) calc(var(--itsm-space-sm) + var(--_close) + var(--itsm-space-xs)) var(--itsm-space-sm) var(--_pad);
 }
 .itsm-Dialog__heading {
   flex: 1 1 auto;
@@ -113,14 +117,16 @@ export const dialogStyles = layer(
   text-wrap: pretty;
 }
 .itsm-Dialog__close {
-  flex: none;
-  margin-block-start: calc(-1 * var(--itsm-space-3xs));
-  margin-inline-end: calc(-1 * var(--itsm-space-xs));
+  position: absolute;
+  inset-block-start: var(--itsm-space-sm);
+  inset-inline-end: var(--itsm-space-sm);
+  inline-size: var(--_close);
+  block-size: var(--_close);
 }
 .itsm-Dialog__body {
   flex: 1 1 auto;
   min-block-size: 0;
-  padding: var(--itsm-space-xs) var(--itsm-space-lg) var(--itsm-space-lg);
+  padding: var(--itsm-space-xs) var(--_pad) var(--itsm-space-lg);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -130,7 +136,7 @@ export const dialogStyles = layer(
   justify-content: flex-end;
   align-items: center;
   gap: var(--itsm-space-sm);
-  padding: var(--itsm-space-md) var(--itsm-space-lg) var(--itsm-space-lg);
+  padding: var(--itsm-space-md) var(--_pad) var(--itsm-space-lg);
   border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
 }
 
@@ -154,7 +160,7 @@ ${mq.belowMd} {
   .itsm-Dialog[data-state="closed"] {
     animation: itsm-overlay-sink var(--itsm-duration-normal) var(--itsm-easing-exit) forwards;
   }
-  .itsm-Dialog__header { padding: var(--itsm-space-ml) var(--itsm-space-md) var(--itsm-space-xs); }
+  .itsm-Dialog__header { padding: var(--itsm-space-ml) calc(var(--itsm-space-sm) + var(--_close) + var(--itsm-space-xs)) var(--itsm-space-xs) var(--itsm-space-md); }
   .itsm-Dialog__body { padding-inline: var(--itsm-space-md); }
   .itsm-Dialog__footer { padding-inline: var(--itsm-space-md); }
   .itsm-Dialog__footer > * { flex: 1 1 auto; }

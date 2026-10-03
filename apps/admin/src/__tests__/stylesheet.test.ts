@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { uiStylesheet } from '@itsm/ui/styles';
 import { structuralVariables, themeVariables } from '@itsm/ui/tokens';
@@ -20,13 +22,52 @@ import { dynamic, GET } from '../app/itsm-ui.css/route.js';
  */
 describe('the app stylesheet and the token pipeline agree', () => {
   const css = readFileSync(fileURLToPath(new URL('../app/globals.css', import.meta.url)), 'utf8');
+  const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('apple'))]);
 
   it('references no variable the pipeline does not emit', () => {
-    const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('apple'))]);
     const used = [...new Set([...css.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))];
 
     expect(used.length).toBeGreaterThan(10);
     expect(used.filter((variable) => !defined.has(variable))).toEqual([]);
+  });
+
+  /*
+   * Every sheet in the app, the areas' own beside their components and the
+   * pages' outside the frame (`app/demo/entry.css`) as well as `globals.css`.
+   */
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  function sheets(dir: string): string[] {
+    return readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
+      if (name === 'node_modules' || name === '__tests__') return [];
+      if (statSync(path).isDirectory()) return sheets(path);
+      return name.endsWith('.css') ? [path] : [];
+    });
+  }
+  const all = sheets(root).map((path) => ({ file: relative(root, path), css: readFileSync(path, 'utf8') }));
+
+  it('finds the sheets it checks', () => {
+    expect(all.map((sheet) => sheet.file)).toEqual(expect.arrayContaining(['app/globals.css', 'app/demo/entry.css']));
+  });
+
+  it('spends only variables the pipeline emits, in every sheet', () => {
+    const unknown = all.flatMap(({ file, css: text }) =>
+      [...new Set([...text.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))].filter((variable) => !defined.has(variable)).map((variable) => `${file}: ${variable}`),
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  /**
+   * No colour literal in any sheet (D3, A7 §1.1): a colour is a token, so a
+   * theme, dark mode and *Increase contrast* reach it. Comments are ignored,
+   * so a sheet may still say which token replaced which colour.
+   */
+  it('writes no hex colour in any sheet', () => {
+    const literals = all.flatMap(({ file, css: text }) => {
+      const code = text.replace(/\/\*[\s\S]*?\*\//g, '');
+      return [...code.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((match) => `${file}: ${match[0]}`);
+    });
+    expect(literals).toEqual([]);
   });
 });
 
@@ -38,16 +79,43 @@ describe('the app stylesheet and the token pipeline agree', () => {
  * taken of — every browser would keep it for a year.
  */
 describe('the stylesheet route', () => {
+  const request = (acceptEncoding?: string) =>
+    new Request('http://admin.test/itsm-ui.css?v=1', acceptEncoding === undefined ? {} : { headers: { 'accept-encoding': acceptEncoding } });
+
   it('serves exactly the design system sheet, as CSS, cacheable for a year', async () => {
-    const response = GET();
+    const response = await GET(request());
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8');
     expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(response.headers.get('content-encoding')).toBeNull();
     expect(await response.text()).toBe(uiStylesheet());
   });
 
-  it('is rendered once, at build time', () => {
-    expect(dynamic).toBe('force-static');
+  // Next's own compression skips a route handler's response, so the route
+  // compresses the sheet itself; every encoding must still decode to the sheet.
+  it.each([
+    ['gzip, deflate, br, zstd', 'br', brotliDecompressSync],
+    ['gzip, deflate', 'gzip', gunzipSync],
+    ['br;q=0, gzip;q=0.8', 'gzip', gunzipSync],
+    ['*', 'br', brotliDecompressSync],
+  ] as const)('answers accept-encoding "%s" in %s, which decodes to the sheet', async (accept, encoding, decode) => {
+    const response = await GET(request(accept));
+    expect(response.headers.get('content-encoding')).toBe(encoding);
+    expect(response.headers.get('vary')).toBe('accept-encoding');
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    const body = Buffer.from(await response.arrayBuffer());
+    expect(body.length).toBeLessThan(Buffer.byteLength(uiStylesheet()) / 5);
+    expect(decode(body).toString('utf8')).toBe(uiStylesheet());
+  });
+
+  it.each(['identity', 'br;q=0, gzip;q=0', 'deflate'])('sends the plain sheet for accept-encoding "%s"', async (accept) => {
+    const response = await GET(request(accept));
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(await response.text()).toBe(uiStylesheet());
+  });
+
+  it('reads the request, so it is rendered per request rather than once at build time', () => {
+    expect(dynamic).toBe('force-dynamic');
   });
 });
 
@@ -59,21 +127,28 @@ describe('the stylesheet route', () => {
 describe('the font files', () => {
   const source = readFileSync(fileURLToPath(new URL('../app/fonts.ts', import.meta.url)), 'utf8');
 
-  it('point at the self-hosted Inter files in packages/ui/fonts', () => {
+  it('point at the self-hosted Inter and Plus Jakarta Sans files in packages/ui/fonts', () => {
     const paths = [...source.matchAll(/src: '([^']+)'/g)].map((match) => match[1]!);
     expect(paths).toEqual([
       '../../../../packages/ui/fonts/InterVariable-latin-opsz.woff2',
       '../../../../packages/ui/fonts/InterVariable-latin-ext-opsz.woff2',
+      '../../../../packages/ui/fonts/PlusJakartaSans-latin-wght.woff2',
+      '../../../../packages/ui/fonts/PlusJakartaSans-latin-ext-wght.woff2',
     ]);
     const here = new URL('../app/fonts.ts', import.meta.url);
     for (const path of paths) expect(existsSync(fileURLToPath(new URL(path, here))), path).toBe(true);
   });
 
-  it('expose the two custom properties the token font stack reads', () => {
+  it('expose the custom properties the token font stacks read', () => {
     const sans = structuralVariables()['--itsm-font-family-sans']!;
     for (const variable of ['--font-inter', '--font-inter-ext']) {
       expect(source).toContain(`variable: '${variable}'`);
       expect(sans).toContain(`var(${variable}, "Inter")`);
+    }
+    const display = structuralVariables()['--itsm-font-family-display']!;
+    for (const variable of ['--font-jakarta', '--font-jakarta-ext']) {
+      expect(source).toContain(`variable: '${variable}'`);
+      expect(display).toContain(`var(${variable}, "Plus Jakarta Sans")`);
     }
   });
 });

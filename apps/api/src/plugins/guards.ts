@@ -13,9 +13,15 @@ import { bumpApiCalls } from '@itsm/module-tenancy';
 
 const IDEMPOTENCY_TTL_SECONDS = 86_400;
 
-/** Search and bulk endpoints get their own, smaller budget. */
+/**
+ * Search and bulk endpoints get their own, smaller budget. So does a metric
+ * batch: up to thirty queries for one request's worth of budget, so it gets
+ * a twentieth of the budget — 30 a minute at the default, where a dashboard
+ * sends one or two a render (A8 R4). Metering still counts it as one call.
+ */
 function budgetFor(url: string, base: number): { limit: number; bucket: string } {
   if (url.startsWith('/api/v1/search')) return { limit: Math.max(30, Math.floor(base / 10)), bucket: 'search' };
+  if (url.startsWith('/api/v1/analytics/query/batch')) return { limit: Math.max(30, Math.floor(base / 20)), bucket: 'batch' };
   if (url.includes(':bulk')) return { limit: Math.max(10, Math.floor(base / 30)), bucket: 'bulk' };
   if (url.startsWith('/api/v1/auth')) return { limit: 30, bucket: 'auth' };
   return { limit: base, bucket: 'default' };

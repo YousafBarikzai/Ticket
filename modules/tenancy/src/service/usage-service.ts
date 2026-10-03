@@ -248,9 +248,12 @@ export async function measure(ctx: TenantContext, tx: Tx, meter: Meter, now: Dat
       const count = await tx.ticket.count({
         where: {
           deletedAt: null,
-          // History brought in by MOD-24 is not this month's work, whenever
-          // it was loaded (ADR-0038).
-          sourceChannel: { not: 'import' },
+          // History brought in from elsewhere is not this month's work,
+          // whenever it was loaded (ADR-0038, amended by ADR-0056). `origin`
+          // marks every import from ADR-0056 on, whatever channel it records;
+          // the channel clause covers tickets imported before the column
+          // existed, which carry `native` and the channel `import`.
+          AND: [{ origin: { not: 'import' } }, { sourceChannel: { not: 'import' } }],
           createdAt: { gte: period.start!, lt: new Date(Date.UTC(period.end!.getUTCFullYear(), period.end!.getUTCMonth(), period.end!.getUTCDate() + 1)) },
         },
       });

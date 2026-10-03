@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { crossAreaHref, type AreaModel } from '@itsm/contracts/areas';
 import { Button, EmptyState, notify, Select, type ActionSpec, type Problem } from '@itsm/ui';
 import { DataTable, type ColumnSpec } from '@itsm/ui/data';
 import { HierNav, PageHeader } from '@itsm/ui/shell';
@@ -44,13 +45,14 @@ export interface RequestTypesViewProps {
   readonly forms: readonly FormView[] | null;
   readonly teams: readonly { readonly id: string; readonly name: string }[] | null;
   readonly canEditQuestions: boolean;
-  readonly portalOrigin?: string;
+  /** The person's areas (`currentAreas()`): *Open in Help Portal* after publishing goes through `crossAreaHref` (A2 §3.7). */
+  readonly areas?: AreaModel;
   /** The request types could not be read; the services still show. */
   readonly problem?: Problem;
 }
 
 export function RequestTypesView(props: RequestTypesViewProps): ReactNode {
-  const { tabs, services, forms, teams, canEditQuestions, portalOrigin, problem } = props;
+  const { tabs, services, forms, teams, canEditQuestions, areas, problem } = props;
   const router = useRouter();
   const params = useSearchParams();
   const typeDrawer = useDrawer('request-type');
@@ -120,7 +122,7 @@ export function RequestTypesView(props: RequestTypesViewProps): ReactNode {
         ...(withQuestions && !canEditQuestions ? { disabled: true, disabledReason: 'Publishing its questions needs Manage forms.' } : {}),
         confirm: {
           title: `Publish ${row.name}?`,
-          body: 'Requesters will see this in the portal immediately.',
+          body: 'Requesters will see this in the Help Portal immediately.',
           confirmLabel: 'Publish',
           ...(withQuestions && row.questions.kind === 'own'
             ? { consequences: [{ label: `Its ${row.questions.count === 1 ? 'question goes' : `${row.questions.count} questions go`} live too` }] }
@@ -159,9 +161,10 @@ export function RequestTypesView(props: RequestTypesViewProps): ReactNode {
     if (id === 'publish') {
       const result = await publish.run(publishSteps(row));
       if (result.ok) {
+        const portal = areas ? crossAreaHref(areas, 'portal', `/catalogue/${encodeURIComponent(row.key)}`) : null;
         notify(`${row.name} is live`, {
           tone: 'success',
-          ...(portalOrigin ? { action: { label: 'Open portal', onClick: () => window.location.assign(`${portalOrigin}/catalogue/${encodeURIComponent(row.key)}`) } } : {}),
+          ...(portal ? { action: { label: 'Open in Help Portal', onClick: () => window.location.assign(portal) } } : {}),
         });
       }
     }
@@ -287,7 +290,7 @@ export function RequestTypesView(props: RequestTypesViewProps): ReactNode {
         forms={forms}
         teams={teams}
         canEditQuestions={canEditQuestions}
-        {...(portalOrigin ? { portalOrigin } : {})}
+        {...(areas ? { areas } : {})}
       />
       <ServiceSheet
         open={create.value === 'service' || serviceDrawer.key !== null}

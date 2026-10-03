@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { act, forwardRef, type AnchorHTMLAttributes, type ReactElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { structuralVariables, themeVariables } from '@itsm/ui/tokens';
+import { buildAreaModel, type AreaModel } from '@itsm/contracts/areas';
 
 vi.mock('server-only', () => ({}));
 
@@ -259,6 +260,11 @@ describe('runs, in words', () => {
 
 /* ======================================================================= */
 
+/** The areas fixtures (A2 §3.3): someone who works tickets in the Service Desk, and Jordan Lee in the demo (Alex Morgan works `team-desk`). */
+const ORIGINS = { portal: 'https://help.test', workbench: 'https://desk.test', admin: 'https://admin.test' };
+const deskAreas: AreaModel = buildAreaModel({ app: 'admin', held: ['ticket.update', 'workflow.read'], session: { kind: 'oidc' }, origins: ORIGINS });
+const demoAreas: AreaModel = buildAreaModel({ app: 'admin', held: [], session: { kind: 'demo', persona: 'admin' }, origins: ORIGINS, agentTeamIds: ['team-desk'] });
+
 function table(props: Partial<Parameters<typeof RunsTable>[0]> = {}): ReactElement {
   return (
     <Frame>
@@ -271,7 +277,7 @@ function table(props: Partial<Parameters<typeof RunsTable>[0]> = {}): ReactEleme
         ruleNames={{ 'vip-requester': 'Flag a VIP' }}
         canOperate
         canReadTickets
-        workbenchOrigin="https://desk.test"
+        areas={deskAreas}
         empty={{ title: 'No runs yet' }}
         {...props}
       />
@@ -285,17 +291,67 @@ describe('the runs table', () => {
     await settle();
     const known = [...document.querySelectorAll<HTMLAnchorElement>('a')].find((a) => a.textContent === 'INC-000005')!;
     expect(known.getAttribute('href')).toBe('https://desk.test/tickets/INC-000005');
-    expect(known.getAttribute('aria-label')).toBe('Open INC-000005 in the workbench');
+    expect(known.getAttribute('aria-label')).toBe('Open INC-000005 in the Service Desk');
     expect([...document.querySelectorAll('a')].some((a) => a.textContent === 'Open')).toBe(true);
     cleanupDocument();
-    render(table({ workbenchOrigin: undefined, ticketNumbers: { [RUN.ticketId!]: 'INC-000005' } }));
+    render(table({ areas: undefined, ticketNumbers: { [RUN.ticketId!]: 'INC-000005' } }));
     await settle();
     const local = [...document.querySelectorAll<HTMLAnchorElement>('a')].find((a) => a.textContent === 'INC-000005')!;
     expect(local.getAttribute('href')).toBe('/tickets?open=ticket:INC-000005');
   });
+
+  it('in the demo, opens a run’s ticket in the console’s drawer: a run does not say which team has it (X-B2)', async () => {
+    render(table({ areas: demoAreas, runs: [RUN, { ...RUN, id: 'r2', ticketId: 't-older' }], ticketNumbers: { [RUN.ticketId!]: 'INC-000005' } }));
+    await settle();
+    const known = [...document.querySelectorAll<HTMLAnchorElement>('a')].find((a) => a.textContent === 'INC-000005')!;
+    expect(known.getAttribute('href')).toBe('/tickets?open=ticket:INC-000005');
+    expect(known.getAttribute('aria-label')).toBe('Open INC-000005');
+    // No number to open by, and no Service Desk link to guess: said in words.
+    expect([...document.querySelectorAll('a')].some((a) => a.textContent === 'Open')).toBe(false);
+    expect(text(document.body)).toContain('A ticket');
+  });
 });
 
 describe('a run’s drawer', () => {
+  const failedRun = { id: 'r1', definitionId: 'w1', status: 'failed', currentKeys: ['do-the-work'], ticketId: 't-1', error: 'x', startedAt: RUN.startedAt, endedAt: null, triggeredBy: 'manual', steps: [] };
+  const ticketLink = (drawer: Element): HTMLAnchorElement | undefined =>
+    [...drawer.querySelectorAll<HTMLAnchorElement>('a')].find((a) => text(a) === 'INC-000005 · VPN keeps dropping');
+
+  it('links the run’s ticket into the Service Desk when it is listed', async () => {
+    run.mockResolvedValue(failedRun);
+    search = 'open=run:r1';
+    window.history.replaceState(null, '', '/workflows/runs?open=run:r1');
+    render(table());
+    await settle();
+    await settle();
+    const link = ticketLink(dialogWith('A workflow run')!)!;
+    expect(link.getAttribute('href')).toBe('https://desk.test/tickets/INC-000005');
+    expect(link.hasAttribute('title')).toBe(false);
+  });
+
+  it('in the demo, links a ticket of Alex Morgan’s teams as Alex, and any other into the console’s drawer', async () => {
+    run.mockResolvedValue(failedRun);
+    ticket.mockResolvedValueOnce({ id: 't-1', number: 'INC-000005', title: 'VPN keeps dropping', groupId: 'team-desk' } as never);
+    search = 'open=run:r1';
+    window.history.replaceState(null, '', '/workflows/runs?open=run:r1');
+    render(table({ areas: demoAreas }));
+    await settle();
+    await settle();
+    const desk = ticketLink(dialogWith('A workflow run')!)!;
+    expect(desk.getAttribute('href')).toBe('https://desk.test/demo?persona=agent&demo=1&redirectTo=%2Ftickets%2FINC-000005');
+    expect(desk.getAttribute('title')).toBe('Opens the Service Desk as Alex Morgan');
+    expect(desk.getAttribute('aria-description')).toBe('Opens the Service Desk as Alex Morgan');
+    cleanupDocument();
+
+    ticket.mockResolvedValueOnce({ id: 't-1', number: 'INC-000005', title: 'VPN keeps dropping', groupId: 'team-network' } as never);
+    render(table({ areas: demoAreas }));
+    await settle();
+    await settle();
+    const local = ticketLink(dialogWith('A workflow run')!)!;
+    expect(local.getAttribute('href')).toBe('/tickets?open=ticket:INC-000005');
+    expect(local.hasAttribute('title')).toBe(false);
+  });
+
   it('offers Retry step, Skip step and Abandon on a failed run, and retries the step', async () => {
     run.mockResolvedValue({ id: 'r1', definitionId: 'w1', status: 'failed', currentKeys: ['do-the-work'], ticketId: 't-1', error: 'The integration did not answer', startedAt: RUN.startedAt, endedAt: null, triggeredBy: 'rule:vip-requester', steps: [{ stepKey: 'approve', attempt: 1, status: 'done', startedAt: RUN.startedAt, endedAt: RUN.startedAt }, { stepKey: 'do-the-work', attempt: 1, status: 'failed', error: 'The integration did not answer', startedAt: RUN.startedAt, endedAt: null }] });
     search = 'open=run:r1';

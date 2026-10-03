@@ -1,5 +1,6 @@
 import type { TenantContext } from './context.js';
-import { logger } from './telemetry.js';
+import { isDemoTenant } from './demo.js';
+import { logger, metrics } from './telemetry.js';
 
 /**
  * Where a credential reference is resolved.
@@ -66,6 +67,18 @@ export const environmentResolver: SecretResolver = async (_ctx, ref) => process.
  */
 export async function resolveSecret(ctx: TenantContext | null, ref: string | undefined): Promise<string | null> {
   if (!ref) return null;
+
+  // E10 (SPEC v3 §4.7.2): the shared demo holds no credential, whatever its
+  // sample rows name. Asked before any resolver, because the environment
+  // resolver maps *any* reference to the deployment's `ITSM_CREDENTIAL_<REF>`:
+  // a visitor who could name a reference would otherwise borrow the
+  // operator's own secret. A call with no context is a deployment's own
+  // configuration check, not a tenant's, and is answered as before.
+  if (ctx && (await isDemoTenant(ctx.tenantId))) {
+    metrics.increment('demo_egress_suppressed_total', { choke: 'E10' });
+    logger.debug('a credential was asked for in the shared demo and not resolved', { ref });
+    return null;
+  }
 
   for (const resolver of resolvers) {
     try {

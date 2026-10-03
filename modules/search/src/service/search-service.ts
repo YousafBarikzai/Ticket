@@ -1,6 +1,7 @@
 import {
   type TenantContext,
   type Tx,
+  ValidationError,
   authz,
   logger,
   metrics,
@@ -40,7 +41,15 @@ export interface IndexInput {
   sourceUpdatedAt: Date;
 }
 
-export async function indexDocument(tx: Tx, ctx: TenantContext, input: IndexInput): Promise<void> {
+/**
+ * Writes one document into the projection.
+ *
+ * `announce` (on by default) publishes `search.document.indexed`, which is how
+ * the external engine hears about it. A bulk rebuild turns it off and pushes
+ * the whole projection once with `reindexTenant` instead of queueing an event
+ * per document.
+ */
+export async function indexDocument(tx: Tx, ctx: TenantContext, input: IndexInput, options: { announce?: boolean } = {}): Promise<void> {
   const existing = await tx.searchDocument.findFirst({
     where: { entityType: input.entityType, entityId: input.entityId },
   });
@@ -72,11 +81,90 @@ export async function indexDocument(tx: Tx, ctx: TenantContext, input: IndexInpu
   // an index write lost when the transaction fails. Going through the outbox
   // makes it exactly-once and retryable, like every other external effect
   // (ADR-0002).
+  if (options.announce === false) return;
   await publish(tx, ctx, {
     definition: events.searchDocumentIndexed,
     aggregateId: input.entityId,
     payload: { entityType: input.entityType, entityId: input.entityId, lagMs },
   });
+}
+
+/**
+ * Indexes one ticket from its row, as it stands: the body of the handler that
+ * follows every ticket event (`handlers/index.ts`), here so the handler and a
+ * bulk rebuild (`reprojectTickets`) share it (A4 §2.8). Returns whether a
+ * document was written; a ticket that has gone, or was deleted, has none.
+ */
+export async function indexTicket(tx: Tx, ctx: TenantContext, ticketId: string, options: { announce?: boolean } = {}): Promise<boolean> {
+  const ticket = await tx.ticket.findFirst({ where: { id: ticketId, deletedAt: null } });
+  if (!ticket) return false;
+
+  const watchers = await tx.ticketWatcher.findMany({ where: { ticketId } });
+  await indexDocument(
+    tx,
+    ctx,
+    {
+      entityType: 'ticket',
+      entityId: ticket.id,
+      title: `${ticket.number} ${ticket.title}`,
+      bodyText: [ticket.title, ticket.description ?? ''].join('\n'),
+      orgId: ticket.orgId,
+      acl: aclForTicket(ticket, watchers.map((w) => w.userId)),
+      facets: {
+        type: ticket.type,
+        status: ticket.status,
+        statusCategory: ticket.statusCategory,
+        priority: ticket.priority,
+        number: ticket.number,
+      },
+      sourceUpdatedAt: ticket.updatedAt,
+    },
+    options,
+  );
+  return true;
+}
+
+/** Tickets per transaction in `reprojectTickets`. */
+const REPROJECT_BATCH = 200;
+
+/**
+ * Rebuilds the PostgreSQL search projection of every ticket in the tenant,
+ * 200 to a transaction (A4 §2.8): for a tenant whose tickets were imported
+ * with their events discarded (the demo build), or an index that has to be
+ * rebuilt from the records.
+ *
+ * Writes the projection only and announces nothing; follow it with
+ * `reindexTenant(ctx)` to push the projection to the external engine in bulk,
+ * as the demo build's last step does. Returns how many tickets were indexed.
+ */
+export async function reprojectTickets(ctx: TenantContext, options: { batch?: number } = {}): Promise<number> {
+  const batch = options.batch ?? REPROJECT_BATCH;
+  if (!Number.isInteger(batch) || batch < 1 || batch > 1_000) {
+    throw new ValidationError('a batch is 1 to 1,000 tickets', [{ field: 'batch', code: 'out_of_range', message: '1 to 1,000' }]);
+  }
+  let indexed = 0;
+  let cursor: string | undefined;
+
+  for (;;) {
+    const page = await transaction(ctx, async (tx) => {
+      const rows = await tx.ticket.findMany({
+        where: { deletedAt: null, ...(cursor ? { id: { gt: cursor } } : {}) },
+        orderBy: { id: 'asc' },
+        select: { id: true },
+        take: batch,
+      });
+      for (const row of rows) {
+        if (await indexTicket(tx, ctx, row.id, { announce: false })) indexed += 1;
+      }
+      return rows;
+    });
+    if (page.length < batch) break;
+    cursor = page.at(-1)!.id;
+  }
+
+  metrics.increment('search_tickets_reprojected_total', {}, indexed);
+  logger.info('rebuilt the ticket search projection', { tenantId: ctx.tenantId, indexed });
+  return indexed;
 }
 
 /**

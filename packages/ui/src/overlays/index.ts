@@ -15,6 +15,7 @@ export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog.js';
 export { ConflictDialog, type ConflictChange, type ConflictDialogProps } from './ConflictDialog.js';
 export { ContextMenu, type ContextMenuProps } from './ContextMenu.js';
 export { DateRangePicker, type DatePreset, type DateRange, type DateRangePickerProps } from './DateRangePicker.js';
+export { InfoTip, type InfoTipProps } from './InfoTip.js';
 export {
   Menu,
   MenuContent,

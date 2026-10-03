@@ -1,5 +1,5 @@
 import { defineHandler } from '@itsm/platform';
-import { aclForTicket, indexDocument, pushToExternal } from '../service/search-service.js';
+import { indexTicket, pushToExternal } from '../service/search-service.js';
 
 /**
  * MOD-09 keeps the search projection in step with the ticket record. Because
@@ -16,26 +16,9 @@ for (const eventType of TICKET_EVENTS) {
     required: true,
     async handle(ctx, event, tx) {
       const { ticketId } = event.payload as { ticketId: string };
-      const ticket = await tx.ticket.findFirst({ where: { id: ticketId, deletedAt: null } });
-      if (!ticket) return;
-
-      const watchers = await tx.ticketWatcher.findMany({ where: { ticketId } });
-      await indexDocument(tx, ctx, {
-        entityType: 'ticket',
-        entityId: ticket.id,
-        title: `${ticket.number} ${ticket.title}`,
-        bodyText: [ticket.title, ticket.description ?? ''].join('\n'),
-        orgId: ticket.orgId,
-        acl: aclForTicket(ticket, watchers.map((w) => w.userId)),
-        facets: {
-          type: ticket.type,
-          status: ticket.status,
-          statusCategory: ticket.statusCategory,
-          priority: ticket.priority,
-          number: ticket.number,
-        },
-        sourceUpdatedAt: ticket.updatedAt,
-      });
+      // The service's, so a bulk rebuild (`reprojectTickets`) writes exactly
+      // the document this handler writes.
+      await indexTicket(tx, ctx, ticketId);
     },
   });
 }

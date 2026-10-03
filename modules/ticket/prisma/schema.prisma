@@ -22,6 +22,10 @@ model Ticket {
   categoryId     String?   @map("category_id") @db.Uuid
   sourceChannel  String    @default("api") @map("source_channel")
   channelRef     String?   @map("channel_ref")
+  /// How the row reached the database, as distinct from how the work reached
+  /// the desk: `native` or `import` (CHECK constraint). Only the import path
+  /// writes `import`, and the ticket meter leaves those out (ADR-0056).
+  origin         String    @default("native")
   parentId       String?   @map("parent_id") @db.Uuid
   slaPolicyId    String?   @map("sla_policy_id") @db.Uuid
   dueAt          DateTime? @map("due_at") @db.Timestamptz(6)
@@ -48,6 +52,11 @@ model Ticket {
 
   @@unique([tenantId, number])
   @@index([tenantId, statusCategory, priority, dueAt])
+  // "Breached" and "due soon" (R2 `filter[sla]`, `filter[due…]`) are open
+  // work by due time; the index above needs a priority to reach `due_at`.
+  @@index([tenantId, statusCategory, dueAt])
+  // `filter[resolvedAfter|resolvedBefore]` windows (R2).
+  @@index([tenantId, resolvedAt])
   @@index([tenantId, assigneeId, statusCategory])
   @@index([tenantId, groupId, statusCategory, createdAt(sort: Desc)])
   @@index([tenantId, requesterId, createdAt(sort: Desc)])

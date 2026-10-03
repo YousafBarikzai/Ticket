@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { NextConfig } from 'next';
 
 /**
- * The agent workbench (docs/architecture/03 §1, 14 §1).
+ * The Service Desk (`apps/workbench`; docs/architecture/03 §1, 14 §1; v3 §3).
  *
  * Two settings carry weight here.
  *
@@ -72,8 +72,15 @@ const nextConfig: NextConfig = {
    * only the pre-paint script from it: unoptimised, the theme barrel's
    * `ThemeProvider` became a client reference of the root layout and shipped
    * a second time on every route (the providers already carry it).
+   *
+   * `@itsm/ui/shell` and `@itsm/ui/charts` for the v3 frame and pages (v3
+   * §10.2): the `(desk)` layout renders the frame's context chip and the
+   * sign-in pages their layout from the shell barrel, and the Overview its
+   * charts from the kit's, all as server components. Unoptimised, each such
+   * import made every client component of the barrel — the palette, the
+   * panels, every chart island — a client reference of the route.
    */
-  experimental: { optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme'] },
+  experimental: { optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme', '@itsm/ui/shell', '@itsm/ui/charts'] },
   /**
    * Every module in this repository imports its neighbours with an explicit
    * `.js` extension, which is what ECMAScript modules require and what `tsx`,
@@ -108,6 +115,18 @@ const nextConfig: NextConfig = {
         headers: [
           { key: 'cache-control', value: 'no-cache, no-store, must-revalidate' },
           { key: 'service-worker-allowed', value: '/' },
+        ],
+      },
+      {
+        /*
+         * The demo's entry page (A3 §6.1, Y-m13): never indexed — it signs a
+         * visitor in — and never stored, because what it shows depends on
+         * the session, the demo's state and the page that linked to it.
+         */
+        source: '/demo',
+        headers: [
+          { key: 'x-robots-tag', value: 'noindex, nofollow' },
+          { key: 'cache-control', value: 'no-store' },
         ],
       },
       {

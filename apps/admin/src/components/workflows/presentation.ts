@@ -20,7 +20,8 @@ export interface Look {
 /** Live · v3, Draft, or Unpublished changes (a draft waiting on top of a live version). */
 export function workflowLook(workflow: Pick<WorkflowView, 'status' | 'liveVersion' | 'hasDraft'>): Look {
   if (workflow.liveVersion !== null && workflow.status === 'published') {
-    if (workflow.hasDraft) return { label: 'Unpublished changes', tone: 'warning', icon: 'pencil' };
+    // Work in progress, not a risk: `info` (D5, A7 §2.9).
+    if (workflow.hasDraft) return { label: 'Unpublished changes', tone: 'info', icon: 'pencil' };
     return { label: `Live · v${workflow.liveVersion}`, tone: 'success', icon: 'circle-check' };
   }
   return { label: 'Draft', tone: 'neutral', icon: 'circle-dashed' };

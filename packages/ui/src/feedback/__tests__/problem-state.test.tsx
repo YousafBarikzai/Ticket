@@ -7,7 +7,15 @@ import { TestProvider } from '../../provider/__tests__/support/provider.js';
 import { componentStylesheet } from '../../styles/index.js';
 import type { Problem } from '../../types.js';
 import { cleanupDocument, click, render } from '../../web/__tests__/support/render.js';
-import { describeProblem, formatWait, inSentence, isRetryableStatus, permissionKeyFrom } from '../problem.js';
+import {
+  DEMO_CAP_CATEGORIES,
+  DEMO_COPY,
+  DEMO_FEATURES,
+  DEMO_PROBLEM_CODES,
+  demoDisabledSentence,
+  demoLimitSentence,
+} from '@itsm/contracts/demo';
+import { DEMO_PROBLEM_COPY, describeProblem, formatWait, inSentence, isRetryableStatus, permissionKeyFrom } from '../problem.js';
 import { ProblemState } from '../ProblemState.js';
 
 /*
@@ -91,6 +99,105 @@ describe('describeProblem', () => {
     expect(isRetryableStatus(429)).toBe(true);
     expect(isRetryableStatus(503)).toBe(true);
     expect(isRetryableStatus(404)).toBe(false);
+  });
+});
+
+/*
+ * The shared demo's problems (SPEC §4.4, §7.0.4, X-m11): each code has its
+ * own sentence and remedy, checked before the status it shares with
+ * something else. The words are the contract's; `problem.ts` imports that
+ * module for its types only (a value import cost every Help Portal page about
+ * 4 kB), so these cases pin every string to it.
+ */
+describe('describeProblem: the shared demo', () => {
+  it('pins every fixed demo string to @itsm/contracts/demo, word for word', () => {
+    expect(DEMO_PROBLEM_COPY.sessionEnded).toBe(DEMO_COPY.sessionEnded);
+    expect(DEMO_PROBLEM_COPY.continueDemo).toBe(DEMO_COPY.continueDemo);
+    expect(`${DEMO_PROBLEM_COPY.unavailable}. ${DEMO_PROBLEM_COPY.unavailableBody}`).toBe(DEMO_COPY.unavailable);
+    expect(DEMO_PROBLEM_COPY.disabledBody).toBe(demoDisabledSentence(null));
+    expect(DEMO_PROBLEM_COPY.limitBody).toBe(demoLimitSentence(null));
+  });
+
+  it('demo_disabled: "Not available in the demo", the feature\'s own sentence, and nothing to press', () => {
+    const description = describeProblem({
+      status: 403,
+      code: DEMO_PROBLEM_CODES.disabled,
+      title: 'Not available in the demo',
+      detail: demoDisabledSentence('integrations'),
+    });
+    expect(description).toMatchObject({ kind: 'demoDisabled', tone: 'neutral', icon: 'lock', title: 'Not available in the demo', remedy: 'none' });
+    expect(description.body).toBe('This is a shared demo, so connecting to other systems is turned off. Everything else works as in the full product.');
+  });
+
+  it.each(DEMO_FEATURES.map((feature) => [feature]))('demo_disabled words %s with the contract\'s sentence', (feature) => {
+    expect(describeProblem({ status: 403, code: 'demo_disabled', detail: demoDisabledSentence(feature) }).body).toBe(demoDisabledSentence(feature));
+  });
+
+  it('demo_disabled never shows developer prose: anything but the sentence\'s shape reads as the general sentence', () => {
+    for (const detail of [undefined, '', 'permission integrations.manage is required', 'This is a shared demo, so <b>x</b>. is turned off. Everything else works as in the full product.']) {
+      expect(describeProblem({ status: 403, code: 'demo_disabled', ...(detail === undefined ? {} : { detail }) }).body).toBe(demoDisabledSentence(null));
+    }
+  });
+
+  it('demo_disabled is not "You don\'t have access": no administrator can grant what the demo turns off', () => {
+    const forbidden = describeProblem({ status: 403, code: 'forbidden' }, { context: 'Integrations' });
+    const disabled = describeProblem({ status: 403, code: 'demo_disabled' }, { context: 'Integrations' });
+    expect(forbidden.kind).toBe('forbidden');
+    expect(disabled.kind).toBe('demoDisabled');
+    expect(disabled.title).toBe('Not available in the demo');
+  });
+
+  it.each([...DEMO_CAP_CATEGORIES.map((category) => [category] as const)])('demo_limit words the %s cap with the contract\'s sentence', (category) => {
+    expect(describeProblem({ status: 429, code: 'demo_limit', detail: demoLimitSentence(category) }).body).toBe(demoLimitSentence(category));
+  });
+
+  it('demo_limit: a 429 that waiting will not cure — no countdown, no retry, the visit\'s own sentence', () => {
+    const description = describeProblem({ status: 429, code: 'demo_limit', retryable: true, detail: demoLimitSentence('writes', { limit: 500 }) });
+    expect(description).toMatchObject({ kind: 'demoLimit', tone: 'neutral', title: 'Demo limit reached', remedy: 'none' });
+    expect(description.body).toBe("To keep this shared demo tidy for everyone, each visit can make 500 changes. You've reached that limit.");
+    expect(describeProblem({ status: 429, code: 'demo_limit', detail: 'rate limited by demo plugin' }).body).toBe(demoLimitSentence(null));
+    // The plain rate limit keeps its own copy.
+    expect(describeProblem({ status: 429, code: 'rate_limited', retryAfterSeconds: 20 }).kind).toBe('rateLimited');
+  });
+
+  it('demo_unavailable: the copy register\'s sentence as a heading and its body, and a retry', () => {
+    const description = describeProblem({ status: 503, code: DEMO_PROBLEM_CODES.unavailable }, { context: 'Your queue' });
+    expect(description).toMatchObject({ kind: 'demoUnavailable', tone: 'neutral', remedy: 'retry' });
+    expect(description.title).toBe('The demo is paused or being prepared');
+    expect(`${description.title}. ${description.body}`).toBe(DEMO_COPY.unavailable);
+    // The whole demo is paused, not this card: the card's own "Couldn't load" would say less.
+    expect(description.title).not.toContain("Couldn't load");
+  });
+
+  it('demo_session_ended: "Your demo session ended", and the way back is "Continue the demo"', () => {
+    const description = describeProblem({ status: 401, code: DEMO_PROBLEM_CODES.sessionEnded });
+    expect(description).toMatchObject({
+      kind: 'demoSessionEnded',
+      title: 'Your demo session ended',
+      body: 'Pick up where you left off — the demo data may have been reset since.',
+      remedy: 'signIn',
+      remedyLabel: 'Continue the demo',
+    });
+    // A plain session end keeps "Sign in again".
+    expect(describeProblem({ status: 401 }).remedyLabel).toBeUndefined();
+  });
+
+  it('demo_reset that reached a page is a re-mint that failed: the visit ended', () => {
+    expect(describeProblem({ status: 401, code: DEMO_PROBLEM_CODES.reset })).toMatchObject({ kind: 'demoSessionEnded', remedyLabel: DEMO_COPY.continueDemo });
+  });
+});
+
+describe('describeProblem: a query that took too long', () => {
+  it('query_timeout: nothing is down; a narrower question or a moment later can work', () => {
+    expect(describeProblem({ status: 503, code: 'query_timeout' })).toMatchObject({
+      kind: 'timeout',
+      title: 'That took too long',
+      body: 'Try a narrower range, or try again in a moment.',
+      remedy: 'retry',
+    });
+    const card = describeProblem({ status: 503, code: 'query_timeout' }, { context: 'Team trend' });
+    expect([card.title, card.body]).toEqual(["Couldn't load team trend", 'That took too long. Try a narrower range, or try again in a moment.']);
+    expect(describeProblem({ status: 503, code: 'dependency_unavailable' }).kind).toBe('unavailable');
   });
 });
 
@@ -288,6 +395,42 @@ describe('ProblemState', () => {
     const home = Array.from(container.querySelectorAll('a')).find((a) => text(a) === 'Go to Command centre');
     expect(home?.getAttribute('href')).toBe('/');
     expect(buttonNamed(container, 'Try again')?.className).toContain('itsm-Button--primary');
+  });
+
+  it('demo_session_ended: the session-ended state, its link to the demo-marked sign-in route', () => {
+    const { container } = render(
+      <TestProvider>
+        <ProblemState problem={{ status: 401, code: 'demo_session_ended' }} signInHref="/api/session/login?redirectTo=%2Foverview&demo=1" />
+      </TestProvider>,
+    );
+    expect(container.firstElementChild?.getAttribute('data-kind')).toBe('demoSessionEnded');
+    expect(text(container.querySelector('h2'))).toBe('Your demo session ended');
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('/api/session/login?redirectTo=%2Foverview&demo=1');
+    // The remedy's own words, not the plain session end's "Sign in again".
+    expect(text(container.querySelector('a'))).toBe('Continue the demo');
+    const unlinked = render(<ProblemState problem={{ status: 401, code: 'demo_session_ended' }} />);
+    expect(buttonNamed(unlinked.container, 'Continue the demo')).toBeDefined();
+    expect(buttonNamed(unlinked.container, 'Sign in again')).toBeUndefined();
+  });
+
+  it('demo_limit and demo_disabled: the sentence, and no Try again that could not work', () => {
+    const onRetry = vi.fn();
+    const limit = render(<ProblemState problem={{ status: 429, code: 'demo_limit', retryable: false, detail: demoLimitSentence('mi.declare') }} onRetry={onRetry} />);
+    expect(text(limit.container)).toContain('each visit can declare one major incident');
+    expect(buttonNamed(limit.container, 'Try again')).toBeUndefined();
+    expect(limit.container.querySelector('.itsm-ProblemState__wait')).toBeNull();
+    limit.unmount();
+    const disabled = render(<ProblemState problem={{ status: 403, code: 'demo_disabled', detail: demoDisabledSentence('uploads') }} onRetry={onRetry} />);
+    expect(text(disabled.container)).toContain('This is a shared demo, so uploading files is turned off.');
+    expect(buttonNamed(disabled.container, 'Try again')).toBeUndefined();
+  });
+
+  it('demo_unavailable: Try again calls the retry', () => {
+    const onRetry = vi.fn();
+    const { container } = render(<ProblemState problem={{ status: 503, code: 'demo_unavailable' }} onRetry={onRetry} />);
+    expect(text(container.querySelector('h2'))).toBe('The demo is paused or being prepared');
+    click(buttonNamed(container, 'Try again')!);
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
   it('renders on the server with no provider (an error page may have none)', () => {

@@ -10,8 +10,7 @@ import { parseFlow } from '../../../../../components/workflows/graph.js';
 import { breadcrumbsFor } from '../../../../../navigation.js';
 import { read } from '../../../../../server/read.js';
 import { holds } from '../../../../../permissions.js';
-import { pageAccess } from '../../../../../server/session.js';
-import { workbenchOrigin } from '../../rules/data.js';
+import { currentAreas, pageAccess } from '../../../../../server/session.js';
 import { loadRuleNames, loadTicketNumbers, loadWorkflow, runView, versionViews, workflowAbilities, workflowView } from '../data.js';
 import '../../../../../components/workflows/workflows.css';
 
@@ -82,7 +81,8 @@ export default async function WorkflowPage({ params, searchParams }: { readonly 
   const graphs = graph ? { [key]: graph } : {};
   const own = runs.ok && row ? runs.value.filter((run) => run.definitionId === row.id).map((run) => runView(run, index, graphs)) : [];
   const can = workflowAbilities(me, detail.value.name);
-  const origin = workbenchOrigin(me);
+  // Ticket links open in the Service Desk when it is listed for this person (A2 §3.7).
+  const areas = await currentAreas();
   const tab = search.tab === 'history' || search.tab === 'runs' ? search.tab : 'diagram';
 
   return (
@@ -101,7 +101,7 @@ export default async function WorkflowPage({ params, searchParams }: { readonly 
       ticketNumbers={ticketNumbers}
       breadcrumbs={crumbs}
       initialTab={tab}
-      {...(origin ? { workbenchOrigin: origin } : {})}
+      areas={areas}
       {...(can.viewOnly ? { viewOnly: can.viewOnly } : {})}
     />
   );

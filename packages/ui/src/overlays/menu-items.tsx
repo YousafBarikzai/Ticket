@@ -60,8 +60,10 @@ function MenuEntry({ item, leading, context }: { readonly item: ItemSpec; readon
   const id = useId();
   const labelId = `${id}-label`;
   const descriptionId = `${id}-description`;
+  const detailId = `${id}-detail`;
   const unavailable = item.disabled === true;
   const secondary = unavailable && item.disabledReason ? item.disabledReason : item.description;
+  const describedBy = [secondary ? descriptionId : null, item.detail ? detailId : null].filter(Boolean).join(' ');
 
   const body = (
     <>
@@ -79,8 +81,14 @@ function MenuEntry({ item, leading, context }: { readonly item: ItemSpec; readon
             {secondary}
           </span>
         ) : null}
+        {item.detail ? (
+          <span className="itsm-Menu__description itsm-Menu__detail" id={detailId}>
+            {item.detail}
+          </span>
+        ) : null}
       </span>
       {item.shortcut ? <Kbd keys={item.shortcut} size="sm" className="itsm-Menu__shortcut" aria-hidden /> : null}
+      {item.current ? <Icon name="check" size="sm" className="itsm-Menu__current" /> : null}
     </>
   );
 
@@ -88,7 +96,8 @@ function MenuEntry({ item, leading, context }: { readonly item: ItemSpec; readon
     className: cx('itsm-Menu__item', item.tone === 'danger' && 'itsm-Menu__item--danger'),
     textValue: item.label,
     'aria-labelledby': labelId,
-    'aria-describedby': secondary ? descriptionId : undefined,
+    'aria-describedby': describedBy || undefined,
+    'aria-current': item.current ? ('true' as const) : undefined,
     'aria-disabled': unavailable || undefined,
     'aria-keyshortcuts': item.shortcut ? ariaKeyShortcuts(item.shortcut) : undefined,
     'data-unavailable': unavailable ? '' : undefined,

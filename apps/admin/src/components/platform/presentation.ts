@@ -47,7 +47,8 @@ export interface TenantView extends Record<string, unknown> {
 
 export const STATUS_LOOK: Readonly<Record<string, { readonly label: string; readonly tone: Tone; readonly icon: 'circle-check' | 'pause' | 'dot' }>> = {
   active: { label: 'Active', tone: 'success', icon: 'circle-check' },
-  suspended: { label: 'Suspended', tone: 'warning', icon: 'pause' },
+  // Paused, not at risk: `hold` (D5, A7 §2.9).
+  suspended: { label: 'Suspended', tone: 'hold', icon: 'pause' },
 };
 
 export function statusLook(status: string): { readonly label: string; readonly tone: Tone; readonly icon: 'circle-check' | 'pause' | 'dot' } {

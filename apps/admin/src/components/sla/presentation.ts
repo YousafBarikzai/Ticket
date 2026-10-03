@@ -219,11 +219,12 @@ export function describeClock(policy: Pick<SlaPolicyRow, 'calendarMode' | 'calen
 }
 
 /** A policy's state as a pill: every policy the API creates is live at once. */
-export function policyState(status: string): { readonly label: string; readonly tone: 'success' | 'neutral' | 'warning' } {
+export function policyState(status: string): { readonly label: string; readonly tone: 'success' | 'neutral' } {
   if (status === 'published') return { label: 'Live', tone: 'success' };
   if (status === 'draft') return { label: 'Draft', tone: 'neutral' };
   if (status === 'retired' || status === 'archived') return { label: 'Retired', tone: 'neutral' };
-  return { label: status.charAt(0).toUpperCase() + status.slice(1), tone: 'warning' };
+  // A state this page does not know keeps its own word, neutral: honest about not knowing, and not amber (D5).
+  return { label: status.charAt(0).toUpperCase() + status.slice(1), tone: 'neutral' };
 }
 
 /** Evaluation order: most specific first (as the clock picks), then by name. */

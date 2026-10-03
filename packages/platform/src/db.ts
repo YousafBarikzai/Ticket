@@ -1,7 +1,8 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { currentContext, type TenantContext } from './context.js';
-import { MissingTenantContextError } from './errors.js';
+import { MissingTenantContextError, QueryTimeoutError } from './errors.js';
 import { loadConfig } from './config.js';
+import { logger, metrics } from './telemetry.js';
 
 /**
  * The tenant-aware data client (ADR-0004).
@@ -39,6 +40,11 @@ export const PLATFORM_MODELS = new Set([
   'AiEvalDataset',
   'AiEvalCase',
   'AiEvalRun',
+  // The shared demo's generation ledger: one row per nightly build, about
+  // tenants rather than in one. Its column is `demo_tenant_id`, deliberately
+  // not `tenant_id`, so neither row-level security nor this extension tries
+  // to scope it to the tenant it describes (A4 §3.4).
+  'DemoGeneration',
 ]);
 
 /** Models that carry tenant_id but are readable by the platform role pre-context. */
@@ -194,10 +200,46 @@ export function platformDb(): PrismaClient {
 }
 
 /**
+ * The longest one statement may run inside a shared-demo transaction (Y-M2).
+ *
+ * The demo tenant lives on the same database as every real customer, and its
+ * visitors are anonymous: the read budgets bound how often they may ask, and
+ * this bounds how much one question may cost. Five seconds is several times
+ * the slowest legitimate demo page, so it only ever stops a runaway.
+ */
+export const DEMO_STATEMENT_TIMEOUT_MS = 5_000;
+
+/** The same limit in PostgreSQL's own spelling, as `SET LOCAL statement_timeout` takes it. */
+const DEMO_STATEMENT_TIMEOUT = '5s';
+
+/**
+ * Whether `error` is PostgreSQL cancelling a statement for its timeout
+ * (SQLSTATE 57014). Prisma reports it two ways: a raw query fails with a known
+ * request error carrying the code in `meta`, and a model query fails with an
+ * unknown request error that only says so in its message.
+ *
+ * The same SQLSTATE also means an operator cancelled the statement by hand
+ * (`pg_cancel_backend`), which is not this request asking too much; so the
+ * reason must say "statement timeout" as well.
+ */
+export function isStatementTimeout(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: unknown; meta?: { code?: unknown; message?: unknown } | null; message?: unknown };
+  const text = [candidate.meta?.message, candidate.message].filter((part): part is string => typeof part === 'string').join('\n');
+  const coded = candidate.meta?.code === '57014' || candidate.code === '57014' || /\b57014\b/.test(text);
+  return coded && /statement timeout/i.test(text);
+}
+
+/**
  * Opens a transaction with the tenant (and actor) set for row-level security.
  *
  * `SET LOCAL` is deliberate: it is scoped to the transaction, so a pooled
  * connection can never carry one request's tenant into the next (risk AR-01).
+ *
+ * A shared-demo context also sets `statement_timeout` for the transaction, in
+ * the same statement (`set_config(…, true)` is `SET LOCAL`), so the limit
+ * costs no extra round trip and cannot be forgotten by a caller. A statement
+ * it stops becomes a 503 for that request rather than an unexplained 500.
  */
 export async function transaction<T>(
   ctx: TenantContext,
@@ -205,18 +247,33 @@ export async function transaction<T>(
   options: { timeout?: number; isolationLevel?: Prisma.TransactionIsolationLevel; client?: PrismaClient } = {},
 ): Promise<T> {
   const client = options.client ?? (appClient ??= baseClient(appUrl()));
-  return client.$transaction(
-    async (tx) => {
-      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true),
-                                  set_config('app.actor_id', ${ctx.actor.id ?? ''}, true)`;
-      const scoped = extendTx(tx, ctx);
-      return fn(scoped);
-    },
-    {
-      timeout: options.timeout ?? 15_000,
-      ...(options.isolationLevel ? { isolationLevel: options.isolationLevel } : {}),
-    },
-  );
+  try {
+    return await client.$transaction(
+      async (tx) => {
+        if (ctx.demo) {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true),
+                                      set_config('app.actor_id', ${ctx.actor.id ?? ''}, true),
+                                      set_config('statement_timeout', ${DEMO_STATEMENT_TIMEOUT}, true)`;
+        } else {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true),
+                                      set_config('app.actor_id', ${ctx.actor.id ?? ''}, true)`;
+        }
+        const scoped = extendTx(tx, ctx);
+        return fn(scoped);
+      },
+      {
+        timeout: options.timeout ?? 15_000,
+        ...(options.isolationLevel ? { isolationLevel: options.isolationLevel } : {}),
+      },
+    );
+  } catch (error) {
+    if (ctx.demo && isStatementTimeout(error)) {
+      metrics.increment('demo_statement_timeouts_total');
+      logger.warn('a demo query ran past the statement timeout and was stopped', { timeoutMs: DEMO_STATEMENT_TIMEOUT_MS });
+      throw new QueryTimeoutError();
+    }
+    throw error;
+  }
 }
 
 /**
@@ -253,11 +310,20 @@ export async function readTransaction<T>(ctx: TenantContext, fn: (tx: Tx) => Pro
   return transaction(
     ctx,
     async (tx) => {
-      await tx.$executeRaw`SELECT set_config('statement_timeout', ${String(READ_STATEMENT_TIMEOUT_MS)}, true)`;
+      await tx.$executeRaw`SELECT set_config('statement_timeout', ${String(readStatementTimeoutMs(ctx))}, true)`;
       return fn(tx);
     },
     { client: readonlyDb(), timeout: READ_STATEMENT_TIMEOUT_MS + 1_000 },
   );
+}
+
+/**
+ * The statement timeout an analytical read runs under. The demo's limit wins
+ * where it is the shorter one: the read pool is where a visitor's heaviest
+ * query goes, so it is the last place the demo's limit may be lifted.
+ */
+export function readStatementTimeoutMs(ctx: Pick<TenantContext, 'demo'>): number {
+  return ctx.demo ? Math.min(READ_STATEMENT_TIMEOUT_MS, DEMO_STATEMENT_TIMEOUT_MS) : READ_STATEMENT_TIMEOUT_MS;
 }
 
 /** As `transaction`, but on the platform role, for tenant provisioning. */

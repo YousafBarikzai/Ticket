@@ -1,5 +1,6 @@
 'use client';
 
+import type { AreaModel } from '@itsm/contracts/areas';
 import {
   useCallback,
   useEffect,
@@ -21,33 +22,33 @@ import { usePins, useRecents, type RecentItem } from '../provider/recents.js';
 import { cx } from '../web/cx.js';
 import { IconButton } from '../web/IconButton.js';
 import { Kbd } from '../web/Kbd.js';
-import { appIcon, kindIcon } from './app-icons.js';
-import { LazyMenuButton } from './LazyMenuButton.js';
+import { kindIcon } from './app-icons.js';
+import { AreaList } from './AreaList.js';
+import { AreaSwitcher, currentArea } from './AreaSwitcher.js';
 import { usePathnameSafe, WithSearch } from './location.js';
 import { currentItemId, navModelItems, needsSearch, type SearchLike } from './match.js';
 import { NavBadgeView } from './NavBadge.js';
-import type { NavItem, NavModel, NavSection, ShellBrand } from './nav.js';
-import { SearchTrigger } from './SearchTrigger.js';
+import type { NavBadge, NavItem, NavModel, NavSection, ShellBrand } from './nav.js';
 import { ShellLink } from './ShellLink.js';
 import { UserMenu, type UserMenuProps } from './UserMenu.js';
 
 export interface SidebarProps {
+  /** The person's areas: the Area card in the column, the area list in the sheet. */
+  readonly areas: AreaModel;
+  /** The brand block's link (the area's home) and workspace. */
   readonly brand: ShellBrand;
   readonly nav: NavModel;
-  /** Beside the brand: the workbench's compose button. */
-  readonly headerExtra?: ReactNode;
-  readonly search?: { readonly placeholder: string; readonly shortcut?: 'mod+k' } | false;
-  readonly onOpenSearch?: () => void;
-  readonly bell?: ReactNode;
+  /** Under the Area card: the Service Desk's "New ticket". */
+  readonly action?: ReactNode;
   /** The connection status slot — renders nothing when healthy. */
   readonly status?: ReactNode;
-  /** The workbench's availability pill. */
+  /** The foot's status row: the Service Desk's availability pill. */
   readonly footerExtra?: ReactNode;
   readonly user?: UserMenuProps;
-  /** `docked`: the column beside the content (full or rail, by width). `sheet`: inside the navigation sheet on small screens. */
+  /** `docked`: the column beside the content (full or rail, by width). `sheet`: inside the navigation sheet below 1024 px. */
   readonly mode: 'docked' | 'sheet';
-  /** The *PanelLeft* button: collapse to the rail, or show the full sidebar. */
-  readonly toggle?: { readonly label: string; readonly onToggle: () => void };
+  /** The foot's Collapse button: collapse to the rail, expand it, or show the full sidebar as a sheet. */
+  readonly collapse?: { readonly label: string; readonly onToggle: () => void };
   readonly className?: string;
 }
 
@@ -233,47 +234,40 @@ function RailTooltip({ tip }: { readonly tip: RailTip | null }): ReactNode {
  * Parts
  * ---------------------------------------------------------------------- */
 
-function BrandBlock({ brand }: { readonly brand: ShellBrand }): ReactNode {
-  const others = (brand.switcher ?? []).filter((entry) => entry.app !== brand.app);
-  const body = (
-    <>
-      <BrandMark app={brand.app} size={28} className="itsm-Sidebar__mark" />
-      <span className="itsm-Sidebar__brandText">
-        <span className="itsm-Sidebar__brandName">{brand.name}</span>
-        {brand.tenant ? (
-          <span className="itsm-Sidebar__tenant">
-            <span className="itsm-visually-hidden">, </span>
-            {brand.tenant}
-          </span>
-        ) : null}
-      </span>
-    </>
-  );
-
-  // The switcher is a menu only when there is somewhere else to go.
-  if ((brand.switcher?.length ?? 0) > 1 && others.length > 0) {
-    return (
-      <LazyMenuButton
-        label="Switch app"
-        align="start"
-        items={[
-          { type: 'label', label: 'Switch to' },
-          ...others.map((entry) => ({ id: `app-${entry.app}`, label: entry.label, icon: appIcon(entry.app), href: entry.href })),
-        ]}
-        renderTrigger={(props) => (
-          <button type="button" className="itsm-Sidebar__brand" {...props}>
-            {body}
-            <Icon name="chevrons-up-down" size="sm" className="itsm-Sidebar__brandChevron" />
-          </button>
-        )}
-      />
-    );
-  }
+/**
+ * The brand block, 56 px like the top bar so the two hairlines meet: the
+ * product mark, "IT Service Management" and the workspace under it, as one
+ * link to the area's home — always home, never a menu (A2 §5.3.1).
+ */
+function BrandBlock({ areas, brand }: { readonly areas: AreaModel; readonly brand: ShellBrand }): ReactNode {
+  const area = currentArea(areas);
   return (
-    <ShellLink href={brand.href} className="itsm-Sidebar__brand">
-      {body}
-    </ShellLink>
+    <div className="itsm-Sidebar__brand">
+      <ShellLink href={brand.href} className="itsm-Sidebar__home" aria-label={`${areas.product} — ${area.name} home`} data-rail-label={`${area.name} home`}>
+        <BrandMark size={32} className="itsm-Sidebar__mark" />
+        <span className="itsm-Sidebar__brandText">
+          <span className="itsm-Sidebar__brandName">{areas.product}</span>
+          {areas.workspace ? <span className="itsm-Sidebar__workspace">{areas.workspace}</span> : null}
+        </span>
+      </ShellLink>
+    </div>
   );
+}
+
+/** The Area card: the way to the other areas, or the area's lockup when there is none. */
+function AreaCard({ areas }: { readonly areas: AreaModel }): ReactNode {
+  const area = currentArea(areas);
+  return (
+    <div className="itsm-Sidebar__area" data-rail-label={areas.visible ? `${area.name} · Switch area` : area.name}>
+      <AreaSwitcher model={areas} display="card" />
+    </div>
+  );
+}
+
+/** In the rail only danger counts are drawn, as a small badge that stops at "9+"; the rest stay in the link's name. */
+function railCount(badge: NavBadge | undefined): string | null {
+  if (!badge || badge.tone !== 'danger' || !(badge.value > 0)) return null;
+  return badge.value > 9 ? '9+' : String(Math.trunc(badge.value));
 }
 
 function NavEntry({ item, currentId }: { readonly item: NavItem; readonly currentId: string | null }): ReactNode {
@@ -281,6 +275,7 @@ function NavEntry({ item, currentId }: { readonly item: NavItem; readonly curren
   const childCurrent = useMemo(() => (item.children ?? []).some(function has(child: NavItem): boolean {
     return child.id === currentId || (child.children ?? []).some(has);
   }), [item.children, currentId]);
+  const rail = railCount(item.badge);
 
   return (
     <li className="itsm-Sidebar__entry">
@@ -294,6 +289,11 @@ function NavEntry({ item, currentId }: { readonly item: NavItem; readonly curren
         {item.icon ? <Icon name={item.icon} size="md" className="itsm-Sidebar__icon" /> : <span className="itsm-Sidebar__icon" aria-hidden="true" />}
         <span className="itsm-Sidebar__label">{item.label}</span>
         <NavBadgeView badge={item.badge} className="itsm-Sidebar__badge" />
+        {rail ? (
+          <span className="itsm-Sidebar__railCount" aria-hidden="true">
+            {rail}
+          </span>
+        ) : null}
       </ShellLink>
       {item.children && item.children.length > 0 && (current || childCurrent) ? (
         <ul className="itsm-Sidebar__children">
@@ -412,13 +412,17 @@ function PinnedAndRecent({ nav }: { readonly nav: NavModel }): ReactNode {
   );
 }
 
+/**
+ * The sections, then this device's Pinned and Recent, then the footer nav:
+ * the primary items keep their places whatever the device remembers
+ * (A2 §5.3.4).
+ */
 function NavLists({ nav, currentId }: { readonly nav: NavModel; readonly currentId: string | null }): ReactNode {
   const app = useOptionalItsm()?.app ?? 'default';
   const [collapsed, setCollapsed] = useCollapsedSections(app);
   return (
     <>
       <div className="itsm-Sidebar__scroll">
-        <PinnedAndRecent nav={nav} />
         {nav.sections.map((section) => (
           <SectionView
             key={section.id}
@@ -428,6 +432,7 @@ function NavLists({ nav, currentId }: { readonly nav: NavModel; readonly current
             onCollapse={(value) => setCollapsed(section.id, value)}
           />
         ))}
+        <PinnedAndRecent nav={nav} />
       </div>
       {nav.footer && nav.footer.length > 0 ? (
         <ul className="itsm-Sidebar__list itsm-Sidebar__list--footer">
@@ -450,74 +455,78 @@ function CurrentNav({ nav }: { readonly nav: NavModel }): ReactNode {
 }
 
 /**
- * The sheet's own header (its title — the app's name — is the sheet's): the
- * compose button, and the other apps as plain links, which suit a touch
- * screen better than a menu inside a sheet.
+ * The foot (A2 §5.3.5): the status row — the Service Desk's availability,
+ * the connection only when it is unwell — the user card, which opens the
+ * same account menu as the top bar's avatar, and Collapse (`[`).
  */
-function SheetHeader({ brand, headerExtra }: { readonly brand: ShellBrand; readonly headerExtra?: ReactNode }): ReactNode {
-  const labelId = useStableId('itsm-nav-apps');
-  const others = (brand.switcher ?? []).filter((entry) => entry.app !== brand.app);
-  if (!headerExtra && others.length === 0) return null;
+function Foot({
+  areas,
+  status,
+  footerExtra,
+  user,
+  collapse,
+}: Pick<SidebarProps, 'areas' | 'status' | 'footerExtra' | 'user' | 'collapse'>): ReactNode {
+  if (!status && !footerExtra && !user && !collapse) return null;
   return (
-    <div className="itsm-Sidebar__header">
-      {headerExtra ? <div className="itsm-Sidebar__headerExtra">{headerExtra}</div> : null}
-      {others.length > 0 ? (
-        <div className="itsm-Sidebar__section">
-          <div id={labelId} className="itsm-Sidebar__sectionLabel">
-            <span className="itsm-Sidebar__sectionText">Switch to</span>
-          </div>
-          <ul className="itsm-Sidebar__list" aria-labelledby={labelId}>
-            {others.map((entry) => (
-              <li key={entry.app} className="itsm-Sidebar__entry">
-                <ShellLink href={entry.href} className="itsm-Sidebar__item">
-                  <Icon name={appIcon(entry.app)} size="md" className="itsm-Sidebar__icon" />
-                  <span className="itsm-Sidebar__label">{entry.label}</span>
-                </ShellLink>
-              </li>
-            ))}
-          </ul>
+    <div className="itsm-Sidebar__foot">
+      {status || footerExtra ? (
+        <div className="itsm-Sidebar__statusRow">
+          {footerExtra ? <div className="itsm-Sidebar__footerExtra">{footerExtra}</div> : null}
+          {status ? <div className="itsm-Sidebar__status">{status}</div> : null}
         </div>
+      ) : null}
+      {user ? (
+        <div className="itsm-Sidebar__user" data-rail-label={user.name}>
+          <UserMenu {...user} areas={user.areas ?? areas} display="row" />
+        </div>
+      ) : null}
+      {collapse ? (
+        <button
+          type="button"
+          className="itsm-Sidebar__collapse"
+          aria-keyshortcuts="["
+          data-rail-label={collapse.label}
+          data-rail-shortcut="["
+          onClick={collapse.onToggle}
+        >
+          <Icon name="panel-left" size="sm" directional className="itsm-Sidebar__collapseIcon" />
+          <span className="itsm-Sidebar__collapseLabel">{collapse.label}</span>
+        </button>
       ) : null}
     </div>
   );
 }
 
 /**
- * The sidebar of the admin console and the workbench: the brand with its app
- * switcher, search and the bell at the top; the navigation, grouped into
- * sections, in the middle; connection status, availability and the account
- * menu at the foot.
+ * The sidebar of Administration and the Service Desk (v3 §3.4, A2 §5.3):
+ * light — white `surface.raised` with a `border.subtle` edge, no shadow —
+ * with, top to bottom, the brand block (56 px, aligned with the top bar's
+ * hairline), the Area card, the Service Desk's "New ticket", the grouped
+ * navigation with its counts, and the foot: status row, user card,
+ * Collapse.
  *
- * Opaque, on the canvas (D6): nothing scrolls beneath it, so it has no reason
- * to be glass. The current page is `surface.selected` with a 3 px accent bar,
- * `text.primary` at 600 and `aria-current="page"` (X-72) — never a
- * link-coloured label. Hover is `surface.hover` over `fast`, and nothing
- * moves.
+ * The current page is `surface.selected` with a 3 px accent bar at the
+ * inline start, its label `text.primary` at 600 and its icon in the accent,
+ * with `aria-current="page"` (X-B4) — never a link-coloured label. Group
+ * labels are sentence case, 600 12/16 in `text.muted`; items 500 13/18 in
+ * `text.secondary` with `text.faint` icons. Hover is `surface.hover` over
+ * `fast`, and nothing moves.
  *
  * Collapsible sections remember their state on this device; the section
  * holding the current page opens by itself. *Pinned* and *Recent* are this
  * device's lists (`usePins`, `useRecents`), empty on the server and hidden
- * while empty.
+ * while empty, after the sections.
  *
- * As a rail (1024–1279 px, or collapsed by the person at 1280 and up) it
- * keeps the icons, turns section headings into hairlines and names each item
- * in a bubble on hover or keyboard focus. It never widens on hover — a panel
- * that grows under a passing pointer covers what the person was reading.
+ * As a rail (1024–1279 px, or collapsed at 1280 and up) it keeps the icons,
+ * the Area card becomes a 44 px tile with a ⇕ badge, section headings become
+ * hairlines, only danger counts stay as small badges, and each part names
+ * itself in a bubble on hover or keyboard focus. It never widens on hover.
+ *
+ * In the navigation sheet (below 1024 px) the sheet's own title carries the
+ * brand; the sheet lists the areas (`AreaList`), "New ticket", the
+ * navigation and the user card.
  */
-export function Sidebar({
-  brand,
-  nav,
-  headerExtra,
-  search,
-  onOpenSearch,
-  bell,
-  status,
-  footerExtra,
-  user,
-  mode,
-  toggle,
-  className,
-}: SidebarProps): ReactNode {
+export function Sidebar({ areas, brand, nav, action, status, footerExtra, user, mode, collapse, className }: SidebarProps): ReactNode {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const navRef = useRef<HTMLElement | null>(null);
   // The docked sidebar is an F6 region; inside the sheet, the sheet is.
@@ -525,65 +534,33 @@ export function Sidebar({
   const rail = useRailTips(() => (mode === 'docked' ? rootRef.current : null));
 
   return (
-    <div ref={rootRef} className={cx('itsm-Sidebar', className)} data-mode={mode}>
+    <div
+      ref={rootRef}
+      className={cx('itsm-Sidebar', className)}
+      data-mode={mode}
+      onPointerOver={rail.handlers.onPointerOver}
+      onPointerOut={rail.handlers.onPointerOut}
+      onFocus={rail.handlers.onFocus}
+      onBlur={rail.handlers.onBlur}
+      onKeyDown={rail.handlers.onKeyDown}
+    >
       {mode === 'docked' ? (
-        <div className="itsm-Sidebar__header">
-          <div className="itsm-Sidebar__brandRow">
-            <BrandBlock brand={brand} />
-            {headerExtra ? <div className="itsm-Sidebar__headerExtra">{headerExtra}</div> : null}
-            {toggle ? (
-              <IconButton
-                className="itsm-Sidebar__toggle"
-                icon="panel-left"
-                size="sm"
-                variant="ghost"
-                label={toggle.label}
-                shortcut="["
-                onClick={toggle.onToggle}
-              />
-            ) : null}
-          </div>
-          {(search && onOpenSearch) || bell ? (
-            <div className="itsm-Sidebar__tools">
-              {search && onOpenSearch ? (
-                <SearchTrigger
-                  className="itsm-Sidebar__search"
-                  placeholder={search.placeholder}
-                  shortcut={search.shortcut ?? 'mod+k'}
-                  bindShortcut={false}
-                  onOpen={onOpenSearch}
-                />
-              ) : null}
-              {bell ? <div className="itsm-Sidebar__bell">{bell}</div> : null}
-            </div>
-          ) : null}
+        <>
+          <BrandBlock areas={areas} brand={brand} />
+          <AreaCard areas={areas} />
+        </>
+      ) : areas.visible ? (
+        <div className="itsm-Sidebar__areas">
+          <AreaList model={areas} />
         </div>
-      ) : (
-        <SheetHeader brand={brand} headerExtra={headerExtra} />
-      )}
+      ) : null}
+      {action ? <div className="itsm-Sidebar__action">{action}</div> : null}
 
-      <nav
-        ref={navRef}
-        aria-label={nav.label}
-        className="itsm-Sidebar__nav itsm-Region"
-        tabIndex={-1}
-        onPointerOver={rail.handlers.onPointerOver}
-        onPointerOut={rail.handlers.onPointerOut}
-        onFocus={rail.handlers.onFocus}
-        onBlur={rail.handlers.onBlur}
-        onKeyDown={rail.handlers.onKeyDown}
-        onScrollCapture={rail.handlers.onScrollCapture}
-      >
+      <nav ref={navRef} aria-label={nav.label} className="itsm-Sidebar__nav itsm-Region" tabIndex={-1} onScrollCapture={rail.handlers.onScrollCapture}>
         <CurrentNav nav={nav} />
       </nav>
 
-      {status || footerExtra || user ? (
-        <div className="itsm-Sidebar__footer">
-          {status ? <div className="itsm-Sidebar__status">{status}</div> : null}
-          {footerExtra ? <div className="itsm-Sidebar__footerExtra">{footerExtra}</div> : null}
-          {user ? <UserMenu {...user} display="row" /> : null}
-        </div>
-      ) : null}
+      <Foot areas={areas} status={status} footerExtra={footerExtra} user={user} collapse={mode === 'docked' ? collapse : undefined} />
       <RailTooltip tip={rail.tip} />
     </div>
   );

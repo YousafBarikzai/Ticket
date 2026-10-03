@@ -10,6 +10,8 @@ import { css, layer, mq, prefers } from '../styles/css.js';
  * against every surface, as every status mark in a chart does (SPEC §1.11).
  * The track is `fill.track`, the product's one track colour; with more
  * contrast it steps up to `border.subtle` so the unfilled part is still seen.
+ * A target is a 2 px tick in the marker navy, reaching 2 px past the stroke
+ * each side; the 140 ring carries the stat numeral.
  */
 export const progressRingStyles = layer(
   'components',
@@ -33,6 +35,12 @@ export const progressRingStyles = layer(
 .itsm-ProgressRing__svg {
   grid-area: 1 / 1;
   display: block;
+  overflow: visible;
+}
+
+.itsm-ProgressRing__target {
+  stroke: var(--itsm-colour-chart-marker);
+  stroke-width: 2;
 }
 
 .itsm-ProgressRing__track {
@@ -64,6 +72,12 @@ export const progressRingStyles = layer(
   font-size: var(--itsm-text-title3-size);
   letter-spacing: var(--itsm-text-title3-tracking);
 }
+.itsm-ProgressRing[data-size="140"] .itsm-ProgressRing__text {
+  font-family: var(--itsm-text-statValue-family);
+  font-size: var(--itsm-text-statValue-size);
+  line-height: var(--itsm-text-statValue-line);
+  letter-spacing: var(--itsm-text-statValue-tracking);
+}
 
 ${moreContrast((scope) => `${scope} .itsm-ProgressRing__track { stroke: var(--itsm-colour-border-subtle); }`)}
 
@@ -86,6 +100,9 @@ ${mq.forcedColors} {
   }
   .itsm-ProgressRing__arc {
     stroke: CanvasText;
+  }
+  .itsm-ProgressRing__target {
+    stroke: Highlight;
   }
 }
 `,

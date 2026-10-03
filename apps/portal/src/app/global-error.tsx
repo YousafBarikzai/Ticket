@@ -29,7 +29,8 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
   return (
     <html lang="en-GB">
       <head>
-        <title>Something went wrong · Help</title>
+        {/* The area's name as the root layout's title template spells it (`AREAS.portal.name`), written out: this boundary loads nothing it can avoid. */}
+        <title>Something went wrong · Help Portal</title>
         <link rel="stylesheet" href={stylesheet} precedence="itsm" />
       </head>
       <body>

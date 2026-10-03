@@ -22,19 +22,68 @@
  * Usage:
  *   tsx infra/scripts/keycloak-realm.ts --environment staging --out realm.resolved.json
  *   tsx infra/scripts/keycloak-realm.ts --environment staging --apply
+ *   tsx infra/scripts/keycloak-realm.ts --environment staging --apply --theme itsm
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { hostsFor, readCatalogue } from './railway-deploy.js';
+import { AREAS, type AreaId } from '@itsm/contracts/areas';
+import { hostsFor, readCatalogue, type Catalogue } from './railway-deploy.js';
 
 export const PLACEHOLDER = '__DOMAIN__';
 
+/** The three applications a person signs in to, by their service name, which is the area's id. */
+export type ClientApplication = AreaId;
+
 /** Which application each confidential client signs people in to. */
-const CLIENT_SERVICE: Readonly<Record<string, string>> = {
+const CLIENT_SERVICE: Readonly<Record<string, ClientApplication>> = {
   'itsm-portal': 'portal',
   'itsm-workbench': 'workbench',
   'itsm-admin': 'admin',
 };
+
+/**
+ * The name each application's client shows people.
+ *
+ * Keycloak puts it in front of them twice: the account page lists the
+ * applications a person has used by it, and the product's login theme says
+ * "Signing in to Service Desk" with it. So it is the area's name, the one the
+ * applications call themselves, rather than a description written for whoever
+ * administers Keycloak — read from `AREAS` (`@itsm/contracts/areas`), the one
+ * place every area's name is written, so the identity provider cannot drift
+ * from the switcher. Set here, at resolve time, rather than only in
+ * `realm.json`, so a rename is one constant.
+ */
+export const CLIENT_NAMES: Readonly<Record<ClientApplication, string>> = {
+  portal: AREAS.portal.name,
+  workbench: AREAS.workbench.name,
+  admin: AREAS.admin.name,
+};
+
+/**
+ * The realm's theme, when the deploy says which.
+ *
+ * `itsm` only once the deploy has confirmed the image carrying that theme is
+ * the one running; `default` is the owner's opt-out back to Keycloak's own.
+ * Absent means the realm is sent with no theme key at all, and Keycloak keeps
+ * whatever it already has — which is what every outcome short of a verified
+ * image switch must do.
+ */
+export type RealmTheme = 'itsm' | 'default';
+
+/** The keys that name a theme. `realm.json` carries none of them; see `resolveRealm`. */
+export const THEME_KEYS = ['loginTheme', 'accountTheme', 'emailTheme'] as const;
+
+/** What each `--theme` value sets. The account page has its own built-in theme, a version ahead of the login one. */
+const THEME_SETTINGS: Readonly<Record<RealmTheme, Readonly<Record<string, string>>>> = {
+  itsm: { loginTheme: 'itsm', accountTheme: 'itsm' },
+  default: { loginTheme: 'keycloak.v2', accountTheme: 'keycloak.v3' },
+};
+
+export interface ResolveOptions {
+  /** The demo is on, so the sign-in pages may offer it (D18). From `demoModeOf`. */
+  readonly demo?: boolean;
+  readonly theme?: RealmTheme;
+}
 
 export interface RealmClient {
   clientId: string;
@@ -73,7 +122,7 @@ export function authHost(domain: string, environment: string): string {
  * deploy to disagree — and they disagree silently, in a redirect nobody tests
  * until somebody cannot sign in.
  */
-export function resolveRealm(realm: Realm, hosts: ReadonlyMap<string, string>, authUrl: string): Realm {
+export function resolveRealm(realm: Realm, hosts: ReadonlyMap<string, string>, authUrl: string, options: ResolveOptions = {}): Realm {
   const hostOf = (serviceName: string): string => {
     const host = hosts.get(serviceName);
     // Thrown rather than defaulted: a client whose application has no host
@@ -89,16 +138,69 @@ export function resolveRealm(realm: Realm, hosts: ReadonlyMap<string, string>, a
     const host = hostOf(serviceName);
     return {
       ...client,
+      name: CLIENT_NAMES[serviceName],
+      // From the same host as the redirect URI, so the way back from one of
+      // Keycloak's own pages cannot lead somewhere the sign-in would not.
+      baseUrl: `https://${host}/`,
       redirectUris: [`https://${host}/api/session/callback`],
       attributes: { ...client.attributes, 'post.logout.redirect.uris': `https://${host}/*` },
     };
   });
 
+  /*
+   * The public site, for the login theme's footer (D18). Unlike a client's
+   * host, a missing site is not an error: the site has no Keycloak client, so
+   * a deployment without one signs people in perfectly well and the footer
+   * simply draws no link to a home that does not exist. Empty rather than
+   * absent, so that turning the demo off clears a link the realm already has.
+   */
+  const site = hosts.get('site');
+  const homeUrl = site ? `https://${site}/` : '';
+  const demoUrl = site && options.demo ? `https://${site}/sign-in?start=demo` : '';
+
+  // No theme unless told, whatever the file says: every deploy PUTs these
+  // settings, so a theme key that arrived by any other route would switch the
+  // realm to a theme whose image may never have been deployed.
+  const unthemed = Object.fromEntries(Object.entries(realm).filter(([key]) => !(THEME_KEYS as readonly string[]).includes(key))) as Realm;
+
   return {
-    ...realm,
-    attributes: { ...realm.attributes, frontendUrl: authUrl.replace(/\/$/, '') },
+    ...unthemed,
+    ...(options.theme ? THEME_SETTINGS[options.theme] : {}),
+    attributes: {
+      ...realm.attributes,
+      frontendUrl: authUrl.replace(/\/$/, ''),
+      'itsm.homeUrl': homeUrl,
+      'itsm.demoUrl': demoUrl,
+    },
     clients,
   };
+}
+
+/**
+ * Whether the deployment runs the demo, from the one place that decides it:
+ * the site's `DEMO_MODE` in `services.json`.
+ *
+ * Read from the catalogue rather than passed in by the workflow, so the realm
+ * and the services it links to cannot disagree about whether there is a demo
+ * to link to, and the deploy gains no input for somebody to forget.
+ */
+export function demoModeOf(catalogue: Catalogue): boolean {
+  return catalogue.services.find((service) => service.name === 'site')?.variables?.DEMO_MODE === 'on';
+}
+
+/**
+ * The `--theme` flag, or undefined when it is not given.
+ *
+ * A value it does not know is refused rather than ignored. Ignoring it would
+ * apply the realm with no theme key, which reports success and changes
+ * nothing — the failure mode this script exists to avoid.
+ */
+export function themeFlag(argv: readonly string[]): RealmTheme | undefined {
+  const index = argv.indexOf('--theme');
+  if (index < 0) return undefined;
+  const value = argv[index + 1];
+  if (value === 'itsm' || value === 'default') return value;
+  throw new Error(`--theme takes itsm or default, not ${value === undefined ? 'nothing' : JSON.stringify(value)}`);
 }
 
 /** Every place a placeholder survived, so the check below can name them. */
@@ -406,9 +508,10 @@ async function main(): Promise<void> {
   const environment = value('--environment');
   const out = value('--out');
   const shouldApply = argv.includes('--apply');
+  const theme = themeFlag(argv);
   const domain = process.env.DEPLOY_DOMAIN;
   if (!environment || (!out && !shouldApply)) {
-    throw new Error('usage: keycloak-realm.ts --environment <name> [--hosts <json>] [--out <file>] [--apply]');
+    throw new Error('usage: keycloak-realm.ts --environment <name> [--hosts <json>] [--out <file>] [--apply] [--theme itsm|default]');
   }
 
   /*
@@ -440,7 +543,7 @@ async function main(): Promise<void> {
   const authUrl = domain ? `https://${authHost(domain, environment)}` : process.env.KEYCLOAK_URL;
   if (!authUrl) throw new Error('KEYCLOAK_URL is not set, and without DEPLOY_DOMAIN there is nothing to derive it from');
 
-  const resolved = resolveRealm(readRealm(), hosts, authUrl);
+  const resolved = resolveRealm(readRealm(), hosts, authUrl, { demo: demoModeOf(readCatalogue()), theme });
   const left = unresolvedPlaceholders(resolved);
   // A realm applied with `__DOMAIN__` still in it is a realm whose redirect
   // URIs match nothing, so this refuses rather than warns.

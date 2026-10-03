@@ -7,6 +7,7 @@
 | `apps/portal` | Next.js App Router, React 19, Tailwind, `packages/ui` | Requester portal: home, search, report issue, request service, my tickets, timeline, approvals inbox, knowledge, profile | Yes (user PWA) | Server components for first paint; client components for forms and timeline; tenant subdomain and custom domains |
 | `apps/workbench` | Next.js | Agent workbench: queues, three-pane ticket workspace, knowledge authoring, major incident room, workload views | Yes (admin/agent PWA) | Keyboard-first; SSE-driven; heavy client state |
 | `apps/admin` | Next.js | Admin console and platform console: builders (fields, forms, categories, priorities, queues, calendars, templates, rules, workflows, SLAs, approvals), settings, flags, modules, packages, audit search, tenancy | **No, deliberately** (ADR-0049) | Guided builders with preview/validate/publish/rollback. A console that answered from a cache while somebody was changing a permission, a limit or a residency policy would show them a configuration that is not the one in force — so this is the one application here with no service worker, and the omission is a decision rather than an omission |
+| `apps/site` | Next.js App Router, server components | The public site (ADR-0062): landing page, sign-in chooser, shareable role pages that open the demo, privacy, cookies and terms | **No** | Not an application: no session, no BFF, no cookie, no service worker, no client data fetching. Every link into the product is a plain `<a>` to an app's origin; the browser talks only to the site. Renders per request because its links are deployment configuration; indexed only on the owner's own domain |
 | `apps/status` | Next.js static export | Public status pages | n/a | Built by a worker job; hosted on Cloudflare |
 | `apps/mobile` | Expo SDK (React Native), Expo Router | Requesters and agents: SSO, push, my tickets, create with camera, comments, approvals, offline drafts; agent triage *(PH-4)* | n/a | iOS PH-2, Android PH-5; EAS Build and Update |
 
@@ -86,6 +87,7 @@ packages/ui/
 |---|---|---|
 | Portal | LCP < 2.0 s on mid-range mobile over 4G; initial JS < 250 kB gzipped | Server components, route-level code splitting, image optimisation, edge caching of static assets |
 | Workbench | Initial JS < 500 kB gzipped; queue interaction < 100 ms | Virtualised lists, prefetching on hover, SSE instead of polling |
+| Public site | Initial JS < 150 kB gzipped per route (the framework alone is about 131.5 kB); HTML of `/` ≤ 60 kB gzipped; CLS ≤ 0.02; the LCP element is the headline | Server components only; no chart or data-fetching JavaScript; pictures pre-encoded |
 | Mobile | Cold start < 2 s on iPhone 12-class | Hermes, lazy routes, minimal native modules |
 | All | Usable on 3G; images lazy-loaded | Lighthouse throttled runs in CI |
 
@@ -110,6 +112,7 @@ sentences are which.
 | `packages/bff` | The backend-for-frontend, once: sign-in, the session store, and the proxy. Handlers speak `Request` and `Response` rather than a framework's types, so a route handler in an application is three lines. Sessions are namespaced per application. |
 | `apps/workbench` | Next.js App Router. The queue, and the three-pane ticket workspace with timeline, composer, transitions, assignment, SLA clocks, time totals and the AI suggestion surface. |
 | `apps/portal` | Next.js App Router. Home, report an issue, the catalogue with `FormRenderer`, my tickets, one ticket with reply and reopen, the approvals inbox, and knowledge search with articles. |
+| `apps/site` | Next.js App Router. The public site's skeleton: a holding page with the product's lockup, one sentence and a work-account sign-in link per area, its 404, `robots.txt`, the sitemap and liveness — the whole pipeline (build, budget, image, scan, deploy, smoke test) exercised a wave before the landing page arrives (ADR-0062). |
 | `packages/pwa` | The offline layer: a service worker with four caching strategies, and an IndexedDB outbox for the three writes §5 allows to be queued. The rules — what may be queued, what an HTTP answer means, when to stop retrying — are pure functions. `@itsm/pwa/live` is the one event stream per tab (§4). |
 | The development sign-in | `POST /api/v1/auth/dev-session`, registered only outside production and only with no `OIDC_ISSUER` (ADR-0041). |
 
@@ -136,7 +139,7 @@ reverse later:
   without a round trip, prefetched neighbours, invalidation by a live notice.
   The portal and the admin console still re-read with `router.refresh()`.
 - **The performance budgets of §8 are checked in CI.** Every change builds the
-  three applications with `next build --webpack`, and
+  three applications and the public site with `next build --webpack`, and
   `infra/scripts/check-bundles.ts` measures each route's first-load
   JavaScript against `infra/bundle-budgets.json`: over budget, or more than
   10 kB over the recorded baseline without recording a new one, fails the

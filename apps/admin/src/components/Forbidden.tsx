@@ -1,17 +1,19 @@
 import type { ReactNode } from 'react';
 import { ProblemState } from '@itsm/ui';
 import { PageHeader } from '@itsm/ui/shell';
-import { pageEntry } from '../navigation.js';
+import { isRootTab, pageEntry, purposeFor } from '../navigation.js';
 import { permissionLabel } from '../permissions.js';
 
 /**
- * What a page shows to somebody its gate refuses (SPEC §4.10 "Forbidden").
+ * What a page shows to somebody its gate refuses (A7 §2.6 "Forbidden", T6;
+ * SPEC §4.10).
  *
- * Inside the frame, with the page's own header kept — "Rules", then "You don't
- * have access to Rules", the permission in words, and (for people who asked
- * to see technical keys) the key to quote to an administrator, with Copy. A
- * person who followed a link from a colleague learns what to ask for rather
- * than meeting a blank page or a sign-in loop.
+ * Inside the frame, with the page's own header kept — the top bar reads
+ * "Rules" and the page's purpose, as it would for someone allowed in — then
+ * "You don't have access to Rules", the permission in words, and (for people
+ * who asked to see technical keys) the key to quote to an administrator, with
+ * Copy. A person who followed a link from a colleague learns what to ask for
+ * rather than meeting a blank page or a sign-in loop.
  *
  * The sidebar never links here: it shows only what the person may open. This
  * is for pasted links and bookmarks. The platform pages do not use it — they
@@ -24,18 +26,19 @@ export function Forbidden({ route }: { readonly route: string }): ReactNode {
   const item = entry?.item;
   const tab = entry?.tab;
   const title = item?.label ?? 'This page';
-  const context = tab && item?.tabs && tab.href !== item.tabs[0]?.href ? `${item.label} › ${tab.label}` : title;
+  const context = item && tab && !isRootTab(item, tab) ? `${item.label} › ${tab.label}` : title;
   const key = entry?.read[0];
+  const purpose = purposeFor(route);
 
   return (
     <div className="app-Page">
-      <PageHeader title={title} />
+      <PageHeader title={title} {...(purpose ? { purpose } : {})} />
       <ProblemState
         size="lg"
         problem={{ status: 403 }}
         context={context}
         {...(key ? { permissionLabel: permissionLabel(key), permissionKey: key } : {})}
-        secondaryAction={{ id: 'home', label: 'Go to Command centre', href: '/', variant: 'secondary' }}
+        secondaryAction={{ id: 'home', label: 'Go to the Command centre', href: '/', variant: 'secondary' }}
       />
     </div>
   );

@@ -8,17 +8,25 @@
  * notification panel, the shortcuts dialog) load it on intent, so a page pays
  * for it only when someone reaches for one.
  */
+export { AppTopBar, ContextChip, type AppTopBarProps, type ContextChipProps } from './AppTopBar.js';
+export { AreaList, areaPersonaLine, type AreaListProps } from './AreaList.js';
+export { AreasProvider, useAreas } from './areas-context.js';
+export { AreaSwitcher, type AreaSwitcherProps } from './AreaSwitcher.js';
 export { BottomDock, type BottomDockProps } from './BottomDock.js';
 export { Breadcrumbs, type BreadcrumbsProps } from './Breadcrumbs.js';
+export { areasFromV2Brand } from './compat.js';
+export { DemoBar, type DemoBarProps, type DemoBarPublicState } from './DemoBar.js';
+export { DEMO_GENERATION_CHANGE_EVENT, onDemoGenerationChange, type DemoGenerationChangeDetail } from './DemoBarControls.js';
 export { useFullScreenFlow } from './flow.js';
 export { HierNav, type HierNavItem, type HierNavProps } from './HierNav.js';
 export { currentItemId, hrefPath, matchScore } from './match.js';
-export type { AppSwitcherItem, NavBadge, NavItem, NavMatch, NavModel, NavSection, ShellBrand } from './nav.js';
+export type { AppSwitcherItem, NavBadge, NavItem, NavMatch, NavModel, NavSection, RouteTitle, ShellBrand, TabAction, TabItem } from './nav.js';
 export {
   EMERGENCY_EVENT,
   NotificationCenter,
   type NotificationCenterProps,
   type NotificationItem,
+  type NotificationKind,
 } from './NotificationCenter.js';
 export { PageHeader, type PageHeaderProps } from './PageHeader.js';
 export { RouteFocus } from './RouteFocus.js';
@@ -26,15 +34,17 @@ export { RouteProgress, useRoutePending, type RouteProgressProps } from './Route
 export { SearchTrigger, type SearchTriggerProps } from './SearchTrigger.js';
 export { ShortcutsDialog, type ShortcutsDialogProps } from './ShortcutsDialog.js';
 export { setShortcutsDialogOpen } from './shortcuts.js';
+export { SignInLayout, type SignInLayoutProps } from './SignInLayout.js';
 export { SkipLinks, type SkipLinksProps } from './SkipLinks.js';
 export { SplitView, type SplitPane, type SplitViewProps } from './SplitView.js';
+export { SYSTEM_BAR_BUSY_LABEL, SystemBar, SystemBarBadge, type SystemBarBadgeProps, type SystemBarBadgeSpec, type SystemBarProps, type SystemBarState } from './SystemBar.js';
 export { TabBar, type TabBarProps } from './TabBar.js';
 export { TabNav, type TabNavItem, type TabNavProps } from './TabNav.js';
 export { TopBar, type TopBarProps } from './TopBar.js';
 export { TopNavShell, type TopNavShellProps } from './TopNavShell.js';
-export { UserMenu, type UserMenuProps, type UserMenuSignOut } from './UserMenu.js';
+export { DEMO_DETAILS_REQUEST_EVENT, DEMO_RESET_REQUEST_EVENT, UserMenu, type UserMenuProps, type UserMenuSignOut } from './UserMenu.js';
 
 // The in-house components, rebuilt in place.
-export { AppShell, type AppShellFrameProps, type AppShellNavItem, type AppShellProps } from '../web/AppShell.js';
+export { AppShell, NAV_SHEET_ID, setNavigationSheetOpen, useNavigationSheetOpen, type AppShellFrameProps, type AppShellNavItem, type AppShellProps } from '../web/AppShell.js';
 export { CommandPalette, rankCommands, type CommandItem, type CommandPaletteProps } from '../web/CommandPalette.js';
 export type { CommandProvider } from '../provider/commands.js';

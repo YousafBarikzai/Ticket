@@ -1,15 +1,19 @@
 import { css, layer, mq, prefers } from '../styles/css.js';
+import { scrollFades } from '../web/Tabs.styles.js';
 
 /**
  * `TabNav`, and the count badge every navigation part shares (`NavBadge`).
  *
- * Route tabs sit on a hairline; each is `callout` 500 in `text.secondary`,
- * the current one `text.primary` 600 — its label reserves the bold width so
- * its neighbours never shift. One 2 px accent indicator slides between tabs
- * on the spring (`transform` only); before it has been placed, and without
- * script, the current tab draws its own underline, so nothing slides in on
- * load. Reduced motion: it simply moves. The row scrolls sideways on narrow
- * screens with its scrollbar hidden.
+ * Route tabs are the page-level underline tabs of v3 §2.14 (A1 §7.7): 40 px
+ * tall, 500 14/20 in `text.muted`, 20 px apart over a `border.subtle`
+ * hairline; the current one is `text.primary` 600 — its label reserves the
+ * bold width so its neighbours never shift — with a `Count` in the accent
+ * tone. One 2 px accent indicator, square at the foot so it sits on the
+ * rule, slides between tabs on the spring (`transform` only); before it has
+ * been placed, and without script, the current tab draws its own underline,
+ * so nothing slides in on load. Reduced motion: it simply moves. The row
+ * scrolls sideways on narrow screens with its scrollbar hidden and edge
+ * fades where more tabs wait (`scrollFades`, shared with `Tabs`).
  *
  * `NavBadge`: a capsule of `footnote` 600 tabular figures — neutral on
  * `fill.secondary`, accent and danger solid with their solid text.
@@ -45,20 +49,21 @@ export const tabNavStyles = layer(
 
 .itsm-TabNav {
   min-inline-size: 0;
-  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
 }
+/* The rule is the track's own inset edge, so the indicator is drawn over it rather than above it. */
 .itsm-TabNav__track {
   position: relative;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  box-shadow: inset 0 calc(-1 * var(--itsm-border-hair)) 0 var(--itsm-colour-border-subtle);
 }
 .itsm-TabNav__track::-webkit-scrollbar {
   display: none;
 }
 .itsm-TabNav__list {
   display: flex;
-  gap: var(--itsm-space-lg);
+  gap: calc(var(--itsm-space-ml) - 2 * var(--itsm-space-3xs));
   margin: 0;
   padding: 0;
   list-style: none;
@@ -71,14 +76,15 @@ export const tabNavStyles = layer(
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: var(--itsm-space-2xs);
-  min-block-size: var(--itsm-control-height-lg);
-  border-radius: var(--itsm-radius-sm);
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-callout-size);
+  gap: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs));
+  min-block-size: calc(var(--itsm-control-height-md) + var(--itsm-space-2xs));
+  padding-inline: var(--itsm-space-3xs);
+  border-radius: var(--itsm-radius-sm) var(--itsm-radius-sm) 0 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-body-size);
   line-height: var(--itsm-text-callout-line);
   font-weight: var(--itsm-font-weight-medium);
-  letter-spacing: var(--itsm-text-callout-tracking);
+  letter-spacing: var(--itsm-text-body-tracking);
   text-decoration: none;
   white-space: nowrap;
   transition: color var(--itsm-duration-fast) var(--itsm-easing-standard);
@@ -105,13 +111,16 @@ export const tabNavStyles = layer(
   visibility: hidden;
   font-weight: var(--itsm-font-weight-semibold);
 }
+.itsm-TabNav__count {
+  flex: none;
+}
 .itsm-TabNav__link[aria-current="page"]::after {
   content: '';
   position: absolute;
   inset-inline: 0;
   inset-block-end: 0;
   block-size: var(--itsm-border-thick);
-  border-radius: var(--itsm-radius-pill);
+  border-radius: var(--itsm-border-thick) var(--itsm-border-thick) 0 0;
   background: var(--itsm-colour-accent);
 }
 .itsm-TabNav__track[data-placed] .itsm-TabNav__link[aria-current="page"]::after {
@@ -123,7 +132,7 @@ export const tabNavStyles = layer(
   left: 0;
   inline-size: 1px;
   block-size: var(--itsm-border-thick);
-  border-radius: var(--itsm-radius-pill);
+  border-radius: 0;
   background: var(--itsm-colour-accent);
   opacity: 0;
   pointer-events: none;
@@ -136,6 +145,8 @@ export const tabNavStyles = layer(
 .itsm-TabNav__track[data-animate] .itsm-TabNav__indicator {
   transition: transform var(--itsm-duration-normal) var(--itsm-easing-spring);
 }
+
+${scrollFades('.itsm-TabNav__track')}
 
 ${mq.reducedMotion} {
   .itsm-TabNav__track[data-animate] .itsm-TabNav__indicator {

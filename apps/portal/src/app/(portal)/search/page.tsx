@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import type { CatalogueItem, Page, SearchResults, Ticket } from '@itsm/sdk';
-import { Button, EmptyState, Icon, VisuallyHidden } from '@itsm/ui';
+import { Button, Count, EmptyState, Icon, VisuallyHidden } from '@itsm/ui';
 import { AppLink } from '../../AppLink.js';
 import { serviceIcon } from '../../../catalogue/icons.js';
 import { articleHref, knowledgeSearchHref, serviceMatches } from '../../../client/palette.js';
@@ -30,6 +30,11 @@ export async function generateMetadata({ searchParams }: { searchParams: Params 
  * Enter on (SPEC §6.3, §5.4): help articles, services, and their own
  * requests, each with "See all" on the page made for that kind, and always
  * "Report 'vpn' as an issue" at the end — a search is never a dead end.
+ *
+ * Each group's heading carries its count (v3 §7.2, A6 §6.8: "Answers 4 ·
+ * Services 2 · Your requests 1"), read as part of the heading ("Answers, 4").
+ * A group cut at the page's limit with more behind it says so ("6+"), and a
+ * group that failed to load has no count at all — never a 0 it did not read.
  *
  * The three reads start together and each fails on its own. Snippets are
  * highlighted without ever becoming HTML (`highlight()`): the search's
@@ -124,11 +129,18 @@ export default async function SearchPage({ searchParams }: { searchParams: Param
 
 /* ---------------------------------------------------------------- Sections */
 
-function SectionHead({ id, title, seeAll }: { readonly id: string; readonly title: string; readonly seeAll?: string }): ReactNode {
+/** How many a group holds: `null` when it failed, `capped` when the page stopped short of the rest. */
+interface GroupCount {
+  readonly value: number | null;
+  readonly capped?: boolean;
+}
+
+function SectionHead({ id, title, count, seeAll }: { readonly id: string; readonly title: string; readonly count: GroupCount; readonly seeAll?: string }): ReactNode {
   return (
     <div className="app-Results__head">
       <h2 id={id} className="app-Results__sectionTitle">
         {title}
+        <Count value={count.value} capped={count.capped ?? false} size="md" className="app-Results__count" />
       </h2>
       {seeAll ? (
         <Button variant="ghost" size="sm" href={seeAll} iconEnd="chevron-right">
@@ -143,7 +155,12 @@ function Answers({ read, query }: { readonly read: Settled<SearchResults>; reado
   const hits = read.ok ? read.value.data : [];
   return (
     <section className="app-Results__section" aria-labelledby="results-answers">
-      <SectionHead id="results-answers" title="Answers" {...(hits.length > 0 ? { seeAll: knowledgeSearchHref(query) } : {})} />
+      <SectionHead
+        id="results-answers"
+        title="Answers"
+        count={{ value: read.ok ? hits.length : null, capped: hits.length >= SECTION_LIMIT }}
+        {...(hits.length > 0 ? { seeAll: knowledgeSearchHref(query) } : {})}
+      />
       {!read.ok ? (
         <SectionProblem what="answers" />
       ) : hits.length === 0 ? (
@@ -176,7 +193,12 @@ function Services({ read, items, query }: { readonly read: Settled<{ data: Catal
   const shown = items.slice(0, SECTION_LIMIT);
   return (
     <section className="app-Results__section" aria-labelledby="results-services">
-      <SectionHead id="results-services" title="Services" {...(items.length > 0 ? { seeAll: `/catalogue?q=${encodeURIComponent(query)}` } : {})} />
+      <SectionHead
+        id="results-services"
+        title="Services"
+        count={{ value: read.ok ? items.length : null }}
+        {...(items.length > 0 ? { seeAll: `/catalogue?q=${encodeURIComponent(query)}` } : {})}
+      />
       {!read.ok ? (
         <SectionProblem what="services" />
       ) : shown.length === 0 ? (
@@ -204,7 +226,12 @@ function Requests({ read, query }: { readonly read: Settled<Page<Ticket>>; reado
   const tickets = read.ok ? read.value.data : [];
   return (
     <section className="app-Results__section" aria-labelledby="results-requests">
-      <SectionHead id="results-requests" title="Your requests" {...(tickets.length > 0 ? { seeAll: `/tickets?show=all&q=${encodeURIComponent(query)}` } : {})} />
+      <SectionHead
+        id="results-requests"
+        title="Your requests"
+        count={{ value: read.ok ? tickets.length : null, capped: read.ok && read.value.nextCursor !== null }}
+        {...(tickets.length > 0 ? { seeAll: `/tickets?show=all&q=${encodeURIComponent(query)}` } : {})}
+      />
       {!read.ok ? (
         <SectionProblem what="your requests" />
       ) : tickets.length === 0 ? (

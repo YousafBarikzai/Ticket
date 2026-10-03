@@ -1,6 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import type { AreaModel } from '@itsm/contracts/areas';
 import {
   Badge,
   Button,
@@ -67,7 +68,8 @@ export interface WorkflowDetailProps {
   readonly canReadTickets: boolean;
   /** Ticket numbers by id, for the runs' ticket column (see `RunsTable`). */
   readonly ticketNumbers?: Readonly<Record<string, string>>;
-  readonly workbenchOrigin?: string;
+  /** The person's areas (`currentAreas()`): ticket links open in the Service Desk when it is listed (A2 §3.7). */
+  readonly areas?: AreaModel;
   readonly breadcrumbs: readonly Crumb[];
   readonly viewOnly?: { readonly label: string; readonly permission: string; readonly key: string };
   readonly initialTab?: 'diagram' | 'history' | 'runs';
@@ -87,7 +89,7 @@ function usePhone(): boolean {
 }
 
 export function WorkflowDetail(props: WorkflowDetailProps): ReactNode {
-  const { workflow, graph, versions, check, runs, graphs, workflows, ruleNames, canPublish, canOperate, canReadTickets, workbenchOrigin, breadcrumbs, viewOnly } = props;
+  const { workflow, graph, versions, check, runs, graphs, workflows, ruleNames, canPublish, canOperate, canReadTickets, areas, breadcrumbs, viewOnly } = props;
   const online = useOnline();
   const phone = usePhone();
   const [tab, setTab] = useState<'diagram' | 'history' | 'runs'>(props.initialTab ?? 'diagram');
@@ -263,7 +265,7 @@ export function WorkflowDetail(props: WorkflowDetailProps): ReactNode {
       canOperate={canOperate}
       canReadTickets={canReadTickets}
       {...(props.ticketNumbers ? { ticketNumbers: props.ticketNumbers } : {})}
-      {...(workbenchOrigin ? { workbenchOrigin } : {})}
+      {...(areas ? { areas } : {})}
       showWorkflow={false}
       empty={{ title: 'No runs yet', description: 'Runs of this workflow appear here once it starts.' }}
     />

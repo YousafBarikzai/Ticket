@@ -87,8 +87,18 @@ export interface AiSuggestionCardProps {
   readonly acceptVariant?: 'primary' | 'tinted' | 'secondary';
   /** Which outcomes to offer, always in the order accept, edit, reject. Default all three. */
   readonly actions?: readonly SuggestionAction[];
+  /**
+   * A suggestion the shared demo wrote in advance rather than one a provider
+   * produced (A6 §5.6.5, D13): a neutral "Sample" pill beside the title, its
+   * reason said in words for the eye and the ear, so a visitor never takes a
+   * stored answer for a live model's.
+   */
+  readonly sample?: boolean;
   readonly className?: string;
 }
+
+/** What the "Sample" pill means, said beside it. */
+export const SAMPLE_SUGGESTION_NOTE = 'A sample written into the demo; no AI provider was called';
 
 const CONFIDENCE_TONE: Record<ConfidenceBand, Tone> = {
   low: 'warning',
@@ -141,6 +151,7 @@ export function AiSuggestionCard({
   acceptLabel = 'Use it',
   acceptVariant = 'primary',
   actions = ALL_ACTIONS,
+  sample = false,
   className,
 }: AiSuggestionCardProps): ReactNode {
   const Link = useOptionalItsm()?.Link;
@@ -161,15 +172,21 @@ export function AiSuggestionCard({
       aria-busy={busy || undefined}
       data-capability={capability}
       data-outcome={outcome}
+      data-sample={sample ? '' : undefined}
     >
       <header className="itsm-AiSuggestion__head">
         <span className="itsm-AiSuggestion__mark" aria-hidden="true">
           <Icon name="sparkles" size="sm" />
         </span>
         <h3 className="itsm-AiSuggestion__title">{title}</h3>
+        {sample ? (
+          <StatusPill className="itsm-AiSuggestion__sample" label="Sample" tone="neutral" icon="sparkles" size="sm" />
+        ) : null}
         {/* Said in words as well as colour: the band is the whole calibration. */}
         <StatusPill className="itsm-AiSuggestion__confidence" label={CONFIDENCE_LABEL[confidence]} tone={CONFIDENCE_TONE[confidence]} icon="auto" size="sm" />
       </header>
+
+      {sample ? <p className="itsm-AiSuggestion__sampleNote">{SAMPLE_SUGGESTION_NOTE}.</p> : null}
 
       <div className="itsm-AiSuggestion__body">{children}</div>
 

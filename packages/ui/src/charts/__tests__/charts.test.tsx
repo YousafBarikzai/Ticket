@@ -1,21 +1,30 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
+import { transformSync } from 'esbuild';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { contrastRatio } from '../../tokens/contrast.js';
 import { themeVariables } from '../../tokens/css.js';
 import { themeNames } from '../../tokens/tokens.js';
-import { statGridStyles } from '../StatGrid.styles.js';
 import { AreaChart } from '../AreaChart.js';
-import { BarChart, type BarDatum } from '../BarChart.js';
-import { ChartFigure } from '../ChartFigure.js';
+import { BarChart } from '../BarChart.js';
+import { BulletList } from '../Bullet.js';
+import { ChartCard } from '../ChartCard.js';
+import { CHART_TABLE_DEFAULTS, ChartFigure } from '../ChartFigure.js';
+import { chartFigureStyles } from '../ChartFigure.styles.js';
+import { DistributionBar } from '../DistributionBar.js';
 import { DonutChart } from '../DonutChart.js';
+import { Gauge } from '../Gauge.js';
 import { LineChart, type ChartSeries } from '../LineChart.js';
+import { CHART_EMPTY_TEXT, ChartEmpty, ChartLegend } from '../parts.js';
 import { ProgressRing } from '../ProgressRing.js';
+import { READER_CORE_MARK } from '../reader-core.js';
 import { Sparkline } from '../Sparkline.js';
-import { StatGrid } from '../StatGrid.js';
+import { TEXTURE_TONES, TexturePatterns, textureId } from '../texture.js';
+import { textureRules, textureVariables, toneTextureImages, toneTextureRules } from '../texture-css.js';
 
 /**
  * The charts as a server renders them: static markup, no provider, no
@@ -36,13 +45,34 @@ const resolved: ChartSeries = { id: 'resolved', label: 'Resolved', points: days.
 
 describe('static SVG from a server component', () => {
   it('keeps every static chart module free of the client directive, so the server-safety guard reads it', () => {
-    for (const file of ['ChartFigure', 'LineChart', 'AreaChart', 'xy', 'BarChart', 'DonutChart', 'ProgressRing', 'Sparkline', 'StatGrid', 'parts', 'texture']) {
-      const source = readFileSync(join(here, '..', `${file}.tsx`), 'utf8');
+    const files = [
+      'ChartFigure.tsx', 'LineChart.tsx', 'AreaChart.tsx', 'xy.tsx', 'BarChart.tsx', 'DonutChart.tsx', 'ProgressRing.tsx',
+      'Sparkline.tsx', 'StatGrid.tsx', 'parts.tsx', 'texture.tsx', 'texture-css.ts', 'markers.tsx', 'common.ts', 'time.ts', 'scale.ts',
+      'ChartCard.tsx', 'Gauge.tsx', 'Bullet.tsx', 'DistributionBar.tsx',
+    ];
+    for (const file of files) {
+      const source = readFileSync(join(here, '..', file), 'utf8');
       expect(source.trimStart().startsWith("'use client'"), file).toBe(false);
     }
-    // The two client leaves are client modules, and only they are.
-    for (const file of ['ChartReader', 'ChartLink', 'StatCard']) {
+    // The client leaves are client modules: the reader island, its lazy core
+    // and the link leaf. (`StatCard` is server-safe in v3, RV2; its own test,
+    // `stat-card.test.tsx`, holds it to that.)
+    for (const file of ['ChartReader', 'reader-core', 'ChartLink']) {
       expect(readFileSync(join(here, '..', `${file}.tsx`), 'utf8').trimStart().startsWith("'use client'"), file).toBe(true);
+    }
+  });
+
+  it('never reads a clock or a random number: "today" is the asAt a page passes in (ADR-0064)', () => {
+    // Comments may talk about clocks; code may not call one. `new Date(x)`
+    // with an argument converts a value and is fine.
+    const banned = /\bDate\.now\s*\(|\bnew\s+Date\s*\(\s*\)|\bperformance\.now\s*\(|\bMath\.random\s*\(/;
+    const sources = readdirSync(join(here, '..')).filter((file) => /\.tsx?$/.test(file));
+    expect(sources).toContain('time.ts');
+    for (const file of sources) {
+      const code = readFileSync(join(here, '..', file), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+      expect(code.match(banned)?.[0], file).toBeUndefined();
     }
   });
 
@@ -55,11 +85,71 @@ describe('static SVG from a server component', () => {
     expect(html(<BarChart title="By team" data={[{ id: 'a', label: 'Desk', value: 3 }]} />)).toContain('itsm-BarChart__bar');
   });
 
+  it('renders the v3 pieces without a provider or a browser', () => {
+    expect(html(<Gauge label="SLA met" value={0.9} target={0.9} />)).toContain('itsm-Gauge__svg');
+    expect(html(<DistributionBar label="Open" segments={[{ id: 'a', label: 'P1', value: 2, tone: 'danger' }]} />)).toContain('itsm-DistributionBar__segment');
+    expect(html(<BulletList title="By team" rows={[{ id: 'a', label: 'Desk', value: 0.8, target: 0.9 }]} />)).toContain('itsm-Bullet__track');
+    expect(html(<ChartCard title="Volume" headline="Rose"><LineChart title="Volume" series={[raised]} xType="time" /></ChartCard>)).toContain('itsm-ChartCard__headline');
+  });
+
   it('keeps the plot out of the accessibility tree: the caption and the table carry it', () => {
     const markup = html(<LineChart title="Volume" series={[raised, resolved]} xType="time" />);
     expect(markup).toMatch(/<svg[^>]*aria-hidden="true"/);
     expect(markup).toMatch(/class="itsm-XYChart__y" aria-hidden="true"/);
     expect(markup).toMatch(/class="itsm-XYChart__x" aria-hidden="true"/);
+  });
+});
+
+describe('the reader island and its lazy core (A8 §5.2, §8.2)', () => {
+  /** A module's own cost: minified and gzipped at level 9, as `check-bundles` measures a chunk. */
+  const gz = (file: string): number =>
+    gzipSync(transformSync(readFileSync(join(here, '..', file), 'utf8'), { loader: 'tsx', jsx: 'automatic', minify: true, format: 'esm', target: 'es2022' }).code, { level: 9 }).length;
+
+  it('keeps the island within 800 B and the core within 3,000 B', () => {
+    expect(gz('ChartReader.tsx')).toBeLessThanOrEqual(800);
+    expect(gz('reader-core.tsx')).toBeLessThanOrEqual(3000);
+  });
+
+  it('reaches the core only through import(), so it is its own chunk, found by its marker', () => {
+    const island = readFileSync(join(here, '..', 'ChartReader.tsx'), 'utf8');
+    expect(island).toContain("import('./reader-core.js')");
+    // The marker in the island would put it in every first load, where the bundle check fails it.
+    expect(island).not.toContain(READER_CORE_MARK);
+    expect(READER_CORE_MARK).toBe('itsm-reader-core');
+    expect(readFileSync(join(here, '..', 'reader-core.tsx'), 'utf8')).toContain(`'${READER_CORE_MARK}'`);
+    const statically = /^\s*(?:import|export)\b[^;]*?\bfrom\s+['"]\.\/reader-core(?:\.js)?['"]/m;
+    for (const file of readdirSync(join(here, '..')).filter((name) => /\.tsx?$/.test(name))) {
+      expect(readFileSync(join(here, '..', file), 'utf8').match(statically)?.[0], file).toBeUndefined();
+    }
+  });
+});
+
+describe('textures by tone (A8 §6.3)', () => {
+  it('gives every tone but success a hatch, in SVG and in CSS alike', () => {
+    expect(TEXTURE_TONES).toEqual(['danger', 'high', 'warning', 'info', 'hold', 'neutral', 'neutralSoft']);
+    const markup = html(
+      <svg>
+        <TexturePatterns id="c" slots={[2]} tones={['danger', 'success', 'info']} />
+      </svg>,
+    );
+    expect(count(markup, /<pattern /g)).toBe(3);
+    expect(markup).toContain(`id="${textureId('c', 'danger')}"`);
+    expect(markup).toContain(`id="${textureId('c', 2)}"`);
+    expect(markup).not.toContain(textureId('c', 'success'));
+    expect(Object.keys(toneTextureImages('ink'))).toEqual(TEXTURE_TONES.map(String));
+  });
+
+  it('matches each tone’s CSS texture to a slot’s, so keys and marks agree', () => {
+    expect(toneTextureImages('ink').danger).toBe(textureRules('', '.x', 'ink').match(/\[data-slot="4"\] \{ background: (.*), var\(--_itsm-series\); \}/)![1]);
+    expect(toneTextureRules('.s', '.m', 'ink')).toContain('.s .m[data-tone="hold"] { background: ');
+    expect(toneTextureRules('.s', '.m', 'ink')).not.toContain('success');
+  });
+
+  it('writes each key’s texture once as a variable in the ink its theme sets', () => {
+    const rules = textureVariables('.m');
+    expect(rules.split('\n')).toHaveLength(14);
+    expect(rules).toContain('.m[data-tone="info"] { --_itsm-texture: radial-gradient(circle, var(--_itsm-ink) 1px, transparent 1.5px) 0 0 / 5px 5px; }');
+    expect(textureVariables('.m', { slots: false }).split('\n')).toHaveLength(7);
   });
 });
 
@@ -97,6 +187,113 @@ describe('ChartFigure', () => {
     expect(markup).toContain('<span class="itsm-ChartFigure__title itsm-visually-hidden">Volume</span>');
     expect(markup).toContain('<span class="itsm-visually-hidden">. </span>Rose.');
   });
+
+  it('takes the card’s headline as its summary, for assistive technology only, since the card shows it (A8-S6)', () => {
+    const markup = html(
+      <ChartFigure title="Raised vs resolved" titleHidden summary="Raised rose from 12 to 18." headline="Resolved kept pace with raised" table={table}>
+        p
+      </ChartFigure>,
+    );
+    expect(markup).toContain('<figcaption class="itsm-ChartFigure__caption itsm-visually-hidden">');
+    expect(markup).toContain('<span class="itsm-ChartFigure__summary itsm-visually-hidden"><span class="itsm-visually-hidden">. </span>Resolved kept pace with raised</span>');
+    expect(markup).not.toContain('Raised rose');
+  });
+
+  it('falls back to the generated summary when the headline is blank', () => {
+    const markup = html(<ChartFigure title="Volume" summary="Rose." headline="  " table={table}>p</ChartFigure>);
+    expect(markup).toContain('<span class="itsm-ChartFigure__summary">Rose.</span>');
+  });
+
+  it('shows "no data" in a table as a dash, never as zero', () => {
+    const markup = html(<ChartFigure title="t" summary="s" table={{ columns: ['Day', 'Raised'], rows: [['Mon', null]] }} tableMode="visible">p</ChartFigure>);
+    expect(markup).toContain('<td data-numeric="true">—</td>');
+  });
+
+  it('reads a matrix by row and by column: row headers, column headers and column groups', () => {
+    const matrix = {
+      columns: ['Day', '09:00', '10:00', '09:00', '10:00'],
+      columnGroups: [
+        { label: '', span: 1 },
+        { label: 'This week', span: 2 },
+        { label: 'Last week', span: 2 },
+      ],
+      rows: [['Tue', 42, 30, 38, 29]],
+    };
+    const markup = html(<ChartFigure title="Arrivals" summary="s" table={matrix} tableMode="visible">p</ChartFigure>);
+    expect(markup).toContain('<tr class="itsm-ChartFigure__groups"><td colSpan="1"></td><th scope="colgroup" colSpan="2">This week</th><th scope="colgroup" colSpan="2">Last week</th></tr>');
+    expect(count(markup, /<th scope="col"/g)).toBe(5);
+    expect(markup).toContain('<th scope="row">Tue</th>');
+  });
+
+  it('can leave out row headers, for a list with no name column', () => {
+    const markup = html(<ChartFigure title="t" summary="s" table={{ columns: ['Value'], rows: [[3], [4]], rowHeaders: false }} tableMode="visible">p</ChartFigure>);
+    expect(markup).not.toContain('scope="row"');
+    expect(count(markup, /<td data-numeric="true">/g)).toBe(2);
+  });
+
+  it('offers the table behind a toggle where marks are positions, and leaves it out where the text already says every value', () => {
+    expect(CHART_TABLE_DEFAULTS.xy).toBe('toggle');
+    expect(CHART_TABLE_DEFAULTS.columns).toBe('toggle');
+    expect(CHART_TABLE_DEFAULTS.heatmap).toBe('toggle');
+    for (const kind of ['rows', 'list', 'gauge', 'distribution', 'bullet'] as const) expect(CHART_TABLE_DEFAULTS[kind], kind).toBe('hidden');
+  });
+});
+
+describe('legend and empty plots', () => {
+  it('keys each series with a 10 × 10 chip by default, radius 2.5 (A8-S2)', () => {
+    const markup = html(<ChartLegend items={[{ id: 'a', label: 'Raised', slot: 2 }]} />);
+    expect(markup).toContain('<span class="itsm-ChartLegend__key" data-mark="chip" data-slot="2" aria-hidden="true"></span>');
+    expect(chartFigureStyles).toMatch(/\.itsm-ChartLegend__key\[data-mark="chip"\] \{\s*inline-size: 0\.625rem;\s*block-size: 0\.625rem;\s*border-radius: 0\.15625rem;/);
+  });
+
+  it('keys a state by its tone, which wins over a slot, and a comparison or forecast by its style', () => {
+    const markup = html(
+      <ChartLegend
+        items={[
+          { id: 'p1', label: 'P1', tone: 'danger', slot: 3 },
+          { id: 'plan', label: 'Plan', style: 'comparison' },
+          { id: 'next', label: 'Forecast', slot: 1, style: 'forecast' },
+          { id: 'now', label: 'Actual', slot: 1, style: 'actual', value: '84%' },
+        ]}
+      />,
+    );
+    expect(markup).toContain('data-mark="chip" data-tone="danger" aria-hidden="true"');
+    expect(markup).toContain('data-mark="chip" data-slot="1" data-style="comparison"');
+    expect(markup).toContain('data-mark="chip" data-slot="1" data-style="forecast"');
+    expect(markup).toMatch(/data-mark="chip" data-slot="1" aria-hidden="true"><\/span><span class="itsm-ChartLegend__label">Actual<\/span><span class="itsm-ChartLegend__value">84%<\/span>/);
+  });
+
+  it('keeps the line and box keys for the charts that still ask for them', () => {
+    expect(html(<ChartLegend mark="line" items={[{ id: 'a', label: 'A', slot: 1 }]} />)).toContain('data-mark="line"');
+  });
+
+  it('colours tones after slots and the comparison grey after both, so state and style win', () => {
+    const slot = chartFigureStyles.indexOf('[data-slot="1"]');
+    const tone = chartFigureStyles.indexOf('[data-tone="danger"] { --_itsm-series: var(--itsm-colour-danger-border); }');
+    const style = chartFigureStyles.indexOf('[data-style="baseline"] { --_itsm-series: var(--itsm-colour-chart-comparison); }');
+    expect(slot).toBeGreaterThan(-1);
+    expect(tone).toBeGreaterThan(slot);
+    expect(style).toBeGreaterThan(tone);
+    // The soft P4 fill is under 3:1 alone, so it carries its outline.
+    expect(chartFigureStyles).toContain('--_itsm-series: var(--itsm-colour-chart-neutralSoft); --_itsm-series-edge: var(--itsm-colour-neutral-border);');
+  });
+
+  it('says why a plot is empty, in words, at the plot’s height', () => {
+    const empty = html(<ChartEmpty height={240} />);
+    expect(empty).toMatch(/^<div class="itsm-Chart__empty" data-reason="empty" style="min-block-size:240px"><span class="itsm-Chart__emptyDisc"><svg[^>]*data-icon="insights"/);
+    expect(empty).toContain('<p class="itsm-Chart__emptyText">No data for this period</p>');
+    const short = html(<ChartEmpty height={240} reason="insufficient" detail="Charts start once there are 3 days of data" />);
+    expect(short).toContain('data-icon="hourglass"');
+    expect(short).toContain('>Not enough history yet</p><p class="itsm-Chart__emptyDetail">Charts start once there are 3 days of data</p>');
+    expect(html(<ChartEmpty height={240} reason="error" />)).toContain(`>${CHART_EMPTY_TEXT.error.replace("'", '&#x27;')}</p>`);
+    expect(html(<ChartEmpty height={120} text="Nothing raised yet" />)).toContain('>Nothing raised yet</p>');
+  });
+
+  it('tints the empty disc by reason: brand for no data, neutral for too little, danger for a failed read', () => {
+    expect(chartFigureStyles).toMatch(/\.itsm-Chart__emptyDisc \{[^}]*inline-size: 3rem;[^}]*background: var\(--itsm-colour-brand-subtle\);/);
+    expect(chartFigureStyles).toMatch(/\[data-reason="insufficient"\] \.itsm-Chart__emptyDisc \{\s*background: var\(--itsm-colour-neutral-subtle\);/);
+    expect(chartFigureStyles).toMatch(/\[data-reason="error"\] \.itsm-Chart__emptyDisc \{\s*background: var\(--itsm-colour-danger-subtle\);/);
+  });
 });
 
 describe('line and area charts', () => {
@@ -115,11 +312,13 @@ describe('line and area charts', () => {
     expect(markup).toMatch(/itsm-XYChart__endName">Resolved</);
   });
 
-  it('gives way to the legend alone when end labels would collide, rather than nudging them off their lines', () => {
+  it('nudges end labels that would collide to 14 px apart rather than dropping them (A8-S5)', () => {
     const close: ChartSeries = { id: 'close', label: 'Close', points: days.map((x, index) => ({ x, y: [10, 14, 11, 18.5][index]! })) };
     const markup = html(<LineChart title="Volume" series={[raised, close]} xType="time" />);
     expect(markup).toContain('itsm-ChartLegend');
-    expect(markup).not.toContain('itsm-XYChart__ends');
+    const tops = [...markup.matchAll(/class="itsm-XYChart__endLabel" style="top:([\d.]+)px"/g)].map((match) => Number(match[1]));
+    expect(tops).toHaveLength(2);
+    expect(Math.abs(tops[0]! - tops[1]!)).toBeGreaterThanOrEqual(14);
   });
 
   it('labels no ends past four series', () => {
@@ -200,135 +399,8 @@ describe('line and area charts', () => {
   });
 });
 
-describe('bar charts', () => {
-  const channels: BarDatum[] = [
-    { id: 'email', label: 'Email', value: 412, icon: 'mail', href: '/tickets?channel=email' },
-    { id: 'slack', label: 'Slack', value: 142 },
-    { id: 'portal', label: 'Portal', value: 318, secondary: 'self-service' },
-  ];
-
-  it('lists label · bar · value rows, largest first, as a ranked list', () => {
-    const markup = html(<BarChart title="By channel" variant="list" data={channels} />);
-    expect(markup).toMatch(/<ol class="itsm-BarChart__rows">/);
-    const labels = [...markup.matchAll(/itsm-BarChart__name[^"]*">([^<]+)</g)].map((match) => match[1]);
-    expect(labels).toEqual(['Email', 'Portal', 'Slack']);
-    // Each row reads as "Email 412": the label, then the value; the bar is decoration.
-    expect(markup).toMatch(/<span class="itsm-BarChart__value">412<\/span><span class="itsm-BarChart__track" aria-hidden="true">/);
-    expect(markup).toContain('data-layout="list"');
-  });
-
-  it('keeps the given order when asked, as an unordered list', () => {
-    const markup = html(<BarChart title="By channel" variant="list" sort="none" data={channels} />);
-    expect(markup).toMatch(/<ul class="itsm-BarChart__rows">/);
-    expect([...markup.matchAll(/itsm-BarChart__name[^"]*">([^<]+)</g)].map((match) => match[1])).toEqual(['Email', 'Slack', 'Portal']);
-  });
-
-  it('links a row and carries its icon and qualifier', () => {
-    const markup = html(<BarChart title="By channel" variant="list" data={channels} />);
-    expect(markup).toContain('<a href="/tickets?channel=email" class="itsm-BarChart__name itsm-BarChart__link">Email</a>');
-    expect(markup).toMatch(/<svg[^>]*itsm-BarChart__icon/);
-    expect(markup).toContain('<span class="itsm-BarChart__secondary">self-service</span>');
-  });
-
-  it('sizes each bar against the largest, and draws nothing for a zero', () => {
-    const markup = html(<BarChart title="By channel" variant="list" data={[...channels, { id: 'fax', label: 'Fax', value: 0 }]} />);
-    expect(markup).toContain('--_itsm-bar:1');
-    expect(markup).toMatch(/--_itsm-bar:0\.3446/);
-    const fax = markup.slice(markup.indexOf('>Fax<'));
-    expect(fax.slice(0, fax.indexOf('</li>'))).not.toContain('itsm-BarChart__segment');
-  });
-
-  it('paints one series in one colour, and "Other" in the de-emphasis grey', () => {
-    const markup = html(<BarChart title="By channel" variant="list" maxBars={2} data={channels} />);
-    expect(count(markup, /data-slot="1"/g)).toBe(1);
-    expect(markup).toContain('data-slot="other"');
-    expect(markup).toMatch(/itsm-BarChart__name">Other<\/span>.*?itsm-BarChart__value">460</);
-  });
-
-  it('stacks parts with their series colours, says the breakdown in words, and adds a legend', () => {
-    const markup = html(
-      <BarChart
-        title="By team"
-        variant="list"
-        seriesDefs={[
-          { id: 'p1', label: 'P1', slot: 6 },
-          { id: 'p2', label: 'P2', slot: 2 },
-        ]}
-        data={[{ id: 'desk', label: 'Desk', value: 0, series: { p1: 3, p2: 9 } }]}
-      />,
-    );
-    expect(markup).toMatch(/itsm-BarChart__value">12<span class="itsm-visually-hidden"> \(P1 3, P2 9\)<\/span>/);
-    expect(markup).toContain('data-slot="6" style="flex-grow:3"');
-    expect(markup).toContain('data-slot="2" style="flex-grow:9"');
-    expect(count(markup, /itsm-ChartLegend__item/g)).toBe(2);
-  });
-
-  it('puts the value at the tip of a horizontal bar, measured in the widest value', () => {
-    const markup = html(<BarChart title="By team" data={channels} />);
-    expect(markup).toContain('data-layout="rows"');
-    expect(markup).toContain('--_itsm-value-ch:3');
-  });
-
-  it('draws vertical bars on a value axis, keeps their order, and puts the data behind "View as table"', () => {
-    const markup = html(
-      <BarChart title="Per day" orientation="vertical" data={['Mon', 'Tue', 'Wed'].map((label, index) => ({ id: label, label, value: [5, 12, 7][index]! }))} />,
-    );
-    expect(markup).toContain('data-layout="columns"');
-    expect([...markup.matchAll(/itsm-BarChart__xTick"[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(['Mon', 'Tue', 'Wed']);
-    expect([...markup.matchAll(/itsm-BarChart__yTick"[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(['0', '5', '10', '15']);
-    expect(markup).toContain('View as table');
-    expect(markup).toMatch(/itsm-ChartFigure__summary itsm-visually-hidden">(<span[^>]*>\. <\/span>)?Highest: Tue \(12\); lowest: Mon \(5\)\./);
-  });
-
-  it('leaves the table out of rows, which already say every value, unless asked', () => {
-    expect(html(<BarChart title="By channel" variant="list" data={channels} />)).not.toContain('<table');
-    expect(html(<BarChart title="By channel" variant="list" data={channels} table="toggle" />)).toContain('<table');
-  });
-
-  it('formats values, empty and loading states', () => {
-    expect(html(<BarChart title="Accuracy" variant="list" valueFormat={{ style: 'percent' }} data={[{ id: 'p', label: 'Priority', value: 0.92 }]} />)).toContain('>92%<');
-    expect(html(<BarChart title="By team" data={[]} />)).toContain('No data for this period');
-    expect(html(<BarChart title="By team" data={channels} loading />)).toContain('aria-busy="true"');
-  });
-
-  it('reads rows with the arrow keys down the list when interactive', () => {
-    const markup = html(<BarChart title="By team" data={channels} interactive />);
-    expect(markup).toContain('Use ↑ ↓ to read values');
-    expect(count(markup, /data-point="\d"/g)).toBe(3);
-  });
-});
-
-describe('donut chart', () => {
-  const segments = ['Email', 'Portal', 'Slack', 'Teams', 'Phone', 'API', 'Fax'].map((label, index) => ({ id: label.toLowerCase(), label, value: 70 - index * 10 }));
-
-  it('is for six parts at most: the smallest fold into "Other"', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments} />);
-    expect(count(markup, /class="itsm-DonutChart__segment"/g)).toBe(6);
-    expect(markup).toMatch(/itsm-ChartLegend__label">Other<\/span><span class="itsm-ChartLegend__value">30<\/span><span class="itsm-ChartLegend__detail">11%</);
-  });
-
-  it('gives every part its value and share in the legend, so nobody reads an angle', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments.slice(0, 2)} />);
-    expect(markup).toMatch(/Email<\/span><span class="itsm-ChartLegend__value">70<\/span><span class="itsm-ChartLegend__detail">54%/);
-    expect(markup).toMatch(/itsm-visually-hidden">(<span[^>]*>\. <\/span>)?Email 54% and Portal 46%, of 130 in all\./);
-  });
-
-  it('draws each textured part twice, with the hatch shown by CSS only when wanted', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments.slice(0, 3)} />);
-    expect(count(markup, /<pattern /g)).toBe(2);
-    expect(count(markup, /itsm-DonutChart__texture" fill="url\(#itsm-donut-[a-z0-9]+-t[23]\)"/g)).toBe(2);
-  });
-
-  it('says the centre figure once, in words', () => {
-    const markup = html(<DonutChart title="Channels" segments={segments.slice(0, 2)} centerValue="130" centerLabel="tickets" />);
-    expect(markup).toContain('<span class="itsm-DonutChart__centre" aria-hidden="true">');
-    expect(markup).toContain('<span class="itsm-visually-hidden">130 tickets</span>');
-  });
-
-  it('is empty when nothing adds up to anything', () => {
-    expect(html(<DonutChart title="Channels" segments={[{ id: 'a', label: 'A', value: 0 }]} />)).toContain('No data for this period');
-  });
-});
+// The bar and donut cases moved to `bar.test.tsx` and `donut.test.tsx` with
+// the v3 charts (WP-44), each with its own axe cases in light and dark.
 
 describe('progress ring and sparkline', () => {
   it('names the ring with its value, and keeps the centre text visual', () => {
@@ -341,6 +413,10 @@ describe('progress ring and sparkline', () => {
     expect(html(<ProgressRing value={0.5} label="x" tone="auto" />)).toContain('data-tone="accent"');
     expect(html(<ProgressRing value={0.8} label="x" tone="auto" />)).toContain('data-tone="warning"');
     expect(html(<ProgressRing value={0.95} label="x" tone="auto" />)).toContain('data-tone="danger"');
+  });
+
+  it('ticks and names a target, and comes in a 140 size', () => {
+    expect(html(<ProgressRing value={0.15} target={0.17} size={140} label="Updates on time" />)).toMatch(/aria-label="Updates on time: 15%, target 17%"[\s\S]*itsm-ProgressRing__target/);
   });
 
   it('clamps and draws no arc for nothing', () => {
@@ -357,26 +433,17 @@ describe('progress ring and sparkline', () => {
   });
 
   it('leaves a gap for a missing value and no wash across it', () => {
-    const markup = html(<Sparkline values={[1, Number.NaN, 3, 4]} label="x" />);
-    expect(markup).not.toContain('itsm-Sparkline__wash');
+    const markup = html(<Sparkline values={[1, null, 3, 4]} label="x" />);
+    // The point alone before the gap has no area; the run after it has its own.
+    const wash = markup.match(/class="itsm-Sparkline__wash" d="([^"]*)"/)?.[1] ?? '';
+    expect(count(wash, /M/g)).toBe(1);
+    expect(count(wash, /Z/g)).toBe(1);
   });
-});
 
-describe('stat grid', () => {
-  it('passes its minimum as a local property and its column rule as an attribute', () => {
-    expect(html(<StatGrid min={200}>x</StatGrid>)).toBe('<div class="itsm-StatGrid" style="--_itsm-stat-min:12.5rem"><div class="itsm-StatGrid__items">x</div></div>');
-    expect(html(<StatGrid columns={4}>x</StatGrid>)).toContain('data-columns="4"');
-  });
-});
-
-describe('StatGrid on a phone', () => {
-  it('is two by two, never one column and never a sideways carousel (X-94)', () => {
-    // The track minimum is the lesser of `min` and half the row, so a grid
-    // as narrow as a phone still makes two columns.
-    expect(statGridStyles).toContain('minmax(min(var(--_itsm-stat-min), calc(50% - var(--_itsm-stat-gap) / 2)), 1fr)');
-    expect(statGridStyles).toMatch(/\[data-columns="4"\] \.itsm-StatGrid__items \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
-    expect(statGridStyles).toMatch(/@container itsm-stats \(min-width: 48rem\)[\s\S]*repeat\(4, minmax\(0, 1fr\)\)/);
-    expect(statGridStyles).not.toMatch(/overflow-x|scroll-snap|nowrap/);
+  it('fills its parent in a KPI tile, 40 px tall by default (A8 §4.2)', () => {
+    const markup = html(<Sparkline values={[12, 14, 18]} label="Rising, 12 → 18" width="fill" tone="accent" />);
+    expect(markup).toMatch(/^<span role="img" aria-label="Rising, 12 → 18" class="itsm-Sparkline" data-tone="accent" data-width="fill" style="block-size:40px">/);
+    expect(markup).toContain('width="100%" height="40"');
   });
 });
 

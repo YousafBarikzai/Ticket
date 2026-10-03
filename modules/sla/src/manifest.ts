@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { registerModule, type ModuleManifest } from '@itsm/platform';
 
 /** MOD-07 SLA. PH-1 delivered the timer engine; PH-2 adds policies, calendars and escalations. */
@@ -15,11 +16,23 @@ export const slaManifest: ModuleManifest = registerModule({
     { key: 'sla.override', scopes: ['team', 'any'], description: 'Pause, resume or excuse a timer with a reason.' },
   ],
   events: {
-    publishes: ['sla.timer.started', 'sla.timer.warning', 'sla.timer.breached', 'sla.timer.paused', 'sla.timer.resumed', 'sla.timer.met'],
+    publishes: ['sla.timer.started', 'sla.timer.warning', 'sla.timer.breached', 'sla.timer.paused', 'sla.timer.resumed', 'sla.timer.met', 'sla.timer.restarted', 'sla.timer.cancelled'],
     consumes: ['ticket.created', 'ticket.status.changed', 'ticket.comment.added', 'ticket.updated', 'ticket.classified'],
   },
   featureFlags: [],
-  settings: [],
+  settings: [
+    {
+      // Read by the analytics module and returned with every `sla.attainment`
+      // answer (A8 S1), so a gauge or bullet never draws a target a page typed
+      // in, and nobody needs `admin.setting.read` to see what they are aiming
+      // at. Below 50 % is not a target anyone sets on purpose.
+      key: 'sla.attainment.target',
+      schema: z.number().min(50).max(100),
+      default: 90,
+      scopes: ['tenant'],
+      description: 'The share of SLA targets the desk aims to meet, in per cent. Drawn as the target on attainment gauges and bullets.',
+    },
+  ],
   jobs: [
     { name: 'sla.tick', queue: 'sla', schedule: '* * * * *', description: 'Fire due warnings and breaches for one partition.' },
   ],

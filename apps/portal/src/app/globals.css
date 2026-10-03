@@ -97,6 +97,10 @@
   box-shadow: inset var(--itsm-border-thick) 0 0 var(--itsm-colour-warning-border), var(--itsm-elevation-xs);
 }
 
+.app-RequestRow[data-yours='hold'] {
+  box-shadow: inset var(--itsm-border-thick) 0 0 var(--itsm-colour-hold-border), var(--itsm-elevation-xs);
+}
+
 .app-RequestRow[data-yours='success'] {
   box-shadow: inset var(--itsm-border-thick) 0 0 var(--itsm-colour-success-border), var(--itsm-elevation-xs);
 }

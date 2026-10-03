@@ -1,9 +1,10 @@
 import { moreContrast } from '../feedback/tone.js';
-import { css, layer, mq } from '../styles/css.js';
+import { css, layer, mq, prefers } from '../styles/css.js';
 
 /**
  * Forced colours take the hues away, so each line keeps its identity by its
- * dash instead (and the legend and end labels say which is which).
+ * dash instead (and the legend and end labels say which is which). A
+ * comparison or forecast keeps the dash its style has everywhere.
  */
 const dashes: Readonly<Record<number, string>> = { 2: '6 3', 3: '1.5 3', 4: '8 3 1.5 3', 5: '3 3', 6: '10 4', 7: '1.5 5', 8: '12 3 3 3' };
 const forcedDashes = Object.entries(dashes)
@@ -11,14 +12,21 @@ const forcedDashes = Object.entries(dashes)
   .join('\n');
 
 /**
- * The line and area charts' frame (`charts/xy.tsx`; area washes are in
- * `AreaChart.styles.ts`): a grid of the y-axis ticks, the plot, the direct
- * end labels, and the x-axis ticks under the plot.
+ * The line and area charts' frame (`charts/xy.tsx`; washes are in
+ * `AreaChart.styles.ts`, markers and the legend in `ChartFigure.styles.ts`):
+ * the legend chips above, a grid of the y-axis ticks, the plot, the end
+ * labels in a gutter of at most `min(22%, 170px)`, and the x-axis ticks.
  *
- * Marks: 2 px lines with round joins that stay 2 px at any width
- * (`non-scaling-stroke`), markers of 8 px with a 2 px ring in the surface
- * colour. Chrome: solid hairline gridlines, the baseline one step stronger,
- * ticks in `caption` with tabular figures in `text.muted`.
+ * Series styles (A8 §4.3.2): `actual` 2 px in its colour (2.5 px for the
+ * primary of several); `comparison` 1.5 px solid and `baseline` 1.5 px dashed
+ * 2 3, both in the comparison grey; `forecast` 1.5 px dashed 5 4 in its
+ * series' colour, its end dot hollow. Every stroke stays its width at any
+ * plot width (`non-scaling-stroke`). Chrome recedes: hairline gridlines, the
+ * baseline one step stronger, ticks in `caption`.
+ *
+ * One reveal on first paint (A8 §6.4): the plot wipes in from the start over
+ * `--itsm-duration-reveal`, never under reduced motion or `animate={false}`;
+ * React keeps the same nodes on a refetch, so it never replays.
  *
  * It adapts to its own width, not the viewport: below 32rem the end labels
  * give way to the legend, and below 30rem the x axis keeps its first, middle
@@ -27,6 +35,11 @@ const forcedDashes = Object.entries(dashes)
 export const lineChartStyles = layer(
   'components',
   css`
+@keyframes itsm-xy-reveal {
+  from { clip-path: inset(-0.5rem 100% -0.5rem -0.5rem); }
+  to { clip-path: inset(-0.5rem); }
+}
+
 .itsm-XYChart {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -39,7 +52,7 @@ export const lineChartStyles = layer(
 }
 
 .itsm-XYChart[data-ends] {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(min(22%, 10.625rem));
   grid-template-areas:
     "legend legend legend"
     "y plot ends"
@@ -52,7 +65,8 @@ export const lineChartStyles = layer(
 }
 
 .itsm-XYChart__y,
-.itsm-XYChart__x {
+.itsm-XYChart__x,
+.itsm-XYChart__ends {
   font-size: var(--itsm-text-caption-size);
   line-height: var(--itsm-text-caption-line);
   font-weight: var(--itsm-text-caption-weight);
@@ -97,6 +111,10 @@ export const lineChartStyles = layer(
   overflow: visible;
 }
 
+.itsm-XYChart[data-reveal] .itsm-XYChart__svg {
+  animation: itsm-xy-reveal var(--itsm-duration-reveal) var(--itsm-easing-entrance);
+}
+
 .itsm-XYChart__paths {
   overflow: visible;
 }
@@ -120,7 +138,23 @@ export const lineChartStyles = layer(
   vector-effect: non-scaling-stroke;
 }
 
-/* A reference to read the data against (a target, a calibrated diagonal): thin, dashed, grey. */
+.itsm-XYChart__line[data-primary] {
+  stroke-width: 2.5;
+}
+
+.itsm-XYChart__line:is([data-style="comparison"], [data-style="baseline"], [data-style="forecast"]) {
+  stroke-width: 1.5;
+}
+
+.itsm-XYChart__line[data-style="baseline"] {
+  stroke-dasharray: 2 3;
+}
+
+.itsm-XYChart__line[data-style="forecast"] {
+  stroke-dasharray: 5 4;
+}
+
+/* v2's reference line (a calibrated diagonal): thin, dashed, grey. */
 .itsm-XYChart__line[data-reference] {
   stroke-width: 1.5;
   stroke-dasharray: 4 4;
@@ -141,14 +175,20 @@ export const lineChartStyles = layer(
   stroke-width: 4;
 }
 
+/* A forecast ends on a hollow dot: a point not yet reached. */
+.itsm-XYChart__end[data-style="forecast"] {
+  fill: var(--_itsm-chart-surface);
+  stroke: var(--_itsm-series);
+  stroke-width: 1.5;
+  paint-order: normal;
+}
+
 .itsm-XYChart__ends {
   grid-area: ends;
   position: relative;
   block-size: var(--_itsm-plot-h);
-  max-inline-size: 10rem;
-  font-size: var(--itsm-text-footnote-size);
-  line-height: var(--itsm-text-footnote-line);
   color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-regular);
 }
 
 .itsm-XYChart__ends > .itsm-XYChart__sizer {
@@ -167,12 +207,20 @@ export const lineChartStyles = layer(
   white-space: nowrap;
 }
 
+/* The PMO's 8 × 8 swatch, radius 2: a chip like the legend's, so the two read as one key. */
 .itsm-XYChart__endKey {
   flex: none;
-  inline-size: var(--itsm-space-xs);
-  block-size: var(--itsm-border-thick);
-  border-radius: var(--itsm-radius-pill);
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 0.125rem;
   background: var(--_itsm-series);
+  box-shadow: inset 0 0 0 1px var(--_itsm-series-edge, transparent);
+}
+
+.itsm-XYChart__endKey:is([data-style="baseline"], [data-style="forecast"]) {
+  box-sizing: border-box;
+  border: 1.5px dashed var(--_itsm-series);
+  background: transparent;
 }
 
 .itsm-XYChart__endName {
@@ -183,7 +231,6 @@ export const lineChartStyles = layer(
 
 .itsm-XYChart__endValue {
   font-weight: var(--itsm-font-weight-semibold);
-  font-variant-numeric: tabular-nums;
   color: var(--itsm-colour-text-primary);
 }
 
@@ -230,20 +277,45 @@ export const lineChartStyles = layer(
   }
 }
 
-${moreContrast((scope) => `${scope} .itsm-XYChart__line { stroke-width: 2.5; }`)}
+${mq.reducedMotion} {
+  .itsm-XYChart[data-reveal] .itsm-XYChart__svg {
+    animation: none;
+  }
+}
+
+${prefers.reducedMotion} .itsm-XYChart[data-reveal] .itsm-XYChart__svg {
+  animation: none;
+}
+
+${moreContrast(
+  (scope) => `${scope} .itsm-XYChart__line { stroke-width: 2.5; }
+${scope} .itsm-XYChart__line:is([data-style="comparison"], [data-style="baseline"], [data-style="forecast"], [data-reference]) { stroke-width: 2; }
+${scope} .itsm-XYChart__gridline[data-axis] { stroke: var(--itsm-colour-border-strong); }`,
+)}
 
 ${mq.forcedColors} {
-  .itsm-XYChart__svg {
+  .itsm-XYChart__svg,
+  .itsm-XYChart__endKey {
     forced-color-adjust: none;
   }
   .itsm-XYChart__line {
     stroke: CanvasText;
   }
 ${forcedDashes}
+  .itsm-XYChart__line:is([data-style="comparison"], [data-style="baseline"]) {
+    stroke-dasharray: 2 3;
+  }
+  .itsm-XYChart__line[data-style="forecast"] {
+    stroke-dasharray: 5 4;
+  }
   .itsm-XYChart__dot,
   .itsm-XYChart__end {
     fill: CanvasText;
     stroke: Canvas;
+  }
+  .itsm-XYChart__end[data-style="forecast"] {
+    fill: Canvas;
+    stroke: CanvasText;
   }
   .itsm-XYChart__gridline {
     stroke: GrayText;
@@ -252,8 +324,11 @@ ${forcedDashes}
     stroke: CanvasText;
   }
   .itsm-XYChart__endKey {
-    forced-color-adjust: none;
     background: CanvasText;
+  }
+  .itsm-XYChart__endKey:is([data-style="baseline"], [data-style="forecast"]) {
+    background: Canvas;
+    border-color: CanvasText;
   }
 }
 `,

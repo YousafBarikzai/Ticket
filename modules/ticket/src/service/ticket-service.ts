@@ -26,8 +26,13 @@ import {
   enqueue,
 } from '@itsm/platform';
 import {
+  canonicalStateSchema,
+  channelSchema,
   events,
   numberPrefix,
+  prioritySchema,
+  statusCategorySchema,
+  ticketTypeSchema,
   type CanonicalState,
   type TicketType,
   inverseLinkType,
@@ -73,6 +78,22 @@ registerScopeResolver<repo.TicketRow>({
   orgId: (ticket) => ticket.orgId,
 });
 
+/**
+ * The channels a ticket can be raised on: every channel except `import`.
+ *
+ * `import` used to be accepted here too, and the ticket meter leaves that
+ * channel out, so any caller of `POST /tickets` could raise live work the
+ * meter never counted. How a row arrived is now `ticket.origin`, which only
+ * the import path writes; a creation that claims the channel is refused with
+ * 422 and told where imports go (ADR-0056).
+ */
+export const creatableChannelSchema = channelSchema.exclude(['import'], {
+  errorMap: (issue, context) =>
+    issue.code === 'invalid_enum_value' && issue.received === 'import'
+      ? { message: 'import is not a channel a new ticket can claim; tickets brought in from another tool go through the import API' }
+      : { message: context.defaultError },
+});
+
 export const createTicketSchema = z.object({
   type: z.enum(['incident', 'request', 'problem', 'change', 'task', 'question']).default('incident'),
   title: z.string().min(1).max(500),
@@ -89,7 +110,7 @@ export const createTicketSchema = z.object({
   assigneeId: z.string().uuid().optional(),
   orgId: z.string().uuid().optional(),
   parentId: z.string().uuid().optional(),
-  sourceChannel: z.enum(['portal', 'email', 'api', 'slack', 'teams', 'whatsapp', 'voice', 'mobile', 'import', 'system']).default('api'),
+  sourceChannel: creatableChannelSchema.default('api'),
   channelRef: z.string().max(500).optional(),
   externalRef: z.string().max(200).optional(),
   custom: z.record(z.unknown()).default({}),
@@ -305,11 +326,12 @@ export async function listTickets(
 ): Promise<ListResult> {
   authz.require(ctx, 'ticket.read');
   const scope = scopeFilterFor(ctx);
+  const query = prepareFilter(filter);
 
   return transaction(ctx, async (tx) => {
     const sort = options.sort ?? '-createdAt';
     const cursor = decodeCursor(options.cursor);
-    const rows = await repo.listTickets(tx, filter, {
+    const rows = await repo.listTickets(tx, query, {
       limit: options.limit + 1,
       sort,
       ...(cursor ? { cursor } : {}),
@@ -340,7 +362,8 @@ export async function listTickets(
 export async function countTickets(ctx: TenantContext, filter: repo.ListFilter = {}): Promise<number> {
   authz.require(ctx, 'ticket.read');
   const scope = scopeFilterFor(ctx);
-  return transaction(ctx, async (tx) => repo.countTickets(tx, filter, scope));
+  const query = prepareFilter(filter);
+  return transaction(ctx, async (tx) => repo.countTickets(tx, query, scope));
 }
 
 /** Where a counted view stops counting. */
@@ -367,8 +390,169 @@ export interface CappedCount {
 export async function countTicketsUpTo(ctx: TenantContext, filter: repo.ListFilter = {}, cap = COUNT_CAP): Promise<CappedCount> {
   authz.require(ctx, 'ticket.read');
   const scope = scopeFilterFor(ctx);
-  const counted = await transaction(ctx, async (tx) => repo.countTickets(tx, filter, scope, cap + 1));
+  const query = prepareFilter(filter);
+  const counted = await transaction(ctx, async (tx) => repo.countTickets(tx, query, scope, cap + 1));
   return counted > cap ? { count: cap, capped: true } : { count: counted, capped: false };
+}
+
+/**
+ * Checks a filter's date windows and fixes the instant its `sla` predicate is
+ * judged against, once for the whole call.
+ *
+ * A window that ends before it starts is refused rather than answered with
+ * nothing: an empty list for a reversed range reads as "no tickets", and the
+ * caller's mistake would never surface. Equal bounds are allowed — `[t, t)` is
+ * a legitimately empty window.
+ */
+function prepareFilter(filter: repo.ListFilter, now: Date = new Date()): repo.ListFilter {
+  const windows = [
+    ['createdAfter', 'createdBefore'],
+    ['dueAfter', 'dueBefore'],
+    ['resolvedAfter', 'resolvedBefore'],
+  ] as const;
+  for (const [after, before] of windows) {
+    const from = filter[after];
+    const to = filter[before];
+    if (from && to && from.getTime() > to.getTime()) {
+      throw new ValidationError('the window ends before it starts', [
+        { field: `filter[${before}]`, code: 'window_reversed', message: `filter[${before}] is earlier than filter[${after}]` },
+      ]);
+    }
+  }
+  return filter.now ? filter : { ...filter, now };
+}
+
+/** The dimensions `GET /tickets/counts?groupBy=` splits by (R2g). */
+export const COUNT_DIMENSIONS = ['priority', 'status', 'statusCategory', 'type', 'group', 'assignee', 'service', 'age', 'sla'] as const;
+export type CountDimension = (typeof COUNT_DIMENSIONS)[number];
+
+export interface TicketCountsBy {
+  groupBy: CountDimension;
+  /** One entry per key; `null` is "no value" (unassigned, no team, no service). */
+  groups: { key: string | null; count: number }[];
+  /** The filtered set's size, which the groups always sum to. */
+  total: number;
+}
+
+/** The widest created or resolved window a grouped count accepts without open work. */
+export const GROUPED_COUNT_MAX_WINDOW_DAYS = 400;
+
+/** Clock skew allowed to a window that names only its start (see `assertBounded`). */
+const OPEN_WINDOW_GRACE_MS = 5 * 60 * 1000;
+
+const COLUMN_OF: Record<Exclude<CountDimension, 'age' | 'sla'>, repo.GroupColumn> = {
+  priority: 'priority',
+  status: 'status',
+  statusCategory: 'statusCategory',
+  type: 'type',
+  group: 'groupId',
+  assignee: 'assigneeId',
+  service: 'serviceId',
+};
+
+/**
+ * The display order of the dimensions whose values are a fixed vocabulary.
+ * People read P1 before P4 and "new" before "closed", whatever the counts.
+ */
+const CANONICAL_ORDER: Partial<Record<CountDimension, readonly string[]>> = {
+  priority: prioritySchema.options,
+  status: canonicalStateSchema.options,
+  statusCategory: statusCategorySchema.options,
+  type: ticketTypeSchema.options,
+};
+
+/** Open and paused: the work an age or SLA breakdown is about. */
+const LIVE_CATEGORIES = ['open', 'paused'];
+
+/**
+ * How many tickets fall in each value of one dimension (R2g), for the
+ * distributions on the Service Desk Overview and Administration's breakdowns.
+ *
+ * The same permission check and scope predicate as `listTickets`, so each
+ * group counts only rows that reader's list would show, and the groups sum to
+ * exactly what `countTickets` returns for the same filter.
+ *
+ * Exact, not capped like a badge, which is affordable only because the set is
+ * bounded first: the call must ask about open or paused work (or `sla`, which
+ * selects open work), or name a created or resolved window of at most 400
+ * days. Anything else would be a whole-history scan on every page view, and is
+ * refused with 422. `age` and `sla` are breakdowns of live work, so they read
+ * open and paused tickets unless the caller names categories; `sla` refuses
+ * categories outside those two, because a resolved ticket is in none of its
+ * buckets and the groups would no longer sum to the total.
+ */
+export async function countTicketsBy(
+  ctx: TenantContext,
+  filter: repo.ListFilter,
+  dimension: CountDimension,
+  now: Date = new Date(),
+): Promise<TicketCountsBy> {
+  authz.require(ctx, 'ticket.read');
+  const scope = scopeFilterFor(ctx);
+
+  // One instant for the guard, the `sla` filter and every bucket edge.
+  const at = filter.now ?? now;
+  const live = dimension === 'age' || dimension === 'sla';
+  const query = prepareFilter(live && !filter.statusCategory?.length ? { ...filter, statusCategory: LIVE_CATEGORIES } : filter, at);
+  if (dimension === 'sla' && query.statusCategory?.some((category) => !LIVE_CATEGORIES.includes(category))) {
+    throw new ValidationError('an SLA breakdown counts open and paused work only', [
+      { field: 'filter[statusCategory]', code: 'not_live', message: 'filter[statusCategory] may name only open and paused with groupBy=sla' },
+    ]);
+  }
+  assertBounded(query, at);
+
+  const groups = await transaction(ctx, async (tx) => {
+    if (dimension === 'age') return repo.countByBuckets(tx, query, repo.ageBuckets(at), scope);
+    if (dimension === 'sla') return repo.countByBuckets(tx, query, repo.slaBuckets(at), scope);
+    return repo.countByColumn(tx, query, COLUMN_OF[dimension], scope);
+  });
+
+  return {
+    groupBy: dimension,
+    groups: ordered(dimension, groups),
+    total: groups.reduce((sum, group) => sum + group.count, 0),
+  };
+}
+
+/** Refuses a grouped count that would read a tenant's whole history (R2g guard). */
+function assertBounded(filter: repo.ListFilter, now: Date): void {
+  const categories = filter.statusCategory ?? [];
+  if (categories.length > 0 && categories.every((category) => LIVE_CATEGORIES.includes(category))) return;
+  if (filter.sla) return;
+  const limitMs = GROUPED_COUNT_MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  // An open-ended window ends now: nothing is created or resolved in the
+  // future, so "since 1 September" is bounded by today. It is measured on
+  // this server's clock, a moment after the caller computed "400 days ago" on
+  // its own, so it gets a few minutes' grace rather than a 422 for a request
+  // that was within the limit when it was written.
+  const within = (after?: Date, before?: Date) =>
+    Boolean(after) && (before ?? now).getTime() - after!.getTime() <= limitMs + (before ? 0 : OPEN_WINDOW_GRACE_MS);
+  if (within(filter.createdAfter, filter.createdBefore) || within(filter.resolvedAfter, filter.resolvedBefore)) return;
+  throw new ValidationError('a grouped count needs open work or a date window', [
+    {
+      field: 'filter',
+      code: 'unbounded',
+      message: `name filter[statusCategory] within open,paused, or a created or resolved window of at most ${GROUPED_COUNT_MAX_WINDOW_DAYS} days`,
+    },
+  ]);
+}
+
+/**
+ * Canonical order for fixed vocabularies (values outside it follow, largest
+ * first); bucket order for `age` and `sla`, which arrive in it; largest first
+ * for teams, people and services, with ties broken by key and "none" last so
+ * the order is stable between refreshes.
+ */
+function ordered(dimension: CountDimension, groups: { key: string | null; count: number }[]): { key: string | null; count: number }[] {
+  if (dimension === 'age' || dimension === 'sla') return groups;
+  const canonical = CANONICAL_ORDER[dimension] ?? [];
+  const rank = (key: string | null) => (key !== null && canonical.includes(key) ? canonical.indexOf(key) : canonical.length);
+  return [...groups].sort(
+    (a, b) =>
+      rank(a.key) - rank(b.key) ||
+      b.count - a.count ||
+      (a.key === null ? 1 : b.key === null ? -1 : a.key.localeCompare(b.key)),
+  );
 }
 
 /**
@@ -1502,199 +1686,29 @@ export async function createRequestFromCatalogue(
 }
 
 // ---------------------------------------------------------------------------
-// Migration (MOD-24): a ticket brought in from somewhere else.
-//
-// Not `createTicket` with the dates changed. A migrated ticket arrives with
-// its history: the status it had, when it was raised and when it was closed,
-// the comments that were made on it. And it must not set anything off — an
-// SLA clock on a ticket closed in 2021, a "your ticket was raised" email to
-// somebody who raised it in another tool, a rule that routes it to a queue.
-// So it is inserted as it was and announced as `ticket.imported`, which the
-// projections follow and the reactions ignore (ADR-0036).
+// Migration (MOD-24) and history imports: tickets brought in from somewhere
+// else. They live in `import-tickets.ts`; re-exported here so callers keep
+// reaching them as `ticketService.importTicket` and the rest.
 // ---------------------------------------------------------------------------
 
-export const importCommentSchema = z.object({
-  body: z.string().min(1).max(100_000),
-  bodyFormat: z.enum(['text', 'html']).default('text'),
-  visibility: z.enum(['public', 'internal']).default('public'),
-  authorId: z.string().uuid().nullable().optional(),
-  createdAt: z.coerce.date().optional(),
-  /** The source's own id for the comment, so the same one imported twice is one. */
-  externalRef: z.string().max(500).optional(),
-});
-export type ImportCommentInput = z.input<typeof importCommentSchema>;
-
-export const importTicketSchema = z.object({
-  type: z.enum(['incident', 'request', 'problem', 'change', 'task', 'question']).default('incident'),
-  title: z.string().min(1).max(500),
-  description: z.string().max(100_000).optional(),
-  descriptionFormat: z.enum(['text', 'html']).default('text'),
-  /** A canonical state; the mapping from the source's words is the caller's. */
-  status: z.string().min(1).max(40),
-  priority: z.enum(['P1', 'P2', 'P3', 'P4']).default('P3'),
-  requesterId: z.string().uuid().nullable().optional(),
-  assigneeId: z.string().uuid().nullable().optional(),
-  groupId: z.string().uuid().nullable().optional(),
-  serviceId: z.string().uuid().nullable().optional(),
-  categoryId: z.string().uuid().nullable().optional(),
-  orgId: z.string().uuid().nullable().optional(),
-  /** The source's reference, kept so people can still find "INC0012345". */
-  externalRef: z.string().min(1).max(200),
-  createdAt: z.coerce.date(),
-  resolvedAt: z.coerce.date().nullable().optional(),
-  closedAt: z.coerce.date().nullable().optional(),
-  custom: z.record(z.unknown()).default({}),
-  comments: z.array(importCommentSchema).max(1000).default([]),
-  importJobId: z.string().uuid().nullable().optional(),
-});
-export type ImportTicketInput = z.input<typeof importTicketSchema>;
-
-function requireImporter(ctx: TenantContext): void {
-  authz.require(ctx, 'ticket.create');
-  if (!ctx.permissions.has('ticket.create', 'any')) {
-    throw new ForbiddenError('ticket.create', 'importing tickets raised by other people needs tenant-wide permission');
-  }
-}
-
-async function insertImportedComment(tx: Tx, ctx: TenantContext, ticketId: string, comment: z.infer<typeof importCommentSchema>): Promise<boolean> {
-  if (comment.externalRef) {
-    const seen = await tx.ticketComment.findFirst({ where: { ticketId, externalRef: comment.externalRef }, select: { id: true } });
-    if (seen) return false;
-  }
-  await repo.insertComment(tx, {
-    id: newId(),
-    tenantId: ctx.tenantId,
-    ticketId,
-    authorId: comment.authorId ?? null,
-    authorType: comment.authorId ? 'user' : 'system',
-    visibility: comment.visibility,
-    body: comment.body,
-    bodyFormat: comment.bodyFormat,
-    channel: 'import',
-    externalRef: comment.externalRef ?? null,
-    ...(comment.createdAt ? { createdAt: comment.createdAt, updatedAt: comment.createdAt } : {}),
-    createdBy: ctx.actor.id,
-  });
-  return true;
-}
-
-async function publishImported(tx: Tx, ctx: TenantContext, ticket: repo.TicketRow, externalRef: string | null, commentsAdded: number, importJobId: string | null): Promise<void> {
-  await publish(tx, ctx, {
-    definition: events.ticketImported,
-    aggregateId: ticket.id,
-    aggregateVersion: ticket.version,
-    payload: {
-      ticketId: ticket.id,
-      number: ticket.number,
-      type: ticket.type,
-      status: ticket.status,
-      externalRef,
-      commentsAdded,
-      importJobId,
-    },
-  });
-}
-
-/** Inserts a ticket as it was elsewhere, with its comments, in one transaction. */
-export async function importTicket(ctx: TenantContext, input: ImportTicketInput): Promise<repo.TicketRow> {
-  const parsed = importTicketSchema.parse(input);
-  requireImporter(ctx);
-  if (!(parsed.status in STATES)) throw new ValidationError(`unknown ticket status: ${parsed.status}`);
-  const status = parsed.status as CanonicalState;
-  const type = parsed.type as TicketType;
-
-  return transaction(ctx, async (tx) => {
-    const duplicate = await tx.ticket.findFirst({ where: { externalRef: parsed.externalRef, deletedAt: null }, select: { number: true } });
-    if (duplicate) {
-      throw new ConflictError(`a ticket with the external reference ${parsed.externalRef} already exists (${duplicate.number})`);
-    }
-
-    const number = await nextNumber(tx, ctx, type, numberPrefix[type]);
-    const id = newId();
-    const requesterId = parsed.requesterId ?? null;
-    const lastTouched = parsed.closedAt ?? parsed.resolvedAt ?? parsed.createdAt;
-    const ticket = await repo.insertTicket(tx, {
-      id,
-      tenantId: ctx.tenantId,
-      orgId: parsed.orgId ?? ctx.organisationIds[0] ?? null,
-      number,
-      type,
-      title: parsed.title,
-      description: parsed.description ?? null,
-      descriptionFormat: parsed.descriptionFormat,
-      status,
-      statusCategory: categoryOf(status),
-      priority: parsed.priority,
-      impact: null,
-      urgency: null,
-      requesterId,
-      affectedUserId: requesterId,
-      assigneeId: parsed.assigneeId ?? null,
-      groupId: parsed.groupId ?? null,
-      serviceId: parsed.serviceId ?? null,
-      categoryId: parsed.categoryId ?? null,
-      sourceChannel: 'import',
-      channelRef: null,
-      parentId: null,
-      externalRef: parsed.externalRef,
-      custom: parsed.custom as never,
-      createdAt: parsed.createdAt,
-      updatedAt: lastTouched,
-      resolvedAt: parsed.resolvedAt ?? null,
-      closedAt: parsed.closedAt ?? null,
-      createdBy: ctx.actor.id,
-      createdByType: ctx.actor.type,
-      updatedBy: ctx.actor.id,
-    });
-
-    await repo.insertTicketEvent(tx, ctx, id, 'imported', { number, externalRef: parsed.externalRef, status });
-    if (requesterId) {
-      await tx.ticketWatcher.create({
-        data: { id: newId(), tenantId: ctx.tenantId, ticketId: id, userId: requesterId, reason: 'requester' },
-      });
-    }
-
-    let commentsAdded = 0;
-    for (const comment of parsed.comments) {
-      if (await insertImportedComment(tx, ctx, id, comment)) commentsAdded += 1;
-    }
-
-    await recordAudit(tx, ctx, {
-      action: 'ticket.imported',
-      targetType: 'ticket',
-      targetId: id,
-      after: { number, externalRef: parsed.externalRef, status, priority: parsed.priority, comments: commentsAdded, importJobId: parsed.importJobId ?? null },
-    });
-    await publishImported(tx, ctx, ticket, parsed.externalRef, commentsAdded, parsed.importJobId ?? null);
-    return ticket;
-  });
-}
-
-/**
- * Adds comments to a ticket that was imported earlier, for sources that keep
- * the conversation in a separate export. One event for the lot, so the
- * projections refresh once rather than once per line.
- */
-export async function importComments(
-  ctx: TenantContext,
-  ticketId: string,
-  comments: ImportCommentInput[],
-  importJobId: string | null = null,
-): Promise<{ added: number }> {
-  requireImporter(ctx);
-  const parsed = comments.map((comment) => importCommentSchema.parse(comment));
-  return transaction(ctx, async (tx) => {
-    const ticket = await repo.findByIdOrNumber(tx, ticketId);
-    if (!ticket) throw new NotFoundError('ticket', ticketId);
-    let added = 0;
-    for (const comment of parsed) {
-      if (await insertImportedComment(tx, ctx, ticket.id, comment)) added += 1;
-    }
-    if (added > 0) {
-      const row = await tx.ticket.findFirst({ where: { id: ticket.id }, select: { externalRef: true } });
-      await recordAudit(tx, ctx, { action: 'ticket.comments.imported', targetType: 'ticket', targetId: ticket.id, after: { added, importJobId } });
-      await publishImported(tx, ctx, ticket, row?.externalRef ?? null, added, importJobId);
-    }
-    return { added };
-  });
-}
+export {
+  BATCH_AUDIT_MAX,
+  IMPORT_CHUNK_MAX,
+  importCommentSchema,
+  importComments,
+  importEventSchema,
+  importLinkSchema,
+  importLinks,
+  importTaskSchema,
+  importTicket,
+  importTicketSchema,
+  importTickets,
+  type ImportCommentInput,
+  type ImportEventInput,
+  type ImportLinkInput,
+  type ImportLinksOptions,
+  type ImportLinksResult,
+  type ImportTaskInput,
+  type ImportTicketInput,
+  type ImportTicketsOptions,
+} from './import-tickets.js';

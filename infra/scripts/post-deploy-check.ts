@@ -18,6 +18,11 @@
  * What this asserts is deliberately narrow, and is the part that is true from
  * outside: every service the deploy gave a hostname to is reachable, and the
  * API says which of its own dependencies it has. It does not create a ticket.
+ *
+ * Two things it reports without ever failing on (`::warning` annotations):
+ * the API's readiness `warnings` — today the public development signing
+ * secret (D24) — and the public site's links into the product, which are
+ * built from origins a deploy can forget to give it.
  * An end-to-end assertion against a deployed environment needs a tenant, a
  * credential and a way to clean up after itself, and inventing one here would
  * repeat the mistake this file is fixing.
@@ -49,6 +54,7 @@ const PATHS: Readonly<Record<string, string>> = {
   portal: '/api/health',
   workbench: '/api/health',
   admin: '/api/health',
+  site: '/api/health',
 };
 
 export function probesFor(hosts: Hosts): Probe[] {
@@ -72,6 +78,8 @@ export interface Outcome {
   readonly probe: Probe;
   readonly ok: boolean;
   readonly detail: string;
+  /** The readiness answer's body, for the warnings beside its checks. */
+  readonly body?: unknown;
 }
 
 /**
@@ -102,14 +110,16 @@ export function readinessDetail(body: unknown): string {
 
 async function probe(one: Probe, fetcher: typeof fetch): Promise<Outcome> {
   let last = 'never answered';
+  let lastBody: unknown;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     try {
       const response = await fetcher(one.url, { signal: AbortSignal.timeout(15_000) });
       if (one.kind === 'ready') {
         const body: unknown = await response.json().catch(() => null);
         const detail = readinessDetail(body);
-        if (response.ok) return { probe: one, ok: true, detail };
+        if (response.ok) return { probe: one, ok: true, detail, body };
         last = `${response.status} — ${detail}`;
+        lastBody = body;
       } else {
         if (response.ok) return { probe: one, ok: true, detail: `${response.status}` };
         last = `${response.status}`;
@@ -119,13 +129,125 @@ async function probe(one: Probe, fetcher: typeof fetch): Promise<Outcome> {
     }
     if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, GAP_MS));
   }
-  return { probe: one, ok: false, detail: `after ${ATTEMPTS} attempts: ${last}` };
+  return { probe: one, ok: false, detail: `after ${ATTEMPTS} attempts: ${last}`, ...(lastBody === undefined ? {} : { body: lastBody }) };
 }
 
 export async function check(hosts: Hosts, fetcher: typeof fetch = fetch): Promise<Outcome[]> {
   // In parallel: ten attempts six seconds apart is a minute, and four of those
   // in series is four minutes of a deploy job waiting to say the same thing.
   return Promise.all(probesFor(hosts).map((one) => probe(one, fetcher)));
+}
+
+const RUNBOOK = 'See docs/runbooks/first-production-deploy.md, "The signing secret".';
+
+/**
+ * The API's readiness `warnings`, as annotations (D24, SPEC v3 §6.5).
+ *
+ * `warnings` sits beside `checks` and never changes the status code, so a
+ * deployment signing links with the public development secret is healthy by
+ * every probe above. This is where the deploy says so anyway — loudly, and
+ * without failing, because D24 is "warn, never refuse".
+ */
+export function readinessWarnings(body: unknown): string[] {
+  const warnings = (body as { warnings?: unknown } | null)?.warnings;
+  if (!Array.isArray(warnings)) return [];
+  return warnings.flatMap((entry): string[] => {
+    const code = typeof entry === 'string' ? entry : (entry as { code?: unknown } | null)?.code;
+    if (typeof code !== 'string') return [];
+    if (code === 'dev_token_secret_default') {
+      return [`::warning title=Signing secret::DEV_TOKEN_SECRET is the public development default on the API. ${RUNBOOK}`];
+    }
+    if (code === 'dev_token_secret_short') {
+      return [`::warning title=Signing secret::DEV_TOKEN_SECRET on the API is shorter than 32 characters. ${RUNBOOK}`];
+    }
+    // A code this file has not been taught: named, never interpreted, and
+    // held to the characters a code has so a body cannot write the log.
+    return [`::warning title=Readiness::The API reports a configuration warning: ${code.replace(/[^a-z0-9_.-]/gi, '?').slice(0, 64)}.`];
+  });
+}
+
+/** Each app, the variable the site reads its origin from, its area's name and its demo persona. */
+const SITE_LINK_APPS = [
+  { service: 'portal', variable: 'PORTAL_ORIGIN', area: 'the Help Portal', persona: 'employee' },
+  { service: 'workbench', variable: 'WORKBENCH_ORIGIN', area: 'the Service Desk', persona: 'agent' },
+  { service: 'admin', variable: 'ADMIN_ORIGIN', area: 'Administration', persona: 'admin' },
+] as const;
+
+interface Anchor {
+  readonly href: string;
+  readonly rel: readonly string[];
+}
+
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+/** Every `<a>` in a page, with its href and rel, read the way a browser would read the attributes. */
+export function anchorsIn(html: string): Anchor[] {
+  const anchors: Anchor[] = [];
+  for (const [tag] of html.matchAll(/<a\b[^>]*>/gi)) {
+    const attribute = (name: string): string | null => {
+      const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(tag);
+      return match ? decodeEntities(match[1] ?? match[2] ?? match[3] ?? '') : null;
+    };
+    const href = attribute('href');
+    if (href === null) continue;
+    anchors.push({ href, rel: (attribute('rel') ?? '').split(/\s+/).filter(Boolean).map((token) => token.toLowerCase()) });
+  }
+  return anchors;
+}
+
+/**
+ * Do the public site's links reach the product? Warn-only (A5 §7.7).
+ *
+ * The site's links are built from origins the deploy gives it, and one it
+ * forgot is not an error anywhere: the page renders that part as unavailable
+ * and every probe stays green. So the chooser is read from outside, and every
+ * app the deploy published must have its work-account row — and, while the
+ * demo is on (`data-demo="on"`), its role button: `rel="nofollow"`, never
+ * `noreferrer`, because the app's `/demo` needs the Referer (D22).
+ */
+export async function siteLinkWarnings(hosts: Hosts, fetcher: typeof fetch = fetch): Promise<string[]> {
+  const site = hosts.site;
+  if (!site) return [];
+  const page = `${site}/sign-in?start=demo`;
+  let html: string;
+  try {
+    const response = await fetcher(page, { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) return [`::warning title=Site links::${page} answered ${response.status}, so the site's links into the product were not checked.`];
+    html = await response.text();
+  } catch (error) {
+    return [`::warning title=Site links::${page} did not answer (${error instanceof Error ? error.message : String(error)}), so the site's links into the product were not checked.`];
+  }
+
+  const anchors = anchorsIn(html);
+  const demo = /\sdata-demo\s*=\s*["']?on["'\s>]/i.test(html);
+  const warnings: string[] = [];
+  for (const app of SITE_LINK_APPS) {
+    const origin = hosts[app.service];
+    if (!origin) continue;
+    const signIn = `${origin}/api/session/login?account=1&redirectTo=%2Fresume`;
+    if (!anchors.some((anchor) => anchor.href === signIn)) {
+      warnings.push(`::warning title=Site links::The site has no sign-in link to ${app.area} (${signIn}). Is ${app.variable} set on the site service?`);
+    }
+    if (!demo) continue;
+    const role = `${origin}/demo?persona=${app.persona}&demo=1`;
+    const button = anchors.find((anchor) => anchor.href === role);
+    if (!button) {
+      warnings.push(`::warning title=Site links::The demo is on but the site has no role button into ${app.area} (${role}). Is ${app.variable} set on the site service?`);
+    } else if (!button.rel.includes('nofollow')) {
+      warnings.push(`::warning title=Site links::The role button into ${app.area} is missing rel="nofollow".`);
+    }
+    if (anchors.some((anchor) => anchor.href.startsWith(`${origin}/demo?`) && anchor.rel.includes('noreferrer'))) {
+      warnings.push(`::warning title=Site links::A link into ${app.area}'s demo carries rel="noreferrer", which stops /demo from opening in one click (D22).`);
+    }
+  }
+  return warnings;
 }
 
 export function parseHosts(argv: readonly string[]): Hosts {
@@ -150,6 +272,11 @@ async function main(): Promise<void> {
   for (const { probe: one, ok, detail } of outcomes) {
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${one.service} ${one.kind} — ${detail}`);
   }
+
+  // Warnings, never failures: printed as annotations and left out of the
+  // exit code (D24; A5 §7.7).
+  const ready = outcomes.find((outcome) => outcome.probe.kind === 'ready');
+  for (const line of [...readinessWarnings(ready?.body), ...(await siteLinkWarnings(hosts))]) console.log(line);
 
   const failed = outcomes.filter((outcome) => !outcome.ok);
   if (failed.length === 0) {

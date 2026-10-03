@@ -5,10 +5,13 @@ import type { ConfirmDialogProps } from '../../overlays/ConfirmDialog.js';
 import { Checkbox } from '../Checkbox.js';
 import { FormField } from '../FormField.js';
 import { Input } from '../Input.js';
+import { inputStyles } from '../Input.styles.js';
 import { RadioGroup } from '../RadioGroup.js';
 import { Select } from '../Select.js';
+import { selectStyles } from '../Select.styles.js';
 import { Switch, type SwitchProps } from '../Switch.js';
 import { Tabs } from '../Tabs.js';
+import { tabsStyles } from '../Tabs.styles.js';
 import { Textarea } from '../Textarea.js';
 import { activeElement, cleanupDocument, click, focus, press, render, typeInto } from './support/render.js';
 
@@ -64,6 +67,19 @@ async function flush(): Promise<void> {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 32));
   });
+}
+
+/** The declarations of the first rule in `sheet` written exactly as `selector {`. */
+function rule(sheet: string, selector: string): string {
+  const start = sheet.indexOf(`${selector} {`);
+  return start < 0 ? '' : sheet.slice(start, sheet.indexOf('}', start));
+}
+
+/** What a screen reader hears: the text, less anything hidden from assistive technology. */
+function spoken(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return '';
+  return [...node.childNodes].map(spoken).join('');
 }
 
 function byText<T extends HTMLElement = HTMLElement>(selector: string, text: string): T {
@@ -271,6 +287,60 @@ describe('Input', () => {
   });
 });
 
+describe('the v3 field box (§2.9, §2.14)', () => {
+  const focusSelector =
+    '.itsm-Input:focus-visible,\n.itsm-Textarea:focus-visible,\n.itsm-Select:focus-visible,\n.itsm-InputGroup:has(.itsm-InputGroup__input:focus-visible)';
+
+  it('is 36 px with the control radius, a border.interactive edge, the xs shadow and the input text size', () => {
+    const box = rule(inputStyles, '.itsm-Input,\n.itsm-Textarea,\n.itsm-Select,\n.itsm-InputGroup');
+    expect(box).toContain('min-block-size: var(--itsm-control-height-md)');
+    expect(box).toContain('border-radius: var(--itsm-radius-lg)');
+    expect(box).toContain('solid var(--itsm-colour-border-interactive)');
+    expect(box).toContain('box-shadow: var(--itsm-elevation-xs)');
+    expect(box).toContain('font-size: var(--itsm-input-font-size)');
+  });
+
+  it('focuses with the halo, not the ring: no outline, an accent edge and a 4 px focusHalo wash', () => {
+    const focused = rule(inputStyles, focusSelector);
+    expect(focused).toContain('outline: none');
+    expect(focused).toContain('border-color: var(--itsm-colour-accent)');
+    expect(focused).toContain('0 0 0 var(--itsm-border-hair) var(--itsm-colour-accent)');
+    expect(focused).toContain('0 0 0 var(--itsm-space-2xs) var(--itsm-colour-focusHalo)');
+  });
+
+  it('brings the outline back where the halo cannot be seen: the high-contrast themes and forced colours', () => {
+    expect(inputStyles).toContain(':root[data-itsm-theme="high-contrast"] :is(.itsm-Input, .itsm-Textarea, .itsm-Select):focus-visible');
+    expect(inputStyles).toMatch(/@media \(prefers-contrast: more\) \{[\s\S]*outline: var\(--itsm-focus-width\) solid var\(--itsm-colour-border-focus\)/);
+    expect(inputStyles).toMatch(/@media \(forced-colors: active\) \{[\s\S]*outline: var\(--itsm-border-thick\) solid Highlight/);
+  });
+
+  it('haloes an invalid field in danger at 18 % when it has focus', () => {
+    const invalid = rule(
+      inputStyles,
+      '.itsm-Input[aria-invalid="true"]:focus-visible,\n.itsm-Textarea[aria-invalid="true"]:focus-visible,\n.itsm-Select[aria-invalid="true"]:focus-visible,\n.itsm-InputGroup[data-invalid]:has(.itsm-InputGroup__input:focus-visible)',
+    );
+    expect(invalid).toContain('color-mix(in srgb, var(--itsm-colour-danger-border) 18%, transparent)');
+  });
+
+  it('draws disabled on the sunken surface, and the large size at 44 px with the item radius and 15 px text', () => {
+    expect(rule(inputStyles, '.itsm-Input:disabled,\n.itsm-Textarea:disabled,\n.itsm-Select:disabled,\n.itsm-InputGroup[data-disabled]')).toContain(
+      'background-color: var(--itsm-colour-surface-sunken)',
+    );
+    const large = rule(inputStyles, '.itsm-Input--lg,\n.itsm-InputGroup--lg,\n.itsm-Select--lg');
+    expect(large).toContain('min-block-size: var(--itsm-control-height-lg)');
+    expect(large).toContain('border-radius: var(--itsm-radius-item)');
+    expect(large).toContain('max(var(--itsm-font-size-md), var(--itsm-input-font-size))');
+  });
+
+  it('keeps every size at 16 px or more under a coarse pointer, so iOS does not zoom on focus', () => {
+    expect(inputStyles).toMatch(/@media \(pointer: coarse\) \{\s*\.itsm-Input--sm,\s*\.itsm-InputGroup--sm,\s*\.itsm-Select--sm \{\s*font-size: var\(--itsm-input-font-size\);/);
+  });
+
+  it('draws the select chevron in text.muted', () => {
+    expect(rule(selectStyles, '.itsm-SelectField__chevron')).toContain('color: var(--itsm-colour-text-muted)');
+  });
+});
+
 describe('Textarea', () => {
   it('hands the caller its ref — object and callback — while still growing itself', () => {
     const objectRef = createRef<HTMLTextAreaElement>();
@@ -426,6 +496,53 @@ describe('Tabs', () => {
     expect(document.querySelector('.itsm-Tabs')?.className).toContain('itsm-Tabs--segmented');
     expect(document.querySelector('[role="tab"] .itsm-Tabs__label')?.getAttribute('data-text')).toBe('Details');
     expect(document.querySelector('[role="tabpanel"]')?.textContent).toBe('Details panel');
+  });
+
+  it('is the underline look by default', () => {
+    render(<Tabs label="Sections" items={[{ id: 'a', label: 'Details', content: <p>Details panel</p> }]} />);
+    expect(document.querySelector('.itsm-Tabs')?.className).toContain('itsm-Tabs--underline');
+  });
+
+  it('draws a count after the label, accent on the selected tab, and speaks it with the label', () => {
+    render(
+      <Tabs
+        label="Register"
+        variant="pill"
+        items={[
+          { id: 'register', label: 'Register', count: 24, content: <p>Register panel</p> },
+          { id: 'overdue', label: 'Overdue', count: 3, content: <p>Overdue panel</p> },
+          { id: 'mine', label: 'Mine', count: null, content: <p>Mine panel</p> },
+        ]}
+      />,
+    );
+    expect(document.querySelector('.itsm-Tabs')?.className).toContain('itsm-Tabs--pill');
+    const tabs = [...document.querySelectorAll<HTMLElement>('[role="tab"]')];
+    expect(tabs.map((tab) => spoken(tab))).toEqual(['Register, 24', 'Overdue, 3', 'Mine']);
+    expect(tabs.map((tab) => tab.querySelector('.itsm-Count')?.getAttribute('data-tone') ?? null)).toEqual(['accent', 'neutral', null]);
+    expect(tabs[0]!.querySelector('.itsm-Count')?.getAttribute('data-size')).toBe('sm');
+    click(tabs[1]!);
+    expect(tabs.map((tab) => tab.querySelector('.itsm-Count')?.getAttribute('data-tone') ?? null)).toEqual(['neutral', 'accent', null]);
+  });
+
+  it('draws the v3 looks: underline 40 px tabs over a hairline, raised pills, a sunken segmented track', () => {
+    const underline = rule(tabsStyles, '.itsm-Tabs--underline .itsm-Tabs__tab');
+    expect(underline).toContain('min-block-size: calc(var(--itsm-control-height-md) + var(--itsm-space-2xs))');
+    expect(underline).toContain('font-size: var(--itsm-text-body-size)');
+    expect(rule(tabsStyles, '.itsm-Tabs__tab')).toContain('color: var(--itsm-colour-text-muted)');
+    expect(rule(tabsStyles, '.itsm-Tabs--underline .itsm-Tabs__tab::after')).toContain('background-color: var(--itsm-colour-accent)');
+    const pill = rule(tabsStyles, '.itsm-Tabs--pill .itsm-Tabs__tab[aria-selected="true"]');
+    expect(pill).toContain('var(--itsm-colour-surface-raised)');
+    expect(pill).toContain('var(--itsm-colour-border-soft)');
+    expect(pill).toContain('var(--itsm-elevation-sm)');
+    expect(rule(tabsStyles, '.itsm-Tabs--segmented .itsm-Tabs__list')).toContain('var(--itsm-colour-surface-sunken)');
+  });
+
+  it('fades the ends of a row that scrolls, where scroll timelines exist, and never for the segmented track', () => {
+    expect(tabsStyles).toContain('@supports (animation-timeline: scroll())');
+    expect(tabsStyles).toContain('.itsm-Tabs:not(.itsm-Tabs--segmented) > .itsm-Tabs__list {');
+    expect(tabsStyles).toContain('animation-timeline: scroll(self inline)');
+    expect(tabsStyles).toMatch(/:dir\(rtl\) \{\s*animation-direction: reverse;/);
+    expect(tabsStyles).toContain('@keyframes itsm-scroll-fades');
   });
 });
 

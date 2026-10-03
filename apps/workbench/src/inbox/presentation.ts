@@ -41,13 +41,20 @@ export function isWaitingState(state: string): boolean {
   return state.startsWith('pending_');
 }
 
-/** Categories, not states: a tenant may rename states, and the category is the stable thing. */
+/**
+ * Categories, not states: a tenant may rename states, and the category is the
+ * stable thing.
+ *
+ * Paused work is `hold` (D5): amber means an SLA at risk or a deadline close,
+ * and a ticket waiting on somebody else is neither, so it gets the waiting
+ * colour the design system keeps for exactly that.
+ */
 export function categoryIntent(category: string): IntentName {
   switch (category) {
     case 'open':
       return 'info';
     case 'paused':
-      return 'warning';
+      return 'hold';
     case 'resolved':
       return 'success';
     default:
@@ -61,7 +68,7 @@ export function categoryTone(category: string): Tone {
     case 'open':
       return 'info';
     case 'paused':
-      return 'warning';
+      return 'hold';
     case 'resolved':
       return 'success';
     default:
@@ -69,12 +76,13 @@ export function categoryTone(category: string): Tone {
   }
 }
 
+/** P1 is danger and P2 `high` (D5): orange for "soon", never the amber of an SLA at risk. */
 export function priorityIntent(priority: string): IntentName {
   switch (priority.toUpperCase()) {
     case 'P1':
       return 'danger';
     case 'P2':
-      return 'warning';
+      return 'high';
     default:
       return 'neutral';
   }
@@ -145,12 +153,20 @@ export function channelLabel(channel: string): string {
 }
 
 /**
+ * The Help Portal's name, as `AREAS.portal.name` in `@itsm/contracts/areas`
+ * (D1). Spelt out because this module reaches the browser on every desk
+ * page and the areas module's tables would come with an import;
+ * `presentation.test.ts` holds the two equal.
+ */
+export const HELP_PORTAL_NAME = 'Help Portal';
+
+/**
  * What a public reply will do, said where the agent writes it (SPEC §6.2):
- * a reply to an emailed ticket is an email; one raised in the portal is read
- * there.
+ * a reply to an emailed ticket is an email; one raised in the Help Portal is
+ * read there.
  */
 export function replyChannelLine(channel: string): string {
-  return channel === 'email' ? 'Replying by email' : 'Visible in the portal';
+  return channel === 'email' ? 'Replying by email' : `Visible in the ${HELP_PORTAL_NAME}`;
 }
 
 /**
@@ -400,7 +416,9 @@ export function problemOf(error: unknown): Problem {
       ...(code ? { code } : {}),
       ...(error.problem?.title ? { title: error.problem.title } : {}),
       ...(error.problem?.detail ? { detail: error.problem.detail } : {}),
-      retryable: error.retryable,
+      // A demo cap (429 demo_limit) does not lift with time, so waiting and
+      // trying again cannot help, though every other 429 may be retried.
+      retryable: code === 'demo_limit' ? false : error.retryable,
       ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
     };
   }

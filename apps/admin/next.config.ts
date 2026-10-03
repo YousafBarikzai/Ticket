@@ -78,9 +78,15 @@ const nextConfig: NextConfig = {
    * was added). `@itsm/ui/theme` is named too, as in the other two apps: the
    * root layout imports the no-flash theme script from it, and without the
    * rewrite that entry's client re-exports (the theme hooks) ride along.
+   *
+   * `@itsm/ui/shell` and `@itsm/ui/charts` are barrels of the same kind. Until
+   * they were named, every route carried the whole shell — the demo bar, the
+   * system bar, the split view and the rest of what no admin page renders —
+   * and the chart kit's client modules beside it: 10.5–21.7 kB per route,
+   * measured before and after on the same tree (WP-42a).
    */
   experimental: {
-    optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme'],
+    optimizePackageImports: ['@itsm/ui', '@itsm/ui/theme', '@itsm/ui/shell', '@itsm/ui/charts'],
     /**
      * Server Actions carry the platform pages' writes (SPEC §3.6 rule 7) and
      * nothing else. Next already refuses an action whose `Origin` is not this
@@ -120,6 +126,18 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      /*
+       * `/demo` decides whether to open a shared demo session (SPEC v3 §4.6.1):
+       * never indexed, and never stored by a cache, because what it shows
+       * depends on this browser's cookies and on the demo's state right now.
+       */
+      {
+        source: '/demo',
+        headers: [
+          { key: 'x-robots-tag', value: 'noindex, nofollow' },
+          { key: 'cache-control', value: 'no-store' },
+        ],
+      },
       {
         source: '/:path*',
         headers: [

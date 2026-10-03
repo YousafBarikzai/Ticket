@@ -4,6 +4,7 @@ import { useMemo, useRef, type ReactNode } from 'react';
 import { Button, EmptyState, StatusPill, notify, useItsm, useNow, type EmptySpec, type Plural } from '@itsm/ui';
 import { DataTable, type ColumnSpec, type DataTablePagination, type DataTableScope, type FilterSpec } from '@itsm/ui/data';
 import { useRouter } from 'next/navigation';
+import { crossAreaTicketHref, type AreaModel } from '@itsm/contracts/areas';
 import { api } from '../../client/api.js';
 import { useOnline } from '../../client/live.js';
 import { useDrawer } from '../../client/useDrawer.js';
@@ -40,7 +41,8 @@ export interface RunsTableProps {
    * "Open". Runs carry only the id, and the API has no lookup by many ids.
    */
   readonly ticketNumbers?: Readonly<Record<string, string>>;
-  readonly workbenchOrigin?: string;
+  /** The person's areas (`currentAreas()`): ticket links open in the Service Desk when it is listed (A2 §3.7). */
+  readonly areas?: AreaModel;
   readonly showWorkflow?: boolean;
   readonly scope?: DataTableScope;
   readonly filters?: readonly FilterSpec[];
@@ -90,7 +92,7 @@ export function RunsTable({
   canOperate,
   canReadTickets,
   ticketNumbers = {},
-  workbenchOrigin,
+  areas,
   showWorkflow = true,
   scope,
   filters,
@@ -210,17 +212,21 @@ export function RunsTable({
           ticket: (row) => {
             if (!row.run.ticketId) return <span className="app-Runs__quiet">None</span>;
             const number = ticketNumbers[row.run.ticketId];
+            // The Service Desk when it is listed (same tab, through the area model), else this
+            // console's Tickets drawer. A run does not say which team has its ticket, so in a demo
+            // — where the Service Desk opens only Alex Morgan's teams' tickets (X-B2) — the row opens
+            // the drawer, whose *Open in Service Desk* knows the team.
+            const desk = areas ? crossAreaTicketHref(areas, { number: number ?? row.run.ticketId, groupId: null }) : null;
             if (number) {
-              // The workbench when it is there (same tab, SPEC §4.10), else this console's Tickets drawer.
-              const href = workbenchOrigin ? `${workbenchOrigin}/tickets/${encodeURIComponent(number)}` : `/tickets?open=ticket:${encodeURIComponent(number)}`;
+              const href = desk ?? `/tickets?open=ticket:${encodeURIComponent(number)}`;
               return (
-                <a className="app-Runs__ticket" href={href} aria-label={`Open ${number}${workbenchOrigin ? ' in the workbench' : ''}`}>
+                <a className="app-Runs__ticket" href={href} aria-label={`Open ${number}${desk ? ' in the Service Desk' : ''}`}>
                   {number}
                 </a>
               );
             }
-            return workbenchOrigin ? (
-              <Button size="sm" variant="ghost" href={`${workbenchOrigin}/tickets/${encodeURIComponent(row.run.ticketId)}`} aria-label={`Open the ticket for this ${row.workflowName} run`}>
+            return desk ? (
+              <Button size="sm" variant="ghost" href={desk} aria-label={`Open the ticket for this ${row.workflowName} run`}>
                 Open
               </Button>
             ) : (
@@ -261,7 +267,7 @@ export function RunsTable({
         ruleNames={ruleNames}
         canOperate={canOperate}
         canReadTickets={canReadTickets}
-        {...(workbenchOrigin ? { workbenchOrigin } : {})}
+        {...(areas ? { areas } : {})}
         onClose={drawer.close}
       />
     </>

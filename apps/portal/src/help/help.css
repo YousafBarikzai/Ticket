@@ -55,12 +55,111 @@
   }
 }
 
-/* ---- Both steps ------------------------------------------------------------- */
+/* ---- Every step ------------------------------------------------------------- */
 
 .app-HelpFlow {
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-lg);
+  container-type: inline-size;
+}
+
+/*
+ * The step header (v3 §7.2): Describe · Details · Review. Below 30rem it
+ * would stand on end and push the step off a phone's first screen, so the
+ * words "Step 2 of 3 · Add the details" (the sheet's description, the
+ * page's line above the card) carry it there alone.
+ */
+.app-HelpFlow__steps {
+  margin-block-end: calc(-1 * var(--itsm-space-2xs));
+}
+
+@container (max-width: 29.99rem) {
+  .app-HelpFlow__steps {
+    display: none;
+  }
+}
+
+/* The urgency cards carry an IconTile of their own: the card's icon slot keeps its place, not its tint. */
+.app-HelpFlow__urgency .itsm-RadioGroup__cardIcon {
+  inline-size: auto;
+  block-size: auto;
+  background: none;
+}
+
+/* ---- The review ---------------------------------------------------------------- */
+
+.app-HelpReview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-sm);
+  margin: 0;
+}
+
+.app-HelpReview__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+}
+
+.app-HelpReview__title {
+  margin: 0;
+  font-size: var(--itsm-text-headline-size);
+  line-height: var(--itsm-text-headline-line);
+  font-weight: var(--itsm-text-headline-weight);
+  letter-spacing: var(--itsm-text-headline-tracking);
+}
+
+.app-HelpReview__title:focus {
+  outline: none;
+}
+
+.app-HelpReview__title:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-focus-offset);
+  border-radius: var(--itsm-radius-sm);
+}
+
+/* Label beside value from 30rem (the flow is the container), stacked below; hairlines between. */
+.app-HelpReview__answers {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.app-HelpReview__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--itsm-space-3xs) var(--itsm-space-md);
+  padding-block: var(--itsm-space-sm);
+  border-block-start: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+}
+
+@container (min-width: 30rem) {
+  .app-HelpReview__pair {
+    grid-template-columns: minmax(8rem, 2fr) minmax(0, 3fr);
+  }
+}
+
+.app-HelpReview__pair > dt {
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-subheadline-size);
+  line-height: var(--itsm-text-subheadline-line);
+  font-weight: var(--itsm-font-weight-medium);
+}
+
+.app-HelpReview__pair > dd {
+  margin: 0;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-body-size);
+  line-height: var(--itsm-text-body-line);
+  overflow-wrap: anywhere;
+}
+
+/* What they wrote, as they wrote it: line breaks kept. */
+.app-HelpReview__text {
+  white-space: pre-line;
 }
 
 .app-HelpFlow__form {
@@ -245,6 +344,21 @@
 
 /* ---- The ending: sent, or kept for later ------------------------------------ */
 
+/* The server's success panel: the hero is the whole ending, focused as one. */
+.app-HelpSent {
+  border-radius: var(--itsm-radius-2xl);
+  animation: app-HelpDone-fade var(--itsm-duration-normal) var(--itsm-easing-standard) both;
+}
+
+.app-HelpSent:focus {
+  outline: none;
+}
+
+.app-HelpSent:focus-visible {
+  outline: var(--itsm-focus-width) solid var(--itsm-colour-border-focus);
+  outline-offset: var(--itsm-focus-offset);
+}
+
 .app-HelpDone {
   display: flex;
   flex-direction: column;
@@ -292,11 +406,6 @@
 .app-HelpDone__number {
   font-variant-numeric: tabular-nums slashed-zero;
   white-space: nowrap;
-}
-
-/* The promise's live region stays in place (so it is heard when it fills) without holding a gap open. */
-.app-HelpDone__slot:empty {
-  margin-block-start: calc(-1 * var(--itsm-space-sm));
 }
 
 .app-HelpDone__promise {

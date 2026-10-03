@@ -64,6 +64,11 @@ export interface ViewDefinition {
   readonly id: ViewId;
   /** Nav label = H1 = `<title>` (SPEC §5.1). */
   readonly label: string;
+  /**
+   * The purpose line under the title in the top bar while the view is open
+   * (v3 §3.5, A2 §5.4.1): one line, sentence case, no full stop.
+   */
+  readonly description: string;
   readonly icon: IconName;
   /** The `g` chord that goes here (SPEC §5.6). */
   readonly shortcut: string;
@@ -89,6 +94,7 @@ export const VIEWS: readonly ViewDefinition[] = [
   {
     id: 'mine',
     label: 'My work',
+    description: 'Open tickets assigned to you, soonest due first',
     icon: 'user',
     shortcut: 'g m',
     keywords: ['assigned to me', 'my tickets', 'mine'],
@@ -108,6 +114,7 @@ export const VIEWS: readonly ViewDefinition[] = [
   {
     id: 'unassigned',
     label: 'Unassigned',
+    description: 'New tickets in your teams that nobody has picked up',
     icon: 'user-plus',
     shortcut: 'g u',
     keywords: ['nobody', 'unclaimed', 'pick up', 'triage'],
@@ -127,6 +134,7 @@ export const VIEWS: readonly ViewDefinition[] = [
   {
     id: 'due',
     label: 'Due soon',
+    description: 'Open tickets in your teams by deadline, breaches first',
     icon: 'clock',
     shortcut: 'g d',
     keywords: ['sla', 'deadline', 'overdue', 'breach'],
@@ -146,6 +154,7 @@ export const VIEWS: readonly ViewDefinition[] = [
   {
     id: 'waiting',
     label: 'Waiting on others',
+    description: 'Your tickets waiting on a requester, a supplier or an approval',
     icon: 'hourglass',
     shortcut: 'g w',
     keywords: ['pending', 'on hold', 'requester', 'supplier', 'approval'],
@@ -165,6 +174,7 @@ export const VIEWS: readonly ViewDefinition[] = [
   {
     id: 'all',
     label: 'All open',
+    description: 'Every open ticket in your teams',
     icon: 'inbox',
     shortcut: 'g a',
     keywords: ['open tickets', 'queue', 'everything', 'team'],
@@ -184,6 +194,7 @@ export const VIEWS: readonly ViewDefinition[] = [
   {
     id: 'resolved',
     label: 'Recently resolved',
+    description: "Tickets you resolved that haven't closed yet",
     icon: 'circle-check',
     shortcut: 'g r',
     keywords: ['done', 'fixed', 'closed'],
@@ -504,56 +515,27 @@ export function countBadge(count: ViewCount | undefined): NavBadge | undefined {
   };
 }
 
-function withBadge(item: NavItem, badge: NavBadge | undefined): NavItem {
-  return badge ? { ...item, badge } : item;
+/**
+ * The counts the client fetched (`/api/desk/counts`), put on the navigation
+ * the server built (`navigation.ts`): views are filed under their id
+ * (`mine`), teams under `team:<uuid>` (`viewKey`). An item with no known
+ * count, or a count of nothing, has no badge: the server's model carries
+ * none, and this is always applied to it, never to an earlier result.
+ *
+ * Here, beside `countBadge`, rather than in `navigation.ts`, because the
+ * frame calls it in the browser on every count refresh, and `navigation.ts`
+ * reads the area contracts, whose tables cost a client bundle about 4 kB.
+ */
+export function navWithCounts(nav: NavModel, counts: ViewCounts): NavModel {
+  const counted = (items: readonly NavItem[]): NavItem[] =>
+    items.map((item) => {
+      const badge = countBadge(counts[item.id]);
+      return badge ? { ...item, badge } : item;
+    });
+  return { ...nav, sections: nav.sections.map((section) => ({ ...section, items: counted(section.items) })) };
 }
 
-/**
- * The sidebar: the six views, then one item per team the agent is in (SPEC
- * §5.3), with the counts that are known. Pins and recents are the frame's.
- *
- * Without `ticket.read` there is nothing a view could show, so there are no
- * views — the navigation says so by being empty rather than by offering six
- * links to "You don't have access".
- */
-export function deskNavModel({
-  canReadTickets,
-  teams,
-  counts = {},
-}: {
-  readonly canReadTickets: boolean;
-  readonly teams: readonly TeamSummary[];
-  readonly counts?: ViewCounts;
-}): NavModel {
-  if (!canReadTickets) return { label: 'Views', sections: [], pinned: { enabled: false }, recent: { enabled: false } };
-  const views: NavItem[] = VIEWS.map((view) =>
-    withBadge(
-      {
-        id: view.id,
-        label: view.label,
-        href: viewPath({ kind: 'view', id: view.id }),
-        icon: view.icon,
-        match: 'prefix',
-        shortcut: view.shortcut,
-        keywords: view.keywords,
-      },
-      countBadge(counts[view.id]),
-    ),
-  );
-  const teamItems: NavItem[] = teams.map((team) => {
-    const ref: ViewRef = { kind: 'team', teamId: team.id };
-    return withBadge(
-      { id: viewKey(ref), label: team.name, href: viewPath(ref), icon: TEAM_VIEW.icon, match: 'prefix', keywords: ['team'] },
-      countBadge(counts[viewKey(ref)]),
-    );
-  });
-  return {
-    label: 'Views',
-    sections: [
-      { id: 'views', label: 'Views', items: views },
-      ...(teamItems.length > 0 ? [{ id: 'teams', label: 'Teams', collapsible: true, items: teamItems }] : []),
-    ],
-    pinned: { enabled: true, max: 8 },
-    recent: { enabled: true, max: 8 },
-  };
+/** Whether any item carries a danger count: the phone's More tab then shows its dot (A2 §7.1). */
+export function hasDangerCount(nav: NavModel): boolean {
+  return nav.sections.some((section) => section.items.some((item) => item.badge?.tone === 'danger' && item.badge.value > 0));
 }

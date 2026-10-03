@@ -7,6 +7,7 @@ import { cleanupDocument, focus, render, typeInto } from '../../web/__tests__/su
 import { FormField } from '../../web/FormField.js';
 import { CheckboxGroup } from '../CheckboxGroup.js';
 import { DurationField } from '../DurationField.js';
+import { FilterPills } from '../FilterPills.js';
 import { NumberField } from '../NumberField.js';
 import { SearchField } from '../SearchField.js';
 import { SegmentedControl } from '../SegmentedControl.js';
@@ -70,6 +71,38 @@ describe('controls audit', () => {
             { value: 'archived', label: 'Archived', disabled: true },
           ]}
         />
+      </div>,
+    );
+  });
+
+  it('SegmentedControl: counts through the shared Count, one of them null', async () => {
+    await audit(
+      <SegmentedControl
+        label="Board or list"
+        mode="value"
+        size="sm"
+        value="list"
+        onValueChange={noop}
+        options={[
+          { value: 'list', label: 'List', count: 16 },
+          { value: 'board', label: 'Board', count: null },
+        ]}
+      />,
+    );
+  });
+
+  it('FilterPills: nav, toggle and single, with counts, a tone, a disabled pill and a summary', async () => {
+    const options = [
+      { value: 'all', label: 'All', count: 16, href: '/inbox' },
+      { value: 'new', label: 'New', count: 4, href: '/inbox?status=new' },
+      { value: 'breached', label: 'Breached', count: 1, tone: 'danger' as const, href: '/inbox?sla=breached' },
+      { value: 'waiting', label: 'Waiting', count: 120, countCapped: true, disabled: true },
+    ];
+    await audit(
+      <div>
+        <FilterPills label="Filter by status" mode="nav" value="new" options={options} summary="Showing 4 of 16" />
+        <FilterPills label="Narrow the queue" mode="toggle" value={['all', 'breached']} onValueChange={noop} options={options} />
+        <FilterPills label="Show" mode="single" size="sm" value="all" onValueChange={noop} options={options} />
       </div>,
     );
   });

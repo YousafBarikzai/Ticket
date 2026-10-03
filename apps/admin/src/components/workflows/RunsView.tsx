@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import type { AreaModel } from '@itsm/contracts/areas';
 import { IconButton, announce, notify, useItsm, useNow } from '@itsm/ui';
 import { formatDateTime, formatRelative } from '@itsm/ui/format';
 import { PageHeader, useRoutePending } from '@itsm/ui/shell';
@@ -39,7 +40,8 @@ export interface RunsViewProps {
   readonly canReadTickets: boolean;
   /** Ticket numbers by id, for the runs' ticket column (see `RunsTable`). */
   readonly ticketNumbers?: Readonly<Record<string, string>>;
-  readonly workbenchOrigin?: string;
+  /** The person's areas (`currentAreas()`): ticket links open in the Service Desk when it is listed (A2 §3.7). */
+  readonly areas?: AreaModel;
   readonly tabs: readonly { id: string; label: string; href: string; match?: 'exact' }[];
   readonly viewOnly?: { readonly label: string; readonly permission: string; readonly key: string };
   /** When the server read these rows (ISO). */
@@ -61,7 +63,7 @@ const EMPTY: Readonly<Record<RunScope, { title: string; description: string }>> 
 };
 
 export function RunsView(props: RunsViewProps): ReactNode {
-  const { scope, scopeHrefs, query, workflows, graphs, ruleNames, canOperate, canReadTickets, workbenchOrigin, tabs, viewOnly, unknownTicket } = props;
+  const { scope, scopeHrefs, query, workflows, graphs, ruleNames, canOperate, canReadTickets, areas, tabs, viewOnly, unknownTicket } = props;
   const [rows, setRows] = useState<readonly RunView[]>(props.runs);
   const [limit, setLimit] = useState(props.limit);
   const [loading, setLoading] = useState(false);
@@ -105,7 +107,7 @@ export function RunsView(props: RunsViewProps): ReactNode {
         canOperate={canOperate}
         canReadTickets={canReadTickets}
         {...(props.ticketNumbers ? { ticketNumbers: props.ticketNumbers } : {})}
-        {...(workbenchOrigin ? { workbenchOrigin } : {})}
+        {...(areas ? { areas } : {})}
         scope={{
           label: 'State',
           value: scope,

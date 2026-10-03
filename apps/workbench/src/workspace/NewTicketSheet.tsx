@@ -13,6 +13,7 @@ import {
   DraftStatus,
   FormField,
   Input,
+  PriorityChip,
   SegmentedControl,
   Select,
   Textarea,
@@ -152,6 +153,7 @@ function hasPermission(me: Me | undefined, key: string, scope?: string): boolean
   return Boolean(me?.permissions.some((entry) => entry.key === key && (scope === undefined || entry.scope === scope)));
 }
 
+/** `/me` on the client; the ticket workspace reads the demo's persona ids under the same key. */
 const meKey = ['desk', 'me'] as const;
 
 export function NewTicketSheet({ open, onOpenChange, onCreated }: NewTicketSheetProps): ReactNode {
@@ -278,7 +280,10 @@ export function NewTicketSheet({ open, onOpenChange, onCreated }: NewTicketSheet
         setFailure({ title: 'The ticket wasn’t sent', body: 'You’re offline, or the service didn’t answer. Everything is still here: try again when you’re connected, and it will be raised once.' });
       } else if (!fieldErrors.title && Object.keys(custom).length === 0) {
         const described = describeProblem(problem);
-        setFailure({ title: problem.status === 422 ? 'The ticket was refused' : described.title, ...(problem.detail ?? described.body ? { body: problem.detail ?? described.body } : {}) });
+        // The demo's cap (25 new tickets a visit) and lock speak the contract's sentence, never the service's raw detail.
+        const demo = problem.code === 'demo_limit' || problem.code === 'demo_disabled';
+        const body = demo ? described.body : (problem.detail ?? described.body);
+        setFailure({ title: problem.status === 422 ? 'The ticket was refused' : described.title, ...(body ? { body } : {}) });
       }
       requestAnimationFrame(() => {
         if (fieldErrors.title) titleRef.current?.focus();
@@ -452,8 +457,20 @@ export function NewTicketSheet({ open, onOpenChange, onCreated }: NewTicketSheet
             </FormField>
           </div>
           <p id={previewId} className="app-NewTicket__preview" data-state={preview ? preview.from : 'none'} aria-live="polite">
-            <span aria-hidden="true">{previewLine(preview)}</span>
-            <span className="itsm-visually-hidden">{previewSpoken(preview)}</span>
+            {preview ? (
+              // The priority as the desk sees it everywhere else (A6 §5.7): the chip with
+              // its bars, spoken "Priority 2, high", after what the choices make it.
+              <>
+                {preview.from === 'usual' ? <span className="itsm-visually-hidden">Usually: </span> : null}
+                <span aria-hidden="true">{preview.from === 'usual' ? 'Usually → ' : '→ '}</span>
+                <PriorityChip priority={preview.priority} words className="app-NewTicket__chip" />
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">{previewLine(preview)}</span>
+                <span className="itsm-visually-hidden">{previewSpoken(preview)}</span>
+              </>
+            )}
           </p>
           {preview?.from === 'usual' ? <p className="app-NewTicket__note">From the recommended grid; your desk’s own may differ.</p> : null}
           {!preview ? <p className="app-NewTicket__note">Without both, the desk’s default priority applies.</p> : null}

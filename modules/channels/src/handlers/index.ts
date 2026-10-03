@@ -1,4 +1,4 @@
-import { defineHandler, logger, metrics } from '@itsm/platform';
+import { defineHandler, isDemoTenant, logger, metrics } from '@itsm/platform';
 import { outboundSubject, outboundMessageId, TICKET_HEADER } from '../domain/threading.js';
 import { transportForAccount } from '../service/transport-registry.js';
 import { replyToChat } from '../service/chat-inbound.js';
@@ -43,6 +43,15 @@ defineHandler({
     const ticket = await tx.ticket.findFirst({ where: { id: payload.ticketId } });
     if (!ticket) return;
 
+    // E7 (SPEC v3 §4.7.2): an agent's reply in the shared demo stays in the
+    // ticket. It reaches no requester's inbox and no chat thread, whatever
+    // conversation a visitor's ticket came in on — the comment itself is
+    // untouched, which is all the demo needs to show.
+    if (await isDemoTenant(ctx.tenantId)) {
+      metrics.increment('demo_egress_suppressed_total', { choke: 'E7' });
+      return;
+    }
+
     for (const conversation of conversations) {
       const account = await tx.channelAccount.findFirst({ where: { id: conversation.accountId } });
       if (!account) continue;
@@ -76,7 +85,7 @@ defineHandler({
           continue;
         }
 
-        await replyToChat(config.transport ?? conversation.channel, {
+        await replyToChat(ctx.tenantId, config.transport ?? conversation.channel, {
           roomId: state.roomId,
           threadId: conversation.externalThreadId,
           text: `*${ticket.number}* — ${comment.body}`,

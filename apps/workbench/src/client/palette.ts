@@ -3,12 +3,15 @@ import type { CommandItem, CommandProvider } from '@itsm/ui';
 import type { Prefs } from '@itsm/ui/theme';
 import { stateLabel, typeLabel } from '../inbox/presentation.js';
 import { VIEWS, viewKey, viewPath, type TeamSummary } from '../inbox/views.js';
+import type { DeskDestination } from '../navigation.js';
 
 /**
  * The workbench's command palette (SPEC §5.5): what ⌘K offers.
  *
- * Groups, in the order they are listed on an empty query: Go to (the views
- * with their `g` chords, the person's teams), Create, Preferences, Help. As
+ * Groups, in the order they are listed on an empty query: Go to (the
+ * Overview, the views with their `g` chords, the person's teams, and the
+ * Board once it ships), Create, Switch area (v3 §3.9, A2 §10.3), Preferences,
+ * Help. As
  * the person types, three searches join them — ticket numbers ("INC-123" is
  * pinned first as "Open INC-000123"), tickets by text, and people ("Tickets
  * from Ada") — and when nothing at all matches, the fallback row "Search
@@ -17,7 +20,10 @@ import { VIEWS, viewKey, viewPath, type TeamSummary } from '../inbox/views.js';
  * workspace while one is open (`useRegisterCommands`).
  *
  * Built from injected functions rather than from the SDK and the router
- * directly, so the whole registry is testable as data.
+ * directly, so the whole registry is testable as data. The places and the
+ * areas arrive as data the server built (`navigation.ts`): this module is
+ * also read by the frame's first load, so it imports nothing of the area
+ * contracts itself.
  */
 
 /** Availability as the pill and the palette offer it; `left` is a manager's decision, not a menu item. */
@@ -43,6 +49,10 @@ export interface DeskPaletteDeps {
   readonly canSetAvailability: boolean;
   readonly canReadPeople: boolean;
   readonly teams: readonly TeamSummary[];
+  /** The Overview and, once it ships, the Board (`deskDestinations`); a pending place is not in the list. */
+  readonly destinations?: readonly DeskDestination[];
+  /** "Switch to {area}" for each other area, and in a demo the site's home (`switchAreaCommands`). */
+  readonly switchArea?: readonly CommandItem[];
   readonly prefs: Prefs;
   setPrefs(patch: Partial<Prefs>): void;
   openNewTicket(): void;
@@ -90,8 +100,13 @@ export function searchFallback(query: string, canReadTickets: boolean): CommandI
   return { id: 'fallback:search-all', label: `Search tickets for ‘${trimmed}’`, icon: 'search', href: searchAllHref(trimmed) };
 }
 
-function goToItems(teams: readonly TeamSummary[]): CommandItem[] {
+function goToItems(teams: readonly TeamSummary[], destinations: readonly DeskDestination[]): CommandItem[] {
+  const place = (id: string): CommandItem[] =>
+    destinations
+      .filter((entry) => entry.id === id)
+      .map((entry) => ({ id: `go:${entry.id}`, label: entry.label, icon: entry.icon, shortcut: entry.shortcut, keywords: [...entry.keywords], href: entry.href }));
   return [
+    ...place('overview'),
     ...VIEWS.map(
       (view): CommandItem => ({
         id: `go:${view.id}`,
@@ -112,6 +127,7 @@ function goToItems(teams: readonly TeamSummary[]): CommandItem[] {
         href: viewPath({ kind: 'team', teamId: team.id }),
       }),
     ),
+    ...place('board'),
   ];
 }
 
@@ -197,7 +213,7 @@ export function deskCommandProviders(deps: DeskPaletteDeps): CommandProvider[] {
   const providers: CommandProvider[] = [];
 
   if (deps.canReadTickets) {
-    providers.push({ id: 'go', group: 'Go to', items: goToItems(deps.teams) });
+    providers.push({ id: 'go', group: 'Go to', items: goToItems(deps.teams, deps.destinations ?? []) });
     providers.push({
       id: 'number',
       group: 'Go to',
@@ -217,6 +233,10 @@ export function deskCommandProviders(deps: DeskPaletteDeps): CommandProvider[] {
       group: 'Create',
       items: [{ id: 'create:ticket', label: 'New ticket', icon: 'compose', shortcut: 'c', keywords: ['raise', 'log', 'create'], run: deps.openNewTicket }],
     });
+  }
+
+  if (deps.switchArea && deps.switchArea.length > 0) {
+    providers.push({ id: 'areas', group: 'Switch area', items: deps.switchArea });
   }
 
   if (deps.canReadTickets && deps.canSearch) {

@@ -1,12 +1,15 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { uiStylesheet } from '@itsm/ui/styles';
 import { structuralVariables, themeVariables } from '@itsm/ui/tokens';
 import { dynamic, GET } from '../app/itsm-ui.css/route.js';
 
 /**
- * Every custom property this app spends is one the design system emits.
+ * Every custom property this app spends is one the design system emits, and
+ * no colour is written as a literal.
  *
  * A `var(--itsm-thing-that-does-not-exist)` is silent: the declaration is
  * dropped and the element renders with the browser default, which usually
@@ -15,18 +18,51 @@ import { dynamic, GET } from '../app/itsm-ui.css/route.js';
  * be a copy of another app's — every rule valid, not one of them matching a
  * class this app renders.
  *
+ * Every stylesheet under `src/` is read, the pages' own as well as
+ * `globals.css`, so a page that brings its CSS beside it is held to the same
+ * rules. A hex colour is refused outright (D3, A7 §1.1 applied to the Service
+ * Desk): colours come from the tokens, so the themes, dark mode and increased
+ * contrast reach every rule.
+ *
  * It does not check that a class is used, only that a token exists. Catching
  * the other direction needs a renderer, and that belongs in a browser test.
  */
-describe('the app stylesheet and the token pipeline agree', () => {
-  const css = readFileSync(fileURLToPath(new URL('../app/globals.css', import.meta.url)), 'utf8');
+const srcDir = fileURLToPath(new URL('../', import.meta.url));
+
+function stylesheetsUnder(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) out.push(...stylesheetsUnder(path));
+    else if (name.endsWith('.css')) out.push(path);
+  }
+  return out;
+}
+
+describe('the app stylesheets and the token pipeline agree', () => {
+  const sheets = stylesheetsUnder(srcDir).map((file) => ({ file: relative(srcDir, file), css: readFileSync(file, 'utf8') }));
+  const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('apple'))]);
+
+  it('finds the app’s stylesheets, globals.css and the entry pages’ among them', () => {
+    const files = sheets.map((sheet) => sheet.file.split(sep).join('/'));
+    expect(files).toEqual(expect.arrayContaining(['app/globals.css', 'app/demo/entry.css']));
+  });
 
   it('references no variable the pipeline does not emit', () => {
-    const defined = new Set([...Object.keys(structuralVariables()), ...Object.keys(themeVariables('apple'))]);
-    const used = [...new Set([...css.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))];
+    const globals = sheets.find((sheet) => sheet.file.endsWith('globals.css'))!;
+    expect([...globals.css.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].length).toBeGreaterThan(10);
+    for (const { file, css } of sheets) {
+      const used = [...new Set([...css.matchAll(/var\((--itsm-[a-zA-Z0-9-]+)/g)].map((match) => match[1]!))];
+      expect(used.filter((variable) => !defined.has(variable)), file).toEqual([]);
+    }
+  });
 
-    expect(used.length).toBeGreaterThan(10);
-    expect(used.filter((variable) => !defined.has(variable))).toEqual([]);
+  it('writes no colour as a hex literal', () => {
+    for (const { file, css } of sheets) {
+      // Comments may name a colour; declarations may not.
+      const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      expect(code.match(/#[0-9a-f]{3,8}\b/gi) ?? [], file).toEqual([]);
+    }
   });
 });
 
@@ -38,16 +74,43 @@ describe('the app stylesheet and the token pipeline agree', () => {
  * taken of — every browser would keep it for a year.
  */
 describe('the stylesheet route', () => {
+  const request = (acceptEncoding?: string) =>
+    new Request('http://workbench.test/itsm-ui.css?v=1', acceptEncoding === undefined ? {} : { headers: { 'accept-encoding': acceptEncoding } });
+
   it('serves exactly the design system sheet, as CSS, cacheable for a year', async () => {
-    const response = GET();
+    const response = await GET(request());
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8');
     expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(response.headers.get('content-encoding')).toBeNull();
     expect(await response.text()).toBe(uiStylesheet());
   });
 
-  it('is rendered once, at build time', () => {
-    expect(dynamic).toBe('force-static');
+  // Next's own compression skips a route handler's response, so the route
+  // compresses the sheet itself; every encoding must still decode to the sheet.
+  it.each([
+    ['gzip, deflate, br, zstd', 'br', brotliDecompressSync],
+    ['gzip, deflate', 'gzip', gunzipSync],
+    ['br;q=0, gzip;q=0.8', 'gzip', gunzipSync],
+    ['*', 'br', brotliDecompressSync],
+  ] as const)('answers accept-encoding "%s" in %s, which decodes to the sheet', async (accept, encoding, decode) => {
+    const response = await GET(request(accept));
+    expect(response.headers.get('content-encoding')).toBe(encoding);
+    expect(response.headers.get('vary')).toBe('accept-encoding');
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    const body = Buffer.from(await response.arrayBuffer());
+    expect(body.length).toBeLessThan(Buffer.byteLength(uiStylesheet()) / 5);
+    expect(decode(body).toString('utf8')).toBe(uiStylesheet());
+  });
+
+  it.each(['identity', 'br;q=0, gzip;q=0', 'deflate'])('sends the plain sheet for accept-encoding "%s"', async (accept) => {
+    const response = await GET(request(accept));
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(await response.text()).toBe(uiStylesheet());
+  });
+
+  it('reads the request, so it is rendered per request rather than once at build time', () => {
+    expect(dynamic).toBe('force-dynamic');
   });
 });
 
@@ -59,21 +122,28 @@ describe('the stylesheet route', () => {
 describe('the font files', () => {
   const source = readFileSync(fileURLToPath(new URL('../app/fonts.ts', import.meta.url)), 'utf8');
 
-  it('point at the self-hosted Inter files in packages/ui/fonts', () => {
+  it('point at the self-hosted Inter and Plus Jakarta Sans files in packages/ui/fonts', () => {
     const paths = [...source.matchAll(/src: '([^']+)'/g)].map((match) => match[1]!);
     expect(paths).toEqual([
       '../../../../packages/ui/fonts/InterVariable-latin-opsz.woff2',
       '../../../../packages/ui/fonts/InterVariable-latin-ext-opsz.woff2',
+      '../../../../packages/ui/fonts/PlusJakartaSans-latin-wght.woff2',
+      '../../../../packages/ui/fonts/PlusJakartaSans-latin-ext-wght.woff2',
     ]);
     const here = new URL('../app/fonts.ts', import.meta.url);
     for (const path of paths) expect(existsSync(fileURLToPath(new URL(path, here))), path).toBe(true);
   });
 
-  it('expose the two custom properties the token font stack reads', () => {
+  it('expose the custom properties the token font stacks read', () => {
     const sans = structuralVariables()['--itsm-font-family-sans']!;
     for (const variable of ['--font-inter', '--font-inter-ext']) {
       expect(source).toContain(`variable: '${variable}'`);
       expect(sans).toContain(`var(${variable}, "Inter")`);
+    }
+    const display = structuralVariables()['--itsm-font-family-display']!;
+    for (const variable of ['--font-jakarta', '--font-jakarta-ext']) {
+      expect(source).toContain(`variable: '${variable}'`);
+      expect(display).toContain(`var(${variable}, "Plus Jakarta Sans")`);
     }
   });
 });

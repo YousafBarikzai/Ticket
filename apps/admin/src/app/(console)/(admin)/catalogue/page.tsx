@@ -6,8 +6,8 @@ import { Forbidden } from '../../../../components/Forbidden.js';
 import { RequestTypesView } from '../../../../components/catalogue/RequestTypesView.js';
 import { tabsFor } from '../../../../navigation.js';
 import { read } from '../../../../server/read.js';
-import { pageAccess } from '../../../../server/session.js';
-import { loadForms, loadTeams, mayWriteForms, originOf, requestTypeViews, serviceViews } from './data.js';
+import { currentAreas, pageAccess } from '../../../../server/session.js';
+import { loadForms, loadTeams, mayWriteForms, requestTypeViews, serviceViews } from './data.js';
 import '../../../../components/catalogue/catalogue.css';
 
 export const metadata: Metadata = { title: 'Services & requests' };
@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
  *
  * The shortest loop in the product between an administrator doing something
  * and a requester seeing it: publish a request type here and it is in the
- * portal's catalogue, entitlement permitting. Drafts are listed beside live
+ * Help Portal's catalogue, entitlement permitting. Drafts are listed beside live
  * items for that reason — the difference between "I made it" and "they can
  * see it" is one column, and hiding drafts would make the gap invisible.
  *
@@ -33,11 +33,12 @@ export default async function CataloguePage(): Promise<ReactNode> {
   const { me, api } = access;
   const tabs = tabsFor(me, 'services');
 
-  const [services, types, forms, teams] = await Promise.all([
+  const [services, types, forms, teams, areas] = await Promise.all([
     read(() => api.configure.catalogue.services()),
     read(() => api.configure.catalogue.requestTypes()),
     loadForms(api, me),
     loadTeams(api),
+    currentAreas(),
   ]);
 
   if (!services.ok) {
@@ -52,7 +53,6 @@ export default async function CataloguePage(): Promise<ReactNode> {
   const serviceRows = await serviceViews(api, services.value, teams);
   const formRows = forms?.ok ? forms.value : null;
   const typeRows = types.ok ? requestTypeViews(types.value, serviceRows, formRows ?? [], teams) : [];
-  const portalOrigin = originOf(process.env.PORTAL_ORIGIN);
 
   return (
     <RequestTypesView
@@ -62,7 +62,7 @@ export default async function CataloguePage(): Promise<ReactNode> {
       forms={formRows}
       teams={teams}
       canEditQuestions={mayWriteForms(me)}
-      {...(portalOrigin ? { portalOrigin } : {})}
+      areas={areas}
       {...(types.ok ? {} : { problem: types.problem })}
     />
   );

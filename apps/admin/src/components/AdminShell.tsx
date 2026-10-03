@@ -2,13 +2,15 @@
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import type { AreaId, AreaModel } from '@itsm/contracts/areas';
 import { ConnectionStatus, GlobalBanner, useHotkey } from '@itsm/ui';
-import { AppShell, NotificationCenter, type AppSwitcherItem } from '@itsm/ui/shell';
+import type { MenuItemSpec } from '@itsm/ui/overlays';
+import { AppShell, DEMO_RESET_REQUEST_EVENT, NotificationCenter, setShortcutsDialogOpen } from '@itsm/ui/shell';
 import { useLiveState } from '@itsm/pwa/live';
 import { navModel, visibleNav, type NavBadgeValues } from '../navigation.js';
 import { holdsAny, type Grants } from '../permissions.js';
 import { useAdminNotifications, useOnline } from '../client/live.js';
-import { setCommandPaletteOpen, useCommandPaletteOpen } from '../client/palette.js';
+import { PaletteAreasProvider, setCommandPaletteOpen, useCommandPaletteOpen, type PaletteAreas } from '../client/palette.js';
 import { forgetThisPerson } from '../client/sign-out.js';
 import { useSessionEnded } from '../client/useMutation.js';
 
@@ -17,8 +19,14 @@ import { useSessionEnded } from '../client/useMutation.js';
  * (SPEC §4.9, §5.2, D7, D18), for tenant and platform pages alike.
  *
  * Everything it is given is serialisable — who is signed in, their
- * permissions, which other apps they can switch to — because the layout that
- * renders it is a server component. What needs the browser lives here:
+ * permissions, their areas (`currentAreas()`), the links into the other areas
+ * the server built from them, and the server-rendered demo bar and major
+ * incident chip — because the layout that renders it is a server component.
+ * It passes only the v3 frame props (SPEC v3 §3.10, RV1). It never reads an
+ * origin and never builds a cross-area link itself: those come built from the
+ * area model on the server, which keeps the model's code (and the demo's
+ * tables behind it) out of every route's first load. What needs the browser
+ * lives here:
  *
  *   - the sidebar, built from `navigation.ts` for this person, with badge
  *     counts that stream in after first paint (`NavBadges`);
@@ -29,20 +37,33 @@ import { useSessionEnded } from '../client/useMutation.js';
  *     banners: "You're offline — changes can't be saved" (the console queues
  *     nothing, ADR-0049) and "Your session ended" when the stream finds out
  *     before the person does;
- *   - the account menu: appearance, contrast, density, keyboard shortcuts,
- *     *Your access*, help and sign out — a POST that first forgets this
+ *   - the Help menu (Knowledge base · Help Portal, Keyboard shortcuts…; in
+ *     the demo How the demo works and the site);
+ *   - the account menu: the person's areas, *Your access*, appearance,
+ *     contrast, density, keyboard shortcuts, help, in the demo the Demo group,
+ *     and sign out (*End demo* in the demo) — a POST that first forgets this
  *     person's recent items, pins and dismissed notices on this device.
  */
 
 export interface AdminShellProps {
+  /** Line 2: the demo persona's job title, else the organisation or the workspace. */
   readonly person: { readonly name: string; readonly detail?: string };
-  readonly tenant: { readonly name: string } | null;
   readonly permissions: Grants['permissions'];
-  /** The other applications this person can use, same tab. */
-  readonly switcher: readonly AppSwitcherItem[];
-  /** Where a notification about a ticket opens. */
-  readonly workbenchOrigin?: string;
-  readonly helpHref?: string;
+  /** The person's areas, built on the server (`currentAreas()`): the Area card, the account menu, `useAreas()`. */
+  readonly areas: AreaModel;
+  /** The palette's words for each area (`AREAS[…].keywords`, read on the server). */
+  readonly areaKeywords: Readonly<Partial<Record<AreaId, readonly string[]>>>;
+  /** Links into the other areas, built from `areas` on the server (`crossAreaHref`); `null` where there is none. */
+  readonly links: {
+    /** "Knowledge base · Help Portal": the Help Portal's `/knowledge`. */
+    readonly knowledge: string | null;
+    /** The Service Desk's ticket page with a trailing slash; a notification's ticket is appended. */
+    readonly serviceDeskTickets: string | null;
+  };
+  /** The demo bar (server-rendered, `LazySessionDemoBar`), in demo visits only. */
+  readonly systemBar?: ReactNode;
+  /** The frame's chips ahead of the page's own: the live major incident, streamed. */
+  readonly context?: ReactNode;
   readonly children: ReactNode;
 }
 
@@ -107,8 +128,8 @@ function usePreloadPalette(): void {
  * The bell, the pill and the banners
  * ---------------------------------------------------------------------- */
 
-function AdminBell({ workbenchOrigin }: { readonly workbenchOrigin?: string }): ReactNode {
-  const notifications = useAdminNotifications(workbenchOrigin);
+function AdminBell({ serviceDeskTickets }: { readonly serviceDeskTickets: string | null }): ReactNode {
+  const notifications = useAdminNotifications(serviceDeskTickets);
   return (
     <NotificationCenter
       unread={notifications.unread}
@@ -122,37 +143,88 @@ function AdminBell({ workbenchOrigin }: { readonly workbenchOrigin?: string }): 
 
 const noItem = (): void => undefined;
 
-function signInAgain(): void {
-  const here = `${window.location.pathname}${window.location.search}`;
-  window.location.assign(`/api/session/login?redirectTo=${encodeURIComponent(here)}`);
+/**
+ * "Sign in again" after the session ended under the page — back to this page
+ * afterwards. A demo visit asks with `demo=1` (`signInAgainHref`'s shape,
+ * D22): the BFF then reopens the demo through `/demo` rather than sending a
+ * visitor to an identity provider they have no account with. Spelt out rather
+ * than imported, because `@itsm/contracts/demo` would bring its tables into
+ * every route's first load.
+ */
+export function signInAgainUrl(here: string, demo: boolean): string {
+  const query = new URLSearchParams({ redirectTo: here });
+  if (demo) query.set('demo', '1');
+  return `/api/session/login?${query.toString()}`;
+}
+
+function signInAgain(demo: boolean): void {
+  window.location.assign(signInAgainUrl(`${window.location.pathname}${window.location.search}`, demo));
 }
 
 /** Nothing while the stream is healthy (X-82); "Reconnecting…", "Offline" or "Session ended" otherwise. */
-function AdminStatus(): ReactNode {
+function AdminStatus({ demo }: { readonly demo: boolean }): ReactNode {
   const { state } = useLiveState();
-  return <ConnectionStatus state={state} pending={0} attention={[]} onRetry={noItem} onDiscard={noItem} onSignIn={signInAgain} />;
+  return <ConnectionStatus state={state} pending={0} attention={[]} onRetry={noItem} onDiscard={noItem} onSignIn={() => signInAgain(demo)} />;
 }
 
-function AdminBanners(): ReactNode {
+function AdminBanners({ demo }: { readonly demo: boolean }): ReactNode {
   const online = useOnline();
   const { state } = useLiveState();
   if (!online) {
     return <GlobalBanner tone="warning" icon="wifi-off" title="You’re offline" body="Changes can’t be saved until the connection is back." live="polite" />;
   }
   if (state === 'ended') {
-    return (
+    // The demo's words (§4.4): a visit is continued, never signed in to.
+    return demo ? (
+      <GlobalBanner
+        tone="warning"
+        icon="play"
+        title="Your demo session ended"
+        body="Continue the demo to save changes. The demo data may have been reset since."
+        action={{ id: 'continue-demo', label: 'Continue the demo' }}
+        onAction={() => signInAgain(true)}
+        live="polite"
+      />
+    ) : (
       <GlobalBanner
         tone="warning"
         icon="log-in"
         title="Your session ended"
         body="Sign in again to save changes. What you see stays here until you do."
         action={{ id: 'sign-in', label: 'Sign in again' }}
-        onAction={signInAgain}
+        onAction={() => signInAgain(false)}
         live="polite"
       />
     );
   }
   return null;
+}
+
+/**
+ * The top bar's Help menu (A2 §5.2.6): the knowledge base, which lives in the
+ * Help Portal, and the keyboard shortcuts; in the demo also how the demo works
+ * and the site's home (D18 — a real session never links to the site). Pure,
+ * and tested.
+ */
+export function helpItems(areas: AreaModel, knowledge: string | null): MenuItemSpec[] {
+  const portal = areas.areas.find((area) => area.id === 'portal');
+  const items: MenuItemSpec[] = [];
+  if (knowledge) {
+    items.push({
+      id: 'knowledge',
+      label: 'Knowledge base · Help Portal',
+      icon: 'knowledge',
+      href: knowledge,
+      ...(areas.demo && portal?.persona ? { description: `You’ll continue as ${portal.persona.name}` } : {}),
+    });
+  }
+  items.push({ id: 'shortcuts', label: 'Keyboard shortcuts…', icon: 'keyboard', shortcut: '?', onSelect: () => setShortcutsDialogOpen(true) });
+  const home = areas.demo ? areas.home : undefined;
+  if (home) {
+    items.push({ id: 'how-it-works', label: 'How the demo works', icon: 'info', href: `${home.href.split('#')[0]!.replace(/\/+$/, '')}/#how-it-works` });
+    items.push({ id: 'home', label: home.label, icon: 'home', href: home.href });
+  }
+  return items;
 }
 
 /* -------------------------------------------------------------------------
@@ -175,7 +247,7 @@ function GoTo({ keys, href, label }: { readonly keys: string; readonly href: str
  * The frame
  * ---------------------------------------------------------------------- */
 
-export function AdminShell({ person, tenant, permissions, switcher, workbenchOrigin, helpHref, children }: AdminShellProps): ReactNode {
+export function AdminShell({ person, permissions, areas, areaKeywords, links, systemBar, context, children }: AdminShellProps): ReactNode {
   const badges = useNavBadges();
   const grants = useMemo<Grants>(() => ({ permissions }), [permissions]);
   const nav = useMemo(() => navModel(grants, badges), [grants, badges]);
@@ -202,10 +274,11 @@ export function AdminShell({ person, tenant, permissions, switcher, workbenchOri
     setCommandPaletteOpen(false);
   }, [pathname]);
 
-  const brand = useMemo(
-    () => ({ name: 'Administration', ...(tenant ? { tenant: tenant.name } : {}), href: '/', app: 'admin' as const, switcher: [...switcher] }),
-    [tenant, switcher],
-  );
+  const demo = areas.demo;
+  // The v3 brand: the product lockup links home, under it the workspace (§3.4). The area's name is the Area card's.
+  const brand = useMemo(() => ({ href: '/', ...(areas.workspace ? { workspace: areas.workspace } : {}) }), [areas.workspace]);
+  const help = useMemo(() => ({ items: helpItems(areas, links.knowledge) }), [areas, links.knowledge]);
+  const paletteAreas = useMemo<PaletteAreas>(() => ({ model: areas, keywords: areaKeywords }), [areas, areaKeywords]);
 
   const canReadNotifications = holdsAny(grants, ['notification.read']);
   const chords = useMemo(() => visibleNav(grants).filter((item) => item.shortcut), [grants]);
@@ -214,16 +287,22 @@ export function AdminShell({ person, tenant, permissions, switcher, workbenchOri
     <>
       <AppShell
         variant="sidebar"
+        areas={areas}
         brand={brand}
         nav={nav}
+        {...(systemBar ? { systemBar } : {})}
+        {...(context ? { context } : {})}
+        help={help}
         search={{ placeholder: 'Search or jump to…', shortcut: 'mod+k' }}
         onOpenSearch={openSearch}
-        bell={canReadNotifications ? <AdminBell {...(workbenchOrigin ? { workbenchOrigin } : {})} /> : undefined}
-        status={<AdminStatus />}
-        banner={<AdminBanners />}
+        bell={canReadNotifications ? <AdminBell serviceDeskTickets={links.serviceDeskTickets} /> : undefined}
+        status={<AdminStatus demo={demo} />}
+        banner={<AdminBanners demo={demo} />}
         user={{
           name: person.name,
           ...(person.detail ? { detail: person.detail } : {}),
+          areas,
+          ...(demo ? { demo: { resetEvent: DEMO_RESET_REQUEST_EVENT } } : {}),
           items: [
             {
               id: 'access',
@@ -238,7 +317,7 @@ export function AdminShell({ person, tenant, permissions, switcher, workbenchOri
           appearance: true,
           density: true,
           shortcuts: true,
-          ...(helpHref ? { help: { href: helpHref } } : {}),
+          ...(links.knowledge ? { help: { href: links.knowledge, label: 'Knowledge base · Help Portal' } } : {}),
           signOut: { action: '/api/session/logout', beforeSubmit: forgetThisPerson },
         }}
       >
@@ -248,9 +327,12 @@ export function AdminShell({ person, tenant, permissions, switcher, workbenchOri
         <GoTo key={item.id} keys={item.shortcut!} href={item.href} label={item.label} />
       ))}
       {paletteWanted ? (
-        <Suspense fallback={null}>
-          <LazyPalette grants={grants} open={paletteOpen} onOpenChange={setCommandPaletteOpen} />
-        </Suspense>
+        // The palette is drawn beside the frame, outside its areas context, so it is handed the areas here.
+        <PaletteAreasProvider value={paletteAreas}>
+          <Suspense fallback={null}>
+            <LazyPalette grants={grants} open={paletteOpen} onOpenChange={setCommandPaletteOpen} />
+          </Suspense>
+        </PaletteAreasProvider>
       ) : null}
       {accessWanted ? (
         <Suspense fallback={null}>
@@ -259,7 +341,7 @@ export function AdminShell({ person, tenant, permissions, switcher, workbenchOri
       ) : null}
       {sessionEnded ? (
         <Suspense fallback={null}>
-          <LazySessionEnded open={sessionEnded} onDismiss={dismissSessionEnded} onSignIn={signInAgain} />
+          <LazySessionEnded open={sessionEnded} onDismiss={dismissSessionEnded} onSignIn={() => signInAgain(demo)} />
         </Suspense>
       ) : null}
     </>

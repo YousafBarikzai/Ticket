@@ -24,3 +24,33 @@ export async function nextNumber(tx: Tx, ctx: TenantContext, type: string, prefi
   if (allocated === undefined) throw new Error(`could not allocate a ${type} number`);
   return `${prefix}-${String(allocated).padStart(width, '0')}`;
 }
+
+/**
+ * Raises a counter so the next number it allocates is at least `floor`, and
+ * never lowers it. Returns the number `nextNumber` will allocate next.
+ *
+ * The shared demo's history starts mid-story: Northwind's incidents are in the
+ * four thousands and its changes past eleven hundred (A4 §1.15), because a
+ * service desk whose oldest ticket is `INC-000001` reads as a system switched
+ * on yesterday. The importer floors each counter before its first row.
+ *
+ * `GREATEST` rather than a plain set, so a floor below the counter is a no-op:
+ * running it after numbers were already allocated can never hand one out a
+ * second time. `next` keeps `nextNumber`'s meaning — the number to allocate
+ * next — so a floor of 4101 makes the next ticket `INC-004101`.
+ */
+export async function ensureCounterAtLeast(tx: Tx, ctx: TenantContext, type: string, floor: number): Promise<number> {
+  if (!Number.isSafeInteger(floor) || floor < 1 || floor > 2_147_483_647) {
+    throw new RangeError(`a counter floor must be a whole number from 1, not ${String(floor)}`);
+  }
+  const rows = await tx.$queryRaw<{ next: number }[]>`
+    INSERT INTO ticket_counter (tenant_id, type, next)
+    VALUES (${ctx.tenantId}::uuid, ${type}, ${floor}::int)
+    ON CONFLICT (tenant_id, type) DO UPDATE SET next = GREATEST(ticket_counter.next, EXCLUDED.next)
+    RETURNING ticket_counter.next AS next
+  `;
+
+  const next = rows[0]?.next;
+  if (next === undefined) throw new Error(`could not floor the ${type} counter`);
+  return Number(next);
+}

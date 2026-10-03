@@ -127,6 +127,11 @@ describe('the SDK calls routes that exist, with the method it uses', () => {
     expect(calls).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/v1/me' }));
     expect(calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/api/v1/tickets' }));
     expect(calls).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/v1/tickets' }));
+    // The redesign's Phase 1 surface (WP-37), by name, so a reader regression cannot skip it.
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/api/v1/analytics/query/batch' }));
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/v1/tickets/counts' }));
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'GET', path: `/api/v1/major-incidents/${UUID}` }));
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'GET', path: `/api/v1/records/${UUID}/${UUID}/cis` }));
     // Every verb the SDK uses is represented, so none of them is being read wrong across the board.
     expect(new Set(calls.map((call) => call.method))).toEqual(new Set(METHODS));
   });
@@ -163,6 +168,10 @@ describe('the SDK calls routes that exist, with the method it uses', () => {
     expect(await mounted('GET', `/api/v1/tickets/${UUID}/comments`)).toBe(false);
     expect(await mounted('POST', `/api/v1/tickets/${UUID}/comments`)).toBe(true);
   });
+
+  it('mounts GET /api/platform/v1/deployment-warnings, which the reader above does not scan (D24)', async () => expect(await mounted('GET', '/api/platform/v1/deployment-warnings')).toBe(true));
+  it('mounts GET /api/demo/v1/status, which demo().status() calls and the reader above does not scan (WP-37)', async () => expect(await mounted('GET', '/api/demo/v1/status')).toBe(true));
+  it('mounts POST /api/demo/v1/reset, the visitor reset the BFF forwards and the reader above does not scan (WP-31)', async () => expect(await mounted('POST', '/api/demo/v1/reset')).toBe(true));
 
   for (const call of calls) {
     it(`mounts ${call.method} ${call.path}`, async () => {

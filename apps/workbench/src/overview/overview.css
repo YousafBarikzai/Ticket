@@ -1,0 +1,305 @@
+/*
+ * The Overview (SPEC v3 §7.1.1; A6 §5.2): only the page's own arrangement
+ * — the toolbar, the phone's section chips, the banner's breakpoint, the
+ * hero's place while it loads, the SLA card's two figures and the Waiting
+ * and On call lists. Everything else is the design system's (hero, tiles,
+ * cards, charts, the dashboard grid).
+ *
+ * Every colour, space, size and duration is a design-system custom
+ * property, so a token change, dark mode and increased contrast reach the
+ * page with the rest of the product. Unlayered, so it wins over the design
+ * system's `@layer itsm.*` rules without `!important`. Logical properties
+ * throughout.
+ */
+
+.app-Overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--itsm-space-ml);
+}
+
+/* A section chip, a "Needs you" tab or a hero link lands on a card, not under the sticky bars. */
+.app-Overview [id] {
+  scroll-margin-block-start: calc(var(--itsm-frame-top) + var(--itsm-space-xl));
+}
+
+/* ---- The major incident below 1024 px ------------------------------------
+ * The frame's chip carries it from 1024 px; below that the chips are hidden,
+ * so the page says it above the toolbar (A6 §5.2.5). */
+
+@media (min-width: 64rem) {
+  .app-Overview__incident {
+    display: none;
+  }
+}
+
+/* ---- The toolbar (G2) ---------------------------------------------------- */
+
+.app-Overview__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--itsm-space-sm);
+  min-block-size: var(--itsm-control-height-lg);
+}
+
+.app-Overview__controls,
+.app-Overview__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  min-inline-size: 0;
+}
+
+.app-Overview__asAt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  margin: 0;
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Section chips (G12): phones only ------------------------------------ */
+
+.app-Overview__jumps {
+  display: none;
+}
+
+@container itsm-page (max-width: 47.9999rem) {
+  .app-Overview__jumps {
+    display: block;
+    position: sticky;
+    inset-block-start: var(--itsm-frame-top);
+    z-index: 1;
+    margin-inline: calc(-1 * var(--itsm-page-gutter));
+    padding: var(--itsm-space-xs) var(--itsm-page-gutter);
+    background: var(--itsm-colour-surface-canvas);
+    border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+  }
+  .app-Overview__jumps ul {
+    display: flex;
+    gap: var(--itsm-space-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .app-Overview__jumps a {
+    display: inline-flex;
+    align-items: center;
+    block-size: var(--itsm-control-height-sm);
+    padding-inline: var(--itsm-space-sm);
+    border: var(--itsm-border-hair) solid var(--itsm-colour-border-soft);
+    border-radius: var(--itsm-radius-pill);
+    background: var(--itsm-colour-surface-raised);
+    color: var(--itsm-colour-text-secondary);
+    font-size: var(--itsm-text-footnote-size);
+    line-height: var(--itsm-text-footnote-line);
+    font-weight: var(--itsm-font-weight-medium);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .app-Overview__jumps a:hover {
+    background: var(--itsm-colour-surface-hover);
+  }
+  /* Five rows of "Needs you" on a phone; "Show all" has the rest (A6 §5.2.9). */
+  .app-Overview__needs .itsm-AttentionList__row:nth-child(n + 6) {
+    display: none;
+  }
+}
+
+/* ---- The hero's place while it loads: its own minimum height (168) ----- */
+
+.app-Overview__heroSkeleton {
+  border-radius: var(--itsm-radius-3xl);
+}
+
+/* ---- SLA met: the gauge, then the targets under it ---------------------- */
+
+.app-Overview__sla {
+  display: grid;
+  gap: var(--itsm-space-md);
+  justify-items: center;
+}
+.app-Overview__sla > :last-child:not(:first-child) {
+  justify-self: stretch;
+}
+
+/* ---- Waiting on others: the register's table, read-only ------------------
+ * The DataTable v3 look (§2.14) for six rows that need no sorting, menus or
+ * selection: a `surface.raisedAlt` header band, 40 px rows on dividers,
+ * `id`-style references, a long wait in danger text with words for the ear. */
+
+.app-Overview__waiting {
+  container-type: inline-size;
+}
+
+.app-Overview__tableScroll {
+  overflow-x: auto;
+}
+
+.app-Overview__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  color: var(--itsm-colour-text-secondary);
+}
+
+.app-Overview__table th {
+  block-size: 2.25rem;
+  padding: 0 var(--itsm-space-sm);
+  background: var(--itsm-colour-surface-raisedAlt);
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.app-Overview__table td {
+  block-size: var(--itsm-row-height);
+  padding: var(--itsm-space-2xs) var(--itsm-space-sm);
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-divider);
+  vertical-align: middle;
+}
+
+.app-Overview__table tr:last-child td {
+  border-block-end: 0;
+}
+
+.app-Overview__table th:first-child,
+.app-Overview__table td:first-child {
+  padding-inline-start: var(--itsm-space-ml);
+}
+
+.app-Overview__table th:last-child,
+.app-Overview__table td:last-child {
+  padding-inline-end: var(--itsm-space-ml);
+}
+
+.app-Overview__table tbody tr:hover {
+  background: var(--itsm-colour-surface-hover);
+}
+
+.app-Overview__ref {
+  color: var(--itsm-colour-text-muted);
+  font-family: var(--itsm-text-id-family);
+  font-size: var(--itsm-text-id-size);
+  line-height: var(--itsm-text-id-line);
+  font-weight: var(--itsm-text-id-weight);
+  white-space: nowrap;
+}
+
+.app-Overview__titleCell {
+  inline-size: 100%;
+  max-inline-size: 0;
+}
+
+.app-Overview__titleLink {
+  display: block;
+  overflow: hidden;
+  color: var(--itsm-colour-text-primary);
+  font-weight: var(--itsm-font-weight-medium);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-Overview__titleLink:hover {
+  text-decoration: underline;
+}
+
+.app-Overview__table td[data-column='age'] {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.app-Overview__table td[data-long] {
+  color: var(--itsm-colour-danger-subtleText);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+
+.app-Overview__person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-xs);
+  white-space: nowrap;
+}
+
+.app-Overview__muted {
+  color: var(--itsm-colour-text-muted);
+}
+
+/* A narrow card keeps the reference, the title and what it waits on. */
+@container (max-width: 40rem) {
+  .app-Overview__table [data-column='requester'] {
+    display: none;
+  }
+}
+@container (max-width: 30rem) {
+  .app-Overview__table [data-column='age'] {
+    display: none;
+  }
+}
+
+/* ---- On call now --------------------------------------------------------- */
+
+.app-Overview__onCallList {
+  display: grid;
+  gap: var(--itsm-space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-Overview__onCallRow {
+  display: flex;
+  align-items: center;
+  gap: var(--itsm-space-sm);
+  min-block-size: var(--itsm-control-height-lg);
+}
+
+.app-Overview__onCallText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.app-Overview__onCallName {
+  overflow: hidden;
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-Overview__onCallMeta,
+.app-Overview__onCallStatus {
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+}
+
+.app-Overview__onCallStatus {
+  flex: none;
+}
+
+@media (forced-colors: active) {
+  .app-Overview__jumps a,
+  .app-Overview__table th {
+    border-color: CanvasText;
+  }
+}

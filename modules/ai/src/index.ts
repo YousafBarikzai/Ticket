@@ -174,6 +174,7 @@ export {
   type TriageRun,
 } from './service/decision-service.js';
 export { recordOverrides, reviewAutoMode, stepDownState, type StepDownState } from './service/auto-service.js';
+export { SAMPLE_DECISIONS_MAX, SAMPLE_MODEL, SAMPLE_PROVIDER, importSampleDecisions, sampleDecisionSchema, type ImportedSampleDecision, type SampleDecisionInput, type SampleDecisionsOptions } from './service/sample-decisions.js';
 export { tenantAiRegions } from './service/residency-service.js';
 export {
   respondSchema,
