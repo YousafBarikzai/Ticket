@@ -304,12 +304,26 @@ export async function updateWithVersion(
   return result.count;
 }
 
+/** Who did it and when, for a timeline entry written after the fact. */
+export interface TicketEventOptions {
+  /**
+   * When it happened. Omitted, the database stamps the insert (`now()`), which
+   * is right for everything that happens live; an imported history says when
+   * each step really was, or every step of a four-month-old ticket would read
+   * as happening during the import.
+   */
+  occurredAt?: Date;
+  /** Who did it. Omitted, the caller's own actor, as every live write. */
+  actor?: { type: string; id: string | null };
+}
+
 export async function insertTicketEvent(
   tx: Tx,
   ctx: TenantContext,
   ticketId: string,
   type: string,
   payload: Record<string, unknown>,
+  options: TicketEventOptions = {},
 ): Promise<void> {
   await tx.ticketEvent.create({
     data: {
@@ -317,9 +331,11 @@ export async function insertTicketEvent(
       tenantId: ctx.tenantId,
       ticketId,
       type,
-      actorType: ctx.actor.type,
-      actorId: ctx.actor.id,
+      actorType: options.actor?.type ?? ctx.actor.type,
+      actorId: options.actor ? options.actor.id : ctx.actor.id,
       payload: payload as never,
+      // Only when given: the column's default is the live behaviour.
+      ...(options.occurredAt ? { occurredAt: options.occurredAt } : {}),
     },
   });
 }

@@ -135,6 +135,19 @@ interface Increments {
   breached?: true;
 }
 
+/** How a refresh is applied. */
+export interface RefreshOptions {
+  /**
+   * Move `rollup_ticket_daily` by the difference the refresh made. On by
+   * default: that is how the rollup keeps up with every live event. A
+   * reprojection (`reprojectFromSource`) turns it off, because it rebuilds
+   * the days it touched from the facts afterwards, and diffing thousands of
+   * rows into a table about to be replaced is the build's biggest waste
+   * (A4 §2.7).
+   */
+  rollups?: boolean;
+}
+
 /**
  * Rebuilds one ticket's fact from the source rows, then moves the rollup by
  * the difference. Every projector below is a call to this.
@@ -145,6 +158,7 @@ export async function refreshTicketFact(
   event: EventEnvelope,
   ticketId: string,
   increments: Increments = {},
+  options: RefreshOptions = {},
 ): Promise<void> {
   const ticket = await loadTicket(tx, ticketId);
   if (!ticket) {
@@ -200,7 +214,7 @@ export async function refreshTicketFact(
 
   await dims.ensureDate(tx, after.createdDate);
   await facts.writeTicketFact(tx, ctx.tenantId, after);
-  await rollups.applyEntries(tx, ctx.tenantId, rollupDiff(shapeOf(before), shapeOf(after)));
+  if (options.rollups ?? true) await rollups.applyEntries(tx, ctx.tenantId, rollupDiff(shapeOf(before), shapeOf(after)));
   await facts.advanceCursor(tx, ctx.tenantId, PROJECTOR, event.id, occurredAt);
 
   metrics.increment('analytics_facts_projected_total', { projector: PROJECTOR });
@@ -218,8 +232,14 @@ function laterOf(a: Date | null, b: Date): Date {
  * missed, so there is nothing to read back and the flag has to be set by the
  * event that knows.
  */
-export async function markBreached(ctx: TenantContext, tx: Tx, event: EventEnvelope, ticketId: string): Promise<void> {
+export async function markBreached(
+  ctx: TenantContext,
+  tx: Tx,
+  event: EventEnvelope,
+  ticketId: string,
+  options: RefreshOptions = {},
+): Promise<void> {
   const before = await facts.findTicketFact(tx, ticketId);
   if (before?.breached) return;
-  await refreshTicketFact(ctx, tx, event, ticketId, { breached: true });
+  await refreshTicketFact(ctx, tx, event, ticketId, { breached: true }, options);
 }
