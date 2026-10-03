@@ -169,7 +169,7 @@ describe('the delta pill', () => {
 });
 
 describe('the spark row', () => {
-  it('draws the trend as an accent sparkline, 96 × 40 until the kit’s fill width is wired in, named by its direction', () => {
+  it('draws the trend as an accent sparkline the full width of the row, 40 tall, named by its direction', () => {
     const root = card({ trend: [980, 1100, 1284] });
     const row = root.querySelector('.itsm-StatCard__spark')!;
     expect(row.getAttribute('data-kind')).toBe('trend');
@@ -177,8 +177,8 @@ describe('the spark row', () => {
     expect(spark.getAttribute('role')).toBe('img');
     expect(spark.getAttribute('aria-label')).toBe('Trend: Rising, 980 → 1,284');
     expect(spark.getAttribute('data-tone')).toBe('accent');
-    expect(spark.getAttribute('width')).toBe('96');
-    expect(spark.getAttribute('height')).toBe('40');
+    expect(spark.getAttribute('data-width')).toBe('fill');
+    expect(spark.querySelector('svg')?.getAttribute('height')).toBe('40');
     expect(root.hasAttribute('data-spark')).toBe(true);
   });
 
