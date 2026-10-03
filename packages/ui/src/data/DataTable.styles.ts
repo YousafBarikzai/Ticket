@@ -44,7 +44,7 @@ ${scope} :is(.itsm-DataTable__row, .itsm-DataTable__skeletonRow) {
   min-block-size: var(--itsm-row-height-2line);
   padding-block: var(--itsm-space-sm);
   padding-inline: var(--itsm-space-md);
-  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-divider);
 }
 ${scope} :is(.itsm-DataTable__row, .itsm-DataTable__skeletonRow):last-child {
   border-block-end: 0;
@@ -123,14 +123,18 @@ ${scope} :is([data-kind="number"], [data-kind="percent"], [data-kind="currency"]
   clip-path: none;
   color: var(--itsm-colour-text-muted);
 }
-${scope} .itsm-DataTable__row[data-current] {
-  box-shadow: inset calc(var(--itsm-border-thick) + 1px) 0 0 0 var(--itsm-colour-accent);
+/* As a card, the row draws its bar itself: its first cell is the checkbox in the corner. */
+${scope} .itsm-DataTable__row:is([data-current], [data-accent])::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: var(--_bar-width);
+  background: var(--_bar);
+  pointer-events: none;
 }
-${scope} .itsm-DataTable__row[data-current]:dir(rtl) {
-  box-shadow: inset calc(-1 * (var(--itsm-border-thick) + 1px)) 0 0 0 var(--itsm-colour-accent);
-}
-${scope} .itsm-DataTable__row[data-current] > :first-child {
-  box-shadow: none;
+${scope} .itsm-DataTable__row > :first-child::before {
+  content: none;
 }
 ${scope} .itsm-DataTable__selectCell {
   position: absolute;
@@ -157,21 +161,32 @@ ${scope} .itsm-DataTable__stateRow > td {
 
 /**
  * `DataTable`: the admin list, in the patterns layer (it is built from the
- * components and adjusts a few of them in place).
+ * components and adjusts a few of them in place). v3 §2.14, A1 §7.11.
  *
- * - **Frame.** A raised card (radius `2xl`, elevation `xs`) on the canvas,
- *   clipped to its corners with `overflow: clip`, which — unlike `hidden` —
- *   is not a scroll container, so the header can still stick to the window.
- *   The table scrolls sideways inside it only when it is wider than the
- *   frame; while it fits the scroller is `visible` for the same reason.
- * - **Header.** Opaque `surface.raised`, never glass (D6): 13/18 `subheadline`
- *   in `text.secondary`, sentence case, a hairline under it, and the `md`
- *   shadow once it has stuck. Sort buttons show their arrow on hover and focus
- *   and keep it once sorted; the state itself is `aria-sort` on the cell.
- * - **Rows.** The density's row height (44, 36 compact, 48 on touch), `callout`
- *   with tabular figures, hairlines between. Hover is `surface.hover` and
- *   nothing moves (SPEC §1.9). Checked rows take `surface.selected`; the row
- *   whose drawer is open adds the 3 px accent bar and a semibold title.
+ * - **Frame.** A raised card on the canvas with a 1 px `border.subtle` and
+ *   radius `2xl` (12), and no shadow: depth is border-first. Clipped to its
+ *   corners with `overflow: clip`, which — unlike `hidden` — is not a scroll
+ *   container, so the header can still stick to the window. The table
+ *   scrolls sideways inside it only when it is wider than the frame; while it
+ *   fits the scroller is `visible` for the same reason. In a `Card bleed`
+ *   (`bleed`) the frame gives up its edge and corners to the card's.
+ * - **Header.** A 36 px band on `surface.raisedAlt`, opaque, never glass
+ *   (D6): 600 12/16 in `text.muted`, sentence case, a `border.subtle` rule
+ *   under it, and the `md` shadow once it has stuck. It sticks at
+ *   `--itsm-frame-top` — under the top bar, and under the demo's system bar
+ *   where one is on the page at ≥ 48rem (the one offset line here). Sortable
+ *   headers show `chevrons-up-down` at 55 %; a sorted one its arrow in
+ *   `text.primary`; the state itself is `aria-sort` on the cell.
+ * - **Rows.** The density's row height (40, 32 compact, 48 on touch; a
+ *   two-line title grows to 52), `callout` 13/20 in `text.secondary` with
+ *   tabular figures, `border.divider` between. Hover is `surface.hover` and
+ *   nothing moves. Checked rows take `surface.selected`; the row whose
+ *   drawer is open adds the 3 px accent bar (a `::before` at the inline
+ *   start, so right-to-left mirrors) and a semibold title. A critical row
+ *   (`accent`) draws the same bar in its tone's border colour.
+ * - **Cells.** `title` 500 `text.primary`; `mono` the `id` style; `due`
+ *   turns `danger.subtleText` 600 with its slip once late; `type` is a
+ *   22 px sunken chip. No rings in rows (X-33).
  * - **Controls.** Row checkboxes and ⋯ appear on hover and focus, for every
  *   row once any is checked, and on touch screens through the "Select"
  *   toggle; the primary link's hit area stretches over its whole cell.
@@ -195,8 +210,10 @@ export const dataTableStyles = layer(
 .itsm-DataTable {
   --_select: calc(var(--itsm-control-height-sm) + var(--itsm-space-sm));
   --_lead: 0px;
-  --_sticky-top: 0px;
-  --_header: calc(var(--itsm-text-subheadline-line) + 2 * var(--itsm-space-xs));
+  --_sticky-top: calc(var(--itsm-frame-top));
+  /* The header band: 36 px at every density. */
+  --_header: 2.25rem;
+  --_bar-width: calc(var(--itsm-border-thick) + 1px);
   display: flex;
   flex-direction: column;
   gap: var(--itsm-space-sm);
@@ -205,11 +222,6 @@ export const dataTableStyles = layer(
 }
 .itsm-DataTable[data-selectable] {
   --_lead: var(--_select);
-}
-${mq.belowLg} {
-  .itsm-DataTable {
-    --_sticky-top: var(--itsm-topbar-height);
-  }
 }
 :where([role="dialog"], [role="alertdialog"]) .itsm-DataTable {
   --_sticky-top: 0px;
@@ -256,10 +268,18 @@ ${mq.belowLg} {
   container: itsm-datatable / inline-size;
   position: relative;
   min-inline-size: 0;
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   border-radius: var(--itsm-radius-2xl);
   background: var(--itsm-colour-surface-raised);
-  box-shadow: var(--itsm-elevation-xs), var(--itsm-edge-highlight);
   overflow: clip;
+}
+/* In a \`Card bleed\`: the card is the frame; the toolbar and notes keep the card's padding. */
+.itsm-DataTable[data-bleed] > .itsm-DataTable__frame {
+  border: 0;
+  border-radius: inherit;
+}
+.itsm-DataTable[data-bleed] > :is(.itsm-DataTable__toolbar, .itsm-DataTable__note, .itsm-InlineAlert, .itsm-LoadMore, .itsm-OlderNewer, .itsm-DataTable__pager) {
+  padding-inline: var(--itsm-card-padding);
 }
 .itsm-DataTable__refresh {
   position: absolute;
@@ -300,27 +320,27 @@ ${mq.belowLg} {
   text-align: start;
 }
 
-.itsm-DataTable__table > thead :is(th, td) {
+.itsm-DataTable__head :is(th, td) {
   position: sticky;
   inset-block-start: var(--_sticky-top);
   z-index: 2;
   box-sizing: border-box;
   block-size: var(--_header);
-  padding-block: var(--itsm-space-xs);
+  padding-block: 0;
   padding-inline: var(--itsm-space-sm);
-  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
-  background: var(--itsm-colour-surface-raised);
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-subheadline-size);
-  line-height: var(--itsm-text-subheadline-line);
-  letter-spacing: var(--itsm-text-subheadline-tracking);
-  font-weight: var(--itsm-text-subheadline-weight);
+  border-block-end: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-surface-raisedAlt);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  letter-spacing: 0;
+  font-weight: var(--itsm-font-weight-semibold);
   text-align: start;
   vertical-align: middle;
   white-space: nowrap;
   transition: box-shadow var(--itsm-duration-normal) var(--itsm-easing-standard);
 }
-.itsm-DataTable__table > thead[data-stuck] :is(th, td) {
+.itsm-DataTable__head[data-stuck] :is(th, td) {
   box-shadow: var(--itsm-elevation-md);
   clip-path: inset(0 -1px -24px -1px);
 }
@@ -358,19 +378,16 @@ ${mq.belowLg} {
 }
 .itsm-DataTable__sortIcon {
   flex: none;
-  opacity: 0;
+  color: var(--itsm-colour-text-muted);
+  opacity: 0.55;
   transition: opacity var(--itsm-duration-fast) var(--itsm-easing-standard);
 }
-.itsm-DataTable__sort:is(:hover, :focus-visible, [data-active]) .itsm-DataTable__sortIcon {
+.itsm-DataTable__sort:is(:hover, :focus-visible) .itsm-DataTable__sortIcon {
   opacity: 1;
 }
-.itsm-DataTable__sort:not([data-active]) .itsm-DataTable__sortIcon {
-  color: var(--itsm-colour-text-muted);
-}
-${mq.coarse} {
-  .itsm-DataTable__sortIcon {
-    opacity: 1;
-  }
+.itsm-DataTable__sort[data-active] .itsm-DataTable__sortIcon {
+  color: var(--itsm-colour-text-primary);
+  opacity: 1;
 }
 
 /* Rows and cells */
@@ -382,12 +399,16 @@ ${mq.coarse} {
 .itsm-DataTable__table > tbody > tr > :is(td, th) {
   box-sizing: border-box;
   block-size: var(--itsm-row-height);
-  padding-block: var(--itsm-space-2xs);
+  padding-block: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs));
   padding-inline: var(--itsm-space-sm);
-  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-divider);
+  color: var(--itsm-colour-text-secondary);
   font-weight: var(--itsm-font-weight-regular);
   text-align: start;
   vertical-align: middle;
+}
+.itsm-DataTable__table > tbody > tr > :is(.itsm-DataTable__primaryCell, [data-kind="title"]) {
+  color: var(--itsm-colour-text-primary);
 }
 .itsm-DataTable__table > tbody:last-child > tr:last-child > :is(td, th) {
   border-block-end: 0;
@@ -422,11 +443,28 @@ ${HOVER} {
 .itsm-DataTable__row[data-current] {
   background: var(--itsm-colour-surface-selected);
 }
-.itsm-DataTable__row[data-current] > :first-child {
-  box-shadow: inset calc(var(--itsm-border-thick) + 1px) 0 0 0 var(--itsm-colour-accent);
+
+/* The 3 px bar: on the first cell (a row's own ::before would grow a column), at inline-start so RTL mirrors. */
+.itsm-DataTable__row[data-accent="neutral"] { --_bar: var(--itsm-colour-neutral-border); }
+.itsm-DataTable__row[data-accent="accent"] { --_bar: var(--itsm-colour-accent); }
+.itsm-DataTable__row[data-accent="info"] { --_bar: var(--itsm-colour-info-border); }
+.itsm-DataTable__row[data-accent="success"] { --_bar: var(--itsm-colour-success-border); }
+.itsm-DataTable__row[data-accent="warning"] { --_bar: var(--itsm-colour-warning-border); }
+.itsm-DataTable__row[data-accent="danger"] { --_bar: var(--itsm-colour-danger-border); }
+.itsm-DataTable__row[data-accent="hold"] { --_bar: var(--itsm-colour-hold-border); }
+.itsm-DataTable__row[data-accent="high"] { --_bar: var(--itsm-colour-high-border); }
+.itsm-DataTable__row[data-current] { --_bar: var(--itsm-colour-accent); }
+.itsm-DataTable__row:is([data-current], [data-accent]) > :first-child {
+  position: relative;
 }
-.itsm-DataTable__row[data-current] > :first-child:dir(rtl) {
-  box-shadow: inset calc(-1 * (var(--itsm-border-thick) + 1px)) 0 0 0 var(--itsm-colour-accent);
+.itsm-DataTable__row:is([data-current], [data-accent]) > :first-child::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: var(--_bar-width);
+  background: var(--_bar);
+  pointer-events: none;
 }
 .itsm-DataTable__row[data-current] .itsm-DataTable__primary {
   font-weight: var(--itsm-font-weight-semibold);
@@ -534,10 +572,41 @@ ${prefers.reducedMotion} .itsm-DataTable__updated {
   color: var(--itsm-colour-text-muted);
 }
 .itsm-DataTable__mono {
-  font-family: var(--itsm-font-family-mono);
-  font-size: var(--itsm-text-footnote-size);
-  color: var(--itsm-colour-text-secondary);
+  font-family: var(--itsm-text-id-family);
+  font-size: var(--itsm-text-id-size);
+  line-height: var(--itsm-text-id-line);
+  font-weight: var(--itsm-text-id-weight);
+  font-variant-numeric: slashed-zero tabular-nums;
+  color: var(--itsm-colour-text-muted);
   overflow-wrap: anywhere;
+}
+.itsm-DataTable__due[data-overdue] {
+  color: var(--itsm-colour-danger-subtleText);
+  font-weight: var(--itsm-font-weight-semibold);
+}
+.itsm-DataTable__slip {
+  margin-inline-start: var(--itsm-space-2xs);
+  font-weight: var(--itsm-font-weight-medium);
+}
+.itsm-DataTable__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--itsm-space-2xs);
+  box-sizing: border-box;
+  block-size: 1.375rem;
+  padding-inline: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs));
+  border-radius: var(--itsm-radius-sm);
+  background: var(--itsm-colour-surface-sunken);
+  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-medium);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.itsm-DataTable__typeIcon {
+  flex: none;
+  color: var(--itsm-colour-text-muted);
 }
 .itsm-DataTable__person,
 .itsm-DataTable__channel,
@@ -676,9 +745,9 @@ ${mq.coarse} {
   z-index: 1;
   background: inherit;
 }
-.itsm-DataTable__scroll:not([data-fits]) .itsm-DataTable__table > thead :is(th, td) {
+.itsm-DataTable__scroll:not([data-fits]) .itsm-DataTable__head :is(th, td) {
   z-index: 3;
-  background: var(--itsm-colour-surface-raised);
+  background: var(--itsm-colour-surface-raisedAlt);
 }
 
 /* Groups */
@@ -690,24 +759,17 @@ ${mq.coarse} {
   padding-block: var(--itsm-space-xs);
   padding-inline: var(--itsm-space-md);
   border-block-end: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
-  background: var(--itsm-colour-surface-sunken);
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-subheadline-size);
-  line-height: var(--itsm-text-subheadline-line);
-  letter-spacing: var(--itsm-text-subheadline-tracking);
-  font-weight: var(--itsm-text-subheadline-weight);
+  background: var(--itsm-colour-surface-raisedAlt);
+  color: var(--itsm-colour-text-primary);
+  font-size: var(--itsm-text-callout-size);
+  line-height: var(--itsm-text-callout-line);
+  letter-spacing: 0;
+  font-weight: var(--itsm-font-weight-semibold);
   text-align: start;
 }
 .itsm-DataTable__groupCount {
-  display: inline-block;
   margin-inline-start: var(--itsm-space-xs);
-  padding-inline: var(--itsm-space-2xs);
-  border-radius: var(--itsm-radius-pill);
-  background: var(--itsm-colour-fill-secondary);
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-footnote-size);
-  line-height: var(--itsm-text-footnote-line);
-  font-weight: var(--itsm-font-weight-medium);
+  vertical-align: middle;
 }
 
 /* States inside the table */
@@ -807,6 +869,11 @@ ${cards('.itsm-DataTable[data-layout="cards"]')}
 ${mq.forcedColors} {
   .itsm-DataTable__frame {
     border: 1px solid CanvasText;
+  }
+  .itsm-DataTable__row:is([data-current], [data-accent]) > :first-child::before,
+  .itsm-DataTable__row:is([data-current], [data-accent])::before {
+    forced-color-adjust: none;
+    background: Highlight;
   }
   .itsm-DataTable__row[data-current] > :first-child,
   .itsm-DataTable__row[data-selected] > :first-child {

@@ -3,7 +3,9 @@ import { describeTrend } from '../../charts/scale.js';
 import { Sparkline } from '../../charts/Sparkline.js';
 import { AvatarStack } from '../../display/AvatarStack.js';
 import { channelInfo } from '../../display/channel.js';
+import { PriorityChip } from '../../display/PriorityChip.js';
 import { StatusPill } from '../../display/StatusPill.js';
+import { priorityLook, TICKET_STATE_LOOK, ticketStateLook, ticketTypeLook } from '../../display/ticket-states.js';
 import { formatDuration } from '../../format/duration.js';
 import { formatDateTime, formatNumber, formatPercent } from '../../format/format.js';
 import { RelativeTime } from '../../format/RelativeTime.js';
@@ -11,9 +13,11 @@ import { Icon } from '../../icons/Icon.js';
 import type { IconName, LinkComponent, Tone } from '../../types.js';
 import { Avatar } from '../../web/Avatar.js';
 import { Badge } from '../../web/Badge.js';
-import { SlaClock, type SlaState } from '../../workbench/SlaClock.js';
+import type { SlaState } from '../../workbench/SlaClock.js';
 import { fillTemplate, isBlank, personName, textOf, valueAt } from '../model.js';
 import type { CellKind, ColumnSpec } from '../types.js';
+import { DueCell } from './DueCell.js';
+import { SlaCell } from './SlaCell.js';
 import { TimeCell } from './TimeCell.js';
 
 /**
@@ -25,6 +29,69 @@ import { TimeCell } from './TimeCell.js';
  * Hook-free on purpose: the table calls these while it renders, with the
  * locale, zone and words it read from the provider once.
  */
+
+/**
+ * The cell kinds a `DataTable` draws: the serialisable `CellKind`s and the
+ * two v3 adds (§2.14). `due` is a date that turns red with its slip ("+4d")
+ * once it has passed on a row still open; `type` is a ticket type's chip
+ * (`TYPE_LOOK`: a sunken chip, a muted glyph, the type's name). Both are
+ * plain data, like every kind, so a server page can ask for them.
+ */
+export type DataCellKind = CellKind | 'due' | 'type';
+
+/**
+ * When a `due` date that has passed counts as late: the row's `field` is not
+ * one of `notIn` (`{ field: 'statusCategory', notIn: ['resolved', 'closed'] }`),
+ * or is one of `in`. Without a rule every past date is late.
+ */
+export interface OverdueRule {
+  readonly field: string;
+  readonly notIn?: readonly string[];
+  readonly in?: readonly string[];
+}
+
+/**
+ * A column of a `DataTable`: a `ColumnSpec`, with the v3 kinds and, for
+ * `due`, the rule that says when a past date is late.
+ */
+export interface DataTableColumn extends Omit<ColumnSpec, 'kind'> {
+  readonly kind?: DataCellKind;
+  /** `due` only. */
+  readonly overdueWhen?: OverdueRule;
+}
+
+/** The ticket types' words, tones and glyphs as a column map, so a `type` column searches and sorts by its words. */
+const TYPE_MAP: NonNullable<ColumnSpec['map']> = Object.freeze(
+  Object.fromEntries(
+    (['incident', 'request', 'question', 'problem', 'change', 'task'] as const).map((key) => {
+      const look = ticketTypeLook(key);
+      return [key, { label: look.label, tone: look.tone, icon: look.icon }];
+    }),
+  ),
+);
+
+/**
+ * The column as the table's model sees it — sorting, alignment, search, the
+ * View menu: a `due` date is a `date`, a `type` a `badge` with the types'
+ * words. Only the cell itself draws the difference. A column of a v2 kind
+ * comes back as it is, so its identity (and every memo keyed on it) holds.
+ */
+export function modelColumn(column: DataTableColumn): ColumnSpec {
+  const { kind, overdueWhen: _overdueWhen, ...rest } = column;
+  if (kind === 'due') return { ...rest, kind: 'date' };
+  if (kind === 'type') return { ...rest, kind: 'badge', map: column.map ?? TYPE_MAP };
+  return column as ColumnSpec;
+}
+
+/** Whether a row's past `due` date is late under the column's rule. */
+export function isOpenFor(rule: OverdueRule | undefined, row: unknown): boolean {
+  if (!rule) return true;
+  const value = valueAt(row, rule.field);
+  const key = isBlank(value) ? '' : scalar(value);
+  if (rule.in && !rule.in.includes(key)) return false;
+  if (rule.notIn && rule.notIn.includes(key)) return false;
+  return true;
+}
 
 export interface CellContext {
   readonly locale: string;
@@ -39,9 +106,6 @@ export interface CellContext {
 export interface CellPlacement {
   readonly primary?: boolean;
 }
-
-/** Priority tones when a column gives no map: only the two that need attention are coloured. */
-const PRIORITY_TONES: Readonly<Record<string, Tone>> = { P1: 'danger', P2: 'warning', P3: 'neutral', P4: 'neutral' };
 
 function isExternal(href: string): boolean {
   return /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(href) || href.startsWith('mailto:');
@@ -71,7 +135,7 @@ export function EmptyCell({ column, notSet }: { readonly column: Pick<ColumnSpec
   );
 }
 
-function withSecondary(main: ReactNode, column: ColumnSpec, row: unknown): ReactNode {
+function withSecondary(main: ReactNode, column: Pick<ColumnSpec, 'secondaryField'>, row: unknown): ReactNode {
   if (!column.secondaryField) return main;
   const secondary = valueAt(row, column.secondaryField);
   if (isBlank(secondary)) return main;
@@ -83,10 +147,11 @@ function withSecondary(main: ReactNode, column: ColumnSpec, row: unknown): React
   );
 }
 
-function time(value: unknown, column: ColumnSpec, context: CellContext, kind: 'date' | 'datetime'): ReactNode {
+/** A moment's `<time>` text in the column's form, its full spelling, and its ISO string; `null` when it is not a moment. */
+function moment(value: unknown, column: Pick<ColumnSpec, 'format'>, context: CellContext, kind: 'date' | 'datetime'): { iso: string; text: string; full: string } | null {
   const iso = value instanceof Date ? value.toISOString() : String(value);
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
+  if (Number.isNaN(date.getTime())) return null;
   let text: string;
   const options = column.format as Intl.DateTimeFormatOptions | undefined;
   if (options && !('unit' in options) && Object.keys(options).length > 0) {
@@ -98,7 +163,13 @@ function time(value: unknown, column: ColumnSpec, context: CellContext, kind: 'd
   } else {
     text = formatDateTime(iso, { locale: context.locale, timeZone: context.timeZone, style: kind });
   }
-  return <TimeCell iso={iso} text={text} full={formatDateTime(iso, { locale: context.locale, timeZone: context.timeZone, style: 'full' })} />;
+  return { iso, text, full: formatDateTime(iso, { locale: context.locale, timeZone: context.timeZone, style: 'full' }) };
+}
+
+function time(value: unknown, column: Pick<ColumnSpec, 'format'>, context: CellContext, kind: 'date' | 'datetime'): ReactNode {
+  const at = moment(value, column, context, kind);
+  if (!at) return value instanceof Date ? value.toISOString() : String(value);
+  return <TimeCell iso={at.iso} text={at.text} full={at.full} />;
 }
 
 /** A link drawn inside a cell that is not the row's primary control. */
@@ -126,7 +197,7 @@ function CellLink({ href, children, Link }: { readonly href: string; readonly ch
   );
 }
 
-function mapped(column: ColumnSpec, value: unknown): { label: string; tone?: Tone; icon?: IconName } {
+function mapped(column: Pick<ColumnSpec, 'kind' | 'map'>, value: unknown): { label: string; tone?: Tone; icon?: IconName } {
   const key = scalar(value);
   const entry = column.map?.[key];
   return entry ?? { label: textOf(column, value) || key };
@@ -137,30 +208,41 @@ function mapped(column: ColumnSpec, value: unknown): { label: string; tone?: Ton
  * them in the row's link or button, and a link inside a link is the nesting
  * X-62 forbids.
  */
-export function renderCell(column: ColumnSpec, row: unknown, context: CellContext, placement: CellPlacement = {}): ReactNode {
+export function renderCell(column: DataTableColumn, row: unknown, context: CellContext, placement: CellPlacement = {}): ReactNode {
   const value = valueAt(row, column.field);
-  if (isBlank(value) && column.kind !== 'boolean') return <EmptyCell column={column} notSet={context.notSet} />;
-  const kind: CellKind = column.kind ?? 'text';
+  const kind: DataCellKind = column.kind ?? 'text';
+  /** The column as the model reads it: what words a value has, in a v2 kind. */
+  const model = modelColumn(column);
+  // Nobody in a person column that has a word for it ("Unassigned"): the dashed avatar beside the word.
+  if (isBlank(value) && kind === 'person' && column.empty && column.empty !== '—' && !placement.primary) {
+    return (
+      <span className="itsm-DataTable__person" data-nobody="">
+        <Avatar kind="unassigned" size="sm" decorative />
+        <span className="itsm-DataTable__empty">{column.empty}</span>
+      </span>
+    );
+  }
+  if (isBlank(value) && kind !== 'boolean') return <EmptyCell column={column} notSet={context.notSet} />;
   const numberFormat = column.format && !('unit' in column.format) ? (column.format as Intl.NumberFormatOptions) : undefined;
 
   switch (kind) {
     case 'title':
-      return withSecondary(<span className="itsm-DataTable__titleText">{textOf(column, value)}</span>, column, row);
+      return withSecondary(<span className="itsm-DataTable__titleText">{textOf(model, value)}</span>, column, row);
 
     case 'mono':
-      return <code className="itsm-DataTable__mono">{textOf(column, value)}</code>;
+      return <code className="itsm-DataTable__mono">{textOf(model, value)}</code>;
 
     case 'number':
     case 'currency': {
       const number = toNumber(value);
-      if (number === null) return textOf(column, value);
+      if (number === null) return textOf(model, value);
       if (kind === 'currency' && !numberFormat?.currency) return formatNumber(number, { locale: context.locale, ...numberFormat });
       return formatNumber(number, { locale: context.locale, ...numberFormat, ...(kind === 'currency' ? { style: 'currency' as const } : {}) });
     }
 
     case 'percent': {
       const number = toNumber(value);
-      return number === null ? textOf(column, value) : formatPercent(number, { locale: context.locale, ...numberFormat });
+      return number === null ? textOf(model, value) : formatPercent(number, { locale: context.locale, ...numberFormat });
     }
 
     case 'date':
@@ -172,24 +254,55 @@ export function renderCell(column: ColumnSpec, row: unknown, context: CellContex
 
     case 'duration': {
       const minutes = toNumber(value);
-      return minutes === null ? textOf(column, value) : formatDuration(minutes, { locale: context.locale });
+      return minutes === null ? textOf(model, value) : formatDuration(minutes, { locale: context.locale });
     }
 
     case 'status': {
-      const state = mapped(column, value);
+      // The column's own words win; a canonical ticket state without them takes its D5 look.
+      const key = scalar(value);
+      const state = column.map?.[key] ?? (Object.prototype.hasOwnProperty.call(TICKET_STATE_LOOK, key) ? ticketStateLook(key) : mapped(model, value));
       return <StatusPill size="sm" label={state.label} tone={state.tone ?? 'neutral'} icon={state.icon ?? 'auto'} {...(column.srPrefix ? { srPrefix: column.srPrefix } : {})} />;
     }
 
-    case 'badge':
     case 'priority': {
-      const state = mapped(column, value);
-      const tone = state.tone ?? (kind === 'priority' ? (PRIORITY_TONES[scalar(value).toUpperCase()] ?? 'neutral') : 'neutral');
-      const srPrefix = column.srPrefix ?? (kind === 'priority' ? 'Priority' : undefined);
+      // P1–P4 are the signal-bar chip (v3 §2.14); a column that maps its values keeps its own words.
+      const code = scalar(value).toUpperCase();
+      if (!column.map?.[scalar(value)] && priorityLook(code)) {
+        return <PriorityChip priority={code} size="sm" srPrefix={column.srPrefix ?? 'Priority'} />;
+      }
+      const state = mapped(model, value);
       return (
-        <Badge size="sm" tone={tone} {...(state.icon ? { icon: state.icon } : {})} {...(srPrefix ? { srPrefix } : {})}>
+        <Badge size="sm" tone={state.tone ?? 'neutral'} {...(state.icon ? { icon: state.icon } : {})} srPrefix={column.srPrefix ?? 'Priority'}>
           {state.label}
         </Badge>
       );
+    }
+
+    case 'badge': {
+      const state = mapped(model, value);
+      return (
+        <Badge size="sm" tone={state.tone ?? 'neutral'} {...(state.icon ? { icon: state.icon } : {})} {...(column.srPrefix ? { srPrefix: column.srPrefix } : {})}>
+          {state.label}
+        </Badge>
+      );
+    }
+
+    case 'type': {
+      const key = scalar(value);
+      const entry = column.map?.[key];
+      const look = ticketTypeLook(key);
+      return (
+        <span className="itsm-DataTable__type">
+          <Icon name={entry?.icon ?? look.icon} size={12} className="itsm-DataTable__typeIcon" />
+          {entry?.label ?? look.label}
+        </span>
+      );
+    }
+
+    case 'due': {
+      const at = moment(value, column, context, column.format && 'hour' in column.format ? 'datetime' : 'date');
+      if (!at) return textOf(model, value);
+      return <DueCell iso={at.iso} text={at.text} full={at.full} open={isOpenFor(column.overdueWhen, row)} locale={context.locale} />;
     }
 
     case 'person': {
@@ -197,7 +310,7 @@ export function renderCell(column: ColumnSpec, row: unknown, context: CellContex
       const initials = typeof value === 'object' && value ? (value as { initials?: unknown }).initials : undefined;
       const person = (
         <span className="itsm-DataTable__person">
-          <Avatar name={name} size="xs" decorative {...(typeof initials === 'string' ? { initials } : {})} />
+          <Avatar name={name} size="sm" decorative {...(typeof initials === 'string' ? { initials } : {})} />
           <span className="itsm-DataTable__personName">{name}</span>
         </span>
       );
@@ -242,7 +355,7 @@ export function renderCell(column: ColumnSpec, row: unknown, context: CellContex
     }
 
     case 'link': {
-      const text = textOf(column, value);
+      const text = textOf(model, value);
       if (placement.primary) return text;
       const href = column.href ? fillTemplate(column.href, row) : typeof value === 'string' ? value : undefined;
       return href ? (
@@ -256,7 +369,7 @@ export function renderCell(column: ColumnSpec, row: unknown, context: CellContex
 
     case 'progress': {
       let ratio = toNumber(value);
-      if (ratio === null) return textOf(column, value);
+      if (ratio === null) return textOf(model, value);
       if (ratio > 1) ratio /= 100;
       ratio = Math.max(0, Math.min(1, ratio));
       return (
@@ -287,21 +400,22 @@ export function renderCell(column: ColumnSpec, row: unknown, context: CellContex
     }
 
     case 'sla': {
-      if (typeof value !== 'object' || value === null) return textOf(column, value);
-      const clock = value as { state?: SlaState; remainingMinutes?: number | null; dueAt?: string; targetType?: string };
+      if (typeof value !== 'object' || value === null) return textOf(model, value);
+      const clock = value as { state?: SlaState; remainingMinutes?: number | null; dueAt?: string };
       if (!clock.state) return <EmptyCell column={column} notSet={context.notSet} />;
       return (
-        <SlaClock
-          targetType={clock.targetType ?? 'resolution'}
+        <SlaCell
           state={clock.state}
           remainingMinutes={clock.remainingMinutes ?? null}
+          locale={context.locale}
           {...(clock.dueAt ? { dueAt: clock.dueAt } : {})}
+          {...(column.srPrefix ? { srPrefix: column.srPrefix } : {})}
         />
       );
     }
 
     case 'text':
     default:
-      return withSecondary(<span className="itsm-DataTable__text">{textOf(column, value)}</span>, column, row);
+      return withSecondary(<span className="itsm-DataTable__text">{textOf(model, value)}</span>, column, row);
   }
 }

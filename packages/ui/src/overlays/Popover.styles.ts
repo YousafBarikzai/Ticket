@@ -1,13 +1,15 @@
 import { css, layer, mq, prefers } from '../styles/css.js';
 
 /**
- * `Popover`: the menu's material and motion around free content.
+ * `Popover`: the menu's material and motion around free content (v3 §2.14).
  *
  * `material.popover` (glass at ≥ 0.96 alpha, solid where transparency is
- * reduced), a `border.subtle` hairline, radius `xl`, elevation `lg`, 16 px
- * padding. The title is a `headline` in sentence case; the body reads in
- * `callout`, the size of everything else that floats. Scales in from the
- * trigger's side over `fast`, and only fades under reduced motion.
+ * reduced), a 1 px `border.subtle`, radius `xl` (12), elevation `md` — the
+ * menu's surface exactly. Free content keeps 16 px padding where a menu's
+ * rows have 6: text needs the room a row's own padding gives it. The title is
+ * a `headline` in sentence case; the body reads in `callout`, the size of
+ * everything else that floats. Scales in from the trigger's side over
+ * `fast`, and only fades under reduced motion.
  */
 export const popoverStyles = layer(
   'components',
@@ -20,12 +22,12 @@ export const popoverStyles = layer(
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--itsm-space-md);
-  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   border-radius: var(--itsm-radius-xl);
   background: var(--itsm-colour-material-popover);
   -webkit-backdrop-filter: var(--itsm-material-popover-filter);
   backdrop-filter: var(--itsm-material-popover-filter);
-  box-shadow: var(--itsm-elevation-lg), var(--itsm-edge-highlight);
+  box-shadow: var(--itsm-elevation-md), var(--itsm-edge-highlight);
   color: var(--itsm-colour-text-primary);
   font-family: var(--itsm-font-family-sans);
   font-size: var(--itsm-text-callout-size);

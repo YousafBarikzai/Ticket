@@ -30,6 +30,7 @@ import {
   type ReactNode,
 } from 'react';
 import { announce } from '../a11y/announcer.js';
+import { Count } from '../display/Count.js';
 import { useCollectionKeyboard, type ActivateHow, type CollectionColumn } from '../a11y/collection-keyboard.js';
 import { InlineAlert } from '../feedback/InlineAlert.js';
 import { inSentence } from '../feedback/problem.js';
@@ -44,7 +45,7 @@ import { useOptionalItsm } from '../provider/ItsmProvider.js';
 import { defaultMessages } from '../provider/messages.js';
 import { notify } from '../provider/notify.js';
 import { useTheme } from '../theme/ThemeProvider.js';
-import type { ActionSpec, EmptySpec, Plural, Problem } from '../types.js';
+import type { ActionSpec, EmptySpec, Plural, Problem, Tone } from '../types.js';
 import { Button } from '../web/Button.js';
 import { Checkbox } from '../web/Checkbox.js';
 import { cx } from '../web/cx.js';
@@ -52,7 +53,7 @@ import { EmptyState } from '../web/EmptyState.js';
 import { IconButton } from '../web/IconButton.js';
 import { Skeleton } from '../web/Skeleton.js';
 import { BulkActionBar, type ActionDetails } from './BulkActionBar.js';
-import { renderCell, type CellContext } from './cells/index.js';
+import { modelColumn, renderCell, type CellContext, type DataTableColumn } from './cells/index.js';
 import { FilterBar } from './FilterBar.js';
 import { useIsomorphicLayoutEffect, useLatest } from './latest.js';
 import { LoadMore } from './LoadMore.js';
@@ -92,11 +93,13 @@ export type DataTableActivate =
   | { readonly kind: 'callback' };
 
 export type { DataTableSort } from './model.js';
+export type { DataCellKind, DataTableColumn, OverdueRule } from './cells/index.js';
 
 export interface DataTableProps<Row extends Record<string, unknown>> {
   readonly caption: string;
   readonly captionHidden?: boolean;
-  readonly columns: readonly ColumnSpec[];
+  /** `ColumnSpec`s, plus the v3 kinds `due` and `type` (§2.14). */
+  readonly columns: readonly DataTableColumn[];
   readonly rows: readonly Row[];
   /** The field that identifies a row. */
   readonly rowKey: string;
@@ -174,6 +177,21 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
   readonly currentKeys?: readonly string[];
   /** Client parent only: an empty state of its own instead of `empty` (the deprecated `InteractiveTable`'s node). */
   readonly emptyContent?: ReactNode;
+
+  /* v3 (§2.14). */
+
+  /**
+   * Critical rows: the row's `field` mapped to a tone draws a 3 px bar in that
+   * tone's border colour at the row's inline start — a P1, a breach. The
+   * current row's accent bar wins over it.
+   */
+  readonly accent?: { readonly field: string; readonly map: Readonly<Record<string, Tone>> };
+  /**
+   * The table sits in a `Card bleed`: no frame of its own (no border, no
+   * corners), its rows edge to edge under the card's title, and the toolbar
+   * and notes keep the card's padding.
+   */
+  readonly bleed?: boolean;
 }
 
 /* -------------------------------------------------------------------------
@@ -410,6 +428,8 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
     onFiltersChange,
     currentKeys,
     emptyContent,
+    accent,
+    bleed = false,
     state,
   } = props;
   const { view, setView, isPending } = state;
@@ -417,7 +437,11 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
   // of the page's view component: keyed by their contents, so TanStack's row
   // models are rebuilt when a column changes rather than on every render.
   const columnsKey = JSON.stringify(props.columns);
-  const columns = useMemo(() => props.columns, [columnsKey]);
+  const drawnColumns = useMemo(() => props.columns, [columnsKey]);
+  // The model (sorting, search, alignment, the View menu) reads each column in
+  // a v2 kind; the cells draw the column as given (`due`, `type`).
+  const columns = useMemo(() => drawnColumns.map(modelColumn), [drawnColumns]);
+  const drawnById = useMemo(() => new Map(drawnColumns.map((column) => [column.id, column])), [drawnColumns]);
 
   const itsm = useOptionalItsm();
   const { prefs, setPrefs } = useTheme();
@@ -1226,6 +1250,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
     const isSelected = selected.has(key);
     const current = isCurrent(row, key);
     const flash = flashing.get(key);
+    const accentTone = accent ? accent.map[String(valueAt(row, accent.field) ?? '')] : undefined;
     const primaryControl = (content: ReactNode): ReactNode => {
       if (!activate) return content;
       const control = kb.getControlProps(index, 'primary');
@@ -1280,6 +1305,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
         className="itsm-DataTable__row"
         data-selected={isSelected ? '' : undefined}
         data-current={current ? '' : undefined}
+        data-accent={accentTone}
         aria-current={current ? 'true' : undefined}
         data-flash={flash === undefined ? undefined : flash % 2 === 0 ? 'even' : 'odd'}
         data-activatable={activate ? '' : undefined}
@@ -1323,7 +1349,8 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
         {shownColumns.map((column) => {
           const isPrimary = column.id === primary?.id;
           const custom = cells?.[column.id];
-          const content = custom ? custom(row) : renderCell(column, row, cellContext, { primary: isPrimary && hasPrimaryControl });
+          const drawn = drawnById.get(column.id) ?? column;
+          const content = custom ? custom(row) : renderCell(drawn, row, cellContext, { primary: isPrimary && hasPrimaryControl });
           const role = cardRoleOf(column, primary, badgeId);
           const shared = {
             className: cx('itsm-DataTable__cell', isPrimary && 'itsm-DataTable__primaryCell', column.truncate && 'itsm-DataTable__clamp'),
@@ -1331,7 +1358,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
             'data-hide-below': column.hideBelow,
             'data-card-role': role,
             'data-lines': column.truncate,
-            'data-kind': column.kind ?? 'text',
+            'data-kind': drawn.kind ?? 'text',
           };
           if (isPrimary) {
             return (
@@ -1453,7 +1480,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
       <Suspense fallback={ordered.slice(0, VIRTUAL_FROM).map((entry) => renderRow(entry))}>
         <VirtualRows
           count={ordered.length}
-          estimateSize={effectiveDensity === 'compact' ? 36 : 44}
+          estimateSize={effectiveDensity === 'compact' ? 32 : 40}
           colSpan={colSpan}
           renderRow={(index, measure) => renderRow(ordered[index]!, measure)}
           scrollTo={virtualScroll}
@@ -1524,7 +1551,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
         {sortNote ? <span className="itsm-visually-hidden">, {inSentence(sortNote)}</span> : null}
         {firstLoad ? <span className="itsm-visually-hidden">, {messages.loading.replace(/…$/, '').toLowerCase()}</span> : null}
       </caption>
-      <thead data-stuck={stuck ? '' : undefined}>
+      <thead className="itsm-DataTable__head" data-stuck={stuck ? '' : undefined}>
         <tr>
           {selectable ? (
             <td className="itsm-DataTable__selectCell" data-card-role="select">
@@ -1558,8 +1585,8 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
                   <button type="button" className="itsm-DataTable__sort" data-active={active ? '' : undefined} onClick={() => setSort(nextSort(column))}>
                     {label}
                     <Icon
-                      name={active ? (view.sort?.direction === 'ascending' ? 'arrow-up' : 'arrow-down') : 'arrow-up-down'}
-                      size="xs"
+                      name={active ? (view.sort?.direction === 'ascending' ? 'arrow-up' : 'arrow-down') : 'chevrons-up-down'}
+                      size={12}
                       className="itsm-DataTable__sortIcon"
                     />
                   </button>
@@ -1585,7 +1612,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
                 <tr className="itsm-DataTable__groupRow">
                   <th scope="colgroup" colSpan={colSpan}>
                     <span className="itsm-DataTable__groupLabel">{group.label}</span>
-                    <span className="itsm-DataTable__groupCount">{formatNumber(group.entries.length, { locale })}</span>
+                    <Count value={group.entries.length} size="sm" locale={locale} className="itsm-DataTable__groupCount" />
                   </th>
                 </tr>
                 {group.entries.map((entry) => renderRow(entry))}
@@ -1609,6 +1636,7 @@ function DataTableView<Row extends AnyRow>(props: DataTableProps<Row> & { readon
       data-select-mode={selectMode ? '' : undefined}
       data-has-menu={hasMenu ? '' : undefined}
       data-refreshing={busy ? '' : undefined}
+      data-bleed={bleed ? '' : undefined}
     >
       {hasToolbar ? (
         <div className="itsm-DataTable__toolbar">

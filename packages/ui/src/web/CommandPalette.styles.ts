@@ -5,13 +5,14 @@ import { css, layer, mq, prefers } from '../styles/css.js';
  * attributes are pinned by `command-palette.test.ts`.
  *
  * `material.popover` — glass at 0.96, solid where transparency is reduced or
- * contrast raised — 640 px wide, 12vh from the top, radius `3xl`, elevation
- * `xl`, over the blurred scrim. The field is `title3`-sized type with the
- * magnifier (or a back chevron and the page's chips on a nested page); the
- * results are `callout` rows at the nav-item height, highlighted on
- * `surface.selected` with `text.primary` (never link blue), the matched part
- * of the label in 600. Group headings are sentence-case `subheadline` in
- * `text.secondary`. Key hints sit in a quiet footer.
+ * contrast raised — 640 px wide, 12vh from the top, radius `3xl` (16) with a
+ * 1 px `border.subtle`, elevation `xl`, over the blurred scrim (v3 §2.14).
+ * The field is `title3`-sized type with the magnifier (or a back chevron and
+ * the page's chips on a nested page); the results are `callout` rows at the
+ * nav-item height, highlighted on `surface.selected` with `text.primary`
+ * (never link blue), the matched part of the label in 600. Group headings
+ * are the menus' section heads: sentence-case 600 12/16 in `text.muted`.
+ * Key hints sit in a quiet footer.
  *
  * It fades and scales in from 0.97 over `fast` on the entrance curve; under
  * reduced motion it only fades. On phones it is a full-height sheet from the
@@ -41,7 +42,7 @@ export const commandPaletteStyles = layer(
   inline-size: min(100%, 40rem);
   max-block-size: min(32rem, 76vh);
   overflow: hidden;
-  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   border-radius: var(--itsm-radius-3xl);
   background: var(--itsm-colour-material-popover);
   -webkit-backdrop-filter: var(--itsm-material-popover-filter);
@@ -150,10 +151,10 @@ export const commandPaletteStyles = layer(
 }
 .itsm-CommandPalette__group {
   padding: var(--itsm-space-xs) var(--itsm-space-xs) var(--itsm-space-2xs);
-  color: var(--itsm-colour-text-secondary);
-  font-size: var(--itsm-text-subheadline-size);
-  line-height: var(--itsm-text-subheadline-line);
-  font-weight: var(--itsm-text-subheadline-weight);
+  color: var(--itsm-colour-text-muted);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
 }
 
 .itsm-CommandPalette__option {

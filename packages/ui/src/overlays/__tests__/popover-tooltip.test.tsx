@@ -2,8 +2,18 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestProvider } from '../../provider/__tests__/support/provider.js';
+import { unknownVariables } from '../../styles/css.js';
+import { structuralVariables, themeVariables } from '../../tokens/css.js';
+import { commandPaletteStyles } from '../../web/CommandPalette.styles.js';
+import { dialogStyles } from '../../web/Dialog.styles.js';
 import { tooltipStyles } from '../../web/Tooltip.styles.js';
 import { Tooltip } from '../../web/Tooltip.js';
+import { confirmDialogStyles } from '../ConfirmDialog.styles.js';
+import { contextMenuStyles } from '../ContextMenu.styles.js';
+import { menuStyles } from '../Menu.styles.js';
+import { popoverStyles } from '../Popover.styles.js';
+import { sheetStyles } from '../Sheet.styles.js';
+import { toasterStyles } from '../Toaster.styles.js';
 import { activeElement, cleanupDocument, click, focus, pointerDown, pointerEnter, press, render, settle } from '../../web/__tests__/support/render.js';
 import { Popover } from '../Popover.js';
 import { SplitButton } from '../SplitButton.js';
@@ -256,5 +266,121 @@ describe('SplitButton', () => {
     press(activeElement()!, 'Escape');
     await settle();
     expect(onMenuOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * The v3 overlay restyles (§2.9, §2.14, §2.15; A1 §7.16, §7.17): radii 12
+ * for things that float beside their trigger, 16 for things that take the
+ * screen; the long soft elevations; the slate scrim; no squircles.
+ * ---------------------------------------------------------------------- */
+
+describe('v3 overlay restyles', () => {
+  /** One rule of a stylesheet, by its exact selector at the start of a line. */
+  const rule = (css: string, selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return css.match(new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`))?.[1] ?? '';
+  };
+
+  it('sizes the radii the overlays use: xl 12, 3xl 16, sm 6', () => {
+    const vars = structuralVariables();
+    expect(vars['--itsm-radius-xl']).toBe('0.75rem');
+    expect(vars['--itsm-radius-3xl']).toBe('1rem');
+    expect(vars['--itsm-radius-sm']).toBe('0.375rem');
+  });
+
+  it('dims the page behind dialogs and sheets with the slate scrim', () => {
+    expect(themeVariables('apple')['--itsm-colour-scrim']).toBe('rgba(15, 23, 42, 0.4)');
+    for (const [css, scrim] of [
+      [dialogStyles, '.itsm-Dialog__scrim'],
+      [sheetStyles, '.itsm-Sheet__scrim'],
+      [commandPaletteStyles, '.itsm-CommandPalette__scrim'],
+    ] as const) {
+      expect(rule(css, scrim), scrim).toContain('background: var(--itsm-colour-scrim);');
+    }
+  });
+
+  it('menus and context menus: radius 12, 6 px padding, a 1 px border.subtle, elevation md', () => {
+    const content = rule(menuStyles, '.itsm-Menu__content');
+    expect(content).toContain('border-radius: var(--itsm-radius-xl);');
+    expect(content).toContain('padding: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs));');
+    expect(content).toContain('border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);');
+    expect(content).toContain('box-shadow: var(--itsm-elevation-md)');
+    // A context menu draws with the menu's classes; only its origin is its own.
+    expect(contextMenuStyles).not.toContain('border-radius');
+    expect(contextMenuStyles).not.toContain('box-shadow');
+  });
+
+  it('menu items: 34 px, radius 6, 500 13/20 text.secondary, muted icons; section heads 600 12/16 muted; divider separators', () => {
+    const item = rule(menuStyles, '.itsm-Menu__item');
+    expect(item).toContain('min-block-size: calc(var(--itsm-nav-item-height) - var(--itsm-space-3xs));');
+    expect(item).toContain('border-radius: var(--itsm-radius-sm);');
+    expect(item).toContain('color: var(--itsm-colour-text-secondary);');
+    expect(item).toContain('font-weight: var(--itsm-font-weight-medium);');
+    expect(rule(menuStyles, '.itsm-Menu__item[data-highlighted]')).toContain('color: var(--itsm-colour-text-primary);');
+    expect(rule(menuStyles, '.itsm-Menu__leading')).toContain('color: var(--itsm-colour-text-muted);');
+    const heading = rule(menuStyles, '.itsm-Menu__heading');
+    expect(heading).toContain('font-size: var(--itsm-text-footnote-size);');
+    expect(heading).toContain('font-weight: var(--itsm-font-weight-semibold);');
+    expect(heading).toContain('color: var(--itsm-colour-text-muted);');
+    expect(rule(menuStyles, '.itsm-Menu__separator')).toContain('background: var(--itsm-colour-border-divider);');
+    // The item's detail line and the current choice's check live with the menu.
+    expect(rule(menuStyles, '.itsm-Menu__detail')).toContain('color: var(--itsm-colour-text-secondary);');
+    expect(rule(menuStyles, '.itsm-Menu__current')).toContain('color: var(--itsm-colour-accent);');
+  });
+
+  it('popovers: the menu’s surface, with room for free content', () => {
+    const popover = rule(popoverStyles, '.itsm-Popover');
+    expect(popover).toContain('border-radius: var(--itsm-radius-xl);');
+    expect(popover).toContain('border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);');
+    expect(popover).toContain('box-shadow: var(--itsm-elevation-md)');
+  });
+
+  it('dialogs: radius 16, elevation xl, padding 28 28 24, a title2 title, the 34 px close 12 px from the corner', () => {
+    const dialog = rule(dialogStyles, '.itsm-Dialog');
+    expect(dialog).toContain('border-radius: var(--itsm-radius-3xl);');
+    expect(dialog).toContain('box-shadow: var(--itsm-elevation-xl)');
+    expect(dialog).toContain('--_pad: calc(var(--itsm-space-lg) + var(--itsm-space-2xs));');
+    expect(rule(dialogStyles, '.itsm-Dialog__header')).toMatch(/padding: var\(--_pad\) .+ var\(--itsm-space-sm\) var\(--_pad\);/);
+    expect(rule(dialogStyles, '.itsm-Dialog__body')).toContain('padding: var(--itsm-space-xs) var(--_pad) var(--itsm-space-lg);');
+    expect(rule(dialogStyles, '.itsm-Dialog__title')).toContain('font-size: var(--itsm-text-title2-size);');
+    const close = rule(dialogStyles, '.itsm-Dialog__close');
+    expect(close).toContain('inset-block-start: var(--itsm-space-sm);');
+    expect(close).toContain('inset-inline-end: var(--itsm-space-sm);');
+    expect(close).toContain('inline-size: var(--_close);');
+    expect(dialog).toContain('--_close: 2.125rem;');
+  });
+
+  it('sheets and the palette: radius 16, elevation xl; no squircle on anything that floats', () => {
+    expect(rule(sheetStyles, '.itsm-Sheet')).toContain('border-radius: var(--itsm-radius-3xl);');
+    expect(rule(sheetStyles, '.itsm-Sheet')).toContain('box-shadow: var(--itsm-elevation-xl)');
+    // From the bottom, only the top corners round.
+    expect(rule(sheetStyles, '.itsm-Sheet--bottom')).toContain('border-end-start-radius: 0;');
+    const palette = rule(commandPaletteStyles, '.itsm-CommandPalette');
+    expect(palette).toContain('border-radius: var(--itsm-radius-3xl);');
+    expect(palette).toContain('box-shadow: var(--itsm-elevation-xl)');
+    for (const css of [dialogStyles, sheetStyles, commandPaletteStyles, menuStyles, popoverStyles, toasterStyles]) {
+      expect(css).not.toContain('squircle');
+    }
+  });
+
+  it('toasts: radius 12, elevation lg, padding 12 10 12 14, 13/20 descriptions, a 24 px close', () => {
+    const item = rule(toasterStyles, '.itsm-Toaster__item');
+    expect(item).toContain('border-radius: var(--itsm-radius-xl);');
+    expect(item).toContain('box-shadow: var(--itsm-elevation-lg)');
+    expect(item).toContain('background: var(--itsm-colour-surface-overlay);');
+    expect(rule(toasterStyles, '.itsm-Toaster__toast')).toContain(
+      'padding: var(--itsm-space-sm) calc(var(--itsm-space-xs) + var(--itsm-space-3xs)) var(--itsm-space-sm) calc(var(--itsm-space-sm) + var(--itsm-space-3xs));',
+    );
+    expect(rule(toasterStyles, '.itsm-Toaster__description')).toContain('font-size: var(--itsm-text-callout-size);');
+    expect(rule(toasterStyles, '.itsm-Toaster__close')).toContain('inline-size: var(--itsm-icon-xl);');
+    expect(rule(toasterStyles, '.itsm-Toaster__actions .itsm-Button--ghost')).toContain('color: var(--itsm-colour-brand-subtleText);');
+  });
+
+  it('reads only variables the tokens emit, and no colour literals', () => {
+    for (const css of [menuStyles, contextMenuStyles, popoverStyles, sheetStyles, toasterStyles, confirmDialogStyles, dialogStyles, commandPaletteStyles]) {
+      expect(unknownVariables(css)).toEqual([]);
+      expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/);
+    }
   });
 });

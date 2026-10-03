@@ -2,16 +2,18 @@ import { css, layer, mq, prefers } from '../styles/css.js';
 
 /**
  * `Menu`, and every menu drawn from the same parts (`ContextMenu`, submenus,
- * `SplitButton`'s chevron, the account menu).
+ * `SplitButton`'s chevron, the account menu). v3 §2.14, A1 §7.17.
  *
  * - **Material:** `material.popover` with its blur — one of the few glass
  *   surfaces D6 allows, and only because the tokens keep it at ≥ 0.96 alpha
  *   and turn it solid where transparency is reduced or contrast raised. A
- *   `border.subtle` hairline defines the edge on a light canvas; in the
- *   high-contrast themes the `lg` elevation is itself a 2 px ring.
- * - **Geometry:** radius `xl` (14) with 6 px padding, so an item's radius
- *   `md` (8) is concentric with the surface. Items are the nav-item height
- *   (32, 28 compact, 44 on touch) in `callout`.
+ *   1 px `border.subtle` defines the edge on a light canvas, under the `md`
+ *   elevation (long and soft; a 2 px ring in the high-contrast themes).
+ * - **Geometry:** radius `xl` (12) with 6 px padding, so an item's radius
+ *   `sm` (6) is concentric with the surface. Items are 34 px (a hair under
+ *   the nav item: 30 compact, 42 on touch), 500 13/20 in `text.secondary`
+ *   with `text.muted` icons; section heads 600 12/16 `text.muted`, sentence
+ *   case; separators `border.divider`.
  * - **Highlight:** `surface.selected` with `text.primary`, never link blue.
  *   Radix focuses the item under the pointer as well as the one the keyboard
  *   reached, so the inset ring is drawn for `:focus-visible` only: arrowing
@@ -35,12 +37,12 @@ export const menuStyles = layer(
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs));
-  border: var(--itsm-hairline) solid var(--itsm-colour-border-subtle);
+  border: var(--itsm-border-hair) solid var(--itsm-colour-border-subtle);
   border-radius: var(--itsm-radius-xl);
   background: var(--itsm-colour-material-popover);
   -webkit-backdrop-filter: var(--itsm-material-popover-filter);
   backdrop-filter: var(--itsm-material-popover-filter);
-  box-shadow: var(--itsm-elevation-lg), var(--itsm-edge-highlight);
+  box-shadow: var(--itsm-elevation-md), var(--itsm-edge-highlight);
   color: var(--itsm-colour-text-primary);
   font-family: var(--itsm-font-family-sans);
   font-size: var(--itsm-text-callout-size);
@@ -60,10 +62,11 @@ export const menuStyles = layer(
   align-items: center;
   gap: var(--itsm-space-xs);
   box-sizing: border-box;
-  min-block-size: var(--itsm-nav-item-height);
+  min-block-size: calc(var(--itsm-nav-item-height) - var(--itsm-space-3xs));
   padding: var(--itsm-space-2xs) var(--itsm-space-xs);
-  border-radius: var(--itsm-radius-md);
-  color: var(--itsm-colour-text-primary);
+  border-radius: var(--itsm-radius-sm);
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-medium);
   text-decoration: none;
   cursor: default;
   user-select: none;
@@ -110,6 +113,9 @@ export const menuStyles = layer(
   justify-content: center;
   inline-size: var(--itsm-icon-sm);
   block-size: var(--itsm-icon-sm);
+  color: var(--itsm-colour-text-muted);
+}
+.itsm-Menu__item[data-highlighted] .itsm-Menu__leading {
   color: var(--itsm-colour-text-secondary);
 }
 .itsm-Menu__indicator {
@@ -131,9 +137,20 @@ export const menuStyles = layer(
   font-size: var(--itsm-text-footnote-size);
   line-height: var(--itsm-text-footnote-line);
   letter-spacing: var(--itsm-text-footnote-tracking);
+  font-weight: var(--itsm-font-weight-regular);
   color: var(--itsm-colour-text-muted);
   white-space: normal;
   text-wrap: pretty;
+}
+/* An item's second line that is part of its name (\`detail\`), and the check on the current choice. */
+.itsm-Menu__detail {
+  color: var(--itsm-colour-text-secondary);
+  font-weight: var(--itsm-font-weight-medium);
+}
+.itsm-Menu__current {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--itsm-colour-accent);
 }
 .itsm-Menu__shortcut {
   flex: none;
@@ -149,11 +166,11 @@ export const menuStyles = layer(
 
 .itsm-Menu__heading {
   padding: var(--itsm-space-xs) var(--itsm-space-xs) var(--itsm-space-2xs);
-  font-size: var(--itsm-text-subheadline-size);
-  line-height: var(--itsm-text-subheadline-line);
-  font-weight: var(--itsm-text-subheadline-weight);
-  letter-spacing: var(--itsm-text-subheadline-tracking);
-  color: var(--itsm-colour-text-secondary);
+  font-size: var(--itsm-text-footnote-size);
+  line-height: var(--itsm-text-footnote-line);
+  font-weight: var(--itsm-font-weight-semibold);
+  letter-spacing: 0;
+  color: var(--itsm-colour-text-muted);
 }
 .itsm-Menu__group + .itsm-Menu__group .itsm-Menu__heading {
   padding-block-start: var(--itsm-space-sm);
@@ -161,7 +178,7 @@ export const menuStyles = layer(
 .itsm-Menu__separator {
   block-size: var(--itsm-hairline);
   margin: calc(var(--itsm-space-2xs) + var(--itsm-space-3xs) / 2) var(--itsm-space-xs);
-  background: var(--itsm-colour-border-subtle);
+  background: var(--itsm-colour-border-divider);
 }
 
 ${mq.coarse} {

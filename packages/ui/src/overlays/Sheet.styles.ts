@@ -3,7 +3,8 @@ import { css, layer, mq, prefers } from '../styles/css.js';
 /**
  * `Sheet`.
  *
- * - **Surface:** opaque `surface.overlay` (D6), elevation `xl`, radius `3xl`.
+ * - **Surface:** opaque `surface.overlay` (D6), elevation `xl`, radius `3xl`
+ *   (16), no squircle (v3 §2.9), over the scrim (`rgba(15,23,42,.40)` light).
  *   From an edge it floats one panel-inset (8 px) off the screen's edges with
  *   every corner rounded, the way the frame's content panel does; from the
  *   bottom it spans the width with only its top corners rounded and keeps the
@@ -70,10 +71,6 @@ export const sheetStyles = layer(
 .itsm-Sheet--sm { inline-size: min(calc(100vw - 2 * var(--_inset)), var(--itsm-sheet-sm)); }
 .itsm-Sheet--lg { inline-size: min(calc(100vw - 2 * var(--_inset)), var(--itsm-sheet-lg)); }
 .itsm-Sheet--full { inline-size: calc(100vw - 2 * var(--_inset)); }
-
-@supports (corner-shape: squircle) {
-  .itsm-Sheet { corner-shape: squircle; }
-}
 
 /* From the end edge (and auto, at md and up). */
 .itsm-Sheet--end,
