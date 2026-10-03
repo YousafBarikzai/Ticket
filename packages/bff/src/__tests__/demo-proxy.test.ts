@@ -221,7 +221,9 @@ describe('the proxy for a demo visit (X rows)', () => {
     upstream.mockResolvedValue(problem(401, 'demo_session_ended'));
     const response = await proxied(session.id);
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toMatchObject({ type: 'https://docs.itsm.example/problems/demo_session_ended', demo: true });
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ type: 'https://docs.itsm.example/problems/demo_session_ended', demo: true });
+    expect(body).not.toHaveProperty('restored');
     expect(setCookieFor(response, SESSION_COOKIE)).toContain('Max-Age=0');
     await expect(tokens.sessions.get(session.id)).resolves.toBeNull();
     expect(tokens.keyspace.exists(DEMO_KEYS.token(demoTokenHash(session.accessToken)))).toBe(false);
@@ -257,6 +259,7 @@ describe('the proxy for a demo visit (X rows)', () => {
 
     const response = await proxied(session.id);
     expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ type: expect.stringMatching(/\/demo_session_ended$/), restored: true });
     expect(setCookieFor(response, SESSION_COOKIE)).toBeUndefined();
     await expect(tokens.sessions.get(session.id)).resolves.toMatchObject({ kind: 'oidc', displayName: 'Jane Smith' });
     await expect(tokens.sessions.get(real.id)).resolves.toBeNull();

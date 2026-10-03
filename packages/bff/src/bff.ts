@@ -353,11 +353,19 @@ export function createBff(app: BffIdentity, env: Environment = process.env): Bff
     return isDemoSession(session) ? demoSessionFor(session, store) : realSessionFor(session, store);
   }
 
-  /** The answer the proxy gives for a visit that has ended (X3): 401 `demo_session_ended`. */
-  function sessionEnded(correlationId: string): Response {
+  /**
+   * The answer the proxy gives for a visit that has ended (X3): 401
+   * `demo_session_ended`. `restored: true` tells the page that the cookie now
+   * names the person's own session again, so it can reload into their
+   * account instead of offering to continue the demo.
+   */
+  function sessionEnded(correlationId: string, restored: boolean): Response {
     return new Response(
       JSON.stringify(
-        codedProblemBody(401, DEMO_PROBLEM_CODES.sessionEnded, 'Unauthorized', 'your demo session has ended', correlationId, { demo: true }),
+        codedProblemBody(401, DEMO_PROBLEM_CODES.sessionEnded, 'Unauthorized', 'your demo session has ended', correlationId, {
+          demo: true,
+          ...(restored ? { restored: true } : {}),
+        }),
       ),
       { status: 401, headers: { 'content-type': 'application/problem+json' } },
     );
@@ -400,7 +408,8 @@ export function createBff(app: BffIdentity, env: Environment = process.env): Bff
       const after = await endDemoVisit({ config, sessions: store, tokens: await demoTokenStore(config), session, now });
       // Restored under the same id, the cookie already names the person's
       // own session again; otherwise it names nothing and is cleared.
-      return { response: sessionEnded(correlationId), session: after, cookies: isRealSession(after) ? [] : [clearedSessionCookie()] };
+      const restored = isRealSession(after);
+      return { response: sessionEnded(correlationId, restored), session: after, cookies: restored ? [] : [clearedSessionCookie()] };
     };
 
     if (code === DEMO_PROBLEM_CODES.reset && config.demo !== null) {
