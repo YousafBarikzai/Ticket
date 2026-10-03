@@ -49,6 +49,7 @@ import { packRoutes } from './packs.js';
 import { aiRoutes } from './ai.js';
 import { authRoutes } from './auth.js';
 import { platformRoutes } from './platform.js';
+import { demoRoutes, demoStreamIsCurrent, demoStreams, ensureDemoEventSubscriber, meDemo } from './demo.js';
 
 /** Mounts every module's routes under the versioned tenant prefix. */
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -88,6 +89,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.register(platformRoutes, { prefix: '/api/platform/v1' });
+
+  // The shared demo's status and visitor reset (SPEC v3 §4.6.4). Always
+  // mounted, so the route listing is the same in every mode; with the demo
+  // off each answers the API's ordinary 404.
+  app.register(demoRoutes, { prefix: '/api/demo/v1' });
 
   // The public status page lives at the root: its URL is printed on things,
   // and it is the one page here that a stranger is meant to open.
@@ -187,6 +193,10 @@ async function identityRoutes(app: FastifyInstance): Promise<void> {
       teamIds: ctx.teamIds,
       locale: ctx.locale,
       timeZone: ctx.timeZone,
+      // Only in a shared-demo session: who the visitor is exploring as, and
+      // what the demo turns off, so every page can say so in the demo's own
+      // words (§4.4, X5, X-B2). Absent otherwise, not null.
+      ...(ctx.demo ? { demo: meDemo(ctx.demo) } : {}),
     };
   });
 
@@ -649,6 +659,13 @@ async function supportingRoutes(app: FastifyInstance): Promise<void> {
    * it is subscribed. Until it was, any signed-in person could ask for
    * `ticket:<any id in their tenant>` and learn, live, whenever somebody else
    * touched a ticket they could not open.
+   *
+   * A shared-demo stream belongs to one generation of the demo, whose tenant
+   * a nightly or visitor reset replaces. It is ended when the swap is
+   * announced on `demo:events`, and — should that message be lost — on the
+   * next heartbeat that finds the live record has moved on (A3 §3.4, §6.9).
+   * The browser reconnects through the BFF, which re-mints onto the new
+   * generation, so the visitor never sees a session end.
    */
   app.get('/events/stream', async (request, reply) => {
     const ctx = contextOf(request);
@@ -668,16 +685,47 @@ async function supportingRoutes(app: FastifyInstance): Promise<void> {
     });
     reply.raw.write(`event: ready\ndata: ${JSON.stringify({ topics: topics.length })}\n\n`);
 
+    let finished = false;
+    let untrack: (() => void) | null = null;
     const subscription = await subscribeTopics(topics, (_topic, notice) => {
-      reply.raw.write(`event: change\ndata: ${JSON.stringify(notice)}\n\n`);
+      if (!finished) reply.raw.write(`event: change\ndata: ${JSON.stringify(notice)}\n\n`);
     });
-    // Heartbeats keep intermediaries from closing an idle stream.
-    const heartbeat = setInterval(() => reply.raw.write(': keep-alive\n\n'), 25_000);
 
-    request.raw.on('close', () => {
+    const cleanUp = (): void => {
+      if (finished) return;
+      finished = true;
       clearInterval(heartbeat);
+      untrack?.();
       void subscription.close();
-    });
+    };
+    // Ends a demo stream of a generation that is no longer live. The event
+    // tells a client that listens why; one that does not simply reconnects.
+    const endForReset = (): void => {
+      if (finished) return;
+      reply.raw.write(`event: demo-reset\ndata: ${JSON.stringify({ generation: ctx.demo?.generation ?? null })}\n\n`);
+      cleanUp();
+      reply.raw.end();
+    };
+
+    // Heartbeats keep intermediaries from closing an idle stream; for a demo
+    // stream each one also checks the stream's generation is still live.
+    const heartbeat = setInterval(() => {
+      if (finished) return;
+      reply.raw.write(': keep-alive\n\n');
+      const demo = ctx.demo;
+      if (demo) {
+        void demoStreamIsCurrent(demo.generation).then((current) => {
+          if (!current) endForReset();
+        });
+      }
+    }, 25_000);
+
+    if (ctx.demo) {
+      untrack = demoStreams.add({ generation: ctx.demo.generation, end: endForReset });
+      void ensureDemoEventSubscriber();
+    }
+
+    request.raw.on('close', cleanUp);
 
     metrics.increment('sse_connections_total');
     return reply;

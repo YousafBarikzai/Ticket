@@ -3,9 +3,12 @@ import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
 import {
   ConflictError,
+  DemoUnavailableError,
   DomainError,
+  QueryTimeoutError,
   RateLimitedError,
   ValidationError,
+  demoDisabledForForbidden,
   logger,
   metrics,
   toProblemDetails,
@@ -30,10 +33,33 @@ function fromZodError(error: ZodError): ValidationError {
   );
 }
 
+/**
+ * Server-side answers that are expected states rather than faults: the shared
+ * demo paused or being prepared, and a demo query stopped by its five-second
+ * limit. A warning each, not an error, so an operator pause does not page
+ * anybody and a real 500 still stands out.
+ */
+function isExpectedUnavailability(error: DomainError): boolean {
+  return error instanceof DemoUnavailableError || error instanceof QueryTimeoutError;
+}
+
+/**
+ * The error a client is answered with. In a shared-demo session a permission
+ * refusal for a key the demo strips becomes `demo_disabled` with its feature
+ * (A3 §7.2), so the visitor reads why the action is off — "This is a shared
+ * demo, so … is turned off" — rather than "permission … is required", which
+ * would suggest asking an administrator for it.
+ */
+export function answerFor(error: unknown, demo: boolean): unknown {
+  const domainError = error instanceof ZodError ? fromZodError(error) : error;
+  if (!demo) return domainError;
+  return demoDisabledForForbidden(domainError) ?? domainError;
+}
+
 export const errorsPlugin = fp(async (app: FastifyInstance) => {
   app.setErrorHandler((error: unknown, request, reply) => {
     const correlationId = request.correlationId ?? 'unknown';
-    const domainError = error instanceof ZodError ? fromZodError(error) : error;
+    const domainError = answerFor(error, Boolean(request.tenantContext?.demo));
 
     if (domainError instanceof DomainError) {
       const problem = toProblemDetails(domainError, correlationId, request.url);
@@ -49,7 +75,8 @@ export const errorsPlugin = fp(async (app: FastifyInstance) => {
       metrics.increment('api_errors_total', { status: String(domainError.status) });
       // A client mistake is not worth an error log; a server fault is.
       if (domainError.status >= 500) {
-        logger.error('request failed', { url: request.url, code: domainError.code, message: domainError.message });
+        const log = isExpectedUnavailability(domainError) ? logger.warn : logger.error;
+        log('request failed', { url: request.url, code: domainError.code, message: domainError.message });
       }
       reply.status(domainError.status).type('application/problem+json').send(problem);
       return;

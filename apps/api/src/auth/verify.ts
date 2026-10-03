@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { UnauthorisedError, cache, loadConfig, logger } from '@itsm/platform';
+import { isDemoBearer, verifyDemoToken, type DemoTokenFacts } from './demo-token.js';
 
 /**
  * Token verification (docs/architecture/09 §1).
@@ -7,6 +8,8 @@ import { UnauthorisedError, cache, loadConfig, logger } from '@itsm/platform';
  * Production tokens come from Keycloak and are verified against its JWKS. A
  * locally signed development token is accepted ONLY when no issuer is
  * configured, so a deployed environment cannot fall back to it by accident.
+ * A shared-demo token (`itsmdemo_…`) is recognised by its prefix and verified
+ * against Redis instead (`demo-token.ts`), whatever the issuer setting.
  */
 
 export interface VerifiedToken {
@@ -28,6 +31,12 @@ export interface VerifiedToken {
    */
   expiresAt?: number;
   impersonation?: { byUserId: string; reason: string };
+  /**
+   * Set only for a verified shared-demo token (SPEC v3 §4.4). Its presence is
+   * what makes the context plugin demand a `kind = 'demo'` tenant, and its
+   * absence what makes it refuse one.
+   */
+  demo?: DemoTokenFacts;
 }
 
 interface JwtPayload {
@@ -151,6 +160,10 @@ export async function verifyAccessToken(authorisation: string): Promise<Verified
   if (!authorisation.startsWith('Bearer ')) throw new UnauthorisedError('unsupported authorisation scheme');
 
   const token = authorisation.slice('Bearer '.length).trim();
+  // Before the issuer is chosen: a demo token is neither a Keycloak token nor
+  // a development one, and must never be tried as either.
+  if (isDemoBearer(token)) return verifyDemoToken(token);
+
   const payload = config.OIDC_ISSUER
     ? await verifyProviderToken(token, config.OIDC_ISSUER)
     : verifyDevelopmentToken(token);

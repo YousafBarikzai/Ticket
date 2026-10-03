@@ -3,16 +3,22 @@ import fp from 'fastify-plugin';
 import {
   buildPermissionSet,
   createContext,
+  DemoResetError,
+  DemoUnavailableError,
   EMPTY_PERMISSIONS,
   enterContext,
+  isDemoTenant,
   loadConfig,
   logger,
+  metrics,
   newCorrelationId,
+  stripDemoPermissions,
   SYSTEM_PERMISSIONS,
   tenantFacts,
   TenantSuspendedError,
   UnauthorisedError,
   withContext,
+  type DemoContext,
   type TenantContext,
 } from '@itsm/platform';
 import { resolveActor, scimTokenService, userService } from '@itsm/module-identity';
@@ -50,11 +56,23 @@ const UNAUTHENTICATED_PATHS = new Set([
   // environment is not production (routes/auth.ts), so in a deployment this
   // entry names a path that answers 404.
   '/api/v1/auth/dev-session',
+  // The shared demo's public status (SPEC v3 §4.6.4): the site and every
+  // app's demo bar read it before anyone has a session. It names no tenant,
+  // user or token. It is the only demo route without authentication; nothing
+  // here or anywhere else mints a demo token (D21).
+  '/api/demo/v1/status',
 ]);
+
+/** Where the demo's API routes live (`routes/demo.ts`). */
+const DEMO_ROUTE_PREFIX = '/api/demo/';
 
 function isUnauthenticated(request: FastifyRequest): boolean {
   const url = request.url.split('?')[0] ?? '';
   if (UNAUTHENTICATED_PATHS.has(url)) return true;
+  // With the demo switched off its routes do not exist, and each answers 404
+  // itself (§4.6.4 step 1). Letting them past the door first means a token —
+  // or the lack of one — cannot turn that into a 401 that hints otherwise.
+  if (url.startsWith(DEMO_ROUTE_PREFIX) && loadConfig().DEMO_MODE !== 'on') return true;
   // Signed-token endpoints carry their own proof and have no session.
   if (url.startsWith('/api/v1/public/')) return true;
   // The public status page, by slug or on a mapped host (MOD-23).
@@ -96,6 +114,10 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
     if ((request.url.split('?')[0] ?? '').startsWith('/scim/v2')) {
       if (!header.startsWith('Bearer ')) throw new UnauthorisedError('a SCIM bearer token is required');
       const scim = await scimTokenService.authenticate(header.slice('Bearer '.length).trim());
+      // The shared demo has no directory to provision: its SCIM permission is
+      // stripped, so no token can be issued there. This closes the path anyway,
+      // as the interlock below does for every other kind of token (D25).
+      if (await isDemoTenant(scim.tenantId)) refuseNonDemoToken();
       request.tenantContext = createContext({
         tenantId: scim.tenantId,
         region: scim.region,
@@ -113,8 +135,12 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
     request.token = token;
 
     const tenant = await tenantService.findTenantById(token.tenantId);
+    // The database interlock (D25), both ways, before anything else about the
+    // tenant is believed: the token's kind and the tenant's must agree.
+    assertTenantAccepts(token, tenant);
     if (!tenant) throw new UnauthorisedError('this token names a tenant that does not exist');
     if (tenant.status === 'suspended') throw new TenantSuspendedError();
+    const demoTenant = tenant.kind === 'demo';
 
     // The host is only a hint for branding; the token decides the tenant. A
     // mismatch means someone is presenting a token on the wrong front door.
@@ -133,8 +159,9 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
       // cannot be quietly missing in the worker.
       ...tenantFacts(tenant),
       correlationId: request.correlationId,
-      ip: request.ip,
-      userAgent: request.headers['user-agent'],
+      // A demo visitor's address and browser are never kept, not even in the
+      // audit rows their writes produce (D23, §4.7.6).
+      ...(demoTenant ? {} : { ip: request.ip, userAgent: request.headers['user-agent'] }),
     };
 
     if (token.kind === 'service') {
@@ -161,7 +188,10 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
     // of our ids; looking that up as one would be a database error, not a miss.
     const namesOurId = UUID.test(token.userId ?? '');
     let actor = namesOurId ? await withContext(bootstrapContext, () => resolveActor(bootstrapContext, token.userId!)) : null;
-    if (!actor && token.email && token.userId === token.subject) {
+    // Never for a demo token, which carries no email and whose subject is the
+    // visit rather than the user anyway: belt and braces, because a persona
+    // created on the fly by a visitor's request would be a person nobody built.
+    if (!actor && !token.demo && token.email && token.userId === token.subject) {
       // First login through the identity provider: the token names nobody the
       // platform knows yet. Provision just in time, or link an account that
       // SCIM or an import already made for this address (doc 09 §JIT).
@@ -174,19 +204,27 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
       });
       actor = await withContext(bootstrapContext, () => resolveActor(bootstrapContext, provisioned.userId));
     }
-    if (!actor) throw new UnauthorisedError('this account no longer exists');
-    if (actor.status !== 'active') throw new UnauthorisedError('this account is not active');
+    if (!actor || actor.status !== 'active') {
+      // A persona the build has not finished, or one the worker's check is
+      // about to repair: 503 rather than `demo_reset`, because a re-mint would
+      // name the same user and loop (A3 §4.5).
+      if (token.demo) throw new DemoUnavailableError('persona');
+      throw new UnauthorisedError(actor ? 'this account is not active' : 'this account no longer exists');
+    }
 
     request.tenantContext = createContext({
       ...base,
       actor: { type: 'user', id: actor.userId, displayName: actor.displayName },
-      permissions: actor.permissions,
+      // Whatever the persona's roles say, the shared demo never offers what it
+      // strips (§4.7.1): `/me` omits those keys and every check refuses them.
+      permissions: demoTenant ? stripDemoPermissions(actor.permissions) : actor.permissions,
       organisationIds: actor.organisationIds,
       organisationPaths: actor.organisationPaths,
       teamIds: actor.teamIds,
       locale: actor.locale,
       timeZone: actor.timeZone,
       ...(token.impersonation ? { impersonation: token.impersonation } : {}),
+      ...(token.demo ? { demo: demoContextOf(token.demo) } : {}),
     });
 
     enterContext(request.tenantContext);
@@ -197,6 +235,68 @@ export const contextPlugin = fp(async (app: FastifyInstance) => {
 
   logger.debug('context plugin registered');
 });
+
+/** The demo facts the request context carries, copied from the verified token (§4.4). */
+function demoContextOf(demo: NonNullable<VerifiedToken['demo']>): DemoContext {
+  return {
+    sid: demo.sid,
+    persona: demo.persona,
+    app: demo.app,
+    generation: demo.generation,
+    personaUserIds: demo.personaUserIds,
+    agentTeamIds: demo.agentTeamIds,
+  };
+}
+
+/** A token that is not a demo session, presented to the demo tenant. */
+function refuseNonDemoToken(): never {
+  metrics.increment('demo_interlock_refusals_total', { reason: 'non-demo-token' });
+  throw new UnauthorisedError('this workspace only accepts demo sessions');
+}
+
+/** The tenant fields the interlock reads. */
+export interface InterlockTenant {
+  readonly id: string;
+  readonly kind: string;
+  readonly status: string;
+}
+
+/**
+ * The database interlock (D25; §4.4), in both directions.
+ *
+ * Redis vouches for a demo token, and Redis is shared by every service; the
+ * tenant's `kind` lives in Postgres, is fixed at insert by a trigger, and no
+ * application role can write it. So whatever a forged or corrupted Redis
+ * says, a demo token reaches only a `kind = 'demo'` tenant, and no other kind
+ * of token — Keycloak, development, API key, SCIM — reaches the demo tenant
+ * at all, which keeps a real administrator's session out of the shared data
+ * as firmly as it keeps visitors out of real data.
+ *
+ * | Token | Tenant | Outcome |
+ * |---|---|---|
+ * | demo | demo, `active` | accepted |
+ * | demo | demo, any other status, or gone | 401 `demo_reset` (the BFF re-mints onto the live one) |
+ * | demo | standard | 401, `SECURITY` error log, metric `{reason: 'kind'}` |
+ * | any other | demo | 401 "this workspace only accepts demo sessions", metric `{reason: 'non-demo-token'}` |
+ *
+ * Returns quietly for a non-demo token and a standard (or missing) tenant;
+ * the caller's own checks take it from there.
+ */
+export function assertTenantAccepts(token: Pick<VerifiedToken, 'demo'>, tenant: InterlockTenant | null): void {
+  if (token.demo) {
+    // A purged generation: its token already fails the generation check
+    // unless the live record still names it, and a re-mint is the way out.
+    if (!tenant) throw new DemoResetError();
+    if (tenant.kind !== 'demo') {
+      logger.error('SECURITY: a demo token named a standard tenant', { tenantId: tenant.id });
+      metrics.increment('demo_interlock_refusals_total', { reason: 'kind' });
+      throw new UnauthorisedError('this token names a tenant it cannot be used with');
+    }
+    if (tenant.status !== 'active') throw new DemoResetError();
+    return;
+  }
+  if (tenant?.kind === 'demo') refuseNonDemoToken();
+}
 
 /** The context for the current request, or a clear failure if there is none. */
 export function contextOf(request: FastifyRequest): TenantContext {
