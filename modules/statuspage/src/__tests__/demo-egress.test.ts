@@ -74,7 +74,7 @@ vi.mock('@itsm/module-notifications', () => ({
 
 const { DEMO, STANDARD } = ids;
 
-const { buildPermissionSet, createContext, handlersFor, metrics, setTenantKindReader, signToken } = await import('@itsm/platform');
+const { buildPermissionSet, createContext, handlersFor, metrics, resetConfig, setTenantKindReader, signToken } = await import('@itsm/platform');
 const { confirm, notifySubscribers, readPublicStatus, subscribe, unsubscribe } = await import('../service/public-service.js');
 const { DEMO_SUBSCRIPTIONS_OFF, renderStatusPage } = await import('../service/page-render.js');
 await import('../handlers/index.js');
@@ -98,8 +98,11 @@ function link(tenantId: string, kind: 'status_confirm' | 'status_unsubscribe'): 
 const PAGE = { id: 'page-1', name: 'Northwind Traders', description: null, supportUrl: null, isPublic: true };
 
 beforeEach(() => {
-  // Sign the forged links with a test secret, so the case needs no environment.
+  // Sign the forged links with a test secret, and give the configuration the one
+  // variable it requires, so the cases need no environment (CI's unit job has none).
   vi.stubEnv('DEV_TOKEN_SECRET', 'demo-egress-unit-test-secret');
+  vi.stubEnv('DATABASE_URL_APP', 'postgresql://unit:unit@127.0.0.1:5432/unit');
+  resetConfig();
   db.calls = [];
   db.writes = [];
   db.rows = {
@@ -122,6 +125,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  resetConfig();
   setTenantKindReader(null);
 });
 
