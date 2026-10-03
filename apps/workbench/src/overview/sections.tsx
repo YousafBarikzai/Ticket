@@ -12,7 +12,6 @@ import {
   Icon,
   PRIORITY_LOOK,
   SLA_STATE_LOOK,
-  SegmentedControl,
   Skeleton,
   SkeletonStat,
   StatusPill,
@@ -35,6 +34,7 @@ import { CardProblem } from '../components/CardProblem.js';
 import { isPending, severityLabel } from '../navigation.js';
 import type { Settled } from '../server/settle.js';
 import { AssignSlot } from './AssignSlot.js';
+import { OverviewControls } from './OverviewControls.js';
 import {
   loadAnalytics,
   loadBreachedByPriority,
@@ -83,16 +83,17 @@ import {
   deriveOpenSeries,
   dueLabel,
   dueToday,
-  exact,
   fromProbe,
   isBreached,
   isDueSoon,
+  kpisFrom,
   localDays,
   longDuration,
   nextDue,
   oldestBreach,
   overviewHref,
   prioritySplit,
+  seriesSince,
   queueVerdict,
   slip,
   targetName,
@@ -153,6 +154,8 @@ function tileValue(figure: Figure): { readonly value: number | null; readonly ap
   return figure.atLeast ? { value: figure.value, approx: 'atLeast' } : { value: figure.value };
 }
 
+const HOUR_MS = 3_600_000;
+
 /** The InfoTip line a probe figure carries. */
 const PROBE_SOURCE = 'Counted from the first 200 tickets';
 
@@ -162,6 +165,11 @@ function grouped(settled: Settled<Grouped | null>): Grouped | null {
 
 function count(map: ReadonlyMap<string | null, number> | null | undefined, key: string): number {
   return map?.get(key) ?? 0;
+}
+
+/** A count in the reader's locale, with "+" when it is only a lower bound: "1,204", "200+". */
+function said(value: number, locale: string, atLeast = false): string {
+  return `${new Intl.NumberFormat(locale).format(value)}${atLeast ? '+' : ''}`;
 }
 
 /** A row-derived figure: exact when the probe held every row, "200+" when it was full. */
@@ -243,23 +251,24 @@ export function OverviewToolbar({ ctx }: { readonly ctx: OverviewContext }): Rea
   return (
     <div className="app-Overview__toolbar">
       <div className="app-Overview__controls">
-        {ctx.teamScope ? (
-          <SegmentedControl
-            mode="nav"
-            label="Scope"
-            value={query.scope}
-            options={[
-              { value: 'mine', label: 'Mine', href: overviewHref(query, { scope: 'mine', attention: 'all' }) },
-              { value: 'team', label: ctx.teamLabel, href: overviewHref(query, { scope: 'team', attention: 'all' }) },
-            ]}
-          />
-        ) : null}
-        <SegmentedControl
-          mode="nav"
-          size="sm"
-          label="Period"
-          value={query.range}
-          options={RANGES.map((range) => ({ value: range, label: `${RANGE_DAYS[range]} days`, href: overviewHref(query, { range }) }))}
+        <OverviewControls
+          scope={
+            ctx.teamScope
+              ? {
+                  label: 'Scope',
+                  value: query.scope,
+                  options: [
+                    { value: 'mine', label: 'Mine', href: overviewHref(query, { scope: 'mine', attention: 'all' }) },
+                    { value: 'team', label: ctx.teamLabel, href: overviewHref(query, { scope: 'team', attention: 'all' }) },
+                  ],
+                }
+              : null
+          }
+          period={{
+            label: 'Period',
+            value: query.range,
+            options: RANGES.map((range) => ({ value: range, label: `${RANGE_DAYS[range]} days`, href: overviewHref(query, { range }) })),
+          }}
         />
         <p className="app-Overview__asAt" data-as-at="page">
           <Icon name="calendar" size={14} />
@@ -365,8 +374,12 @@ export async function OverviewHero({ ctx }: { readonly ctx: OverviewContext }): 
   ]);
 
   const rows = open.ok ? open.value.rows : [];
-  const breached = grouped(breachedBy)?.total ?? probeFigure(open, (ticket) => isBreached(ticket, now)).value;
-  const dueSoon = grouped(bySla) ? count(grouped(bySla)!.groups, 'due_soon') : probeFigure(open, (ticket) => isDueSoon(ticket, now)).value;
+  const breachedProbe = probeFigure(open, (ticket) => isBreached(ticket, now));
+  const breached = grouped(breachedBy)?.total ?? breachedProbe.value;
+  const breachedSaid = said(breached ?? 0, locale, !grouped(breachedBy) && breachedProbe.atLeast);
+  const dueSoonProbe = probeFigure(open, (ticket) => isDueSoon(ticket, now));
+  const dueSoon = grouped(bySla) ? count(grouped(bySla)!.groups, 'due_soon') : dueSoonProbe.value;
+  const dueSoonSaid = said(dueSoon ?? 0, locale, !grouped(bySla) && dueSoonProbe.atLeast);
   const dueTodayCount = grouped(dueBy)?.total ?? (open.ok ? dueToday(rows, now, timeZone).length : null);
   const urgentCount = urgent.ok ? urgent.value.rows.length : 0;
   const liveIncident = incident.ok ? incident.value : null;
@@ -394,7 +407,7 @@ export async function OverviewHero({ ctx }: { readonly ctx: OverviewContext }): 
     if (reason === 'breached') {
       why.push({
         tone: 'danger',
-        label: breached === 1 && firstBreach ? `1 breached: ${firstBreach.number} ${firstBreach.title}` : `${breached} breached`,
+        label: breached === 1 && firstBreach ? `1 breached: ${firstBreach.number} ${firstBreach.title}` : `${breachedSaid} breached`,
         ...(breachAt ? { detail: `Passed its target ${dayAndTime(new Date(breachAt), now, locale, timeZone)}` } : {}),
         href: breached === 1 && firstBreach ? ticketHref(firstBreach.number) : overviewHref(query, { attention: 'breached' }, 'needs-you'),
       });
@@ -403,14 +416,14 @@ export async function OverviewHero({ ctx }: { readonly ctx: OverviewContext }): 
       const soon = rows.filter((ticket) => isDueSoon(ticket, now));
       why.push({
         tone: DUE_SOON_TONE,
-        label: dueSoon === 1 && soon[0] ? `1 due within the hour: ${soon[0].number}` : `${dueSoon} due within the hour`,
+        label: dueSoon === 1 && soon[0] ? `1 due within the hour: ${soon[0].number}` : `${dueSoonSaid} due within the hour`,
         href: dueSoon === 1 && soon[0] ? ticketHref(soon[0].number) : overviewHref(query, { attention: 'due-soon' }, 'needs-you'),
       });
     }
     if (reason === 'unassigned-urgent') {
       why.push({
         tone: 'danger',
-        label: `${urgentCount}${urgent.ok && urgent.value.capped ? '+' : ''} unassigned P1 or P2 ${ctx.teamWords}`,
+        label: `${said(urgentCount, locale, urgent.ok && urgent.value.capped)} unassigned P1 or P2 ${ctx.teamWords}`,
         href: overviewHref(query, { attention: 'unassigned-urgent' }, 'needs-you'),
       });
     }
@@ -418,22 +431,22 @@ export async function OverviewHero({ ctx }: { readonly ctx: OverviewContext }): 
       why.push({ tone: 'danger', label: `${liveIncident.row.number} is live`, ...(liveIncident.href ? { href: liveIncident.href } : {}) });
     }
     if (reason === 'due-today') {
-      why.push({ tone: 'neutral', label: `${dueTodayCount} due today`, href: viewHref(ctx, '/inbox/mine', '/inbox/due') });
+      why.push({ tone: 'neutral', label: `${said(dueTodayCount ?? 0, locale)} due today`, href: viewHref(ctx, '/inbox/mine', '/inbox/due') });
     }
   }
 
   const repliedCount = rows.filter((ticket) => replies.ok && replies.value.has(ticket.id)).length;
   const waitingCount = grouped(waitingBy)?.total ?? (waiting.ok ? waiting.value.rows.length : 0);
   const chips: HeroChip[] = [
-    ...((breached ?? 0) > 0 ? [{ id: 'breached', tone: 'danger' as const, label: `${breached} breached`, href: overviewHref(query, { attention: 'breached' }, 'needs-you') }] : []),
+    ...((breached ?? 0) > 0 ? [{ id: 'breached', tone: 'danger' as const, label: `${breachedSaid} breached`, href: overviewHref(query, { attention: 'breached' }, 'needs-you') }] : []),
     ...((dueSoon ?? 0) > 0
-      ? [{ id: 'due-soon', tone: DUE_SOON_TONE, label: `${dueSoon} due within the hour`, href: overviewHref(query, { attention: 'due-soon' }, 'needs-you') }]
+      ? [{ id: 'due-soon', tone: DUE_SOON_TONE, label: `${dueSoonSaid} due within the hour`, href: overviewHref(query, { attention: 'due-soon' }, 'needs-you') }]
       : []),
     ...(repliedCount > 0
-      ? [{ id: 'replied', tone: 'info' as const, label: `${repliedCount} ${repliedCount === 1 ? 'customer' : 'customers'} replied`, href: overviewHref(query, { attention: 'replied' }, 'needs-you') }]
+      ? [{ id: 'replied', tone: 'info' as const, label: `${said(repliedCount, locale)} ${repliedCount === 1 ? 'customer' : 'customers'} replied`, href: overviewHref(query, { attention: 'replied' }, 'needs-you') }]
       : []),
     ...(waitingCount > 0
-      ? [{ id: 'waiting', tone: 'hold' as const, label: `${waitingCount} waiting on others`, href: viewHref(ctx, '/inbox/waiting', WAITING_HREF_TEAM) }]
+      ? [{ id: 'waiting', tone: 'hold' as const, label: `${said(waitingCount, locale)} waiting on others`, href: viewHref(ctx, '/inbox/waiting', WAITING_HREF_TEAM) }]
       : []),
   ].slice(0, 4);
 
@@ -477,7 +490,7 @@ export async function OverviewHero({ ctx }: { readonly ctx: OverviewContext }): 
       {...(why.length > 0 ? { why: <HeroWhy items={why} title={`Why queue health is ${look.label.toLowerCase()}`} /> } : {})}
       trend={{ text: known ? trendLine(narrativeInput) : 'Couldn’t read the queue' }}
       chips={chips}
-      narrative={known ? queueNarrative(narrativeInput) : 'The queue couldn’t be read just now. Try again in a moment'}
+      narrative={known ? queueNarrative(narrativeInput) : 'The queue couldn’t be read just now'}
       dimensions={dimensions}
       aside={heroAside(ctx, clocks, next)}
     />
@@ -499,8 +512,8 @@ function myWorkDimension(mine: Settled<Probe>, ctx: OverviewContext): HeroDimens
   });
   const look = verdictLook(verdict);
   const next = nextDue(rows, now);
-  const parts = [`${rows.length}${capped ? '+' : ''} open`];
-  if (breached > 0) parts.push(`${breached} breached`);
+  const parts = [`${said(rows.length, ctx.locale, capped)} open`];
+  if (breached > 0) parts.push(`${said(breached, ctx.locale, capped)} breached`);
   if (next?.dueAt) parts.push(`next due ${compactDuration(Date.parse(next.dueAt) - now.getTime())}`);
   return { id: 'mine', label: 'My work', tone: look.tone, state: look.label, reason: parts.join(' · '), href: '/inbox/mine' };
 }
@@ -512,7 +525,7 @@ function teamDimension(ctx: OverviewContext, urgent: Settled<Probe>, unassigned:
   const risky = (urgent.ok && urgent.value.rows.length > 0) || (age !== null && age > UNASSIGNED_TARGET_MS);
   const look = verdictLook(risky ? 'at_risk' : 'on_track');
   const figure = unassigned.value;
-  const parts = [`${figure.value ?? '—'}${figure.atLeast ? '+' : ''} unassigned`];
+  const parts = [`${figure.value === null ? '—' : said(figure.value, ctx.locale, figure.atLeast)} unassigned`];
   if (age !== null) parts.push(`oldest ${compactDuration(age)}`);
   return { id: 'team', label: 'Team queue', tone: look.tone, state: look.label, reason: parts.join(' · '), href: '/inbox/unassigned' };
 }
@@ -522,9 +535,9 @@ function waitingDimension(ctx: OverviewContext, waiting: Settled<Probe>, total: 
   const href = viewHref(ctx, '/inbox/waiting', WAITING_HREF_TEAM);
   if (!waiting.ok) return { id: 'waiting', label: 'Waiting on others', tone: 'neutral', state: '—', href };
   const oldest = Math.min(...waiting.value.rows.map((ticket) => Date.parse(ticket.updatedAt)).filter(Number.isFinite));
-  const parts = [`${total} waiting`];
+  const parts = [`${said(total, ctx.locale)} waiting`];
   if (Number.isFinite(oldest)) parts.push(`longest ${longDuration(ctx.now.getTime() - oldest)}`);
-  return { id: 'waiting', label: 'Waiting on others', tone: 'hold', state: total > 0 ? 'Waiting' : 'None waiting', reason: parts.join(' · '), href };
+  return { id: 'waiting', label: 'Waiting on others', tone: total > 0 ? 'hold' : 'neutral', state: total > 0 ? 'Waiting' : 'None waiting', reason: parts.join(' · '), href };
 }
 
 /**
@@ -573,7 +586,6 @@ export function KpiSkeleton(): ReactNode {
 export async function OverviewKpis({ ctx }: { readonly ctx: OverviewContext }): Promise<ReactNode> {
   const { query, now, locale, timeZone, period } = ctx;
   const days = RANGE_DAYS[query.range];
-  const seriesSince = new Date(Math.min(Date.parse(period.start), localDays(now, timeZone, OPEN_SERIES_DAYS)[0]!.start.getTime())).toISOString();
   const [open, openBy, waiting, waitingBy, bySla, breachedBy, dueBy, unassigned, oldest, resolvedCounts, resolvedRows] = await Promise.all([
     loadOpenRows(query.scope),
     loadOpenByPriority(query.scope),
@@ -585,22 +597,26 @@ export async function OverviewKpis({ ctx }: { readonly ctx: OverviewContext }): 
     loadUnassignedCount(),
     loadOldestUnassigned(),
     loadResolvedCounts(query.scope, period.start, period.previousStart),
-    loadResolvedRows(query.scope, seriesSince),
+    loadResolvedRows(query.scope, seriesSince(now, timeZone, days)),
   ]);
   const rows = open.ok ? open.value.rows : [];
+  // A long range can hold more resolved tickets than are read; the Open series needs only its own fortnight.
+  const recent =
+    resolvedRows.ok && resolvedRows.value && !resolvedRows.value.complete && days > OPEN_SERIES_DAYS
+      ? await loadResolvedRows(query.scope, seriesSince(now, timeZone, OPEN_SERIES_DAYS))
+      : resolvedRows;
 
   /* 1 · Open */
   const openGroups = grouped(openBy);
-  const openFigure: Figure = openGroups ? exact(openGroups.total) : open.ok ? fromProbe(rows.length, open.value.capped) : UNKNOWN;
   const openSplit = openGroups?.groups ?? (open.ok ? countBy(rows, (ticket) => ticket.priority) : null);
   const finished = resolvedRows.ok && resolvedRows.value?.complete ? resolvedRows.value.rows : null;
-  const openSeries = open.ok && !open.value.capped && finished ? deriveOpenSeries(rows, finished, now, timeZone) : null;
+  const recentFinished = recent.ok && recent.value?.complete ? recent.value.rows : null;
+  const openSeries = open.ok && !open.value.capped && recentFinished ? deriveOpenSeries(rows, recentFinished, now, timeZone) : null;
   const openDelta = openSeries ? openSeries[openSeries.length - 1]! - openSeries[openSeries.length - 1 - 7]! : null;
 
   /* 2 · Due today */
   const dueGroups = grouped(dueBy);
   const dueRows = dueToday(rows, now, timeZone);
-  const dueFigure: Figure = dueGroups ? exact(dueGroups.total) : open.ok ? fromProbe(dueRows.length, open.value.capped) : UNKNOWN;
   const dueSplit = dueGroups?.groups ?? countBy(dueRows, (ticket) => ticket.priority);
   const slaGroups = grouped(bySla)?.groups;
   const withinHour = slaGroups ? count(slaGroups, 'due_soon') : rows.filter((ticket) => isDueSoon(ticket, now)).length;
@@ -608,23 +624,34 @@ export async function OverviewKpis({ ctx }: { readonly ctx: OverviewContext }): 
   /* 3 · Breached */
   const breachedGroups = grouped(breachedBy);
   const breachedRows = rows.filter((ticket) => isBreached(ticket, now));
-  const breachedFigure: Figure = breachedGroups ? exact(breachedGroups.total) : open.ok ? fromProbe(breachedRows.length, open.value.capped) : UNKNOWN;
   const breachedSplit = breachedGroups?.groups ?? countBy(breachedRows, (ticket) => ticket.priority);
   const firstBreach = oldestBreach(rows, now);
 
   /* 4 · Waiting on others */
   const waitingGroups = grouped(waitingBy);
   const waitingRows = waiting.ok ? waiting.value.rows : [];
-  const waitingFigure: Figure = waitingGroups ? exact(waitingGroups.total) : waiting.ok ? fromProbe(waitingRows.length, waiting.value.capped) : UNKNOWN;
   const waitingSplit = waitingGroups?.groups ?? countBy(waitingRows, (ticket) => ticket.status);
   const longest = Math.min(...waitingRows.map((ticket) => Date.parse(ticket.updatedAt)).filter(Number.isFinite));
 
   /* 5 · Unassigned in my teams */
-  const unassignedFigure: Figure = unassigned.ok ? unassigned.value : UNKNOWN;
   const oldestAge = oldest.ok && oldest.value ? now.getTime() - Date.parse(oldest.value.createdAt) : null;
 
   /* 6 · Resolved · {range} */
-  const resolvedFigure: Figure = resolvedCounts.ok && resolvedCounts.value ? resolvedCounts.value.current : finishedFigure(resolvedRows, period.start);
+  const figures = kpisFrom({
+    open: open.ok ? open.value : null,
+    waiting: waiting.ok ? waiting.value : null,
+    openTotal: openGroups?.total ?? null,
+    dueTodayTotal: dueGroups?.total ?? null,
+    breachedTotal: breachedGroups?.total ?? null,
+    waitingTotal: waitingGroups?.total ?? null,
+    unassigned: unassigned.ok ? unassigned.value : null,
+    resolved: resolvedCounts.ok && resolvedCounts.value ? resolvedCounts.value.current : null,
+    resolvedRows: resolvedRows.ok ? resolvedRows.value : null,
+    periodStart: period.start,
+    now,
+    timeZone,
+  });
+  const { open: openFigure, dueToday: dueFigure, breached: breachedFigure, waiting: waitingFigure, unassigned: unassignedFigure, resolved: resolvedFigure } = figures;
   const resolvedDelta =
     resolvedCounts.ok && resolvedCounts.value && !resolvedCounts.value.current.atLeast && !resolvedCounts.value.previous.atLeast
       ? (resolvedCounts.value.current.value ?? 0) - (resolvedCounts.value.previous.value ?? 0)
@@ -665,7 +692,7 @@ export async function OverviewKpis({ ctx }: { readonly ctx: OverviewContext }): 
         href={viewHref(ctx, '/inbox/mine', '/inbox/due')}
         info={{ body: 'Open tickets due before midnight, your time.', ...(dueFigure.probe ? { source: PROBE_SOURCE } : {}) }}
         visual={strip('Due today by priority', dueSplit, 'Nothing due today')}
-        context={withinHour > 0 ? `${withinHour} within the hour` : 'None within the hour'}
+        context={withinHour > 0 ? `${said(withinHour, locale)} within the hour` : 'None within the hour'}
         status={withinHour > 0 ? 'attention' : 'default'}
         {...tileProblem(dueFigure, dueBy, open)}
       />
@@ -711,14 +738,13 @@ export async function OverviewKpis({ ctx }: { readonly ctx: OverviewContext }): 
         info="Open tickets in your teams that nobody has picked up."
         visual={
           <BulletBar
-            label="Oldest unassigned"
+            label="Oldest"
             compact
             cap
-            value={oldestAge === null ? 0 : oldestAge / 3_600_000}
-            target={UNASSIGNED_TARGET_MS / 3_600_000}
-            max={Math.max(UNASSIGNED_TARGET_MS / 3_600_000, oldestAge === null ? 0 : oldestAge / 3_600_000)}
-            format={{ maximumFractionDigits: 1 }}
-            detail="hours, against 4"
+            value={oldestAge === null ? 0 : oldestAge / HOUR_MS}
+            target={UNASSIGNED_TARGET_MS / HOUR_MS}
+            max={Math.max(UNASSIGNED_TARGET_MS, oldestAge ?? 0) / HOUR_MS}
+            format={{ style: 'unit', unit: 'hour', unitDisplay: 'narrow', maximumFractionDigits: 0 }}
             locale={locale}
           />
         }
@@ -736,7 +762,7 @@ export async function OverviewKpis({ ctx }: { readonly ctx: OverviewContext }): 
           : {
               visual: (
                 <BulletBar
-                  label={`Resolved against the previous ${days} days`}
+                  label="Resolved"
                   compact
                   value={resolvedFigure.value ?? 0}
                   {...(previousFigure?.value !== null && previousFigure?.value !== undefined ? { target: previousFigure.value } : {})}
@@ -745,7 +771,7 @@ export async function OverviewKpis({ ctx }: { readonly ctx: OverviewContext }): 
               ),
             })}
         {...(resolvedDelta !== null ? { delta: { value: resolvedDelta, period: `vs previous ${days} days`, goodDirection: 'up' as const } } : {})}
-        {...(resolvedDelta === null && previousFigure?.value !== null && previousFigure?.value !== undefined ? { context: `${previousFigure.value} in the previous ${days} days` } : {})}
+        {...(resolvedDelta === null && previousFigure?.value !== null && previousFigure?.value !== undefined ? { context: `${said(previousFigure.value, locale, previousFigure.atLeast)} in the previous ${days} days` } : {})}
         {...tileProblem(resolvedFigure, resolvedCounts, resolvedRows)}
       />
     </StatGrid>
@@ -761,14 +787,6 @@ function tileProblem(figure: Figure, ...reads: readonly Settled<unknown>[]): { r
   if (figure.value !== null) return {};
   for (const read of reads) if (!read.ok) return { problem: read.problem };
   return {};
-}
-
-/** Resolved in the period from the rows, when the count could not say: exact only when every row was read. */
-function finishedFigure(rows: Settled<{ readonly rows: readonly Ticket[]; readonly complete: boolean } | null>, since: string): Figure {
-  if (!rows.ok || !rows.value) return UNKNOWN;
-  const start = Date.parse(since);
-  const matched = rows.value.rows.filter((ticket) => (time(ticket.resolvedAt) ?? 0) >= start).length;
-  return rows.value.complete ? exact(matched) : fromProbe(matched, true);
 }
 
 /* ================================================================ Needs you */

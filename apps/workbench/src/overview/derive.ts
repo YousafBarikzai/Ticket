@@ -189,6 +189,17 @@ export function periods(now: Date, timeZone: string, days: number): { readonly s
   };
 }
 
+/**
+ * Where the resolved tickets behind the sparklines are read from: the
+ * range's first day or the Open series' first day, whichever is earlier, so
+ * one read serves both tiles.
+ */
+export function seriesSince(now: Date, timeZone: string, days: number): string {
+  const range = periods(now, timeZone, days).start.getTime();
+  const open = localDays(now, timeZone, OPEN_SERIES_DAYS)[0]!.start.getTime();
+  return new Date(Math.min(range, open)).toISOString();
+}
+
 /** "40 min", "2 h", "3 d": a span floored to its largest whole unit, never rounded up. */
 export function compactDuration(ms: number): string {
   const span = Math.max(0, ms);
@@ -630,27 +641,72 @@ export interface KpiFigures {
   readonly resolved: Figure;
 }
 
+/** A probe as the KPIs read it: the first page of rows and whether there was more. */
+export interface ProbeRows {
+  readonly rows: readonly Ticket[];
+  readonly capped: boolean;
+}
+
 /**
- * The KPI figures from what was read: a grouped count's total where the API
- * answered one (exact), a capped count ("999+"), or a probe of the rows
- * ("200+"), in that order of preference; `UNKNOWN` ("—") when nothing could
- * say.
+ * What the KPI figures are worked out from. Each source is `null` when its
+ * read failed or the API could not answer it (a grouped count on an API
+ * older than R2g, a window it did not apply).
  */
-export function kpisFrom(input: {
-  readonly open: Figure;
-  readonly dueToday: Figure;
-  readonly breached: Figure;
-  readonly waiting: Figure;
-  readonly unassigned: Figure;
-  readonly resolved: Figure;
-}): KpiFigures {
+export interface KpiSources {
+  /** The scope's open and paused work, soonest due first. */
+  readonly open: ProbeRows | null;
+  /** The scope's waiting work. */
+  readonly waiting: ProbeRows | null;
+  /** Grouped-count totals (R2g), each exact. */
+  readonly openTotal: number | null;
+  readonly dueTodayTotal: number | null;
+  readonly breachedTotal: number | null;
+  readonly waitingTotal: number | null;
+  /** `GET /tickets/count` of unassigned open work. */
+  readonly unassigned: Figure | null;
+  /** `GET /tickets/count` of resolved work in the period (R2). */
+  readonly resolved: Figure | null;
+  /** The resolved tickets read for the sparkline, for when the count could not say. */
+  readonly resolvedRows: { readonly rows: readonly Ticket[]; readonly complete: boolean } | null;
+  /** The period's first instant. */
+  readonly periodStart: string;
+  readonly now: Date;
+  readonly timeZone: string;
+}
+
+/** A figure from a grouped count's total, else counted from the probe's rows, else unknown. */
+function preferred(total: number | null, probe: ProbeRows | null, match: (ticket: Ticket) => boolean): Figure {
+  if (total !== null) return exact(total);
+  if (probe) return fromProbe(probe.rows.filter(match).length, probe.capped);
+  return UNKNOWN;
+}
+
+/**
+ * The six KPI figures (A6 §5.2.4), in one order of preference for each: a
+ * grouped count's total (exact), a count (capped at "999+"), then the
+ * probe's rows ("200+" when the page was full), and `UNKNOWN` ("—", never a
+ * guessed 0) when nothing could say. The same for every reader, whatever
+ * their analytics (D9).
+ */
+export function kpisFrom(sources: KpiSources): KpiFigures {
+  const { now, timeZone } = sources;
+  const { start, end } = todayWindow(now, timeZone);
+  const since = Date.parse(sources.periodStart);
+  const resolvedFromRows = (): Figure => {
+    if (!sources.resolvedRows) return UNKNOWN;
+    const matched = sources.resolvedRows.rows.filter((ticket) => (time(ticket.resolvedAt) ?? Number.NEGATIVE_INFINITY) >= since).length;
+    return sources.resolvedRows.complete ? exact(matched) : fromProbe(matched, true);
+  };
   return {
-    open: input.open,
-    dueToday: input.dueToday,
-    breached: input.breached,
-    waiting: input.waiting,
-    unassigned: input.unassigned,
-    resolved: input.resolved,
+    open: preferred(sources.openTotal, sources.open, () => true),
+    dueToday: preferred(sources.dueTodayTotal, sources.open, (ticket) => {
+      const due = time(ticket.dueAt);
+      return ticket.statusCategory === 'open' && due !== null && due >= start.getTime() && due < end.getTime();
+    }),
+    breached: preferred(sources.breachedTotal, sources.open, (ticket) => isBreached(ticket, now)),
+    waiting: preferred(sources.waitingTotal, sources.waiting, () => true),
+    unassigned: sources.unassigned ?? UNKNOWN,
+    resolved: sources.resolved ?? resolvedFromRows(),
   };
 }
 

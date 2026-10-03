@@ -12,19 +12,22 @@ import {
   loadBySla,
   loadClocks,
   loadDueTodayByPriority,
+  loadAnalytics,
   loadIncident,
   loadOldestUnassigned,
+  loadOnCall,
   loadOpenByPriority,
   loadOpenRows,
   loadReplies,
   loadResolvedCounts,
+  loadResolvedRows,
   loadTeamByStatus,
   loadUnassignedCount,
   loadUnassignedUrgent,
   loadWaitingByStatus,
   loadWaitingRows,
 } from '../../../overview/data.js';
-import { RANGE_DAYS, overviewHref, overviewQuery, periods, todayWindow, type SearchParams } from '../../../overview/derive.js';
+import { RANGE_DAYS, overviewHref, overviewQuery, periods, seriesSince, todayWindow, type SearchParams } from '../../../overview/derive.js';
 import {
   AnalyticsRow,
   AnalyticsSkeleton,
@@ -112,6 +115,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     loadBreachedByPriority(query.scope),
     loadDueTodayByPriority(query.scope, ctx.today.start, ctx.today.end),
     loadResolvedCounts(query.scope, ctx.period.start, ctx.period.previousStart),
+    loadResolvedRows(query.scope, seriesSince(now, timeZone, RANGE_DAYS[query.range])),
     loadUnassignedCount(),
     loadOldestUnassigned(),
     loadUnassignedUrgent(),
@@ -119,6 +123,9 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     loadReplies(),
     loadClocks(query.scope),
     ...(held.has('incident.major.read') ? [loadIncident()] : []),
+    ...(held.has('workload.read') ? [loadOnCall()] : []),
+    // D9: asked only of a reader who holds analytics.
+    ...(ctx.analytics ? [loadAnalytics(query.range)] : []),
   ]).catch(() => undefined);
 
   return (
