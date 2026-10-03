@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { AREA_ORDER, AREAS, SITE } from '@itsm/contracts/areas';
 import { DEMO_PERSONAS } from '@itsm/contracts/demo';
-import { Banner } from '@itsm/ui';
+import { InlineAlert } from '@itsm/ui';
 import { DemoBar, SignInLayout } from '@itsm/ui/shell';
 import { HINT_READ } from '../../client/continue-read.js';
 import { AreaRow } from '../../components/AreaRow.js';
@@ -83,9 +83,10 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
         </h2>
       )}
       {note ? (
-        <Banner tone="warning" className="app-Chooser__status">
+        // A server-rendered alert, not the client `Banner`: the note is never dismissed, and the banner's island cost the page its budget.
+        <InlineAlert tone="warning" role="status" className="app-Chooser__status">
           {note}
-        </Banner>
+        </InlineAlert>
       ) : null}
       <div className="app-Chooser__continue">
         {DEMO_PERSONAS.map((persona) => (
