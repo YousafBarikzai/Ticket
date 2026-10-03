@@ -1,5 +1,5 @@
 import type { CanonicalState, Priority } from '@itsm/contracts';
-import { DEMO_COMPANY, demoHeroRef } from '@itsm/contracts/demo';
+import { DEMO_COMPANY } from '@itsm/contracts/demo';
 import { NORTHWIND_CALENDAR_KEY, StoryCalendar, type BusinessClock } from './calendar.js';
 import type { DemoContent, RequestItemKey, SubcategoryKey, TeamKey, TicketChannel } from './content-types.js';
 import { CATEGORY_KEYS, SUBCATEGORIES, TEAM_KEYS, TICKET_CHANNELS, categoryOfSubcategory } from './content-types.js';
@@ -765,7 +765,7 @@ export function planWithContent(input: DemoPlanInput, content: DemoContent): Dem
   /* -------------------------------------------------- 5. The heroes */
   const heroApprovals: PlannedApproval[] = [];
   const heroTickets = content.heroes.map((hero) => {
-    const planned = planHero(hero, t0, mode, { calendar, words, firstNameOf, managerOf: (key) => person.get(key)?.managerKey ?? null }, streamFor(seed, 'hero', hero.key));
+    const planned = planHero(hero, t0, mode, { calendar, words, firstNameOf }, streamFor(seed, 'hero', hero.key));
     if (planned.approval) {
       heroApprovals.push({
         subject: { kind: 'ticket', ref: planned.ticket.ref },
@@ -788,6 +788,7 @@ export function planWithContent(input: DemoPlanInput, content: DemoContent): Dem
     .filter((b) => b.draw.team === 'service-desk' && (b.ticket.status === 'resolved' || b.ticket.status === 'closed') && b.ticket.resolvedAt !== null && b.ticket.resolvedAt >= recentFrom)
     .sort((a, b) => a.ticket.createdAt - b.ticket.createdAt || a.slot.ref.localeCompare(b.slot.ref))
     .slice(-6);
+  const alexRecent = new Set(recent.map((entry) => entry.slot.ref));
   for (const entry of recent) {
     const draw = { ...entry.draw, agent: ALEX, agentFirstName: firstNameOf(ALEX) };
     const life = buildLife(draw, tools(draw.priority), streamFor(seed, 'life', entry.slot.ref));
@@ -809,8 +810,9 @@ export function planWithContent(input: DemoPlanInput, content: DemoContent): Dem
   function steerAttainment(): void {
     const last30 = t0 - 30 * DAY_MS;
     const others = [...reportTickets, ...storyTickets, ...heroTickets].filter((ticket) => ticket.createdAt >= last30);
+    // Alex's six recent resolutions are part of his first screen: left as they are.
     const candidates = built
-      .filter((entry) => entry.slot.ref.startsWith('demo:t:') && entry.ticket.createdAt >= last30)
+      .filter((entry) => entry.slot.ref.startsWith('demo:t:') && entry.ticket.createdAt >= last30 && !alexRecent.has(entry.slot.ref))
       .map((entry) => ({ entry, order: streamFor(seed, 'steer', entry.slot.ref).float() }))
       .sort((a, b) => a.order - b.order)
       .map(({ entry }) => entry);
@@ -1094,4 +1096,3 @@ export function starCounts(n: number): Record<1 | 2 | 3 | 4 | 5, number> {
   return counts;
 }
 
-export { demoHeroRef, JORDAN, ALEX, EMMA };

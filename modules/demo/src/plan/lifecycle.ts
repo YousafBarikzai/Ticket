@@ -10,7 +10,7 @@ import type {
   TeamKey,
   TicketChannel,
 } from './content-types.js';
-import { SURVEY_INVITE_SHARE, type TargetType } from './model.js';
+import type { TargetType } from './model.js';
 import type { Stream } from './rng.js';
 import { SlaSim, targetMs } from './sla-plan.js';
 import { DAY_MS, HOUR_MS, MINUTE_MS, type Instant } from './time.js';
@@ -388,9 +388,4 @@ export function buildLife(draw: TicketDraw, tools: LifeTools, rng: Stream): Tick
   function taskStartOr(fallback: Instant): Instant {
     return Math.max(fallback, taskStart ?? fallback);
   }
-}
-
-/** Whether a resolved incident or request is sent a survey (A4 §1.11). */
-export function invitedAt(quantile: number): boolean {
-  return quantile < SURVEY_INVITE_SHARE;
 }

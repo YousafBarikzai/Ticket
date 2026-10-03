@@ -2,6 +2,7 @@ import { TWENTY_FOUR_SEVEN, addBusinessMs, elapsedBusinessMs } from '@itsm/busin
 import { DEMO_BUILD_STEPS, DEMO_PERSONAS, DEMO_SD_HEROES, demoHeroRef } from '@itsm/contracts/demo';
 import { isTenantModule } from '@itsm/platform';
 import { STATES } from '@itsm/module-ticket';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DEMO_GENERATOR_VERSION, demoConfigFrom } from '../config.js';
 import { DEMO_JOB_NAMES, demoManifest } from '../manifest.js';
@@ -506,6 +507,16 @@ describe('the demo module', () => {
       expect.objectContaining({ name: DEMO_JOB_NAMES.purge, queue: 'demo' }),
     ]);
     expect(demoManifest.jobs.filter((job) => job.schedule)).toHaveLength(1);
+  });
+
+  it('keeps the planner, the parts and the content library out of what the API process loads', () => {
+    // The API registers this module's manifest through @itsm/runtime; only the
+    // build job may evaluate the story (A4 §2.2). Type exports are erased.
+    const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+    const reaching = source.split('\n').filter((line) => /from '\.\/(plan|verify|parts|content)\//.test(line));
+    expect(reaching.length).toBeGreaterThan(0);
+    for (const line of reaching) expect(line.trimStart().startsWith('export type'), line).toBe(true);
+    expect(readFileSync(new URL('../jobs.ts', import.meta.url), 'utf8')).not.toMatch(/^import /m);
   });
 
   it('reads its configuration from the platform’s, with A4’s defaults', () => {

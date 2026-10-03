@@ -26,7 +26,6 @@ export interface HeroTools {
   readonly calendar: StoryCalendar;
   readonly words: Words;
   readonly firstNameOf: (key: string) => string;
-  readonly managerOf: (key: string) => string | null;
 }
 
 interface HeroTiming {

@@ -3,7 +3,7 @@ import type { ChangeContent, DemoContent, KnowledgeKey, ProblemContent, Subcateg
 import { LIVE_INCIDENT_ARTICLE } from './content-types.js';
 import { streamFor } from './rng.js';
 import type { MajorIncidentStory } from './story.js';
-import { DAY_MS, HOUR_MS, MINUTE_MS, addDays, dayNumber, londonWall, ukInstant, wallMinutes, weekdayOf, type DateKey, type Instant } from './time.js';
+import { DAY_MS, HOUR_MS, MINUTE_MS, addDays, londonWall, ukInstant, wallMinutes, weekdayOf, type DateKey, type Instant } from './time.js';
 import type {
   PlannedAiSample,
   PlannedApproval,
@@ -302,16 +302,19 @@ export function planObjects(inputs: ObjectInputs): PlannedObjects {
     const resolved: { ticketRef: string; at: Instant }[] = [];
     if (publishedAt !== null) {
       const subcategories = live ? (['vpn'] as const) : (ARTICLE_SUBCATEGORIES[article.key] ?? []);
-      const candidates = tickets.filter(
-        (ticket) =>
-          (live ? ticket.majorIncident === 4 : ticket.ref.startsWith('demo:t:') && finished(ticket)) &&
-          (subcategories as readonly string[]).includes(ticket.subcategory) &&
-          ticket.createdAt >= publishedAt,
+      // The live incident's article is linked to nine of its reports as it is
+      // published; every other article to a share of the resolved tickets it
+      // answers, after it was published (about 140 in all, A4 §1.5).
+      const candidates = tickets.filter((ticket) =>
+        live
+          ? ticket.majorIncident === 4
+          : ticket.ref.startsWith('demo:t:') && finished(ticket) && (subcategories as readonly string[]).includes(ticket.subcategory) && ticket.createdAt >= publishedAt,
       );
       const wanted = live ? 9 : Math.min(12, Math.ceil(candidates.length / 6));
       for (const ticket of candidates.slice(-wanted)) {
         if (resolvedLinks >= 160 && !live) break;
-        resolved.push({ ticketRef: ticket.ref, at: Math.min(t0 - MINUTE_MS, (ticket.resolvedAt ?? ticket.createdAt) + MINUTE_MS) });
+        const linkedAt = live ? Math.max(publishedAt, ticket.createdAt) + MINUTE_MS : (ticket.resolvedAt ?? ticket.createdAt) + MINUTE_MS;
+        resolved.push({ ticketRef: ticket.ref, at: Math.min(t0 - MINUTE_MS, linkedAt) });
         if (!live) resolvedLinks += 1;
       }
     }
